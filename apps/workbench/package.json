@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check": "tsc --noEmit",
-    "test": "node --test tests/demo-state.test.ts tests/tokens.test.ts"
+    "test": "node --test tests/workflow-state.test.ts tests/tokens.test.ts"
   },
   "dependencies": {
     "@radix-ui/themes": "3.3.0",
