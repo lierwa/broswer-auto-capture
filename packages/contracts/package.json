@@ -1,0 +1,21 @@
+{
+  "name": "@browser-capture/contracts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./run": "./src/run.ts",
+    "./workflow": "./src/workflow.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsx --test tests/**/*.test.ts"
+  },
+  "dependencies": {
+    "zod": "4.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.0",
+    "tsx": "4.20.5"
+  }
+}

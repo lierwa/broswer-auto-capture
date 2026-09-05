@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+work/
+.codegraph/
+data/
+runs/
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+!.env.example
