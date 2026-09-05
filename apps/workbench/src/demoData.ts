@@ -1,5 +1,4 @@
 import type { Edge, Node } from "@xyflow/react"
-import type { DemoStage } from "./demoState.js"
 
 export const demoNodes: Node[] = [
   { id: "scope", position: { x: 0, y: 110 }, data: { label: "确认来源范围\n演示计划" }, type: "input", className: "flow-node plan-node" },
@@ -10,7 +9,7 @@ export const demoNodes: Node[] = [
 ]
 
 export const demoEdges: Edge[] = [
-  { id: "scope-open", source: "scope", target: "open", animated: true },
+  { id: "scope-open", source: "scope", target: "open" },
   { id: "open-specs", source: "open", target: "specs" },
   { id: "open-reviews", source: "open", target: "reviews" },
   { id: "specs-result", source: "specs", target: "result" },
@@ -23,13 +22,4 @@ export const nodeDetails: Record<string, { title: string; detail: string }> = {
   specs: { title: "读取原始参数", detail: "普通节点候选：保留字段原文与来源页面关联。" },
   reviews: { title: "逐页读取评价", detail: "循环检查点候选：最多 100 条，不足时记录终止原因。" },
   result: { title: "保存样例结构", detail: "输出字段包含商品、原始参数、评价和来源关联。" },
-}
-
-export const stageCopy: Record<DemoStage, { label: string; queue: string; next: string }> = {
-  draft: { label: "演示 · 待确认", queue: "尚未排队", next: "请先确认演示计划" },
-  confirmed: { label: "演示 · 已确认", queue: "可加入演示队列", next: "模拟加入队列" },
-  queued: { label: "演示 · 排队中", queue: "演示队列第 1 位", next: "模拟开始执行" },
-  running: { label: "演示 · 模拟执行中", queue: "模拟执行中", next: "模拟暂停" },
-  paused: { label: "演示 · 已暂停", queue: "已保存演示进度", next: "模拟恢复" },
-  complete: { label: "演示 · 已完成", queue: "演示流程已结束", next: "样例结果可查看" },
 }

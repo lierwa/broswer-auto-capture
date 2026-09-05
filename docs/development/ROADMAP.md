@@ -14,6 +14,7 @@
 | S0-02 | S0-01 | `packages/contracts` | 受控链路、节点、运行审计 Zod 契约 | Sol high（开发子 agent） | 契约单测与 `tsc --noEmit` |
 | S0-03 | S0-02 | `packages/runtime` | LangGraph 普通节点循环、取消和恢复原型 | Sol high（开发子 agent） | 零模型审计、恢复和取消测试 |
 | S0-04 | S0-01 | `apps/workbench` | Token、Radix/React Flow 工作台流程样例 | Sol high（开发子 agent） | Vite 构建、浏览器可操作性检查 |
+| S0-04B | S0-04自评与负责人修改授权 | `apps/workbench/**`、使用与进度文档 | 对话/计划双区、按需运行、旧计划失效与响应式修正 | Astra high（主控） | 完整测试/check/build、需求修改与执行状态浏览器检查、804/390px溢出复查 |
 | S0-05 | S0-03、S0-04 | `docs/development/*` | 选型结论、架构基线、阶段证据 | Sol high | 组件原型与 Windows 启动核验 |
 | S0-06 | S0-01 | `README.md`、`AGENTS.md`、`docs/development/{ROADMAP,RESEARCH,PROGRESS}.md`、`.codex/config.toml`、`.codex/agents/*.toml` | 开发期 Astra/Sol 模型规则与角色配置同步 | Sol high（开发子 agent） | 静态一致性检查；实际 `turn_context` 核验 model/effort |
 
