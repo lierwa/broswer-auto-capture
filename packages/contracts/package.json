@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./interview": "./src/interview.ts",
+    "./task": "./src/task.ts",
     "./run": "./src/run.ts",
     "./workflow": "./src/workflow.ts"
   },

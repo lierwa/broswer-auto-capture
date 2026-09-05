@@ -1,0 +1,76 @@
+param([Parameter(Mandatory)][ValidatePattern('^[a-z]{4}$')][string]$SessionId)
+$ErrorActionPreference = 'Stop'
+# 仅连接 f1-browser-server.ts 的隔离替身服务。页面交互走原生键盘，服务读数核验 canonical 事实。
+function Assert-Page([string]$Expression, [string]$Name) {
+  $deadline = (Get-Date).AddSeconds(8)
+  do {
+    $result = (bsk evaluate $Expression --session $SessionId | Out-String).Trim()
+    if ($result -eq 'true') { break }
+    Start-Sleep -Milliseconds 100
+  } while ((Get-Date) -lt $deadline)
+  if ($result -ne 'true') { throw "$Name failed: $result" }
+  Write-Output "PASS $Name"
+}
+function Activate([string]$Role, [string]$Name) {
+  $pattern = '(?m)^\s*(@e\d+)\s+' + [regex]::Escape($Role) + ' "' + [regex]::Escape($Name) + '"'
+  $snapshot = bsk snapshot --session $SessionId | Out-String
+  $match = [regex]::Match($snapshot, $pattern)
+  if (-not $match.Success) { throw "Missing control: $Role / $Name" }
+  bsk press Enter --ref $match.Groups[1].Value --session $SessionId | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Activation failed: $Name" }
+}
+function Send-Message([string]$Text) {
+  bsk observe --session $SessionId | Out-Null
+  bsk fill '.task-workspace:not([hidden]) .chat-input' --value $Text --session $SessionId | Out-Null
+  Activate 'button' '发送消息'
+}
+try {
+  bsk observe --session $SessionId | Out-Null
+  Assert-Page 'location.port === "4174"' 'isolated-F1-fixture'
+  Activate 'button' '新建需求'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .chat-input")?.disabled === false && document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 0' 'formal-create-empty-ready'
+  $taskId = (bsk evaluate 'document.querySelector(".task-workspace:not([hidden])").dataset.taskId' --session $SessionId | Out-String).Trim('"', "`r", "`n", ' ')
+  Send-Message 'F1先提问：整理公开商品资料'
+  Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .decision-option").length === 2 && !document.querySelector(".task-workspace:not([hidden]) .decision-option").disabled' 'formal-question-visible'
+  bsk observe --session $SessionId | Out-Null
+  bsk press Enter --selector '.task-workspace:not([hidden]) .decision-option' --session $SessionId | Out-Null
+  Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 4 && document.querySelector(".task-workspace:not([hidden]) .draft-artifact") !== null' 'continuous-answer-draft'
+  $state = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
+  if ($state.decisions.Count -ne 1 -or $state.decisions[0].kind -ne 'option' -or $state.audits[0].model -ne 'fixture') { throw 'Option decision or fixture audit missing' }
+  Activate 'button' '需求草稿 · v1'
+  Activate 'button' '确认需求草稿'
+  Assert-Page 'document.querySelector(".confirmed-next") !== null' 'formal-confirmation-visible'
+  Activate 'button' '关闭需求草稿'
+  bsk reload --session $SessionId | Out-Null
+  bsk observe --session $SessionId | Out-Null
+  Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 4 && document.querySelector(".confirmed-next") !== null' 'reload-retains-confirmed-history'
+  Send-Message 'F1慢轮次：补充范围'
+  Assert-Page 'document.querySelector("button[aria-label=停止生成]") !== null && !document.querySelector(".confirmed-next")' 'new-input-invalidates-confirmation'
+  bsk reload --session $SessionId | Out-Null
+  bsk observe --session $SessionId | Out-Null
+  Assert-Page 'document.querySelector("button[aria-label=停止生成]") !== null' 'reload-reconnects-active-turn'
+  Activate 'button' '新建需求'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .task-notice")?.textContent.includes("正在处理需求") === true' 'other-task-actual-running-notice'
+  bsk observe --session $SessionId | Out-Null
+  bsk fill '.task-workspace:not([hidden]) .chat-input' --value '另一任务未发送的内容' --session $SessionId | Out-Null
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .chat-input").value === "另一任务未发送的内容" && document.querySelector(".task-workspace:not([hidden]) button[aria-label=发送消息]").disabled' 'other-task-editable-send-blocked'
+  bsk press Enter --selector 'button.task-select[aria-label="打开任务：F1 验收需求"]' --session $SessionId | Out-Null
+  Activate 'button' '停止生成'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .assistant-body") !== null && !document.querySelector(".task-workspace:not([hidden]) button[aria-label=停止生成]") && document.querySelector(".task-workspace:not([hidden])").textContent.includes("本轮未提交草稿")' 'cancelled-turn-is-visible-terminal'
+  $cancelled = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
+  if ($cancelled.active -or $cancelled.drafts.Count -ne 1 -or $cancelled.confirmedVersion -ne $null) { throw 'Cancelled round submitted or stayed active' }
+  Send-Message 'F1失败轮次：验证可重试'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden])").textContent.includes("结果未提交") && !document.querySelector(".task-workspace:not([hidden]) button[aria-label=停止生成]")' 'failure-is-visible-and-preserves-history'
+  $failed = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
+  $users = @($failed.messages | Where-Object role -eq 'user').Count
+  Activate 'button' '重试本轮'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .interview-bar").textContent.includes("v2")' 'retry-produces-new-valid-draft'
+  $retried = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
+  if (@($retried.messages | Where-Object role -eq 'user').Count -ne $users -or $retried.drafts.Count -ne 2) { throw 'Retry duplicated user input' }
+  bsk emulate --session $SessionId --width 804 --height 1000 --dpr 1 | Out-Null
+  bsk observe --session $SessionId | Out-Null
+  bsk press Escape --session $SessionId | Out-Null
+  Assert-Page 'document.documentElement.scrollWidth <= innerWidth && document.querySelector(".task-workspace:not([hidden]) .thread-bottom").getBoundingClientRect().bottom <= innerHeight' 'F1-narrow-no-overflow-composer-visible'
+  bsk screenshot --session $SessionId --out D:/work/browser-capture-tool/work/ui-review/f1-lifecycle-804.png | Out-Null
+  Write-Output 'PASS canonical-decisions-cancel-retry-and-fixture-audits'
+} finally { bsk session stop $SessionId }

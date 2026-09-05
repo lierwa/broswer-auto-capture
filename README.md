@@ -4,6 +4,8 @@
 
 ## 已确认的首版范围
 
+开发接续从 [功能开发统一入口](docs/development/DEVELOPMENT_BASELINE.md) 开始：连接产品流程、原型布局、状态清单、实施顺序与已验证证据。当前原型先作为布局基线；各状态的真实界面随功能实现和验收补齐，不代表所有状态已获视觉确认。
+
 确认日期：2026-09-05。负责人已选择访谈中的全部推荐项。
 
 1. 独立的本地 Web 工作台，提供需求对话、计划与链路查看、启动运行和结果查看。
@@ -39,20 +41,27 @@
 - 开发期不再按任务复杂度使用 Luna 或 Terra；上述统一规则不改变产品运行时的 Terra medium、Sol high、Luna medium 路由。
 - Git 按验证阶段在本地提交，当前没有远程推送授权。
 
-页面布局仍按新产品需要讨论；当前Radix Themes/React Flow交互样例已通过浏览器检查，SQLite恢复和本机模型接入有独立原型证据。完整产品链路、真实聊天界面和真实抓取能力尚待接通。
+当前已接入多任务列表、独立访谈保存、assistant-ui、私有访谈 skill 与本机模型；来源调研、正式计划和 BrowserSkill 执行仍待接通。整页布局与显示/折叠/侧栏/抽屉规则见 [工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见 [需求对话机制](docs/development/INTERVIEW_UI.md)。
 
-## 查看阶段 0 交互原型
+## 启动本地工作台（F1）
 
 在项目目录使用 Node.js 24 与 npm：
 
 ```powershell
 npm install
-npm run dev --workspace @browser-capture/workbench -- --host 127.0.0.1 --port 4173 --strictPort
+npm run build
+npm start --workspace @browser-capture/api
 ```
 
-打开 [本机工作台](http://127.0.0.1:4173/)。在需求对话中体验推荐决策、草稿修订和独立需求确认，可切换来源调研、抓取计划、常驻节点画布和运行结果。自由输入保留为待澄清事项；固定样例不冒充模型理解。页面内状态在视图间保留，刷新重置；真实访谈、调研、执行及审计尚待接入。
+打开 [本机工作台](http://127.0.0.1:4175/)。Fastify 同时提供页面与正式 API；新建不调用模型，发送消息使用既有 ChatGPT managed 登录与 Terra/medium。数据库保存在忽略的 `data/workbench.sqlite`，任务、消息、轮次、问题、明确决策、草稿、确认及调用审计在同一事务内保存。
 
-`npm test`、`npm run check` 与 `npm run build` 分别执行所属工作区验证。各阶段实际证据和待验证范围见 PROGRESS。
+首次启动自动导入 `data/tasks.json` 及各任务 JSON，或旧单会话 `data/interview.json`；保留原件，重复启动不重复导入、不覆盖后续数据库修改。迁移前关闭使用同一目录的旧原型服务。损坏文件导致整批导入失败，修复原文件后重启可重试。同一数据目录只允许一个正式服务；异常退出后数据锁约 10 秒过期，重启会把未完成轮次标记为可重试的中断。
+
+开发时保持 API 运行，再在另一终端执行 `npm run dev --workspace @browser-capture/workbench -- --port 4173 --strictPort`。Vite 将 `/api` 代理至 4175。API 端口通过 `BROWSER_CAPTURE_API_PORT` 配置（开发代理终端需使用相同值）；数据目录通过 `BROWSER_CAPTURE_DATA_DIRECTORY` 配置；仅后端开发可设 `BROWSER_CAPTURE_SERVE_UI=false`。
+
+五视图、连续消息、宽屏并排草稿/窄屏抽屉与节点主画布保留。刷新重新读取服务端事实；切任务保留各自未发送输入、页签与节点选择，视图临时状态不承诺跨刷新保存。取消绑定实际轮次，取消后不提交草稿；请求响应丢失时可用原请求标识重发。来源与浏览器执行从 F2/F3 继续，结构样例须显式打开。
+
+`npm test`、`npm run check` 与 `npm run build` 执行所属工作区验证。普通测试用替身；`apps/workbench/tests/f1-browser-server.ts` 只为 `work/` 下隔离浏览器验收提供替身，生产入口没有模型替换开关。各阶段实际证据和待验证范围见 PROGRESS。
 
 ## 验证本机模型接入
 

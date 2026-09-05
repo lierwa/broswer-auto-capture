@@ -1,0 +1,73 @@
+import { z } from "zod"
+
+const text = z.string().trim().min(1).max(30_000)
+const revision = z.number().int().nonnegative()
+const userText = z.string().min(1).max(30_000).refine((value) => value.trim().length > 0, "请输入需求内容")
+export const questionSchema = z.object({
+  prompt: text,
+  options: z.array(z.object({ label: text, description: text, recommended: z.boolean() })).min(2).max(3),
+}).refine((value) => value.options.filter((item) => item.recommended).length === 1, "只能有一个推荐项")
+export const interviewOutputSchema = z.object({
+  assistantText: text, question: questionSchema.nullable(), draft: z.object({ title: text, markdown: text }).nullable(),
+}).refine((value) => !(value.question && value.draft), "有负责人问题时不得生成可确认草稿")
+export const draftSchema = z.object({ version: z.number().int().positive(), revision, title: text, markdown: text })
+export const messageSchema = z.object({
+  id: text, role: z.enum(["user", "assistant"]), text: z.string(),
+  status: z.enum(["complete", "running", "failed", "cancelled"]),
+  question: questionSchema.nullable(), draftVersion: z.number().int().nullable(),
+})
+export const auditSchema = z.object({ revision, model: text, effort: text, invocations: z.number().int().nonnegative() })
+export const turnSchema = z.object({
+  id: text, revision, userMessageId: text, assistantMessageId: text,
+  status: z.enum(["running", "cancelling", "succeeded", "cancelled", "failed", "interrupted"]),
+  reason: z.string().nullable(), createdAt: text, completedAt: text.nullable(),
+})
+export const decisionSchema = z.object({
+  id: text, revision, kind: z.enum(["option", "draft_confirmation"]), text,
+  messageId: text.nullable(), questionId: text.nullable(), draftVersion: z.number().int().nullable(), createdAt: text,
+})
+export const unresolvedSchema = z.object({
+  id: text, revision, question: questionSchema, status: z.enum(["open", "answered", "superseded", "resolved"]), answerMessageId: text.nullable(),
+})
+export const legacyInterviewStateSchema = z.object({
+  revision, messages: z.array(messageSchema), drafts: z.array(draftSchema),
+  confirmedVersion: z.number().int().nullable(), active: z.boolean(), audits: z.array(auditSchema),
+})
+export const interviewStateSchema = legacyInterviewStateSchema.extend({
+  sequence: revision.default(0), activeTurnId: text.nullable().default(null), cancellationRequested: z.boolean().default(false),
+  turns: z.array(turnSchema).default([]), decisions: z.array(decisionSchema).default([]), unresolved: z.array(unresolvedSchema).default([]),
+})
+// WHY：旧请求类型仅用于迁移前切片兼容；正式 API 必须携带幂等键或精确轮次。
+export const interviewRequestSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("message"), text, expectedRevision: revision }),
+  z.object({ type: z.literal("retry"), expectedRevision: revision }),
+  z.object({ type: z.literal("confirm"), version: z.number().int().positive(), expectedRevision: revision }),
+  z.object({ type: z.literal("cancel") }),
+])
+const operation = { requestId: z.string().uuid(), expectedRevision: revision }
+export const interviewCommandSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("message"), text: userText, ...operation, answer: z.object({ questionId: text, label: text }).optional() }).strict(),
+  z.object({ type: z.literal("retry"), ...operation }).strict(),
+  z.object({ type: z.literal("confirm"), version: z.number().int().positive(), ...operation }).strict(),
+  z.object({ type: z.literal("cancel"), turnId: text }).strict(),
+])
+export type InterviewOutput = z.infer<typeof interviewOutputSchema>
+export type InterviewState = z.infer<typeof interviewStateSchema>
+export type InterviewMessage = z.infer<typeof messageSchema>
+export type InterviewRequest = z.infer<typeof interviewRequestSchema>
+export type InterviewCommand = z.infer<typeof interviewCommandSchema>
+export type InterviewTurn = z.infer<typeof turnSchema>
+export const emptyInterview: InterviewState = interviewStateSchema.parse({ revision: 0, messages: [], drafts: [], confirmedVersion: null, active: false, audits: [] })
+
+export function currentDraft(state: Pick<InterviewState, "drafts" | "revision">) {
+  const last = state.drafts.at(-1)
+  return last?.revision === state.revision ? last : undefined
+}
+export function visibleMessageText(message: InterviewMessage) {
+  if (message.role !== "assistant") return message.text
+  const [first, ...rest] = message.text.split("\n")
+  // WHY：仅隔离可验证的旧供应商协议块，不改用户原文。
+  try { if (interviewOutputSchema.safeParse(JSON.parse(first ?? "")).success) return rest.join("\n").trim() }
+  catch { /* 普通中文原样显示。 */ }
+  return message.text
+}

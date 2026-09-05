@@ -264,3 +264,56 @@ th { background: var(--color-panel-raised); color: var(--color-text-muted); font
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
   .react-flow__edge.animated path { animation: none !important; }
 }
+
+/* WHY：完整流程留在视图切换中；当前工作区仅突出眼前任务，详情由用户展开。 */
+.workspace { max-width: 1600px; }
+.topbar { padding: 4px 0 22px; }
+.topbar h1 { font-size: 20px; font-weight: 500; }
+.workbench-layout { grid-template-columns: minmax(0, 1fr); padding-top: 0; }
+.review-panel { height: calc(100dvh - 115px); min-height: 560px; }
+.interview-layout { grid-template-columns: minmax(0, 1fr); }
+.interview-layout[data-draft-open="true"] { grid-template-columns: minmax(0, 1fr) 320px; }
+.conversation > .view-heading { align-items: center; padding: 24px 32px 0; }
+.conversation-body { width: 100%; max-width: 780px; margin: 0 auto; padding: 38px 32px 24px; }
+.conversation-history { margin-bottom: 32px; }
+.conversation-history[open] { padding-bottom: 20px; border-bottom: 1px solid var(--color-border); }
+.conversation-history .message-list { margin-top: 22px; }
+summary { width: fit-content; cursor: pointer; color: var(--color-text-muted); font-size: 12px; line-height: 1.8; }
+summary:hover { color: var(--color-text); }
+.question-card { padding: 0; border: 0; background: none; box-shadow: none; }
+.question-card h3 { font-size: 26px; line-height: 1.6; margin: 0 0 20px; font-weight: 500; }
+.question-card .recommendation { padding: 0; border: 0; background: none; font-size: 15px; color: var(--color-text); margin-bottom: 16px; }
+.recommendation-reason { margin-bottom: 28px; }
+.recommendation-reason p { margin-bottom: 0; }
+.composer { width: calc(100% - 64px); max-width: 716px; margin: 0 auto 32px; padding-top: 22px; }
+.draft-pane { background: var(--color-panel); }
+.draft-pane .section-line { margin-bottom: 26px; }
+.draft-pane h2 { font-size: 18px; }
+.draft-fields dt > span { font-size: 10px; }
+.artifact-view { padding: 32px; }
+.artifact-view > .view-heading h2 { font-size: 21px; font-weight: 500; }
+.research-summary { margin: 40px 0 26px; border: 0; background: none; padding: 0; }
+.research-details, .run-details { margin-top: 28px; }
+.plan-card { padding: 18px 0; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; }
+.plan-detail { margin: 16px 0 0 46px; }
+.large-number { font-size: 18px; color: var(--color-text-muted); }
+.results-empty { padding: 100px 0 80px; }
+.chain-view > .view-heading { margin-bottom: 28px; }
+.chain-layout { grid-template-columns: minmax(0, 1fr); }
+.chain-layout[data-inspector-open="true"] { grid-template-columns: minmax(0, 1fr) 270px; }
+.canvas-heading select { width: 185px; }
+.flow-canvas { height: max(380px, calc(100dvh - 355px)); }
+.node-details { background: var(--color-panel); }
+@media (max-width: 850px) {
+  .review-panel { height: auto; min-height: 650px; }
+  .interview-layout[data-draft-open="true"], .chain-layout[data-inspector-open="true"] { grid-template-columns: minmax(0, 1fr); }
+  .conversation-body { padding: 32px 24px 40px; }
+  .composer { width: calc(100% - 48px); }
+  .flow-canvas { height: 420px; }
+}
+@media (max-width: 600px) {
+  .topbar { flex-wrap: wrap; gap: 12px; }
+  .question-card h3 { font-size: 22px; }
+  .artifact-view { padding: 24px 18px; }
+  .research-summary { align-items: flex-start; }
+}

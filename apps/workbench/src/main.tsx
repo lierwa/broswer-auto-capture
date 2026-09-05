@@ -1,69 +1,45 @@
-import { useReducer, useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 import { createRoot } from "react-dom/client"
-import { Badge, Button, IconButton, Tabs, Theme, Tooltip } from "@radix-ui/themes"
-import { Database, FileSearch, GitBranch, LayoutGrid, MessageSquare, Moon, Search, Sun } from "lucide-react"
+import { Badge, Button, Dialog, IconButton, Theme, Tooltip } from "@radix-ui/themes"
+import { Moon, PanelLeft, Plus, Sun } from "lucide-react"
 import "@radix-ui/themes/styles.css"
 import "@xyflow/react/dist/style.css"
-import { demoReducer, initialDemoState } from "./workflowState.js"
-import { Interview } from "./Interview.js"
-import { ChainView } from "./ChainView.js"
-import { DesignSystem, Plan, Results, Sources } from "./ArtifactViews.js"
-import type { StepId } from "./chainData.js"
+import { useTasks } from "./useTasks.js"
+import { TaskSidebar, TaskMenu } from "./TaskSidebar.js"
+import { TaskWorkspace } from "./TaskWorkspace.js"
+import { taskStatusLabels } from "./taskContract.js"
 import "./styles.css"
+import "./chat.css"
+import "./workbench.css"
 
-const views = [
-  { id: "interview", name: "需求对话", icon: MessageSquare },
-  { id: "sources", name: "来源调研", icon: Search },
-  { id: "plan", name: "抓取计划", icon: FileSearch },
-  { id: "nodes", name: "抓取链路", icon: GitBranch },
-  { id: "results", name: "运行结果", icon: Database },
-]
-
+function subscribe(callback: () => void) {
+  const media = matchMedia("(max-width: 1099px)")
+  media.addEventListener("change", callback)
+  return () => media.removeEventListener("change", callback)
+}
 function App() {
-  const [state, dispatch] = useReducer(demoReducer, initialDemoState)
+  const model = useTasks()
   const [theme, setTheme] = useState<"light" | "dark">("dark")
-  const [activeTab, setActiveTab] = useState("interview")
-  const [composer, setComposer] = useState("")
-  const [viewedVersion, setViewedVersion] = useState<number | null>(null)
-  const [step, setStep] = useState<StepId>("catalog")
-  const [selectedNodes, setSelectedNodes] = useState<Partial<Record<StepId, number>>>({})
-  const confirmed = state.confirmedVersion !== null
-
-  function showChain(value: StepId) { setStep(value); setActiveTab("nodes") }
-
+  const compact = useSyncExternalStore(subscribe, () => matchMedia("(max-width: 1099px)").matches, () => false)
+  const [sidebarOpen, setSidebarOpen] = useState(() => innerWidth >= 1100)
+  const task = model.tasks.find((item) => item.id === model.selected)
+  const running = model.tasks.find((item) => item.status === "running")
+  function select(id: string) { model.select(id); if (compact) setSidebarOpen(false) }
+  const sidebar = <TaskSidebar model={model} close={() => setSidebarOpen(false)} onSelect={select} afterCreate={() => { if (compact) setSidebarOpen(false) }} />
   return <Theme appearance={theme} accentColor="amber" grayColor="sand" radius="small" scaling="95%">
-    <main className="app-shell" data-theme={theme}>
-      <aside className="rail" aria-label="工具导航">
-        <div className="brand-mark" aria-label="Browser Capture">BC</div>
-        <nav><Tooltip content="抓取工作台"><IconButton variant={activeTab === "system" ? "ghost" : "soft"} aria-label="抓取工作台" onClick={() => setActiveTab("interview")}><FileSearch size={19} /></IconButton></Tooltip><Tooltip content="设计系统"><IconButton variant={activeTab === "system" ? "soft" : "ghost"} aria-label="设计系统" onClick={() => setActiveTab("system")}><LayoutGrid size={18} /></IconButton></Tooltip></nav>
-        <div className="rail-footer"><span className="local-dot" />本机工作台</div>
-      </aside>
+    <main className="app-shell task-layout" data-theme={theme} data-sidebar={!compact && sidebarOpen}>
+      {!compact && sidebarOpen && <aside className="task-navigation" aria-label="任务侧栏">{sidebar}</aside>}
+      {compact && <Dialog.Root open={sidebarOpen} onOpenChange={setSidebarOpen}><Dialog.Content className="task-nav-drawer" maxWidth="300px"><Dialog.Title className="sr-only">任务列表</Dialog.Title><Dialog.Description className="sr-only">选择任务后切换整套工作区</Dialog.Description>{sidebar}</Dialog.Content></Dialog.Root>}
       <section className="workspace">
-        <header className="topbar"><div><p className="eyebrow">BROWSER CAPTURE / WORKSPACE</p><h1>抓取工作台</h1></div><div className="status-group"><Badge color="gray" variant="outline">本地交互原型</Badge><Tooltip content={theme === "dark" ? "切换为浅色主题" : "切换为深色主题"}><IconButton variant="ghost" aria-label={theme === "dark" ? "切换为浅色主题" : "切换为深色主题"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</IconButton></Tooltip></div></header>
-        <div className="prototype-strip"><span className="prototype-dot" /><strong>设计预览</strong><span>访谈为固定交互样例；真实模型、来源搜索与抓取尚未接入。页面内状态在切换时保留，刷新重置。</span></div>
-        <div className="workbench-layout">
-          <aside className="task-sidebar" aria-label="当前任务">
-            <p className="eyebrow">CAPTURE REQUEST</p><div className="task-card"><FileSearch size={19} /><h2>冰箱商品与评价</h2><p>京东旗舰店 · 需求样例</p><Badge variant="soft">{confirmed ? "需求已确认（演示）" : "需求访谈中（演示）"}</Badge></div>
-            <div className="sidebar-section"><span className="eyebrow">本次需求</span><dl><div><dt>草稿版本</dt><dd>v{state.version}</dd></div><div><dt>已确认取舍</dt><dd>{Object.keys(state.answers).length} / 3 <small>样例</small></dd></div><div><dt>待澄清补充</dt><dd>{state.notes.length}</dd></div></dl></div>
-            <div className="sidebar-section"><span className="eyebrow">当前产物</span><div className="artifact-index"><span>需求草稿<Badge size="1" color={confirmed ? "green" : "gray"}>{confirmed ? "已确认" : "讨论中"}</Badge></span><span>来源证据<small>未调研</small></span><span>正式计划<small>未生成</small></span><span>执行链路<small>未探索</small></span><span>运行结果<small>未运行</small></span></div></div>
-            <div className="sidebar-next"><span className="eyebrow">下一项工作</span><p>{confirmed ? "基于确认草稿，搜索并核验真实来源。" : "逐个明确需求，沉淀可审阅的草稿。"}</p><Button size="1" variant="ghost" onClick={() => setActiveTab(confirmed ? "sources" : "interview")}>{confirmed ? "查看来源调研" : "回到需求对话"} →</Button></div>
-          </aside>
-          <section className="panel review-panel" aria-label="需求、来源、计划、链路与结果">
-            <Tabs.Root value={activeTab} onValueChange={setActiveTab} activationMode="manual">
-              {/* WHY：焦点移动不切换工作区；鼠标点击或键盘确认才激活目标视图。 */}
-              <Tabs.List aria-label="工作台视图">{views.map(({ id, name, icon: Icon }) => <Tabs.Trigger key={id} value={id} onClick={() => setActiveTab(id)}><Icon size={15} />{name}</Tabs.Trigger>)}{activeTab === "system" && <Tabs.Trigger value="system">设计系统</Tabs.Trigger>}</Tabs.List>
-              <Tabs.Content value="interview" forceMount hidden={activeTab !== "interview"}><Interview state={state} dispatch={dispatch} composer={composer} setComposer={setComposer} viewedVersion={viewedVersion} setViewedVersion={setViewedVersion} /></Tabs.Content>
-              <Tabs.Content value="sources"><Sources confirmedVersion={state.confirmedVersion} /></Tabs.Content>
-              <Tabs.Content value="plan"><Plan onChain={showChain} /></Tabs.Content>
-              <Tabs.Content value="nodes" forceMount hidden={activeTab !== "nodes"}>{activeTab === "nodes" && <ChainView step={step} onStep={setStep} theme={theme} selected={selectedNodes} onSelect={(id, node) => setSelectedNodes((current) => ({ ...current, [id]: node }))} />}</Tabs.Content>
-              <Tabs.Content value="results" forceMount hidden={activeTab !== "results"}><Results /></Tabs.Content>
-              <Tabs.Content value="system"><DesignSystem /></Tabs.Content>
-            </Tabs.Root>
-          </section>
-        </div>
+        <header className="topbar"><div className="task-title-group"><Tooltip content={sidebarOpen ? "收起任务列表" : "展开任务列表"}><IconButton variant="ghost" color="gray" aria-label={sidebarOpen ? "收起任务列表" : "展开任务列表"} onClick={() => setSidebarOpen(!sidebarOpen)}><PanelLeft size={18} /></IconButton></Tooltip><h1>{task?.title ?? "浏览器工作台"}</h1>{task && <Badge color="gray" variant="soft">{taskStatusLabels[task.status]}</Badge>}</div>
+          <div className="status-group">{task && <TaskMenu task={task} model={model} />}<Tooltip content={theme === "dark" ? "切换为浅色主题" : "切换为深色主题"}><IconButton variant="ghost" color="gray" aria-label={theme === "dark" ? "切换为浅色主题" : "切换为深色主题"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</IconButton></Tooltip></div>
+        </header>
+        {model.error && <div className="task-notice" role="alert">{model.error}<Button size="1" variant="soft" onClick={model.reload}>重新读取任务</Button>{model.pendingCreate && <Button size="1" disabled={model.busy} onClick={() => void model.action({ type: "create" })}>恢复新建请求</Button>}</div>}
+        {model.visited.map((id) => { const item = model.tasks.find((entry) => entry.id === id); return item && <TaskWorkspace key={id} task={item} visible={id === model.selected} theme={theme} otherRunning={running?.id !== id ? running : undefined} /> })}
+        {!model.ready && !model.error && <div className="task-notice" role="status">正在读取本地任务</div>}
+        {model.ready && !task && <section className="workspace-welcome"><span className="welcome-mark"><Plus size={22} /></span><h2>每个需求，一个独立任务</h2><p>从对话明确目标，逐步形成草稿、来源依据与浏览器操作链。<br />任务和它的产物始终保存在一起。</p><Button disabled={!model.ready || model.busy} onClick={() => void model.action({ type: "create" })}><Plus size={16} />新建需求</Button></section>}
       </section>
     </main>
   </Theme>
 }
-
 createRoot(document.getElementById("root")!).render(<App />)

@@ -1,0 +1,94 @@
+/* WHY：任务导航与任务产物分层；只用一个主工作区，详情按对象打开。 */
+.task-layout { height: 100dvh; min-height: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+.task-layout[data-sidebar="true"] { grid-template-columns: 232px minmax(0, 1fr); }
+.task-layout .workspace { max-width: none; width: 100%; padding: 0 24px 24px; display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.task-layout .topbar { min-height: 70px; flex-shrink: 0; padding: 12px 0; }
+.task-title-group { display: flex; align-items: center; min-width: 0; gap: 12px; }
+.task-title-group h1 { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-title-group > .rt-Badge { flex-shrink: 0; }
+.task-navigation { border-right: 1px solid var(--color-border); background: var(--color-rail); min-height: 0; }
+.task-sidebar-content { height: 100%; display: flex; flex-direction: column; padding: 20px 14px; gap: 17px; min-height: 0; }
+.task-sidebar-heading { display: flex; align-items: center; gap: 9px; height: 27px; }
+.task-sidebar-heading strong { font-size: 13px; font-weight: 500; flex: 1; }
+.sidebar-brand { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 7px; background: var(--amber-4); color: var(--amber-11); font-weight: 700; }
+.new-task { justify-content: flex-start; width: 100%; }
+.task-list-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--sand-11); padding: 4px 4px 0; }
+.task-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; margin: -8px -5px 0; padding: 3px 5px; }
+.task-list-item { position: relative; display: flex; align-items: flex-start; margin-bottom: 5px; border: 1px solid transparent; border-radius: 8px; }
+.task-list-item[data-selected="true"] { background: var(--sand-4); border-color: var(--sand-6); }
+.task-list-item:hover { background: var(--sand-3); }
+.task-select { width: 100%; min-width: 0; padding: 12px 30px 11px 10px; text-align: left; background: transparent; border: 0; color: var(--sand-12); }
+.task-name { display: block; font-size: 12px; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-status { display: block; color: var(--sand-11); font-size: 10px; margin-top: 5px; }
+.task-status[data-status="running"], .task-status[data-status="failed"] { color: var(--amber-11); }
+.task-list-item .task-more { position: absolute; right: 7px; top: 13px; opacity: 0; }
+.task-list-item:hover .task-more, .task-list-item:focus-within .task-more, .task-list-item[data-selected="true"] .task-more { opacity: 1; }
+.task-list-empty { padding: 12px 8px; font-size: 12px; color: var(--sand-11); }
+.task-sidebar-footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 5px 0; border-top: 1px solid var(--sand-6); }
+.task-sidebar-footer > span { color: var(--sand-11); font-size: 10px; }
+.task-workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.task-body { flex: 1; min-height: 0; display: flex; gap: 0; }
+.task-body > .review-panel { flex: 1; min-width: 0; height: 100%; min-height: 0; }
+.task-body:has(> .detail-pane) > .review-panel { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.task-notice { padding: 10px 14px; background: var(--amber-3); color: var(--amber-11); border: 1px solid var(--amber-6); font-size: 12px; line-height: 1.65; border-radius: 7px; margin-bottom: 12px; flex-shrink: 0; }
+.workspace-welcome { margin: auto; width: min(640px, 100%); padding: 40px 20px; }
+.workspace-welcome h2 { font-size: 27px; font-weight: 500; }
+.workspace-welcome p { font-size: 14px; color: var(--color-text-muted); margin: 20px 0 26px; }
+.rename-task { margin-top: 20px; }
+.rename-task .dialog-actions { gap: 10px; }
+.view-with-detail { display: flex; min-width: 0; height: 100%; }
+.view-with-detail > .artifact-view { flex: 1; min-width: 0; overflow: auto; }
+.detail-surface { color: var(--sand-12); background: var(--sand-2); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.detail-pane { width: 380px; flex: 0 0 380px; border: 1px solid var(--sand-6); border-left: 0; border-radius: 0 5px 5px 0; padding: 20px; }
+.detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; margin-bottom: 14px; }
+.detail-heading h2 { font-size: 17px; margin: 0; }
+.detail-intro { font-size: 12px; line-height: 1.8; color: var(--sand-11); margin: 0 0 16px; }
+.detail-surface .draft-version-label { flex-shrink: 0; margin: 4px 0 16px; }
+.detail-surface .draft-document { flex: 1; min-height: 0; max-height: none; scrollbar-width: thin; }
+.detail-surface .draft-dialog-footer { flex-shrink: 0; flex-wrap: wrap; margin-top: 16px; }
+.detail-content { overflow-y: auto; min-height: 0; font-size: 13px; line-height: 1.8; scrollbar-width: thin; }
+.detail-content h3 { margin: 18px 0 10px; }
+.detail-content .muted { color: var(--sand-11); }
+.detail-content .detail-list dt { color: var(--sand-11); }
+.detail-content .detail-list > div { border-color: var(--sand-6); }
+.detail-drawer.rt-DialogContent { position: fixed; inset: 0 0 0 auto; width: min(92vw, 540px); height: 100dvh; margin: 0; border-radius: 12px 0 0 12px; padding: 24px; }
+.task-nav-drawer.rt-DialogContent { position: fixed; inset: 0 auto 0 0; width: min(86vw, 300px); height: 100dvh; margin: 0; padding: 0; border-radius: 0 12px 12px 0; background: var(--sand-2); }
+.stage-empty { width: min(580px, 100%); margin: 52px auto 44px; text-align: center; }
+.stage-empty > svg { color: var(--color-text-muted); margin-bottom: 18px; }
+.stage-empty h3 { font-size: 21px; font-weight: 500; }
+.stage-empty p { font-size: 13px; color: var(--color-text-muted); margin: 14px 0 22px; }
+.supporting-detail { max-width: 680px; margin: 24px auto 0; padding-top: 18px; border-top: 1px solid var(--color-border); }
+.compact-checklist p { font-size: 12px; color: var(--color-text-muted); margin: 16px 0; }
+.compact-checklist strong { display: block; color: var(--color-text); font-weight: 500; margin-bottom: 3px; }
+.sample-notice { font-size: 11px; color: var(--color-text-muted); margin: 18px 0 24px; }
+.sample-toggle { margin-top: 24px; }
+.empty-chain-canvas { min-height: 380px; height: calc(100dvh - 280px); border: 1px dashed var(--color-border); border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: var(--color-canvas); text-align: center; padding: 24px; }
+.empty-chain-canvas > svg, .empty-chain-canvas p { color: var(--color-text-muted); }
+.empty-chain-canvas p { font-size: 13px; margin: 0 0 10px; }
+.task-layout .chain-layout { display: flex; }
+.chain-layout .canvas-shell { flex: 1; min-width: 0; }
+.chain-layout .detail-pane { width: 300px; flex-basis: 300px; border: 0; border-left: 1px solid var(--color-border); border-radius: 0; }
+.task-layout .flow-canvas { height: max(360px, calc(100dvh - 365px)); }
+.audit-record { padding: 12px 0; border-bottom: 1px solid var(--sand-6); }
+.audit-record summary { color: var(--sand-11); }
+.task-layout .thread-column { padding-left: 24px; padding-right: 24px; }
+.task-layout .thread-bottom { padding-left: 24px; padding-right: 24px; }
+@media (max-width: 1099px) {
+  .task-layout[data-sidebar="true"] { grid-template-columns: minmax(0, 1fr); }
+  .task-layout .workspace { padding: 0 18px 18px; }
+  .task-title-group h1 { font-size: 16px; }
+  .task-title-group { gap: 9px; }
+}
+@media (max-width: 600px) {
+  .task-layout .workspace { padding: 0 10px 10px; }
+  .task-layout .topbar { min-height: 60px; flex-wrap: nowrap; }
+  .task-title-group > .rt-Badge { display: none; }
+  .task-layout .review-panel [role="tabpanel"] { height: calc(100% - 40px); }
+  .task-layout .artifact-view { padding: 22px 16px; }
+  .stage-empty { margin-top: 34px; }
+  .view-heading { align-items: flex-start; }
+  .task-layout .thread-column, .task-layout .thread-bottom { padding-left: 14px; padding-right: 14px; }
+  .task-layout .plan-card header { flex-wrap: wrap; }
+  .task-layout .plan-detail { margin-left: 0; }
+  .detail-drawer.rt-DialogContent { padding: 20px; }
+}

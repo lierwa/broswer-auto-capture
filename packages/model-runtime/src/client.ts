@@ -31,6 +31,7 @@ const DEFAULT_INTERRUPT_GRACE_MS = 2_000
 
 export interface CodexAppServerClientOptions {
   cwd: string
+  skill?: { name: string; path: string }
   packageRoot?: string
   executable?: string
   connectionTimeoutMs?: number
@@ -354,7 +355,7 @@ class ReusableCodexAppServerClient implements CodexAppServerClient {
       state.reportedModel = PRODUCT_MODEL_ID
       state.reportedEffort = PRODUCT_REASONING_EFFORT
       if (state.interrupted) return
-      transport.send("turn/start", state.turnRequestId, turnStartParams(state.threadId, prompt, outputSchema))
+      transport.send("turn/start", state.turnRequestId, turnStartParams(state.threadId, prompt, outputSchema, this.options.skill))
       state.turnStartSent = true
       return
     }

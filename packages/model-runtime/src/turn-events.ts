@@ -68,7 +68,7 @@ export function threadStartParams(cwd: string): object {
     approvalPolicy: "never",
     sandbox: "read-only",
     ephemeral: true,
-    config: { model_reasoning_effort: PRODUCT_REASONING_EFFORT },
+    config: { model_reasoning_effort: PRODUCT_REASONING_EFFORT, web_search: "disabled" },
   }
 }
 
@@ -76,10 +76,11 @@ export function turnStartParams(
   threadId: string,
   prompt: string,
   outputSchema: Record<string, unknown>,
+  skill?: { name: string; path: string },
 ): object {
   return {
     threadId,
-    input: [{ type: "text", text: prompt, text_elements: [] }],
+    input: [{ type: "text", text: prompt, text_elements: [] }, ...(skill ? [{ type: "skill", ...skill }] : [])],
     model: PRODUCT_MODEL_ID,
     effort: PRODUCT_REASONING_EFFORT,
     outputSchema,

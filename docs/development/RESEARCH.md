@@ -1,5 +1,15 @@
 # 调研登记
 
+当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
+
+## R-006 F1 正式本地服务与持久化验证（2026-09-06）
+
+沿用已批准方向，当前实际依赖为 Fastify 5.12.3、@fastify/static 10.1.3、Drizzle 0.45.2、better-sqlite3 12.10.0、proper-lockfile 4.1.2。本机 Node.js 24/Windows 的同步 SQLite 事务提交/回滚、独占目录锁、JSON 保留原件与原子批量导入均通过所属 API 测试。
+
+选择同步短事务保存任务事实；模型调用与等待均在事务外。F1 按任务重投影小规模访谈表，避免跨 JSON 文件半提交；后续规模优化可改增量写入，保持事实归属。数据库 WAL 与外键启用，服务启动先导入、后恢复，再接受请求。同一数据目录的第二服务立即拒绝启动；真实子进程 SIGKILL 后，新 Node 在既有约 10 秒 stale 锁窗口后恢复为 interrupted，历史消息/草稿完整。
+
+正式命令返回 JSON，持续观察单独使用 NDJSON sequence 快照；刷新/断线仅重建观察，不重启模型。浏览器实际回归发现原生 fetch 的接收者绑定问题，已改为普通函数转发后通过。来源与浏览器队列不在 F1 中冻结。详细计数和未测范围见 PROGRESS。
+
 ## R-005 需求访谈、来源调研与工作台设计修订
 
 日期：2026-09-06。基线见 PRODUCT_FLOW.md；本项复用现有组件，不新增运行依赖。
@@ -7,7 +17,7 @@
 - 已核对 `domain-analysis` 的 `categoryInterviewModule.ts`：每轮保存消息、建议/确认决策、待决事项与草稿版本；新输入退出可确认阶段；确认最新草稿后单独 materialize 正式任务。`crawlPlanningModule.ts` 独立管理规划与计划确认，`InterviewThread.tsx` 使用持续对话。相邻项目只读，不修改其源码或数据库。
 - `grill-with-docs` 的逐问、推荐答案与随答沉淀落实到访谈设计；CONTEXT 只保存术语，PRODUCT_FLOW 保存十阶段、输入产物、确认门和失败回路，不为每句用户回答创建工程 ADR。
 - UI 沿用 Radix Themes 与 React Flow、集中语义 Token；需求对话和草稿并排，来源/计划/链路/结果独立切换。链路按步骤展示条件分支、翻页回路、检查点和节点输入输出。
-- 当前原型使用明确标注的固定访谈样例。自由输入保留为待澄清内容，不做关键词分类或模型模拟；需求确认不解锁真实调研/执行。样例图和样例结果不成为当前任务的执行证据。
+- 当前访谈使用 assistant-ui、私有 skill 和真实 Codex App Server，自由输入进入多轮访谈并可形成版本化草稿；多任务独立保存。来源调研与执行尚未接通；样例图和样例结果不成为当前任务的执行证据。
 - 验收门：状态/图结构测试、类型检查、构建，以及真实浏览器的切页、版本、自由输入门、节点检查、深浅主题和 804px 布局。最终结果见 PROGRESS；不能把单轮模型 probe 或前端状态测试当成完整产品访谈通过。
 - 按负责人授权执行 `codegraph init -i`，索引 30 个文件、374 个节点、344 条边；索引在忽略目录中，未纳入 Git。后续结构查询优先使用该索引。
 
@@ -134,9 +144,19 @@ S0-07 验证门：Windows 启动、官方 account/read 仅投影登录状态、�
 
 ## R-004 设计系统与组件复用
 
+### 2026-09-06：业务对话与设计规范分离
+
+依据负责人的当前截图与明确指令，设计系统不作为业务导航或页面展示；只作为 Token、成品组件和工程约束。信息层级见 INTERVIEW_UI.md，界面复杂度通过主内容/摘要入口/二级阅读划分，不折叠完整聊天或移除节点画布。
+
+只读核验 domain-analysis 的 InterviewThread、categoryInterviewModule、codexCategoryInterviewRuntime 与私有 interview-product-category skill。采用相同的 assistant-ui 0.15.14 ExternalStoreRuntime 组合、消息中的问题与草稿卡；复制提问纪律而非商品品类/ZOL 默认值。官方 [ExternalStoreRuntime](https://www.assistant-ui.com/docs/runtimes/custom/external-store) 与 [App Server skill input](https://learn.chatgpt.com/docs/app-server#start-a-turn-invoke-a-skill) 已检索并读取。
+
+当前验证为本机多任务真实访谈切片：typed skill input、自由问答、Markdown 草稿、显式版本确认、本地文件恢复。Vite middleware 提供 taskId 显式路由，TaskService 组合独立 InterviewService，列表元数据写入串行；旧单会话保留原件复制迁入。暂用每任务原子 JSON 文件，不替换 Fastify/Drizzle 方向、不宣称跨文件事务。正式事务迁移、来源搜索、BrowserSkill 样本核验与执行保持独立验收门，详见 PROGRESS。
+
+2026-09-06 全工作台布局验证：依照 WORKBENCH_LAYOUT.md，将稳定上下文放任务侧栏，连续访谈和节点画布保留主区，草稿/节点/审计复用 DetailPane 宽屏并排、窄屏 Radix Dialog 右抽屉；任务菜单复用 DropdownMenu，重命名使用短 Dialog。有价值的步骤依赖保留，补充字段就地折叠，未接通产物保持空态，结构样例显式打开。BrowserSkill 原生键盘与选择操作验证两任务隔离、归档恢复及 804px 抽屉焦点；无新增产品模型调用。
+
 ### S0-04 成品控件原型（2026-09-05）
 
-本轮原型使用 `@radix-ui/themes@3.3.0`（MIT、React19兼容）：Button variants、TextField/TextArea、Dialog、Tabs、Badge、Callout、Tooltip均来自成品库；ReactFlow只承担节点展示。Mantine 9.6.0为对照，其React19.2 peer与完整Vite/PostCSS接入增加当前原型调整范围。专业对话组件assistant-ui待S0-09验证。
+原型采用 `@radix-ui/themes@3.3.0`：Button variants、TextField/TextArea、Dialog、Tabs、Badge、Callout、Tooltip来自成品库；ReactFlow承担节点展示。Mantine 为历史对照，未采用。专业对话组件 assistant-ui 0.15.14 已接入当前真实访谈切片，S0-09 继续正式 API/事务与生命周期验证；不重新进行基础组件选型。
 
 项目只组合需求确认、模拟运行状态与结果字段；`apps/workbench/src/styles.css`集中定义同名light/dark语义Token。Token测试检查同键及业务CSS色值收口，浏览器检查弹窗、主题和节点图控件，具体证据见PROGRESS。控件变体以库props调整，业务布局不覆盖库内部结构；未来替换库保留产品状态与语义Token。
 
