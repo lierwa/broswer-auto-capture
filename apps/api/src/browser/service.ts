@@ -50,7 +50,7 @@ export class BrowserService {
     return this.snapshot(taskId)
   }
   // 只供服务内的来源/探索/执行编排调用；HTTP 不接收任意页面、命令或授权对象。
-  async run<T>(input: unknown, work: (session: Pick<BrowserSession, "command">, signal: AbortSignal) => Promise<T>, signal?: AbortSignal) {
+  async run<T>(input: unknown, work: (session: Pick<BrowserSession, "command" | "beginStep">, signal: AbortSignal) => Promise<T>, signal?: AbortSignal) {
     const grant = grantSchema.parse(input); taskIdSchema.parse(grant.taskId)
     const validate = () => {
       const task = this.store.task(grant.taskId), state = this.store.snapshot(grant.taskId)
@@ -67,7 +67,8 @@ export class BrowserService {
     const done = new Promise<void>((resolve) => { finish = resolve })
     const active = { taskId: grant.taskId, runId: grant.runId, controller: new AbortController(), done }; this.active = active
     try {
-      const result = await this.host.run(grant, (session, lifetime) => work({ command: (command) => { validate(); return session.command(command) } }, lifetime),
+      const result = await this.host.run(grant, (session, lifetime) => work({ command: (command) => { validate(); return session.command(command) },
+        beginStep: (...args) => { validate(); session.beginStep(...args) } }, lifetime),
         AbortSignal.any([active.controller.signal, ...(signal ? [signal] : [])]))
       validate(); this.save({ ...record, status: "succeeded" }); return result
     } catch (error) {

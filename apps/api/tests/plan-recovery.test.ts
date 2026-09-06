@@ -43,12 +43,12 @@ test("实际进程崩溃后生成和执行恢复为中断，既有授权不自�
     }
   } finally { for (const item of fixtures) { assert.ok(path.resolve(item.directory).startsWith(path.resolve(process.env.TEMP!))); await rm(item.directory, { recursive: true, force: true }) } }
 })
-test("v4到v5迁移保留来源事实；冲突整体回滚且不提前版本", () => {
+test("v4到v6迁移保留来源事实；冲突整体回滚且不提前版本", () => {
   const db = new Database(":memory:")
   try {
     db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY); CREATE TABLE researchRuns(id TEXT PRIMARY KEY, body TEXT); INSERT INTO researchRuns VALUES ('source','original'); PRAGMA user_version=4")
     migrate(db); migrate(db)
-    assert.equal(db.pragma("user_version", { simple: true }), 5)
+    assert.equal(db.pragma("user_version", { simple: true }), 6)
     assert.deepEqual(db.prepare("SELECT * FROM researchRuns").all(), [{ id: "source", body: "original" }])
     assert.deepEqual(db.prepare("SELECT * FROM executions").all(), [])
   } finally { db.close() }

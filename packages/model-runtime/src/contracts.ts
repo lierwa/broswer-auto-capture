@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { modelRoutes } from "./routes.js"
 
 export const PRODUCT_MODEL_ID = "gpt-5.6-terra" as const
 export const PRODUCT_REASONING_EFFORT = "medium" as const
@@ -36,11 +37,12 @@ export const accountProjectionSchema = z.object({
 
 export const modelInvocationAuditSchema = z.object({
   invocationCount: z.union([z.literal(0), z.literal(1)]),
-  requestedModel: z.literal(PRODUCT_MODEL_ID),
-  requestedEffort: z.literal(PRODUCT_REASONING_EFFORT),
-  reportedModel: z.literal(PRODUCT_MODEL_ID).nullable(),
-  reportedEffort: z.literal(PRODUCT_REASONING_EFFORT).nullable(),
-})
+  requestedModel: z.enum(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"]),
+  requestedEffort: z.enum(["medium", "high"]),
+  reportedModel: z.enum(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"]).nullable(),
+  reportedEffort: z.enum(["medium", "high"]).nullable(),
+}).refine((value) => Object.values(modelRoutes).some((route) => route.model === value.requestedModel && route.effort === value.requestedEffort)
+  && (!value.reportedModel || value.reportedModel === value.requestedModel) && (!value.reportedEffort || value.reportedEffort === value.requestedEffort), "模型路由不一致")
 
 export type ModelConversationInput = z.output<typeof modelConversationInputSchema>
 export type ModelConversationResult = z.output<typeof modelConversationResultSchema>

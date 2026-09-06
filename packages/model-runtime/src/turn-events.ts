@@ -2,6 +2,7 @@ import type { z } from "zod"
 
 import type { CodexRunEvent } from "./client.js"
 import { PRODUCT_MODEL_ID, PRODUCT_REASONING_EFFORT } from "./contracts.js"
+import { routeFor, type ModelRoute } from "./routes.js"
 import { protocolError } from "./errors.js"
 import {
   agentDeltaParamsSchema,
@@ -22,15 +23,17 @@ export interface TurnState {
   timedOut: boolean
   interruptSent: boolean
   turnStartSent: boolean
-  reportedModel: typeof PRODUCT_MODEL_ID | null
-  reportedEffort: typeof PRODUCT_REASONING_EFFORT | null
+  route: ModelRoute
+  reportedModel: ModelRoute["model"] | null
+  reportedEffort: ModelRoute["effort"] | null
   activeItems: Set<string>
   commentaryItems: Set<string>
 }
 
-export function createTurnState(threadRequestId: number, turnRequestId: number): TurnState {
+export function createTurnState(threadRequestId: number, turnRequestId: number, route = routeFor()): TurnState {
   return {
     threadRequestId,
+    route,
     turnRequestId,
     threadId: undefined,
     turnId: undefined,
@@ -61,14 +64,14 @@ export function handleNotification(
   return []
 }
 
-export function threadStartParams(cwd: string): object {
+export function threadStartParams(cwd: string, route = routeFor()): object {
   return {
-    model: PRODUCT_MODEL_ID,
+    model: route.model,
     cwd,
     approvalPolicy: "never",
     sandbox: "read-only",
     ephemeral: true,
-    config: { model_reasoning_effort: PRODUCT_REASONING_EFFORT, web_search: "disabled" },
+    config: { model_reasoning_effort: route.effort, web_search: "disabled" },
   }
 }
 
@@ -77,12 +80,13 @@ export function turnStartParams(
   prompt: string,
   outputSchema: Record<string, unknown>,
   skill?: { name: string; path: string },
+  route = routeFor(),
 ): object {
   return {
     threadId,
     input: [{ type: "text", text: prompt, text_elements: [] }, ...(skill ? [{ type: "skill", ...skill }] : [])],
-    model: PRODUCT_MODEL_ID,
-    effort: PRODUCT_REASONING_EFFORT,
+    model: route.model,
+    effort: route.effort,
     outputSchema,
   }
 }

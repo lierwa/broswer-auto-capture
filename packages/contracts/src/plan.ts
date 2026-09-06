@@ -4,7 +4,7 @@ import { requirementBriefSchema } from "./requirementBrief.js"
 import { sourceObservationSchema } from "./research.js"
 
 const id = z.string().uuid(), text = z.string().trim().min(1).max(10000), index = z.number().int().nonnegative()
-export const planBudgetSchema = z.object({ maxCommands: z.number().int().min(1).max(500), timeoutMs: z.number().int().min(1000).max(300000), maxModelCalls: z.number().int().min(0).max(12) }).strict()
+export const planBudgetSchema = z.object({ maxCommands: z.number().int().min(1).max(500), timeoutMs: z.number().int().min(1000).max(300000), maxModelCalls: z.number().int().min(0).max(12), maxLlmCalls: z.number().int().min(0).max(12).optional() }).strict()
 const stepId = z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/)
 export const planProposalSchema = z.object({
   summary: text,
@@ -19,6 +19,7 @@ export const planProposalSchema = z.object({
   gaps: z.array(z.object({ gapIndex: index, disposition: z.enum(["execution", "derived", "blocking"]), stepIds: z.array(stepId).max(40), explanation: text }).strict()).max(100),
 }).strict().superRefine((value, ctx) => {
   const seen = new Set<string>()
+  if (value.steps.reduce((sum, step) => sum + (step.budget.maxLlmCalls ?? 0), 0) > 12) ctx.addIssue({ code: "custom", message: "显式模型节点预算合计超限" })
   for (const step of value.steps) {
     if (seen.has(step.id) || step.dependsOn.some((dep) => !seen.has(dep))) ctx.addIssue({ code: "custom", message: "步骤必须唯一且按依赖拓扑排序" })
     if (step.kind !== "derive" && !step.sourceIds.length) ctx.addIssue({ code: "custom", message: "浏览器步骤必须绑定来源" })

@@ -16,8 +16,9 @@ import { ResearchService } from "./research/service.js"
 import { researchModelFactory } from "./research/model.js"
 import { PlanService } from "./plan/service.js"
 import type { PlanExecutor } from "./plan/queue.js"
+import { ChainService } from "./chain/service.js"
 
-export interface AppOptions { root: string; directory: string; modelFactory?: ModelSessionFactory; researchFactory?: ModelSessionFactory; planFactory?: ModelSessionFactory; planExecutor?: PlanExecutor; browserExecutor?: CommandExecutor; serveUi?: boolean }
+export interface AppOptions { root: string; directory: string; modelFactory?: ModelSessionFactory; researchFactory?: ModelSessionFactory; planFactory?: ModelSessionFactory; explorationFactory?: ModelSessionFactory; llmFactory?: ModelSessionFactory; planExecutor?: PlanExecutor | null; browserExecutor?: CommandExecutor; serveUi?: boolean }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
@@ -30,7 +31,11 @@ export async function createApplication(options: AppOptions) {
   try { research = new ResearchService(store, browser, coordinator, options.researchFactory ?? researchModelFactory(options.root)) }
   catch (error) { await browser.close(); await coordinator.close(); await store.close(); throw error }
   let plan: PlanService
-  try { plan = new PlanService(store, research, browser, options.planFactory ?? researchModelFactory(options.root), options.planExecutor) }
+  let chain: ChainService
+  try {
+    chain = new ChainService(store, options.root, options.explorationFactory, options.llmFactory)
+    plan = new PlanService(store, research, browser, options.planFactory ?? researchModelFactory(options.root), options.planExecutor === null ? undefined : options.planExecutor ?? chain.execute)
+  }
   catch (error) { await research.close(); await browser.close(); await coordinator.close(); await store.close(); throw error }
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
   app.addHook("onRequest", async (request, reply) => {
@@ -47,6 +52,7 @@ export async function createApplication(options: AppOptions) {
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
   routes(app, coordinator, browser, research, plan)
+  app.get("/api/chains", (request) => { const { taskId } = taskQuery.parse(request.query); return chain.snapshot(taskId, plan.snapshot(taskId)) })
   app.addHook("preClose", async () => { await plan.close(); await research.close(); await browser.close(); await coordinator.close() })
   app.addHook("onClose", async () => { await store.close() })
   try {
@@ -56,7 +62,7 @@ export async function createApplication(options: AppOptions) {
         ? reply.sendFile("index.html") : reply.code(404).send({ error: "页面或接口不存在。", code: "not_found" }))
     }
     await app.ready()
-    return { app, coordinator, store, browser, research, plan }
+    return { app, coordinator, store, browser, research, plan, chain }
   } catch (error) { await app.close(); throw error }
 }
 function publicStatus(error: unknown) {

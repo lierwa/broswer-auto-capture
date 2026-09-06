@@ -10,7 +10,7 @@ if (!process.argv.includes("--real")) throw new Error("真实验收需要 --real
 const root = fileURLToPath(new URL("../../..", import.meta.url))
 const directory = path.join(root, "work", "f3-real-1788678265551"), taskId = "fff00875-4d68-4fcd-ab82-340eedb57f4b"
 // WHY：沿用正式 F3 隔离验收任务的真实来源，通过正式 API 继续；不导入或写库造来源。
-const current = await createApplication({ root, directory }), headers = { host: "127.0.0.1:4178" }
+const current = await createApplication({ root, directory, planExecutor: null }), headers = { host: "127.0.0.1:4178" }
 async function post(payload: Record<string, unknown>) {
   const response = await current.app.inject({ method: "POST", url: `/api/plan?taskId=${taskId}`, headers, payload })
   assert.equal(response.statusCode, 202, response.body); return response.json()

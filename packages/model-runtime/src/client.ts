@@ -5,6 +5,7 @@ import {
   threadStartResultSchema,
   turnStartResultSchema,
 } from "./wire.js"
+import { routeFor, type ModelPurpose, type ModelRoute } from "./routes.js"
 import { authenticationError, ModelRuntimeError, protocolError, timeoutError } from "./errors.js"
 import {
   startCodexAppServerTransport,
@@ -31,6 +32,7 @@ const DEFAULT_INTERRUPT_GRACE_MS = 2_000
 
 export interface CodexAppServerClientOptions {
   cwd: string
+  purpose?: ModelPurpose
   skill?: { name: string; path: string }
   packageRoot?: string
   executable?: string
@@ -133,7 +135,7 @@ class ReusableCodexAppServerClient implements CodexAppServerClient {
       throw new ModelRuntimeError("busy", "已有产品模型轮次正在运行。", "single-flight")
     }
     if (signal?.aborted) {
-      yield { type: "interrupted", audit: modelAudit(0, null, null) }
+      yield { type: "interrupted", audit: modelAudit(0, null, null, routeFor(this.options.purpose)) }
       return
     }
     this.active = true
@@ -141,12 +143,12 @@ class ReusableCodexAppServerClient implements CodexAppServerClient {
       const account = await this.readAccount()
       if (!account.loggedIn || account.type !== "chatgpt") throw authenticationError("account.read")
       if (signal?.aborted) {
-        yield { type: "interrupted", audit: modelAudit(0, null, null) }
+        yield { type: "interrupted", audit: modelAudit(0, null, null, routeFor(this.options.purpose)) }
         return
       }
       const transport = await this.ensureConnection()
       if (signal?.aborted) {
-        yield { type: "interrupted", audit: modelAudit(0, null, null) }
+        yield { type: "interrupted", audit: modelAudit(0, null, null, routeFor(this.options.purpose)) }
         return
       }
       yield* this.executeTurn(transport, prompt, outputSchema, signal)
@@ -245,7 +247,7 @@ class ReusableCodexAppServerClient implements CodexAppServerClient {
     outputSchema: Record<string, unknown>,
     signal?: AbortSignal,
   ): AsyncIterable<CodexRunEvent> {
-    const state = createTurnState(++this.sequence, ++this.sequence)
+    const state = createTurnState(++this.sequence, ++this.sequence, routeFor(this.options.purpose))
     const timeoutMs = this.options.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS
     const graceMs = this.options.interruptGraceMs ?? DEFAULT_INTERRUPT_GRACE_MS
     let terminal = false
@@ -264,7 +266,7 @@ class ReusableCodexAppServerClient implements CodexAppServerClient {
       return
     }
     try {
-      transport.send("thread/start", state.threadRequestId, threadStartParams(this.options.cwd))
+      transport.send("thread/start", state.threadRequestId, threadStartParams(this.options.cwd, state.route))
       for (;;) {
         let raw: unknown
         try {
@@ -347,15 +349,15 @@ class ReusableCodexAppServerClient implements CodexAppServerClient {
     if (response.id === state.threadRequestId) {
       const parsed = threadStartResultSchema.safeParse(response.result)
       if (!parsed.success) throw protocolError("thread.start.result")
-      if (parsed.data.model !== PRODUCT_MODEL_ID) throw protocolError("thread.start.model")
-      if (parsed.data.reasoningEffort !== PRODUCT_REASONING_EFFORT) {
+      if (parsed.data.model !== state.route.model) throw protocolError("thread.start.model")
+      if (parsed.data.reasoningEffort !== state.route.effort) {
         throw protocolError("thread.start.reasoning_effort")
       }
       state.threadId = parsed.data.thread.id
-      state.reportedModel = PRODUCT_MODEL_ID
-      state.reportedEffort = PRODUCT_REASONING_EFFORT
+      state.reportedModel = state.route.model
+      state.reportedEffort = state.route.effort
       if (state.interrupted) return
-      transport.send("turn/start", state.turnRequestId, turnStartParams(state.threadId, prompt, outputSchema, this.options.skill))
+      transport.send("turn/start", state.turnRequestId, turnStartParams(state.threadId, prompt, outputSchema, this.options.skill, state.route))
       state.turnStartSent = true
       return
     }
@@ -429,18 +431,20 @@ function auditOf(state: TurnState): ModelInvocationAudit {
     state.turnStartSent ? 1 : 0,
     state.reportedModel,
     state.reportedEffort,
+    state.route,
   )
 }
 
 function modelAudit(
   invocationCount: 0 | 1,
-  reportedModel: typeof PRODUCT_MODEL_ID | null,
-  reportedEffort: typeof PRODUCT_REASONING_EFFORT | null,
+  reportedModel: ModelRoute["model"] | null,
+  reportedEffort: ModelRoute["effort"] | null,
+  route: ModelRoute,
 ): ModelInvocationAudit {
   return {
     invocationCount,
-    requestedModel: PRODUCT_MODEL_ID,
-    requestedEffort: PRODUCT_REASONING_EFFORT,
+    requestedModel: route.model,
+    requestedEffort: route.effort,
     reportedModel,
     reportedEffort,
   }
@@ -448,7 +452,8 @@ function modelAudit(
 
 function rpcFailure(value: unknown, phase: string): ModelRuntimeError {
   const text = safeInspect(value)
-  if (/auth|login|required|unauthorized|401/i.test(text)) return authenticationError(phase)
+  if (/invalid_json_schema/i.test(text)) return new ModelRuntimeError("invalid_output", "模型输出协议未被供应商接受，本轮未完成。", `phase=${phase} invalid_json_schema=true`)
+  if (/auth|login|unauthorized|401/i.test(text)) return authenticationError(phase)
   return new ModelRuntimeError(
     "connection_failed",
     "Codex App Server 请求失败，本轮未完成。",

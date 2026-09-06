@@ -4,8 +4,8 @@ import type { BrowserService } from "../browser/service.js"
 import type { PlanRepository } from "./repository.js"
 
 export const pendingExecution = (record: ExecutionRecord) => ["queued", "running", "awaiting_next_stage", "interrupted", "manual_required", "cleanup_required"].includes(record.status)
-// F5 注入步骤探索执行器；F4 默认没有处理器，持久 queued 不冒充浏览器成果。
-export type PlanExecutor = (input: { plan: PlanRecord; execution: ExecutionRecord; browser: Pick<BrowserSession, "command">; signal: AbortSignal }) => Promise<void>
+// 执行器必须返回明确的验证成果；单纯回调退出不代表链路通过。
+export type PlanExecutor = (input: { plan: PlanRecord; execution: ExecutionRecord; browser: Pick<BrowserSession, "command" | "beginStep">; signal: AbortSignal }) => Promise<void | { verified: true; reason: string }>
 export class ExecutionQueue {
   private active: { record: ExecutionRecord; controller: AbortController; done: Promise<void> } | null = null
   private checking = false
@@ -49,18 +49,18 @@ export class ExecutionQueue {
     } finally { this.checking = false }
   }
   private async run(record: ExecutionRecord, plan: PlanRecord, signal: AbortSignal) {
-    let work: Promise<void> | undefined
+    let work: ReturnType<PlanExecutor> | undefined
     try {
-      await this.browser.run({ taskId: record.taskId, runId: record.id, requirementVersion: record.requirementVersion, purpose: "exploration",
+      const outcome = await this.browser.run({ taskId: record.taskId, runId: record.id, requirementVersion: record.requirementVersion, purpose: "exploration",
         allowedOrigins: [...new Set(plan.sources.map((item) => new URL(item.url).origin))], actions: ["navigate", "observe", "click", "fill", "press", "page"],
         maxCommands: record.budget.maxCommands, timeoutMs: record.budget.timeoutMs }, (browser, lifetime) => {
         work = this.executor!({ plan: structuredClone(plan), execution: structuredClone(record), browser, signal: lifetime }); return work
       }, signal)
-      record.status = "awaiting_next_stage"; record.reason = "探索处理器已返回，等待后续链路验证与执行；尚无全量完成结论。"
+      record.status = "awaiting_next_stage"; record.reason = outcome?.verified ? outcome.reason : "探索处理器已返回，等待后续链路验证与执行；尚无全量完成结论。"
     } catch (error) {
       const reason = error instanceof BrowserError ? error.code : "execution_failed"
       record.status = reason === "cancelled" || reason === "manual_required" || reason === "cleanup_required" ? reason : "failed"
-      record.reason = `授权执行已暂停：${reason}。保留原范围与授权记录。`
+      record.reason = reason === "budget_exceeded" ? "步骤预算已用尽，已验证链路与剩余范围保留；调整预算需新计划与独立授权。" : `授权执行已暂停：${reason}。保留原范围与授权记录。`
     } finally {
       await work?.catch(() => {})
       this.repository.saveExecution(record)

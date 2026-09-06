@@ -97,7 +97,7 @@ export class PlanService {
       const budget = plan.proposal.steps.reduce((sum, step) => ({ maxCommands: sum.maxCommands + step.budget.maxCommands, timeoutMs: sum.timeoutMs + step.budget.timeoutMs, maxModelCalls: sum.maxModelCalls + step.budget.maxModelCalls }), { maxCommands: 0, timeoutMs: 0, maxModelCalls: 0 })
       const at = new Date().toISOString(), record: ExecutionRecord = { id: randomUUID(), taskId, planId: plan.id, planVersion: plan.version, planDigest: plan.digest,
         requirementVersion: plan.requirementVersion, requirementRevision: plan.requirementRevision, sourceId: plan.sourceId, sourceVersion: plan.sourceVersion,
-        authorizedAt: at, requestId: command.requestId, budget, status: "queued", sequence: 0, updatedAt: at,
+        authorizedAt: at, requestId: command.requestId, budget: { ...budget, maxLlmCalls: plan.proposal.steps.reduce((sum, step) => sum + (step.budget.maxLlmCalls ?? 0), 0) }, status: "queued", sequence: 0, updatedAt: at,
         reason: this.queue.available() ? "已授权，等待单浏览器执行位置。" : "已授权并持久排队，等待探索执行器接入；尚未开始抓取。" }
       this.repository.saveExecution(record); this.store.recordOperation(`plan:${taskId}`, command.requestId, command, record.id)
     })

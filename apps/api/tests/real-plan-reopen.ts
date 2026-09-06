@@ -8,7 +8,7 @@ import { planStateSchema } from "@browser-capture/contracts/plan"
 
 const root = fileURLToPath(new URL("../../..", import.meta.url)), directory = path.join(root, "work", "f3-real-1788678265551")
 const before = planStateSchema.parse(JSON.parse(await readFile(path.join(directory, "f4-acceptance.json"), "utf8")))
-const current = await createApplication({ root, directory })
+const current = await createApplication({ root, directory, planExecutor: null })
 try {
   const state = current.plan.snapshot(before.taskId), plan = state.records[0]!, source = current.research.snapshot(before.taskId).records[0]!
   assert.deepEqual(state.records, before.records); assert.deepEqual(state.executions, before.executions)

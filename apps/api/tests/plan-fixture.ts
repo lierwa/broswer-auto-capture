@@ -7,6 +7,7 @@ import type { ResearchRecord } from "@browser-capture/contracts/research"
 import type { PlanExecutor } from "../src/plan/queue.js"
 import { researchFixture, headers } from "./research-fixture.js"
 import { succeeded } from "./helpers.js"
+import type { AppOptions } from "../src/app.js"
 
 export function proposalFor(prompt: string): PlanProposal {
   const { requirement, source } = JSON.parse(prompt.split("\n\n").at(-1)!) as { requirement: RequirementBrief; source: ResearchRecord }
@@ -19,9 +20,9 @@ export function proposalFor(prompt: string): PlanProposal {
   objectives: source.coverage.map((item) => ({ objective: item.objective, sourceIds: item.observationIds, stepIds: ["enumerate", "collect"], explanation: item.reason })),
   gaps: source.gaps.map((_item, gapIndex) => ({ gapIndex, disposition: "execution", stepIds: ["enumerate"], explanation: "在正式枚举时验证" })) }
 }
-export async function planFixture(serveUi = false, executor?: PlanExecutor) {
+export async function planFixture(serveUi = false, executor?: PlanExecutor, chainOptions: Pick<AppOptions, "explorationFactory" | "llmFactory"> = {}) {
   const fake = { calls: 0, decide: async (prompt: string): Promise<unknown> => proposalFor(prompt), close: () => {} }
-  const value = await researchFixture(serveUi, { ...(executor ? { planExecutor: executor } : {}), planFactory: async () => ({
+  const value = await researchFixture(serveUi, { ...chainOptions, ...(executor ? { planExecutor: executor } : {}), planFactory: async () => ({
     client: { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => { fake.close() },
       async *runTurn(prompt) { fake.calls++; yield succeeded(await fake.decide(prompt)) } }, dispose: async () => { fake.close() },
   }) })

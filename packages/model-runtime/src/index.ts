@@ -23,6 +23,7 @@ export {
   type CodexRunEvent,
 } from "./client.js"
 export { ModelRuntimeError, type ModelRuntimeErrorCode } from "./errors.js"
+export { routeFor, modelRoutes, type ModelPurpose, type ModelRoute } from "./routes.js"
 export {
   createProductModelRuntime,
   type ProductModelRuntime,

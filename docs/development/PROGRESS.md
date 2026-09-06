@@ -1,5 +1,32 @@
 # 开发进度
 
+## F5 探索、链路与换输入验证（2026-09-06）
+
+从干净的 master/42940c9823b9727fbb8d42a8b127c9b68ad8391d 保存目录接续；本阶段主 task 01a075b5-aaf0-7440-a3a8-0608bf2819e6 的实际 turn_context 为 gpt-6-astra/high，没有开发子 agent。只实现 F5，本地提交后以全新 local task 交接 F6，不推送远程。
+
+- 正式队列默认接入 ChainService：逐步骤 Sol/high 探索、受控 DSL 编译、LangGraph 节点运行、样本与不同输入验证。SQLite v6 保存绑定计划/执行/步骤的链路版本、输入输出、观察哈希、节点事件、判断摘要及模型意图/回报审计。GET `/api/chains?taskId=...` 和现有画布显示真实事实。
+- 普通节点不隐式调用模型；显式 llm 节点单独采用 Luna/medium 且默认预算0。命令按真实底层调用消费，步骤时间/探索/LLM分别执行授权上限；验证失败只在同一步剩余预算内重探，前置成功及已有样本保留。取消、受限、进程中断与未知调用分别保存，finally 回收会话。生成模型沿用 Terra/medium。
+- 每组输入最多验证2个检查点，实际记录代表窗口结束或链路 finish；编译后的完整循环不被截短。新参数还须产生非空且不同的稳定来源键集合。代表验证通过不表示全量已完成；所有步骤通过后进入 awaiting_next_stage，完整执行/结果仍由 F6 接续。
+
+| 验证 | 结果与边界 |
+| --- | --- |
+| 普通测试 | 最终整仓 npm test 157项全部通过：API60、workbench31、browser13、contracts10、model-runtime26、runtime17；work/f5-final-test2.log。npm run check、npm run build通过，最新检查work/f5-delivery-check.log，构建work/f5-final-build.log |
+| 协议与运行 | 授权→两步骤→换输入、0预算拒绝、底层命令上限、取消/晚到结果、人工限制、只重探失败步骤、前序及样本保留、显式LLM独立预算/用途、路由回报核验、30页循环/去重/零普通模型、循环耗尽非完成、无效边/环/临时ref拒绝、验证窗口与完整图分别执行通过 |
+| 持久与故障 | 正式隔离路径创建活动探索后真实Node子进程SIGKILL，重开恢复interrupted，未回报调用仍null；SQLite v5→v6迁移及冲突原子回滚通过。无直接写库伪造运行成功 |
+| 真实目录 | 沿用隔离work/f3-real-1788678265551、task fff00875-4d68-4fcd-ab82-340eedb57f4b、research ee54ab2a-0d04-4aee-bd83-7bb37c3f81ed/v1。正式新计划94d2d2ef-25f5-40fc-947e-1b54dea68fd4/v5、授权执行be81221e-088a-4371-9e2e-aebfa66bc3b0；原需求快照前后不变 |
+| 真实换输入 | enumerate链路335e6341-b3d2-497f-ac2f-e08e5ca70f39/v1 verified，12个实际节点；同一目录URL的分页输入1得到36个稳定来源键（2个checkpoint窗口），输入15得到6个（到达图finish）。81条底层命令、5次完成的Sol/high调用、103772ms。最新编译与输入效果守卫对已保存真实产物只读复核通过，未新增模型或浏览器 |
+| 真实停止 | collect链路5fe2ec0b-8b1e-4033-a656-0cb2a9294bae在本步骤90000ms预算耗尽，7条命令、1次Sol/high调用意图被中断且未回报次数；无已编译采集图。派生未启动，整个execution为failed，前置已验证链路保留。总授权490命令/300000ms/11探索/0显式LLM不被重新分配 |
+| UI组件事件 | browser-f5.ps1 -DomEvents 15项断言通过：空态、正式授权及canonical两步verified、步骤/节点参数与事件、刷新、390px无溢出/详情抽屉、刷新后跨任务隔离。模型和来源是隔离替身，数据全部由正式服务产生。work/f5-ui-dom-final.log |
+| 真实内容布局 | real-chain-view.ts以planExecutor:null只读已有事实；browser-f5-real-view.ps1验证真实12节点图、collect预算停止及390px无横向溢出。work/f5-real-chain-{wide,390}.png已视觉核验，work/f5-real-ui-view3.log。截图后不继续把静态画面当交互证明 |
+| UI环境限制 | 本轮原生输入回归未完整通过。bsk doctor正常，但read-only elementsFromPoint实际命中BROWSER-SKILL-OVERLAY，点击/Enter返回后控件未生效；未修改覆盖层。使用浏览器DOM控件事件补验组件与布局，不视为原生点击/键盘通过。原生Esc/焦点返回未测通过；DOM模拟关闭也未满足完整移除/焦点断言，改以刷新开始独立隔离检查。该限制须在F6重新核验 |
+| 已处理失败 | 迁移旧断言v5→v6、模型wire测试补齐ephemeral/final_answer、全仓并发冷启动下既有storage-process子进程5秒就绪偶发超时（测试等待改15秒，产品预算不变）；重跑157通过。UI脚本补任务/计划语义就绪和限定实际详情选择器，不用ACK替代状态 |
+| 真实早期尝试 | 原v1枚举75秒预算停止；v2计划生成未回报成功（严格schema属性可选是排查假设，修正required后新计划成功）；v3额外来源锚点步骤4命令用尽；v4枚举7模型预算耗尽。各次均保存真实失败；经正式新计划与新授权继续，没有在运行中改代码或静默增加预算。探索后续获得动作历史、页面差异和剩余预算 |
+| 基线提示与未测 | Vite既有>500kB主块提示保留，当前960.39kB。真实完整三步骤、全目录覆盖/末页漂移、第二站点、真实登录恢复、独立复跑/同运行恢复/用户修复及完整结果导出由F6验收；没有真实Luna调用成功的声明 |
+
+真实图的末页分支采用当时商品BCD-309WMCO作为目录快照锚点；F6必须检验当前总量、末页及漂移，不把36+6样本、固定页数或图finish当全量覆盖。证据保留在忽略目录的f5-plan-v*.json、f5-execution-*.json及work/f5-real-summary.json。real-chain.ts --real会执行，--new-plan会新增正式计划/授权；不要用作只读检查。旧real-plan-reopen.ts断言F4 queued，现在仅作历史验收脚本，读取F5用real-chain-view或正式GET。
+
+服务收尾：SQLite备份work/f5-before-api-restart.sqlite；更新API后两个用户任务的完整访谈/浏览器/来源JSON哈希前后相同，work/f5-user-state-{before,after}.json仅存哈希。用户任务无新增计划、授权或链路。API4175/PID21836、Web4173/PID22976是当前快照；原JSON与data保留。隔离验收服务及BrowserSkill会话在交接前关闭。
+
 ## F4 正式计划、独立授权与持久队列（2026-09-06）
 
 基于 master/42790f169cc28884238ba82ef2f1c7a645a8f049 的干净保存目录完成本阶段；项目命令始终 workdir=D:/work/browser-capture-tool。本 session 仅实现 F4，收尾后主动创建全新 F5 task，F5 完成再交接全新 F6；不 fork、不跨阶段并行、不推送。实际 turn_context `01a07596-ab8e-73c0-aace-3c42566478e5` 为 gpt-6-astra/high，本阶段没有开发子 agent。

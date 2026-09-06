@@ -8,13 +8,29 @@ const tabsSchema = z.object({ tabs: z.array(z.object({ tab_id: z.number().int(),
 const observationSchema = z.object({ text: z.string(), tab_id: z.number().int(), truncated: z.boolean() })
 const actionResultSchema = z.object({ tab_id: z.number().int() })
 export class BrowserSession {
+  private scope: { maxCommands: number; deadline: number; count: number; signal: AbortSignal; onCommand: () => void } | null = null
   private discovered = new Set<string>()
   private discoveryOrigins = new Set<string>()
   private observedUrl = "about:blank"
   private active = true
   private pending: Promise<string | null> | null = null
   private manual = false
-  constructor(private readonly grant: BrowserGrant, private readonly sessionId: string, private readonly invoke: Invoke) {}
+  constructor(private readonly grant: BrowserGrant, private readonly sessionId: string, private readonly rawInvoke: Invoke) {}
+  beginStep(maxCommands: number, timeoutMs: number, signal: AbortSignal, onCommand: () => void) {
+    if (this.pending || !Number.isInteger(maxCommands) || maxCommands < 1 || maxCommands > this.grant.maxCommands || timeoutMs < 1 || timeoutMs > this.grant.timeoutMs) throw new BrowserError("permission_denied")
+    this.scope = { maxCommands, deadline: Date.now() + timeoutMs, count: 0, signal, onCommand }
+  }
+  private async invoke(command: string, args: string[]) {
+    const scope = this.scope
+    if (scope) {
+      if (scope.signal.aborted || Date.now() >= scope.deadline || scope.count >= scope.maxCommands) throw new BrowserError("budget_exceeded")
+      // WHY：语义动作包含重新观察等多条底层命令，每条发出前计费，失败也不能退还预算。
+      scope.count++; scope.onCommand()
+    }
+    const result = await this.rawInvoke(command, args)
+    if (scope && (scope.signal.aborted || Date.now() >= scope.deadline)) throw new BrowserError("budget_exceeded")
+    return result
+  }
   async close() { this.active = false; await this.pending?.catch(() => {}) }
   async command(raw: unknown): Promise<string | null> {
     const command = commandSchema.parse(raw)

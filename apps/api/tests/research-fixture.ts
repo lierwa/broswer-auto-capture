@@ -25,14 +25,14 @@ export function decisionFor(prompt: string): ResearchDecision {
   result.assessment = { ...result.assessment, adopted: true, reason: "目录归属与入口可见", fields: [{ name: "名称", evidence }], enumeration: { name: "目录下一页", evidence } }
   return { ...result, action: "finish", query: null, reason: "已观察到规划所需目录和字段", coverage: ["目录", "发现目录"].map((objective) => ({ objective, observationIds: [current.id], reason: "真实目录包含名称和下一页" })) }
 }
-export async function researchFixture(serveUi = false, planOptions: Pick<AppOptions, "planFactory" | "planExecutor"> = {}) {
+export async function researchFixture(serveUi = false, planOptions: Pick<AppOptions, "planFactory" | "planExecutor" | "explorationFactory" | "llmFactory"> = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-research-test-"))
   const fake = { url: "about:blank", restricted: false, failure: false, badStop: false, calls: [] as string[][], modelCalls: 0, closeCalls: 0,
-    decide: async (prompt: string) => decisionFor(prompt), close: () => {} }
+    decide: async (prompt: string) => decisionFor(prompt), close: () => {}, links: [] as { title: string; url: string }[], text: null as string | null, textForUrl: null as ((url: string) => string) | null, linksForUrl: null as ((url: string) => {title:string;url:string}[]) | null }
   const client: CodexAppServerClient = { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => { fake.closeCalls++; fake.close() },
     async *runTurn(prompt) { fake.modelCalls++; yield succeeded(await fake.decide(prompt)) } }
   const options = { root: fileURLToPath(new URL("../../..", import.meta.url)), directory, serveUi,
-    ...planOptions,
+    planExecutor: null, ...planOptions,
     modelFactory: async () => ({ client: { ...client, async *runTurn() { yield succeeded({ assistantText: "已整理", question: null, draft: { title: "目录调研", brief: sourceBrief } }) } }, dispose: async () => {} }),
     researchFactory: async () => ({ client, dispose: () => client.close() }),
     browserExecutor: async (args: readonly string[]) => {
@@ -43,8 +43,8 @@ export async function researchFixture(serveUi = false, planOptions: Pick<AppOpti
       if (args[1] === "session") value = args[2] === "start" ? { session_id: "abcd" } : { stopped: fake.badStop ? [] : ["abcd"], failed: fake.badStop ? [1] : [], return_failures: [] }
       if (args[1] === "navigate") fake.url = args[2]!
       if (args[1] === "tab") value = { tabs: [{ tab_id: 1, url: fake.url, active: true, scope: "agent" }] }
-      if (args[1] === "observe") value = { tab_id: 1, truncated: false, text: fake.restricted && !search ? "请先登录 private-sensitive-data" : search ? "搜索结果 样例机构目录" : '名称 样例目录 @e1 link "下一页"' }
-      if (args[1] === "evaluate") value = { ok: true, tab_id: 1, value: { url: fake.url, title: search ? "搜索结果" : "样例目录", links: search ? [{ title: "样例机构目录", url: "https://example.com/catalog" }] : [] } }
+      if (args[1] === "observe") value = { tab_id: 1, truncated: false, text: fake.restricted && !search ? "请先登录 private-sensitive-data" : search ? "搜索结果 样例机构目录" : fake.textForUrl?.(fake.url) ?? fake.text ?? '名称 样例目录 @e1 link "下一页"' }
+      if (args[1] === "evaluate") value = { ok: true, tab_id: 1, value: { url: fake.url, title: search ? "搜索结果" : "样例目录", links: search ? [{ title: "样例机构目录", url: "https://example.com/catalog" }] : fake.linksForUrl?.(fake.url) ?? fake.links } }
       return { exitCode: 0, stdout: JSON.stringify(value) }
     },
   }

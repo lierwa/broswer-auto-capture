@@ -3,6 +3,7 @@ import type { InterviewMessage, RequirementBrief } from "@browser-capture/contra
 import type { BrowserRecord } from "@browser-capture/contracts/browser"
 import type { ResearchRecord } from "@browser-capture/contracts/research"
 import type { PlanRecord, ExecutionRecord } from "@browser-capture/contracts/plan"
+import type { ChainRecord } from "@browser-capture/contracts/chain"
 
 export const tasks = sqliteTable("tasks", {
   id: text().primaryKey(), title: text().notNull(), renamed: integer({ mode: "boolean" }).notNull(),
@@ -45,5 +46,6 @@ export const researchRuns = sqliteTable("researchRuns", {
   id: text().primaryKey(), taskId: taskId(), body: text({ mode: "json" }).$type<ResearchRecord>().notNull(),
 })
 export const plans = sqliteTable("plans", { id: text().primaryKey(), taskId: taskId(), body: text({ mode: "json" }).$type<PlanRecord>().notNull() })
+export const chains = sqliteTable("chains", { id: text().primaryKey(), taskId: taskId(), executionId: text().notNull().references(() => executions.id), body: text({ mode: "json" }).$type<ChainRecord>().notNull() })
 export const executions = sqliteTable("executions", { id: text().primaryKey(), taskId: taskId(), planId: text().notNull().unique().references(() => plans.id),
   status: text().notNull(), body: text({ mode: "json" }).$type<ExecutionRecord>().notNull() })

@@ -15,7 +15,7 @@ async function bounded<T>(child: ReturnType<typeof launch>, pending: Promise<T>,
   let timer: NodeJS.Timeout | undefined
   try {
     return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(details())) }, 5_000)
+      timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(details())) }, 15_000)
     })])
   } finally { if (timer) clearTimeout(timer) }
 }

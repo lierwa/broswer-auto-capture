@@ -2,6 +2,18 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-012 F5 探索、动作链路与代表验证（2026-09-06）
+
+沿用已锁定的 LangGraph、Zod、BrowserSkill、ReactFlow 和 Radix，不新增引擎或图编辑基础库。`capture-compiler` 校验受控动作、边与可达性、显式结束以及所有环都经过有界 loop；循环耗尽必须走 stop，不能把安全上限当完整结束。动作参数只支持语义目标和受控输入占位，不接收任意脚本、持久 @eN 或页面执行代码。跨边界立即 Zod 校验。
+
+官方 [App Server](https://learn.chatgpt.com/docs/app-server) 的模型/effort 参数沿既有 managed 登录适配。用途路由固定为访谈/来源/计划 Terra medium、首次探索/用户修复 Sol high、显式 llm 节点 Luna medium；修复产品入口属 F6。普通节点没有隐式模型能力。意图先持久化，未回报调用保持 null，实际回报路由严格核验。供应商严格对象 schema 需要全部属性出现在 required；本地兼容旧计划缺省 maxLlmCalls=0，生成 schema 明确要求该字段。
+
+探索模型获得当前观察、内存中的已做动作/页面差异、剩余预算和失败原因，服务只保留观察 URL/哈希与判断摘要，不把原始页面内容写日志。命令、时间、探索调用、显式 LLM 调用各自受授权约束；同一步最多两版本重探共享原预算和截止时间，前置已验证步骤保留。调整步骤预算必须新计划和独立授权。
+
+F5 每组输入最多验证两个 checkpoint，记录 termination=validation_window 或 finish。DSL 保留完整循环；F6 全量执行不传此窗口。换输入不仅要有已观察到的不同参数，还要求实际稳定来源键集合非空且不同。链路已验证不等于整个需求已完成，前序样本也不是完整批量输入集。
+
+真实海尔目录编译出12个节点，分页输入1得到36条，输入15得到6条，5次 Sol/high 回报、81条底层命令。当前终止分支用当时末页商品 BCD-309WMCO 作页面锚点，属于该目录快照；F6 必须核验当前总量、真正末页、重复项及结构变化，不能仅凭锚点或 finish 宣称全覆盖。collect 在90秒步骤预算处停止，派生未开始。完整三步骤真实验证、全目录、第二站点和生命周期仍为后续验收门。细节与运行 ID 见 PROGRESS。
+
 ## R-011 F4 正式计划与授权（2026-09-06）
 
 复用现有 Codex App Server Terra/medium、Zod、SQLite/Drizzle、BrowserService 和 Radix；未新增运行依赖。计划制定是独立的 `plan_creation` 用途，一次显式模型判断，在服务端校验后持久化；规划不打开浏览器。输入为已确认 RequirementBrief 与真实 ResearchRecord；模型不接收宿主工具、原始页面、任意 URL 执行能力或数据库写能力。

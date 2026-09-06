@@ -4,8 +4,10 @@ import { Background, Controls, ReactFlow } from "@xyflow/react"
 import { GitBranch } from "lucide-react"
 import { DetailPane } from "./DetailPane.js"
 import { planSteps, stepGraph, type StepId } from "./chainData.js"
+import { LiveChain } from "./LiveChain.js"
 
-export function ChainView({ step, onStep, theme, selected, onSelect, inspectorOpen, onClose, sample, onSample, active, onPlan }: {
+export function ChainView({ taskId, step, onStep, theme, selected, onSelect, inspectorOpen, onClose, sample, onSample, active, onPlan }: {
+  taskId: string;
   sample: boolean; onSample: (value: boolean) => void; active: boolean; onPlan: () => void;
   step: StepId; onStep: (step: StepId) => void; theme: "light" | "dark";
   selected: Partial<Record<StepId, number>>; onSelect: (step: StepId, node: number) => void
@@ -16,7 +18,7 @@ export function ChainView({ step, onStep, theme, selected, onSelect, inspectorOp
   const detail = graph.details[selectedIndex]!
   return <section className="artifact-view chain-view" aria-label="抓取链路工作区">
     <header className="view-heading"><h2>抓取链路</h2><Button variant="ghost" color="gray" onClick={() => onSample(!sample)}>{sample ? "收起链路结构样例" : "查看链路结构样例"}</Button></header>
-    {!sample ? <div className="empty-chain-canvas"><GitBranch size={28} /><h3>操作链路尚未生成</h3><p>这里将展示当前任务的动作、分支、循环与检查点。</p><Button variant="soft" onClick={onPlan}>查看抓取计划</Button></div> : <>
+    {!sample ? <LiveChain taskId={taskId} active={active} theme={theme} onPlan={onPlan} /> : <>
     <p className="sample-notice">结构样例 · 未验证，不属于当前任务的可执行链路。</p>
     <div className="step-switcher" aria-label="选择链路步骤">{planSteps.map((item, index) => <Button key={item.id} variant={step === item.id ? "soft" : "ghost"} color={step === item.id ? "amber" : "gray"} aria-pressed={step === item.id} onClick={() => onStep(item.id)}><span className="mono">0{index + 1}</span>{item.title}</Button>)}</div>
     <div className="chain-layout view-with-detail">
