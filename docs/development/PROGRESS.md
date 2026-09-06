@@ -2,6 +2,29 @@
 
 更新日期：2026-09-06。
 
+## F3 真实来源调研（2026-09-06）
+
+从干净的 master/b17dcccb7e624b9b5da42e7fbd92a44b19645a33 接续。本阶段只开发F3，未改动相邻项目、未推送远程；F4须在全新session继续。
+
+- 实现：正式 `/api/research` 接收绑定需求版本的幂等启动、精确调研停止和带证据回访谈。SQLite v4持久化独立来源版本、查询意图、页面发现的候选、实际观察、字段/枚举原文证据、覆盖与缺口、用途审计和sequence。需求修改使旧来源待复核；重新调研产生新记录，已取得部分证据保留。
+- 浏览器：F3仍只通过BrowserService。固定page只读表达式补充真实href；follow只允许首次调研访问本会话发现的链接，普通复跑不能动态扩权。URL/tab前后核验、敏感链接过滤、访问闸门、单会话/预算和finally回收均保留。模型选择E证据编号，服务提取原文；临时@eN仅出现在历史观察摘录，不作为操作参数。
+- 模型：沿用官方账号、Terra/medium结构化判断，source_research单独审计；不开放模型shell或任意脚本。意图先写入，供应商未回报次数保持null；取消等待回调和模型关闭后再提交终态。Sol/high操作探索与Luna/medium显式节点仍是F5后续范围。
+- UI：来源页提供显式启动/停止、版本Select、查询记录、已核验优先的来源列表、字段/时间/实际URL/枚举详情、覆盖缺口、刷新恢复和重试原请求。主区先展示最多12个候选，其余按需展开；详情复用Radix并排栏/右抽屉。
+
+| 验证 | 结果与边界 |
+| --- | --- |
+| 整仓 | 最终 `npm test` 129项通过：API42、workbench28、browser13、contracts10、model-runtime24、runtime12；`npm run check`、`npm run build`通过。日志在忽略的work/f3-final-{test,check}.log |
+| 协议/持久化 | 无链接需求、真实候选引用、伪造URL/证据拒绝、缺字段partial、跨任务隔离、并发幂等、需求失效、回访谈幂等、受限/失败/停止/清理、迟到模型结果、关闭服务与重启interrupted均通过；v1/v2/v3到v4、迁移冲突回滚和浏览器历史保留通过 |
+| 真实路径 | `npm exec --workspace @browser-capture/api -- tsx tests/real-research.ts --real`最终exit0：真实访谈生成并确认品牌/门类需求，经正式API搜索海尔中国官网→冰箱目录→代表详情。1次访谈调用、4次source_research调用，全部Terra/medium；3次实际页面观察、116个页面发现候选、2个采纳来源，终态partial |
+| 真实证据 | `work/f3-real-1788678265551/acceptance.json`；task fff00875-4d68-4fcd-ab82-340eedb57f4b，research ee54ab2a-0d04-4aee-bd83-7bb37c3f81ed。目录 https://www.haier.com/cooling/ 与详情 https://www.haier.com/cooling/20260731_293681.shtml 实际观察到名称、型号和链接；session jxhv所有权closed，23个底层完成命令均有用途/关联/哈希审计 |
+| 真实覆盖边界 | 保留目录末页、跨页重复项与全量枚举未执行的说明；“字段缺失说明”是需求中的派生输出列，当前保守检查也记为缺页面依据。F4需结合已确认缺失策略审阅这些partial项、区分来源字段与计划生成的说明，不将代表页验收宣称全量抓取完成 |
+| 最终UI | PowerShell7执行 `apps/workbench/tests/browser-f3.ps1`通过14项：空态、原生启动/停止、完成、来源详情、刷新、人工处理、失败、partial、390px无横向溢出/右抽屉、Esc、回访谈及canonical修订/失效。模型与页面是隔离替身，状态通过正式服务产生。截图work/f3-ui-390.png已视觉核验，测试服务4176/4177已关闭 |
+| 已处理失败 | 前两轮真实调研因模型重写引文而unsupported_evidence，未提交假成功；改为证据编号后复验通过。初轮模型曾识别搜索验证挑战而文本闸门未阻止下一查询，现加入显式access语义闸门并用测试保证立即停止；不把这一早期行为列作通过证据。UI脚本曾用Windows PowerShell5导致参数转义断言失败，改用本机PowerShell7后通过 |
+| 基线提示 | Vite已有主块>500kB提示仍在，当前约935kB；本阶段未做包体积优化 |
+| 未测 | 真实人工登录/验证码后恢复、完整目录末页与全量采集、第二独立站点、自动跨域重定向处理、多搜索供应商切换与生产规模。普通测试通过不替代这些验收门 |
+
+服务收尾：原API无活动任务，先完成SQLite备份至忽略的work/f3-before-api-restart.sqlite，再更新API与Web进程。前后两个用户任务的消息/草稿原文/审计/revision/确认哈希完全一致（work/f3-user-state-before.json仅存哈希）；未替用户确认或重跑。当前API4175/PID22744，Web4173/PID22976，4173同源health通过，`/api/research`已接通。旧草稿缺结构或未确认时继续显示实际门禁。所有BrowserSkill会话均已停止。
+
 ## F2 受控浏览器与正式服务接入（2026-09-06）
 
 负责人认可最新采访基本达到要求，沿用现有提问方式。只给私有 skill 补充“对象纳入条件与字段缺失规则一致”；未重写用户草稿或新增产品模型调用。下文对旧记录的评审保留为当时证据，不覆盖这次负责人接受的基线。

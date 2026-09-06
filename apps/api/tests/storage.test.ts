@@ -66,7 +66,7 @@ test("任务创建幂等，失败事务不改变消息/草稿/确认/事件序�
   assert.deepEqual(store.snapshot(id), before)
   assert.equal(store.list().length, 1)
 }))
-test("v1 数据库原子迁移到 v3，旧草稿和确认历史保留且迁移幂等", async () => {
+test("v1 数据库原子迁移到 v4，旧草稿和确认历史保留且迁移幂等", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-v1-migration-"))
   const file = path.join(directory, "workbench.sqlite")
   try {
@@ -83,8 +83,9 @@ test("v1 数据库原子迁移到 v3，旧草稿和确认历史保留且迁移�
     await reopened.close()
     const inspection = new Database(file, { readonly: true })
     try {
-      assert.equal(inspection.pragma("user_version", { simple: true }), 3)
+      assert.equal(inspection.pragma("user_version", { simple: true }), 4)
       assert.deepEqual(inspection.prepare("SELECT * FROM browserRuns").all(), [])
+      assert.deepEqual(inspection.prepare("SELECT * FROM researchRuns").all(), [])
       assert.equal(inspection.prepare("PRAGMA table_info(drafts)").all().filter((column: any) => column.name === "brief").length, 1)
     } finally { inspection.close() }
   } finally { await rm(directory, { recursive: true, force: true }) }
@@ -96,6 +97,21 @@ test("不兼容的 v1 迁移失败不提前版本号，也不改变已有行", (
     assert.throws(() => migrate(connection), /duplicate column name/i)
     assert.equal(connection.pragma("user_version", { simple: true }), 1)
     assert.deepEqual(connection.prepare("SELECT taskId, version, brief FROM drafts").all(), [{ taskId: "old", version: 1, brief: null }])
+  } finally { connection.close() }
+})
+
+test("F2 v3 升级来源表保持浏览器历史，并在迁移冲突时整体回滚", () => {
+  const connection = new Database(":memory:")
+  try {
+    connection.exec("CREATE TABLE tasks (id TEXT PRIMARY KEY); INSERT INTO tasks VALUES ('existing'); CREATE TABLE browserRuns (runId TEXT PRIMARY KEY, taskId TEXT, body TEXT); INSERT INTO browserRuns VALUES ('old','existing','{}'); PRAGMA user_version=3")
+    migrate(connection); migrate(connection)
+    assert.equal(connection.pragma("user_version", { simple: true }), 4)
+    assert.deepEqual(connection.prepare("SELECT * FROM browserRuns").all(), [{ runId: "old", taskId: "existing", body: "{}" }])
+    assert.deepEqual(connection.prepare("SELECT * FROM researchRuns").all(), [])
+    connection.exec("PRAGMA user_version=3")
+    assert.throws(() => migrate(connection), /already exists/)
+    assert.equal(connection.pragma("user_version", { simple: true }), 3)
+    assert.deepEqual(connection.prepare("SELECT COUNT(*) AS count FROM browserRuns").get(), { count: 1 })
   } finally { connection.close() }
 })
 

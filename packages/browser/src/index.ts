@@ -6,6 +6,7 @@ import { BrowserSession } from "./session.js"
 export { BrowserError, grantSchema, commandSchema, type BrowserGrant, type BrowserAudit, type CommandExecutor } from "./contracts.js"
 export { bskExecutor } from "./transport.js"
 export { BrowserSession } from "./session.js"
+export { pageSchema, publicUrl, type BrowserPage } from "./page.js"
 
 const startSchema = z.object({ session_id: sessionIdSchema })
 const stopSchema = z.object({ stopped: z.array(sessionIdSchema), failed: z.array(z.unknown()), return_failures: z.array(z.unknown()) })
@@ -24,7 +25,7 @@ export class BrowserHost {
   private active: { controller: AbortController; done: Promise<unknown> } | null = null
   readonly journal: BrowserJournal
   constructor(directory: string, private readonly execute: CommandExecutor) { this.journal = new BrowserJournal(directory) }
-  async run<T>(rawGrant: unknown, work: (session: BrowserSession) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  async run<T>(rawGrant: unknown, work: (session: BrowserSession, signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
     const grant = grantSchema.parse(rawGrant)
     if (this.closed) throw new BrowserError("session_closed")
     if (this.active) throw new BrowserError("busy")
@@ -61,7 +62,7 @@ export class BrowserHost {
       } catch { await this.journal.audit({ ...event, phase: "failed" }).catch(() => {}); throw new BrowserError("cleanup_required") }
     } finally { await release() }
   }
-  private async ownedRun<T>(grant: BrowserGrant, work: (session: BrowserSession) => Promise<T>, signal: AbortSignal) {
+  private async ownedRun<T>(grant: BrowserGrant, work: (session: BrowserSession, signal: AbortSignal) => Promise<T>, signal: AbortSignal) {
     const leaseAbort = new AbortController()
     const release = await this.journal.acquire(() => leaseAbort.abort())
     const lifetime = new AbortController()
@@ -101,7 +102,7 @@ export class BrowserHost {
       const started = startSchema.parse(await invoke("session_start", ["session", "start"]))
       session = new BrowserSession(grant, started.session_id, invoke)
       if (combined.aborted) throw new BrowserError("cancelled")
-      const result = await interruptible(() => work(session!), combined)
+      const result = await interruptible(() => work(session!, combined), combined)
       if (combined.aborted) throw new BrowserError("cancelled")
       return result
     } finally {

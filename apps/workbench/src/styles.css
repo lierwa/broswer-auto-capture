@@ -317,3 +317,11 @@ summary:hover { color: var(--color-text); }
   .artifact-view { padding: 24px 18px; }
   .research-summary { align-items: flex-start; }
 }
+.source-list { display: grid; gap: var(--space-3); margin-block: var(--space-4); }
+.source-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); border-bottom: 1px solid var(--color-border); padding-block: var(--space-3); }
+.source-row > div { min-width: 0; overflow-wrap: anywhere; }
+.source-row h3 { margin: 0; font-size: var(--font-size-2); }
+.source-row p { margin-bottom: 0; }
+.source-row button { flex-shrink: 0; }
+.source-gaps { margin-block: var(--space-4); }
+.source-gaps li, .source-detail { overflow-wrap: anywhere; }

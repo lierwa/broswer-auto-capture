@@ -2,6 +2,18 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-010 F3 真实来源调研（2026-09-06）
+
+复用 BrowserService、BrowserSkill 0.2.0、SQLite/Drizzle、现有 Codex App Server 和 Radix；未新增运行依赖。正式入口为 GET/POST `/api/research?taskId=...`。模型仍通过 [App Server 的结构化输出](https://learn.chatgpt.com/docs/app-server) 返回判断，沿用 Terra/medium；首次操作探索 Sol/high 与显式节点 Luna/medium 仍由后续阶段实现。宿主 shell、插件和网页搜索工具保持禁用，浏览器动作全部经过受控服务。
+
+浏览器语义观察实测不含 href。固定只读表达式只提取当前地址、标题和最多150个可见链接，并检查 `ok=true`、tab与观察前后URL一致。表达式不能从 HTTP 或模型输入替换。动态 `follow` 只允许 source_research 用途访问本会话真实发现的目标；Bing跳转目标仅从真实 href 的编码参数解码。搜索入口是固定的通用搜索服务，具体品牌/站点/商品 URL 由页面发现。登录与秘密参数链接过滤，明确访问闸门由文本和模型语义两层停止。真实验证见PROGRESS。
+
+来源调研单次上限为5次查询、10个代表页、16次显式模型判断、180个底层命令和5分钟；一个会话串行使用浏览器。需求没有链接时仍可搜索，confirmedRequirement负责有效结构需求门。SQLite v4用独立调研记录保存版本、查询、候选、观察摘要哈希、选取的公开证据、覆盖/缺口、模型用途审计与单调sequence。页面原文只在内存传递；模型选E编号，服务从该次观察提取对应原文，防止模型重写引文或猜URL成为证据。证据中的@eN仅是历史观察引用文本，不得成为后续链路定位参数。
+
+候选不等于已观察，搜索页不作为采纳来源；缺字段/调查目标/枚举依据保留partial。当前覆盖检查较保守：需求中派生的“字段缺失说明”也可能被报告为无页面字段依据。F4需依据已确认缺失处理规则区分页面采集字段与计划产生的说明字段，并审阅partial中的实际影响；不能静默忽略真正的来源缺口，也不能要求F3先完成全量采集。本阶段未冻结自动跨站重定向放行、搜索服务自动切换或完整分页采集。
+
+停止先中断浏览器和模型，等待回调退出再提交终态；崩溃后的running转interrupted，审计次数未回报保持null。重新调研产生新来源版本，历史保留；需求变更产生stale投影。界面复用Radix Select/Callout/Button/DetailPane，支持历史版本、来源详情、重试原请求和带证据回访谈。
+
 ## R-009 F2 BrowserSkill 受控适配与生命周期（2026-09-06）
 
 采用固定 BrowserSkill CLI + Node spawn 参数数组的薄适配，复用已有 proper-lockfile 4.1.2 与 SQLite/Drizzle；不新增浏览器驱动或模型执行器。以实际 `session start/stop`、`tab list`、`observe`、`navigate/click/fill/press --help` 和本地真实页面核验协议。CLI 0.2.0、扩展 0.2.0、daemon protocol 1.1 当前 doctor 通过。命令形状通过 Zod 校验，语义动作重新观察，临时 ref 不作为外部输入；动作返回还校验 tab 归属。

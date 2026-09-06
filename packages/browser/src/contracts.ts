@@ -8,13 +8,15 @@ export const grantSchema = z.object({
   allowedOrigins: z.array(z.string().url().refine((value) => {
     const url = new URL(value)
     return ["http:", "https:"].includes(url.protocol) && url.origin === value
-  })).max(40),
-  actions: z.array(z.enum(["navigate", "observe", "click", "fill", "press"])).min(1),
+  })).max(64),
+  actions: z.array(z.enum(["navigate", "observe", "click", "fill", "press", "page", "follow"])).min(1),
   maxCommands: z.number().int().min(1).max(500), timeoutMs: z.number().int().min(1000).max(300_000),
 }).strict()
 export type BrowserGrant = z.infer<typeof grantSchema>
 export const targetSchema = z.object({ role: z.enum(["link", "button", "textbox", "combobox"]), name: z.string().min(1).max(300) }).strict()
 export const commandSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("page") }).strict(),
+  z.object({ type: z.literal("follow"), url: z.string().url().max(4000) }).strict(),
   z.object({ type: z.literal("navigate"), url: z.string().url().max(4000) }).strict(),
   z.object({ type: z.literal("observe"), until: z.object({ text: z.string().min(1).max(300), timeoutMs: z.number().int().min(100).max(10_000) }).strict().optional() }).strict(),
   z.object({ type: z.literal("click"), target: targetSchema }).strict(),

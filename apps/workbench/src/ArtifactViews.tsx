@@ -1,21 +1,12 @@
 import { useState } from "react"
 import { Badge, Button } from "@radix-ui/themes"
-import { ArrowRight, Database, FileSearch, Search } from "lucide-react"
+import { ArrowRight, Database, FileSearch } from "lucide-react"
 import { planSteps, type StepId } from "./chainData.js"
 import { DetailPane } from "./DetailPane.js"
 import type { InterviewState } from "./interviewContract.js"
-import { BrowserStatus } from "./BrowserStatus.js"
 
-export function Sources({ confirmedVersion, onInterview, onDraft, taskId, active = false }: { confirmedVersion: number | null; onInterview: () => void; onDraft: () => void; taskId?: string; active?: boolean }) {
-  return <section className="artifact-view" aria-label="来源调研">
-    <header className="view-heading"><h2>来源调研</h2>{confirmedVersion && <Button variant="ghost" color="gray" onClick={onDraft}>需求 v{confirmedVersion}<ArrowRight size={14} /></Button>}</header>
-    {taskId && <BrowserStatus taskId={taskId} active={active} />}
-    <div className="stage-empty"><Search size={26} /><h3>{confirmedVersion ? "范围已确认，准备核验来源" : "先明确这次任务的范围"}</h3><p>{confirmedVersion ? "当前任务尚无来源观察。真实来源调研服务还未接入，不能启动搜索或宣称页面已核验。" : "需求确认后，依据这份范围搜索真实入口、核验样本，并检查覆盖缺口。"}</p>
-      {confirmedVersion ? <Button disabled>开始来源调研</Button> : <Button variant="soft" onClick={onInterview}>继续需求对话<ArrowRight size={14} /></Button>}
-    </div>
-    <details className="supporting-detail"><summary>调研依据与核验内容</summary><div className="compact-checklist"><p><strong>发现入口</strong>保存查询意图、实际候选 URL 与采纳理由。</p><p><strong>核验样本</strong>检查页面字段、枚举方式、访问限制与观察时间。</p><p><strong>核对覆盖</strong>影响目标的缺口放在主层，必要时带证据回到需求讨论。</p></div></details>
-  </section>
-}
+
+export { Sources } from "./Sources.js"
 
 export function Plan({ onChain, onSources }: { onChain: (step: StepId) => void; onSources: () => void }) {
   const [sample, setSample] = useState(false)
