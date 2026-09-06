@@ -6,6 +6,7 @@ import { runActionGraph } from "@browser-capture/runtime/capture"
 import type { PlanProposal, PlanState } from "@browser-capture/contracts/plan"
 import type { ProductStore } from "../database/store.js"
 import type { ModelSessionFactory } from "../interview/modelSession.js"
+import { ModelRuntimeError } from "@browser-capture/model-runtime"
 import type { PlanExecutor } from "../plan/queue.js"
 import { ChainRepository } from "./repository.js"
 import { chainModelFactory, modelDecision } from "./model.js"
@@ -45,7 +46,7 @@ export class ChainService {
   private async runStep(input: ExecutionInput, step: PlanProposal["steps"][number], rows: CaptureRow[], progress?: CaptureStep, run?: (context: StepContext) => Promise<void>) {
     const started = Date.now(), priorElapsed = progress?.elapsedMs ?? 0, remainingTime = step.budget.timeoutMs - priorElapsed
     if (remainingTime <= 0 || (progress?.commands ?? 0) >= step.budget.maxCommands) throw new BrowserError("budget_exceeded")
-    const signal = AbortSignal.any([input.signal, AbortSignal.timeout(remainingTime)])
+    const signal = AbortSignal.any([input.signal, AbortSignal.timeout(remainingTime)]), deadlineAt = started + remainingTime
     let calls = progress?.explorationCalls ?? 0, llmCalls = progress?.llmCalls ?? 0, record = this.createRecord(input, step.id), validated = false
     const save = () => {
       record.consumed.elapsedMs = Date.now() - Date.parse(record.createdAt); this.repository.save(record)
@@ -56,8 +57,12 @@ export class ChainService {
       }
     }
     input.browser.beginStep(step.budget.maxCommands - (progress?.commands ?? 0), remainingTime, signal, () => { record.consumed.commands++; if (progress) progress.commands++; save() })
-    const context: StepContext = { plan: input.plan, step, record, rows, signal, save, current: null, known: new Set(), values: new Set(), targets: new Set(), history: [], rejected: null, lastFailure: null,
+    const fieldNames = input.plan.proposal!.fields.filter((field) => field.stepId === step.id && field.mode !== "derived")
+      .map((field) => input.plan.requirement.deliverables[field.deliverable]!.fields[field.field]!)
+    const repairRows = input.execution.mode === "repair" ? this.repository.repairRows(input.plan, step, fieldNames) : []
+    const context: StepContext = { plan: input.plan, step, record, rows, repairRows, signal, save, current: null, known: new Set(), values: new Set(), targets: new Set(), history: [], rejected: null, lastFailure: null,
       priorCandidate: this.repository.candidate(input.plan, step),
+      assertActive: () => { signal.throwIfAborted(); if (Date.now() >= deadlineAt) throw new BrowserError("budget_exceeded") },
       remaining: () => ({ modelCalls: step.budget.maxModelCalls - calls, timeMs: Math.max(0, remainingTime - (Date.now() - started)) }),
       command: async (command) => { signal.throwIfAborted(); return input.browser.command(command) }, factory: input.execution.mode === "repair" ? this.repairFactory : this.explorationFactory,
       purpose: input.execution.mode === "repair" ? "repair" : "exploration",
@@ -75,7 +80,7 @@ export class ChainService {
       try {
         if (!step.budget.maxModelCalls) throw new BrowserError("budget_exceeded")
         if (step.kind !== "derive") {
-          const entry = step.kind === "collect" && rows[0] ? rows[0].url : sources[0]?.url
+          const entry = step.kind === "collect" && (repairRows[0] ?? rows[0]) ? (repairRows[0] ?? rows[0])!.url : sources[0]?.url
           if (!entry) throw new Error("step_input_missing")
           await context.command({ type: "navigate", url: entry })
           remember(context, JSON.parse((await context.command({ type: "page" }))!))
@@ -87,7 +92,8 @@ export class ChainService {
       } catch (error) {
         if (validated) throw error
         lastError = error; record.status = failureStatus(error, input.signal, signal)
-        record.failureCode = record.status === "budget_exceeded" ? "budget_exceeded" : error instanceof BrowserError ? error.code : error instanceof Error && /^[a-z_]{1,80}$/.test(error.message) ? error.message : "step_failed"
+        record.failureCode = record.status === "budget_exceeded" ? "budget_exceeded" : error instanceof BrowserError || error instanceof ModelRuntimeError ? error.code
+          : error instanceof Error && /^[a-z_]{1,80}$/.test(error.message) ? error.message : "step_failed"
         context.lastFailure = record.failureCode
         record.reason = failureReason(record.status); save()
         if (record.status !== "failed" || calls >= step.budget.maxModelCalls || attempt === 1) break
@@ -114,11 +120,12 @@ export class ChainService {
       const input = phase === "sample" ? record.sample! : record.verification!
       const result = await runActionGraph(record.graph, input, {
         command: context.command,
-        validationWindow: 2,
+        // WHY：样本只需代表窗口；换输入必须真实走到 finish，才能形成独立终态指纹并证明终止分支。
+        ...(phase === "sample" ? { validationWindow: 2 } : {}),
         page: (value) => remember(context, pageSchema.parse(value)),
         initialRows: context.step.kind === "derive" ? context.rows.filter((row) => row.url === input.url).slice(0, 1) : [],
         checkpoint: (rows) => { if (phase === "sample") record.sampleRows = rows; else record.verificationRows = rows; save() },
-        event: (event) => { record.events.push(event); save() },
+        event: (event) => { record.events.push(event); save() }, assertActive: context.assertActive,
         llm: async (node, rows) => {
           context.consumeModel("explicit_llm")
           const result = await modelDecision({ factory: this.llmFactory, schema: z.object({ value: z.string().max(2000) }).strict(), record, purpose: "explicit_llm", phase,
@@ -132,8 +139,26 @@ export class ChainService {
     }
     signal.throwIfAborted()
     verifyInputEffect(record.sampleRows, record.verificationRows)
+    if (context.purpose === "repair" && context.repairRows.length) verifyRepairExamples(context)
+    if (context.step.kind === "enumerate") verifyEnumerationEnd(record)
     record.status = "verified"; record.reason = "固化链路已在样本及不同输入的代表窗口内通过；完整范围批量执行尚待验收。"; save()
   }
+}
+function verifyRepairExamples(context: StepContext) {
+  const required = context.plan.proposal!.fields.filter((field) => field.stepId === context.step.id && field.mode !== "derived")
+    .map((field) => context.plan.requirement.deliverables[field.deliverable]!.fields[field.field]!)
+  const rows = [...context.record.sampleRows, ...context.record.verificationRows]
+  for (const example of context.repairRows.slice(0, 2)) {
+    const repaired = rows.find((row) => row.url === example.url)
+    if (!repaired || required.some((field) => !repaired.fields[field])) throw new Error("repair_example_unresolved")
+  }
+}
+function verifyEnumerationEnd(record: ChainRecord) {
+  const outcome = record.validationOutcomes.find((item) => item.phase === "verification")
+  const last = record.events.filter((event) => event.phase === "verification" && event.status === "passed").at(-1)
+  const finished = record.graph?.nodes.some((node) => node.id === last?.nodeId && node.kind === "finish")
+  // WHY：目录换输入验证必须亲自走完终止分支并留下独立指纹；代表窗口不能替代末页证据。
+  if (!outcome || outcome.bounded || !outcome.terminalDigest || !finished) throw new Error("verification_end_unproven")
 }
 export function verifyInputEffect(sample: CaptureRow[], verification: CaptureRow[]) {
   // WHY：不同参数或命令 ACK 不证明页面真正切换，稳定来源键集合相同不能通过换输入验证。

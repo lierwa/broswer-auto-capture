@@ -7,7 +7,10 @@ import assert from "node:assert/strict"
 import { createApplication } from "../src/app.js"
 
 const prepare = process.argv.includes("--prepare"), execute = process.argv.includes("--execute")
-if (prepare === execute) throw new Error("选择 --prepare 制定正式新计划，或 --execute 执行已独立授权范围")
+const repairIndex = process.argv.indexOf("--repair"), replay = process.argv.includes("--replay")
+const repairStep = repairIndex >= 0 ? process.argv[repairIndex + 1] : null
+const modes = [prepare, execute, repairStep !== null, replay].filter(Boolean).length
+if (modes !== 1 || repairIndex >= 0 && !repairStep) throw new Error("选择 --prepare、--execute、--repair <stepId> 或 --replay")
 const root = fileURLToPath(new URL("../../..", import.meta.url)), directory = path.join(root, "work/f3-real-1788678265551")
 const taskId = "fff00875-4d68-4fcd-ab82-340eedb57f4b"
 const ceiling = { maxCommands: 3850, timeoutMs: 1440000, maxModelCalls: 12, maxLlmCalls: 0 }
@@ -35,14 +38,35 @@ try {
   } else {
     const plan = app.plan.snapshot(taskId).records[0]!
     assert.deepEqual(plan.budgetCeiling, ceiling); assert.equal(plan.status, "ready")
-    await post({ type: "start", requestId: randomUUID(), planId: plan.id, planDigest: plan.digest })
+    const state = app.plan.snapshot(taskId)
+    const parent = state.executions.filter((item) => item.planId === plan.id).at(-1)
+    if (execute) await post({ type: "start", requestId: randomUUID(), planId: plan.id, planDigest: plan.digest })
+    else {
+      assert.ok(parent, "当前计划没有可关联的历史运行")
+      await post(repairStep
+        ? { type: "repair", requestId: randomUUID(), executionId: parent.id, planDigest: plan.digest, stepId: repairStep }
+        : { type: "replay", requestId: randomUUID(), executionId: parent.id, planDigest: plan.digest })
+    }
     const id = app.plan.snapshot(taskId).executions.at(-1)!.id
-    let last = ""
+    let last = "", enumChecked = false
     for (;;) {
       const state = app.plan.snapshot(taskId), run = state.executions.find((item) => item.id === id)!
       const summary = JSON.stringify({ id, status: run.status, steps: run.capture?.steps.map((step) => ({ id: step.stepId, status: step.status,
         records: step.rows.length, inputs: step.inputIndex, commands: step.commands, elapsedMs: step.elapsedMs, modelIntents: step.explorationCalls })) })
       if (summary !== last) { process.stdout.write(summary + "\n"); last = summary }
+      const enumeration = run.capture?.steps.find((step) => step.stepId === "enumerate_catalog")
+      if (!enumChecked && enumeration?.status === "completed") {
+        enumChecked = true
+        const chain = app.chain.snapshot(taskId, state).records.find((item) => item.id === enumeration.chainId)
+        const verification = chain?.validationOutcomes.find((outcome) => outcome.phase === "verification")
+        const verified = Boolean(verification && !verification.bounded && verification.terminalDigest
+          && verification.terminalDigest === enumeration.terminalDigest)
+        process.stdout.write(JSON.stringify({ enumerationAcceptance: verified, verificationDigest: verification?.terminalDigest,
+          executionDigest: enumeration.terminalDigest }) + "\n")
+        if (!verified && ["queued", "running"].includes(run.status)) {
+          await post({ type: "cancel_execution", executionId: id })
+        }
+      }
       if (!["queued", "running"].includes(run.status)) {
         await writeFile(path.join(directory, `f6-full-${id}.json`), JSON.stringify({ run, chains: app.chain.snapshot(taskId, state), browser: await app.browser.snapshot(taskId) }, null, 2))
         process.stdout.write(JSON.stringify({ result: run.status, reason: run.reason, gaps: run.capture?.gaps }) + "\n"); break

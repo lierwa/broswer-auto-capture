@@ -109,7 +109,7 @@ test("下一页仍存在时以新旧语义页面比较终止，末页与换输�
   ;(graph.nodes.find((node) => node.id === "extract") as { next: string }).next = "click"
   ;(graph.nodes.find((node) => node.id === "click") as { next: string }).next = "read_next"
   graph.nodes.push({ id: "read_next", label: "读取新页", kind: "read", next: "compare" },
-    { id: "compare", label: "比较翻页效果", kind: "branch_page_changed", changed: "loop", unchanged: "done" })
+    { id: "compare", label: "比较翻页效果", kind: "branch_page_changed", comparison: "semantic", changed: "loop", unchanged: "done" })
   const env = environment(3), command = env.dependencies.command
   let current = 1
   const deps = { ...env.dependencies, command: async (raw: unknown) => {
@@ -121,4 +121,45 @@ test("下一页仍存在时以新旧语义页面比较终止，末页与换输�
   const full = await runActionGraph(graph, { url: "https://example.com/catalog", value: "" }, deps, "execution", new AbortController().signal)
   const last = await runActionGraph(graph, { url: "https://example.com/catalog?page=3", value: "" }, deps, "verification", new AbortController().signal)
   assert.equal(full.rows.length, 4); assert.equal(last.rows.length, 2); assert.equal(full.pageDigest, last.pageDigest)
+})
+
+test("链接指纹忽略非目录推荐区懒加载，但仍识别商品链接换页", async () => {
+  const graph = structuredClone(loopGraph)
+  graph.nodes = graph.nodes.filter((node) => node.kind !== "branch")
+  ;(graph.nodes.find((node) => node.id === "extract") as { next: string }).next = "click"
+  ;(graph.nodes.find((node) => node.id === "click") as { next: string }).next = "read_next"
+  graph.nodes.push({ id: "read_next", label: "读取新页", kind: "read", next: "compare" },
+    { id: "compare", label: "比较目录链接", kind: "branch_page_changed", comparison: "links", changed: "loop", unchanged: "done" })
+  let page = 1, reads = 0
+  const env = environment(2), command = async (raw: unknown) => {
+    const value = raw as { type: string; url?: string }
+    if (value.type === "navigate") page = Number(new URL(value.url!).searchParams.get("page") ?? "1")
+    if (value.type === "click" && page < 2) page++
+    if (value.type !== "page") return null
+    reads++
+    return JSON.stringify({ url: "https://example.com/catalog", title: "目录", text: `第${page}页 推荐区批次${reads}`, truncated: false,
+      links: [{ url: `https://example.com/items/${page}`, title: `Item ${page}` }, { url: `https://example.com/recommend/${reads}`, title: `推荐 ${reads}` }] })
+  }
+  const result = await runActionGraph(graph, { url: "https://example.com/catalog", value: "" }, { ...env.dependencies, command }, "execution", new AbortController().signal)
+  const independent = await runActionGraph(graph, { url: "https://example.com/catalog?page=2", value: "" }, { ...env.dependencies, command }, "verification", new AbortController().signal)
+  assert.equal(result.rows.length, 2)
+  assert.equal(result.pageDigest, independent.pageDigest)
+  assert.deepEqual(env.events.filter((event) => event.phase === "execution" && event.nodeId === "compare" && event.status === "passed").map((event) => event.detail), ["页面已变化", "页面未变化"])
+})
+
+test("signal尚未触发时，墙钟截止也会在下一个普通派生节点前拒绝", async () => {
+  const graph: ActionGraph = { entry: "derive", coverage: "派生缺失说明", completion: "派生完成", maxTransitions: 5, nodes: [
+    { id: "derive", label: "生成说明", kind: "derive_missing", outputField: "缺失说明", ruleIndex: 0, next: "done" },
+    { id: "done", label: "完成", kind: "finish", reason: "派生完成", minRecords: 1 },
+  ] }
+  const env = environment(1), controller = new AbortController()
+  let checks = 0
+  await assert.rejects(runActionGraph(graph, { url: "https://example.com/items/1", value: "" }, {
+    ...env.dependencies,
+    initialRows: [{ stableKey: "1", url: "https://example.com/items/1", fields: {}, missing: ["型号"] }],
+    assertActive: () => { if (++checks > 2) throw new Error("budget_exceeded") },
+  }, "execution", controller.signal), /budget_exceeded/)
+  assert.equal(controller.signal.aborted, false)
+  assert.equal(env.events.at(-1)?.nodeId, "derive")
+  assert.ok(!env.events.some((event) => event.nodeId === "done"))
 })

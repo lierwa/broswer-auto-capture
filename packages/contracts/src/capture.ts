@@ -9,6 +9,9 @@ export const captureCheckpointSchema = z.object({
   page: pageSchema.nullable(), loops: z.record(z.string(), count), transitions: count, checkpoints: count,
   termination: z.string().nullable(),
   pageDigest: z.string().length(64).nullable().default(null), pageChanged: z.boolean().nullable().default(null),
+  linkDigest: z.string().length(64).nullable().default(null), linksChanged: z.boolean().nullable().default(null),
+  linkFilter: z.object({ pathPrefix: z.string(), pathSuffix: z.string(), titleContains: z.string() }).strict().nullable().default(null),
+  comparisonDigest: z.string().length(64).nullable().default(null),
 }).strict()
 export const captureStepSchema = z.object({
   stepId: z.string(), chainId: id.nullable(), status: z.enum(["pending", "running", "completed", "paused"]),

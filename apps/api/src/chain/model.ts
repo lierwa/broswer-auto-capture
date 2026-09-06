@@ -9,7 +9,8 @@ import type { ModelSession, ModelSessionFactory } from "../interview/modelSessio
 export function chainModelFactory(root: string, purpose: ModelPurpose): ModelSessionFactory {
   return async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "browser-chain-model-"))
-    const client = createCodexAppServerClient({ cwd: directory, packageRoot: path.join(root, "packages/model-runtime"), purpose })
+    // WHY：详情页结构判断会携带真实语义页；仍由步骤总时限约束，但单轮需要覆盖高推理模型的正常响应窗口。
+    const client = createCodexAppServerClient({ cwd: directory, packageRoot: path.join(root, "packages/model-runtime"), purpose, turnTimeoutMs: 300_000 })
     return { client, dispose: async () => { try { await client.close() } finally { await rm(directory, { recursive: true, force: true }) } } }
   }
 }

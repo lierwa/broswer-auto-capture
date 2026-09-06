@@ -1,10 +1,25 @@
 # 开发进度
 
+## F6 海尔隔离完整验收（2026-09-06）
+
+用户授权的 v6 海尔中国官网冰箱目录计划已按正式 API/队列/BrowserService 路径完成。开发协调保持 `gpt-6-astra/high`；本轮实现、修复与真实执行由实际 `turn_context` 为 `gpt-5.6-sol/high` 的开发子任务承担。产品运行中只有枚举与字段链路的显式修复使用 Sol/high；最终独立复跑的三个步骤均为 0 次探索模型、0 次显式 LLM。没有使用额度重置卡。
+
+| 验收 | 结果与证据 |
+| --- | --- |
+| 正式修复 | 枚举链 `da275791-8829-4a45-954c-9aebe51316fd` 以当前页 `extract_links` 过滤后的 URL/标题集合形成末页指纹；独立第15页验证 `bounded=false` 且走到 `finish`。采集链 `fd7492c5-200c-42df-b070-898549de6ac6` 用两条真实漏提页面作为 sample/verification，覆盖现代与传统标题结构。修复运行 `de67ac32-ec5f-4982-9f07-547cfeda8790` 为 `completed`、coverage `completed`、gaps 为空 |
+| 最终零模型复跑 | 独立运行 `b0350454-aa0f-4564-a724-6fe9d59153dc` 为 `completed/replay`、coverage `completed`、gaps 为空。枚举 258 行/167 命令/29912ms，采集 258 行/1806 命令/427403ms，派生 258 行/0 命令/6796ms；合计 1973 命令、464111ms，三个步骤 exploration/LLM/audits 均为 0 |
+| 目录覆盖与字段 | 枚举与采集均为 258 个唯一 stable key、258 个唯一 URL。名称、型号、商品链接空值均为 0，`missing` 行为 0，名称等于站点总标题的行为 0。独立验证与正式执行末页指纹同为 `5a5fa54fdaf646adff66463f938d516c4c725c4e379bbbe28fd8a1440d946208` |
+| 时限与防浪费 | 普通节点在 AbortSignal 之外直接核对墙钟截止；signal 尚未触发时也会在下一个派生节点前拒绝。样本保留两个 checkpoint 代表窗口，verification 必须实际走到 finish。真实验收脚本在枚举完成时立即核对独立验证/执行指纹，不一致即正式取消，不进入全量详情回放 |
+| 定向验证 | runtime 22 项通过，API chain/capture 15 项通过；contracts、runtime、API TypeScript check 通过，`git diff --check` 通过 |
+| 本地数据隔离 | 正式结果只写入忽略目录 `work/f3-real-1788678265551`。用户京东任务 `42154dad-547f-4d88-ac67-c761ff8a4ba8` 的 interview/browser/research/plan/chains 五项 API JSON SHA-256 与执行前逐项一致；API 4175/PID19812 与 Web 4173/PID22976 保持原进程运行 |
+
+可审阅摘要为 `work/f3-real-1788678265551/f6-acceptance-b0350454-aa0f-4564-a724-6fe9d59153dc.json`，258 行目录为同目录下 `f6-haier-catalog-b0350454-aa0f-4564-a724-6fe9d59153dc.json`，包含完整运行/链路/浏览器快照的 canonical 证据为 `f6-full-b0350454-aa0f-4564-a724-6fe9d59153dc.json`。这些运行产物不进入 Git。
+
 ## F6 浏览器阻塞复核（2026-09-06）
 
 用户明确当前优先诊断海尔隔离测试为何阻塞。当前默认/显式标签页及先截图后点击的对照均真实从第1页切到第2页，商品链接集合变化；覆盖层在动作前后存在不证明动作被拦截，上次失败瞬间缺少足够诊断证据，根因仍未定位。15秒协助诊断确认提示进入DOM，但CLI返回RPC超时；官方源码显示人工等待与daemon传输期限相同，存在外层先到期截断业务timed_out回包的问题。上次300秒超时不能说明请求送达或用户未处理。详见 [BROWSER_INTERACTION_DIAGNOSIS](BROWSER_INTERACTION_DIAGNOSIS.md)。本轮没有恢复正式采集、调用模型或修改用户data/已安装BrowserSkill，诊断会话全部关闭。
 
-## F6 执行、结果与生命周期（2026-09-06，真实验收待继续）
+## F6 执行、结果与生命周期（2026-09-06，历史实现与早期运行）
 
 从干净的 master/2bb2093e8c0f3cbb90e505a4b6b69d66ae3e8db3 接续，主 task 01a075f9-7a58-7e82-8479-632f68138dd5 的实际 turn_context 为 gpt-6-astra/high，没有开发子 agent。仅当前保存目录开发、本地提交；没有推送远程或改动相邻项目。
 
@@ -23,12 +38,12 @@
 | UI有限通过 | work/f6-ui-dom3.log通过13项DOM事件回归：空态、正式授权、实际批量结果、canonical来源行、复跑审阅与确认、独立运行/链路不变、刷新、390px无横向溢出和来源抽屉。work/f6-detail-diagnostic.png已视觉检查。后补修复步骤选择器通过类型检查/构建，原生操作待验 |
 | UI与浏览器阻塞 | 原生任务切换返回ACK但任务未变（work/f6-ui-native3.log）；抽屉关闭后DOM为closed但退出动画currentTime持续0、焦点未恢复（work/f6-detail-diagnostic.log），尚未确定根因。海尔分页也无效果；请求人工协助后RPC在300秒超时，没有取得continued/completed，不能据此继续真实抓取。所属会话全部关闭，bsk session list为空 |
 | 已处理/复验失败 | 首轮整仓与构建并行时，chain/plan进程夹具启动超时、storage进程测试总时限超时；无代码变化单独整仓复验169通过。修复授权下游误显running已修为pending并增加业务回归；人工状态文案不再笼统归为登录/访问限制。修复选择器可空value类型错误已修正，复查通过 |
-| 未测门 | 海尔完整三步骤与当前末页/全覆盖、真实零探索独立复跑、实际站点同运行恢复和成功修复、真实登录恢复、完整京东旗舰店及每页前100条评论、第二独立站点、真实Luna调用。海尔原需求仍是中国官网冰箱目录名称/型号/链接/缺失说明，不能用它冒充旗舰店评论验收 |
+| 未测门 | 实际站点同运行恢复、真实登录恢复、完整京东旗舰店及每页前100条评论、第二独立站点、真实Luna调用。海尔原需求仍是中国官网冰箱目录名称/型号/链接/缺失说明，不能用它冒充旗舰店评论验收 |
 | 静态与基线提示 | 35个变更TS/TSX文件的文件500行/函数100行扫描通过；git diff --check通过。Vite既有主块超过500kB提示保留，具体字节数见最终构建日志 |
 
 服务/数据收尾：开发前只停空闲API，备份work/f6-before-development.sqlite；现API4175/PID19812、原Web4173/PID22976运行，4173同源health通过。两任务的访谈/browser/research/plan/chains共10项完整API JSON哈希与开发前一致，work/f6-user-state-{before,after}.json均只保留哈希。用户DB v7 quick_check=ok、foreign_key_check为空；未新增用户确认或授权，旧JSON与数据保留。
 
-真实证据在忽略的work/f3-real-1788678265551/f6-{execution,full}-*.json与f6-plan-v6.json。real-capture-full.ts --prepare会生成新计划，--execute会调用正式启动，不用于只读查询；当前暂停运行需人工确认浏览器交互后，经正式独立修复授权接续，不能重置旧检查点/消耗或手工接管Worker。F6完整验收尚未通过，不进入下一阶段。
+真实证据在忽略的work/f3-real-1788678265551/f6-{execution,full,acceptance,haier-catalog}-*.json与f6-plan-v6.json。real-capture-full.ts --prepare会生成新计划，--execute/--repair/--replay会创建或推进正式运行，不用于只读查询；最终验收结论以上方“F6 海尔隔离完整验收”为准。
 
 ## F5 探索、链路与换输入验证（2026-09-06）
 

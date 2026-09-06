@@ -1,8 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm"
 import { chainRecordSchema, type ChainRecord } from "@browser-capture/contracts/chain"
-import { chains } from "../database/schema.js"
-import { plans } from "../database/schema.js"
-import type { PlanRecord, PlanProposal } from "@browser-capture/contracts/plan"
+import { chains, executions, plans } from "../database/schema.js"
+import { executionRecordSchema, type PlanRecord, type PlanProposal } from "@browser-capture/contracts/plan"
 import type { ProductStore } from "../database/store.js"
 
 export class ChainRepository {
@@ -25,7 +24,14 @@ export class ChainRepository {
     const candidate = this.list(plan.taskId).find((chain) => chain.status === "verified" && compatible.some((previous) => previous.id === chain.planId
       && previous.proposal?.steps.some((oldStep) => oldStep.id === chain.stepId && oldStep.kind === step.kind
         && JSON.stringify([...oldStep.sourceIds].sort()) === JSON.stringify([...step.sourceIds].sort()))))
-    return candidate ? { graph: candidate.graph, sample: candidate.sample, verification: candidate.verification } : null
+    return candidate ? { graph: candidate.graph, sample: candidate.sample, verification: candidate.verification,
+      validationOutcomes: candidate.validationOutcomes } : null
+  }
+  repairRows(plan: PlanRecord, step: PlanProposal["steps"][number], fields: string[]) {
+    const previous = this.store.db.select().from(executions).orderBy(desc(sql`rowid`)).all().map((row) => executionRecordSchema.parse(row.body))
+      .filter((run) => run.taskId === plan.taskId && run.planId === plan.id)
+      .map((run) => run.capture?.steps.find((item) => item.stepId === step.id)).find((item) => item?.rows.length)
+    return previous?.rows.filter((row) => row.missing.length || fields.some((field) => !row.fields[field])).slice(0, 6) ?? []
   }
   save(record: ChainRecord) {
     this.store.task(record.taskId); record.sequence++; record.updatedAt = new Date().toISOString()

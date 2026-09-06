@@ -18,7 +18,7 @@ export const actionNodeSchema = z.discriminatedUnion("kind", [
   base.extend({ kind: z.literal("extract_fields"), ...next, fields: z.array(captureFieldSchema).min(1).max(100) }).strict(),
   base.extend({ kind: z.literal("branch"), text, present: key, absent: key }).strict(),
   base.extend({ kind: z.literal("branch_target"), target, available: key, unavailable: key }).strict(),
-  base.extend({ kind: z.literal("branch_page_changed"), changed: key, unchanged: key }).strict(),
+  base.extend({ kind: z.literal("branch_page_changed"), comparison: z.enum(["semantic", "links"]).default("semantic"), changed: key, unchanged: key }).strict(),
   base.extend({ kind: z.literal("loop"), maxIterations: z.number().int().min(1).max(100), body: key, exhausted: key }).strict(),
   base.extend({ kind: z.literal("checkpoint"), ...next }).strict(),
   base.extend({ kind: z.literal("derive_missing"), ...next, outputField: text, ruleIndex: z.number().int().nonnegative() }).strict(),

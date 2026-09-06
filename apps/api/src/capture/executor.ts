@@ -40,7 +40,7 @@ export async function executeCapture(input: Input, repository: ChainRepository, 
         }
         if (execution.mode === "replay") throw new Error("verified_chain_missing")
         await explore(step, rows, progress, async (context) => {
-          await captureInputs(input, step, progress, rows, context.record, context.command, context.signal, llmFactory)
+          await captureInputs(input, step, progress, rows, context.record, context.command, context.signal, llmFactory, context.assertActive)
         })
       } else await replayStep(input, step, progress, rows, chain, llmFactory)
       progress.status = "completed"; progress.activeSince = null; input.save()
@@ -56,19 +56,22 @@ async function replayStep(input: Input, step: Step, progress: CaptureStep, rows:
   const started = Date.now(), elapsed = progress.elapsedMs, timeout = step.budget.timeoutMs - elapsed
   if (timeout <= 0 || progress.commands >= step.budget.maxCommands) throw new BrowserError("budget_exceeded")
   const signal = AbortSignal.any([input.signal, AbortSignal.timeout(timeout)])
+  const deadlineAt = started + timeout
   progress.activeSince = new Date().toISOString(); input.save()
   input.browser.beginStep(step.budget.maxCommands - progress.commands, timeout, signal, () => { progress.commands++; progress.elapsedMs = elapsed + Date.now() - started; progress.activeSince = new Date().toISOString(); input.save() })
-  try { await captureInputs(input, step, progress, rows, chain, (command) => input.browser.command(command), signal, factory) }
+  const assertActive = () => { signal.throwIfAborted(); if (Date.now() >= deadlineAt) throw new BrowserError("budget_exceeded") }
+  try { await captureInputs(input, step, progress, rows, chain, (command) => input.browser.command(command), signal, factory, assertActive) }
   finally { progress.elapsedMs = elapsed + Date.now() - started; input.save() }
 }
 async function captureInputs(input: Input, step: Step, progress: CaptureStep, upstream: CaptureRow[], chain: ChainRecord,
-  command: StepContext["command"], signal: AbortSignal, factory: ModelSessionFactory) {
+  command: StepContext["command"], signal: AbortSignal, factory: ModelSessionFactory, assertActive: () => void) {
   progress.chainId = chain.id
   if (!progress.inputs.length) progress.inputs = step.kind === "enumerate" ? [chain.sample!]
     : upstream.map((row) => ({ url: row.url, value: "" }))
   if (!progress.inputs.length) throw new Error("step_input_missing")
   input.save()
   while (progress.inputIndex < progress.inputs.length) {
+    assertActive()
     const current = progress.inputs[progress.inputIndex]!
     if (input.execution.resumeRequested && !progress.checkpoint) {
       // WHY：尚无检查点的输入从入口重做；仍需核验新浏览器实际到达授权来源，已提交输入不会重跑。
@@ -84,8 +87,8 @@ async function captureInputs(input: Input, step: Step, progress: CaptureStep, up
     const result = await runActionGraph(chain.graph, current, {
       command, page: (raw) => pageSchema.parse(raw), initialRows: step.kind === "derive" ? upstream.filter((row) => row.url === current.url) : [],
       ...(progress.checkpoint ? { resume: progress.checkpoint } : {}),
-      persist: (checkpoint) => { progress.checkpoint = checkpoint; progress.rows = mergeRows([...progress.rows, ...checkpoint.rows]); input.save() },
-      event: (event) => { progress.events.push(event); if (progress.events.length > 5000) progress.events.shift(); input.save() },
+      persist: (checkpoint) => { progress.checkpoint = checkpoint; progress.rows = mergeRows([...progress.rows, ...checkpoint.rows]); if (step.kind !== "derive") input.save() },
+      event: (event) => { progress.events.push(event); if (progress.events.length > 5000) progress.events.shift(); if (step.kind !== "derive") input.save() }, assertActive,
       verifyResume: async (checkpoint) => {
         let matched = !checkpoint.page && step.kind === "derive"
         if (checkpoint.page) {
@@ -106,6 +109,7 @@ async function captureInputs(input: Input, step: Step, progress: CaptureStep, up
         return value.value
       },
     }, "execution", signal)
+    assertActive()
     progress.rows = mergeRows([...progress.rows, ...result.rows]); progress.termination = result.termination
     progress.terminalDigest = result.pageDigest
     input.execution.resumeRequested = false

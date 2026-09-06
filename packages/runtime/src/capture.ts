@@ -17,14 +17,18 @@ export interface CaptureDependencies {
   page(value: unknown): Page
   event(event: ChainRecord["events"][number]): void
   llm?(node: Extract<ActionNode, { kind: "llm" }>, rows: CaptureRow[]): Promise<string>
+  assertActive?(): void
 }
-interface Machine { cursor: string; rows: CaptureRow[]; page: Page | null; loops: Record<string, number>; transitions: number; checkpoints: number; termination: string | null; pageDigest: string | null; pageChanged: boolean | null }
+interface Machine { cursor: string; rows: CaptureRow[]; page: Page | null; loops: Record<string, number>; transitions: number; checkpoints: number; termination: string | null;
+  pageDigest: string | null; pageChanged: boolean | null; linkDigest: string | null; linksChanged: boolean | null;
+  linkFilter: { pathPrefix: string; pathSuffix: string; titleContains: string } | null; comparisonDigest: string | null }
 const state = Annotation.Root({ machine: Annotation<Machine>({ reducer: (_previous, value) => value }) })
 
 export async function runActionGraph(raw: unknown, rawInput: unknown, dependencies: CaptureDependencies, phase: "sample" | "verification" | "execution", signal: AbortSignal) {
   const graph = compileActionGraph(raw), input = chainInputSchema.parse(rawInput), nodes = new Map(graph.nodes.map((node) => [node.id, node]))
   const graphDigest = createHash("sha256").update(JSON.stringify(graph)).digest("hex")
-  let initial: Machine = { cursor: graph.entry, rows: structuredClone(dependencies.initialRows ?? []), page: null, loops: {}, transitions: 0, checkpoints: 0, termination: null, pageDigest: null, pageChanged: null }
+  let initial: Machine = { cursor: graph.entry, rows: structuredClone(dependencies.initialRows ?? []), page: null, loops: {}, transitions: 0, checkpoints: 0, termination: null,
+    pageDigest: null, pageChanged: null, linkDigest: null, linksChanged: null, linkFilter: null, comparisonDigest: null }
   if (dependencies.resume) {
     const saved = captureCheckpointSchema.parse(dependencies.resume)
     if (saved.graphDigest !== graphDigest || JSON.stringify(saved.input) !== JSON.stringify(input) || !nodes.has(saved.cursor)) throw new Error("checkpoint_binding_mismatch")
@@ -33,14 +37,14 @@ export async function runActionGraph(raw: unknown, rawInput: unknown, dependenci
   }
   // WHY：沿用 LangGraph 进行有界状态推进；固化普通节点只得到浏览器能力，模型仅在 llm 分支显式调用。
   const compiled = new StateGraph(state).addNode("action", async ({ machine }) => {
-    signal.throwIfAborted()
+    signal.throwIfAborted(); dependencies.assertActive?.()
     if (machine.transitions >= graph.maxTransitions) throw new Error("transition_budget")
     const node = nodes.get(machine.cursor)!
     const update = structuredClone(machine); update.transitions++
     const event = (status: "running" | "passed" | "failed", detail: string) => dependencies.event({ nodeId: node.id, phase, status, detail, records: update.rows.length, at: new Date().toISOString() })
     event("running", "正在运行固化节点")
     try {
-      await perform(node, update, input, dependencies); signal.throwIfAborted()
+      await perform(node, update, input, dependencies); signal.throwIfAborted(); dependencies.assertActive?.()
       // WHY：只在节点完成后推进持久游标；恢复核验失败不会消费后续节点或覆盖原检查点。
       if (node.kind === "checkpoint" || node.kind === "finish") dependencies.persist?.(captureCheckpointSchema.parse({ ...update, graphDigest, input }))
       const detail = node.kind === "branch" ? `${update.cursor === node.absent ? "条件缺失" : "条件满足"}：${node.text}`
@@ -51,17 +55,20 @@ export async function runActionGraph(raw: unknown, rawInput: unknown, dependenci
     catch (error) { event("failed", "节点未通过，保留该步骤验证证据"); throw error }
     return { machine: update }
   }).addEdge(START, "action").addConditionalEdges("action", ({ machine }) => machine.termination ? END : "action").compile()
-  if (initial.termination) return { rows: initial.rows, termination: initial.termination, pageDigest: initial.pageDigest }
+  if (initial.termination) return { rows: initial.rows, termination: initial.termination, pageDigest: initial.comparisonDigest ?? initial.pageDigest }
   const result = await compiled.invoke({ machine: initial }, { signal, recursionLimit: graph.maxTransitions + 2 })
-  return { rows: result.machine.rows, termination: result.machine.termination!, pageDigest: result.machine.pageDigest }
+  return { rows: result.machine.rows, termination: result.machine.termination!, pageDigest: result.machine.comparisonDigest ?? result.machine.pageDigest }
 }
 async function perform(node: ActionNode, machine: Machine, input: ChainInput, deps: CaptureDependencies) {
-  if (node.kind === "navigate") { await deps.command({ type: "navigate", url: node.url === "$input.url" ? input.url : node.url }); machine.page = null; machine.pageDigest = null; machine.pageChanged = null }
+  if (node.kind === "navigate") { await deps.command({ type: "navigate", url: node.url === "$input.url" ? input.url : node.url }); machine.page = null; machine.pageDigest = null;
+    machine.pageChanged = null; machine.linkDigest = null; machine.linksChanged = null; machine.linkFilter = null; machine.comparisonDigest = null }
   else if (node.kind === "read") {
     const page = deps.page(JSON.parse((await deps.command({ type: "page" }))!))
     const current = createHash("sha256").update(JSON.stringify({ ...page, text: page.text.replace(/@e\d+/g, "@ref") })).digest("hex")
+    const links = machine.linkFilter ? filteredLinkDigest(page, machine.linkFilter) : null
     machine.pageChanged = machine.pageDigest === null ? null : current !== machine.pageDigest
-    machine.pageDigest = current; machine.page = page
+    machine.linksChanged = machine.linkDigest === null || links === null ? null : links !== machine.linkDigest
+    machine.pageDigest = current; machine.linkDigest = links; machine.page = page
   }
   else if (node.kind === "click") { await deps.command({ type: "click", target: { ...node.target, name: node.target.name === "$input.value" ? input.value : node.target.name } }); machine.page = null }
   else if (node.kind === "fill") { await deps.command({ type: "fill", target: node.target, value: node.value === "$input.value" ? input.value : node.value }); machine.page = null }
@@ -87,8 +94,10 @@ async function perform(node: ActionNode, machine: Machine, input: ChainInput, de
   }
   else if (node.kind === "branch_page_changed") {
     requirePage(machine)
-    if (machine.pageChanged === null) throw new Error("page_comparison_missing")
-    machine.cursor = machine.pageChanged ? node.changed : node.unchanged; return
+    const changed = node.comparison === "links" ? machine.linksChanged : machine.pageChanged
+    if (changed === null) throw new Error("page_comparison_missing")
+    machine.pageChanged = changed; machine.comparisonDigest = node.comparison === "links" ? machine.linkDigest : machine.pageDigest
+    machine.cursor = changed ? node.changed : node.unchanged; return
   }
   else if (node.kind === "loop") {
     const count = machine.loops[node.id] ?? 0
@@ -123,6 +132,16 @@ function extractLinks(node: Extract<ActionNode, { kind: "extract_links" }>, mach
     url.hash = ""
     merge(machine, { stableKey: url.href, url: url.href, fields: { title: link.title }, missing: [] })
   }
+  machine.linkFilter = { pathPrefix: node.pathPrefix, pathSuffix: node.pathSuffix, titleContains: node.titleContains }
+  machine.linkDigest = filteredLinkDigest(page, machine.linkFilter)
+}
+function filteredLinkDigest(page: Page, filter: { pathPrefix: string; pathSuffix: string; titleContains: string }) {
+  const links = page.links.filter((link) => {
+    const path = new URL(link.url).pathname
+    return path.startsWith(filter.pathPrefix) && path.endsWith(filter.pathSuffix) && link.title.includes(filter.titleContains)
+  }).map((link) => ({ url: link.url, title: link.title.trim() }))
+    .sort((left, right) => `${left.url}\u0000${left.title}`.localeCompare(`${right.url}\u0000${right.title}`))
+  return createHash("sha256").update(JSON.stringify(links)).digest("hex")
 }
 function extractFields(node: Extract<ActionNode, { kind: "extract_fields" }>, machine: Machine) {
   const page = requirePage(machine), fields: Record<string, string> = Object.create(null), missing: string[] = []
