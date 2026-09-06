@@ -2,7 +2,17 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-007 目标驱动访谈与结构需求交接（2026-09-06）
+
+真实 Terra/medium 经正式 API 创建任务、持续对话与草稿落库验证。原先强制每个问题提供 2–3 个选项会把自由名称输入包装成无效操作选项；现在契约允许零选项，界面直接使用现有输入框。必要业务选择、系统调查事实及建议默认值分开处理。相同业务需求可以首轮出草稿，也可以补充一个必要名称后完成。
+
+模型输出唯一结构化 RequirementBrief，服务与界面共享 Markdown 渲染；确认绑定 taskId/draftVersion/revision。SQLite v1→v2 原子添加可空 brief，旧草稿/确认保留；旧 Markdown 不自动推断成新结构。来源调研需要入口、代表样本、完整枚举方法和字段可得性证据，批量枚举与逐项采集由正式计划组织。该交接设计不代表 F3/F4 已实现。
+
+实际供应商错误证据：首次结构输出请求被 App Server 以 invalid_json_schema 拒绝，定位到 providedUrls 的 JSON Schema format=uri。仅在发给供应商的 schema 中移除此不支持格式；返回后仍使用本地 Zod URL 校验，且 providedUrls 必须来自用户实际文本。修复后真实轮次成功。早期调研任务混入全量采集、纠正残留旧名称片段和排序建议缺失均经真实输出发现并收紧 skill；具体案例及复核结果见 PROGRESS。普通测试与浏览器 fixture 只验证协议/交互，模型质量另行人工核对实际输出。
+
 ## R-006 F1 正式本地服务与持久化验证（2026-09-06）
+
+根目录开发入口复用 [concurrently](https://github.com/open-cli-tools/concurrently) 10.0.5 与 [cross-env](https://github.com/kentcdodds/cross-env) 10.1.0，统一启动 API 和 Vite；开发 API 关闭静态构建托管，首次开发无需 dist。Windows 实测页面与 API 代理读取通过，Ctrl+C 后两个端口释放。两项仅为开发依赖。
 
 沿用已批准方向，当前实际依赖为 Fastify 5.12.3、@fastify/static 10.1.3、Drizzle 0.45.2、better-sqlite3 12.10.0、proper-lockfile 4.1.2。本机 Node.js 24/Windows 的同步 SQLite 事务提交/回滚、独占目录锁、JSON 保留原件与原子批量导入均通过所属 API 测试。
 

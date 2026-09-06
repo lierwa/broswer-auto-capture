@@ -1,11 +1,11 @@
 import { setTimeout as delay } from "node:timers/promises"
 import { ModelRuntimeError } from "@browser-capture/model-runtime"
-import { interviewCommandSchema, interviewOutputSchema, type InterviewCommand, type InterviewOutput } from "@browser-capture/contracts/interview"
+import { interviewCommandSchema, type InterviewCommand, type InterviewOutput } from "@browser-capture/contracts/interview"
 import { taskCommandSchema, type TaskCommand } from "@browser-capture/contracts/task"
 import { ProductStore } from "../database/store.js"
 import { conflict, DomainError } from "../errors.js"
 import { beginRound, confirmDraft, finishRound } from "./transitions.js"
-import { interviewPrompt, outputSchema, type ModelSession, type ModelSessionFactory } from "./modelSession.js"
+import { interviewPrompt, outputSchema, parseInterviewOutput, type ModelSession, type ModelSessionFactory } from "./modelSession.js"
 
 interface Job { taskId: string; turnId: string; controller: AbortController; done: Promise<void>; session?: ModelSession; closeTimer?: ReturnType<typeof setTimeout> }
 export class InterviewCoordinator {
@@ -78,7 +78,7 @@ export class InterviewCoordinator {
         }
         if (job.controller.signal.aborted) continue
         if (event.type === "interrupted") interrupted = true
-        if (event.type === "turn_succeeded") output = interviewOutputSchema.parse(JSON.parse(event.outputText))
+        if (event.type === "turn_succeeded") output = parseInterviewOutput(JSON.parse(event.outputText), this.store.snapshot(job.taskId))
         if (event.type === "commentary_delta") {
           commentary += event.delta
           if (!/^[\s]*[\{\[`]/.test(commentary)) this.store.mutate(job.taskId, (state) => {

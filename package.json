@@ -10,11 +10,16 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "concurrently --kill-others --names api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "cross-env BROWSER_CAPTURE_SERVE_UI=false npm run dev --workspace @browser-capture/api",
+    "dev:web": "npm run dev --workspace @browser-capture/workbench -- --host 127.0.0.1 --port 4173 --strictPort",
     "build": "npm run build --workspaces --if-present",
     "check": "npm run check --workspaces --if-present",
     "test": "npm run test --workspaces --if-present"
   },
   "devDependencies": {
+    "concurrently": "10.0.5",
+    "cross-env": "10.1.0",
     "typescript": "5.9.2"
   }
 }

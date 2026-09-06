@@ -7,7 +7,14 @@ import { ProductStore } from "../src/database/store.js"
 import { InterviewCoordinator } from "../src/interview/coordinator.js"
 
 export const question = { prompt: "希望收集多少评价？", options: [{ label: "前 20 条", description: "范围较小", recommended: true }, { label: "前 100 条", description: "覆盖更多", recommended: false }] }
-export const draft = { title: "商品与评价", markdown: "# 范围\n全部商品，每商品前 20 条评价。" }
+export const brief = {
+  goal: "收集商品与评价", scope: "任务指定的商品范围",
+  sourceStrategy: { mode: "discover" as const, scope: "系统查找并核验正式来源", providedUrls: [] },
+  deliverables: [{ entity: "商品", fields: ["商品链接", "参数", "评价"], coverage: "目标范围全部商品", limit: "每商品前20条评价，不足记录实际数量" }],
+  discoveryTasks: [{ objective: "查找目标入口及商品枚举依据", expectedOutput: "候选入口与商品链接集合", acceptance: "核验来源归属、分类与枚举覆盖" }],
+  completionCriteria: ["每条结果保留来源链接，报告覆盖和缺口"], constraints: ["登录、验证码转人工"], proposedDefaults: [],
+}
+export const draft = { title: "商品与评价", brief }
 export const audit = { invocationCount: 1, requestedModel: "gpt-5.6-terra", requestedEffort: "medium", reportedModel: "gpt-5.6-terra", reportedEffort: "medium" } as const
 export const succeeded = (output: unknown): CodexRunEvent => ({ type: "turn_succeeded", outputText: JSON.stringify(output), threadId: "test-thread", turnId: "test-turn", audit })
 export function deferred() { let resolve!: () => void; const promise = new Promise<void>((done) => { resolve = done }); return { promise, resolve } }

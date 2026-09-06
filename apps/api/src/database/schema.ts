@@ -1,5 +1,5 @@
 import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
-import type { InterviewMessage } from "@browser-capture/contracts/interview"
+import type { InterviewMessage, RequirementBrief } from "@browser-capture/contracts/interview"
 
 export const tasks = sqliteTable("tasks", {
   id: text().primaryKey(), title: text().notNull(), renamed: integer({ mode: "boolean" }).notNull(),
@@ -12,6 +12,7 @@ export const messages = sqliteTable("messages", {
 }, (table) => [primaryKey({ columns: [table.taskId, table.id] })])
 export const drafts = sqliteTable("drafts", {
   taskId: taskId(), version: integer().notNull(), revision: integer().notNull(), title: text().notNull(), markdown: text().notNull(),
+  brief: text({ mode: "json" }).$type<RequirementBrief | null>(),
 }, (table) => [primaryKey({ columns: [table.taskId, table.version] })])
 export const turns = sqliteTable("turns", {
   taskId: taskId(), id: text().notNull(), revision: integer().notNull(), userMessageId: text().notNull(), assistantMessageId: text().notNull(),

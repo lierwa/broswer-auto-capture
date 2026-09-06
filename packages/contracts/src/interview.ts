@@ -1,16 +1,25 @@
 import { z } from "zod"
+import { requirementBriefSchema } from "./requirementBrief.js"
+import { taskIdSchema } from "./task.js"
+export { requirementBriefSchema, renderRequirementBrief, type RequirementBrief } from "./requirementBrief.js"
 
 const text = z.string().trim().min(1).max(30_000)
 const revision = z.number().int().nonnegative()
 const userText = z.string().min(1).max(30_000).refine((value) => value.trim().length > 0, "请输入需求内容")
 export const questionSchema = z.object({
   prompt: text,
-  options: z.array(z.object({ label: text, description: text, recommended: z.boolean() })).min(2).max(3),
-}).refine((value) => value.options.filter((item) => item.recommended).length === 1, "只能有一个推荐项")
+  options: z.array(z.object({ label: text, description: text, recommended: z.boolean() })).max(3),
+}).refine((value) => value.options.length === 0 || (value.options.length >= 2 && value.options.filter((item) => item.recommended).length === 1), "开放问题无选项；选择题需要两到三个选项且仅一个推荐项")
 export const interviewOutputSchema = z.object({
-  assistantText: text, question: questionSchema.nullable(), draft: z.object({ title: text, markdown: text }).nullable(),
+  assistantText: text, question: questionSchema.nullable(), draft: z.object({ title: text, markdown: text, brief: requirementBriefSchema.nullable().default(null) }).nullable(),
 }).refine((value) => !(value.question && value.draft), "有负责人问题时不得生成可确认草稿")
-export const draftSchema = z.object({ version: z.number().int().positive(), revision, title: text, markdown: text })
+export const modelInterviewOutputSchema = z.object({
+  assistantText: text, question: questionSchema.nullable(),
+  draft: z.object({ title: text, brief: requirementBriefSchema }).nullable(),
+}).strict().refine((value) => !(value.question && value.draft), "有负责人问题时不得生成可确认草稿")
+export const draftSchema = z.object({ version: z.number().int().positive(), revision, title: text, markdown: text,
+  brief: requirementBriefSchema.nullable().default(null),
+})
 export const messageSchema = z.object({
   id: text, role: z.enum(["user", "assistant"]), text: z.string(),
   status: z.enum(["complete", "running", "failed", "cancelled"]),
@@ -62,6 +71,13 @@ export const emptyInterview: InterviewState = interviewStateSchema.parse({ revis
 export function currentDraft(state: Pick<InterviewState, "drafts" | "revision">) {
   const last = state.drafts.at(-1)
   return last?.revision === state.revision ? last : undefined
+}
+export const requirementHandoffSchema = z.object({ taskId: taskIdSchema, draftVersion: z.number().int().positive(), revision, brief: requirementBriefSchema }).strict()
+export function confirmedRequirement(taskId: string, state: InterviewState) {
+  const draft = currentDraft(state)
+  // WHY：后续阶段只能使用当前明确确认的结构需求；旧 Markdown 保留可读，不猜造交接数据。
+  if (state.active || !draft?.brief || state.confirmedVersion !== draft.version) return null
+  return requirementHandoffSchema.parse({ taskId, draftVersion: draft.version, revision: draft.revision, brief: draft.brief })
 }
 export function visibleMessageText(message: InterviewMessage) {
   if (message.role !== "assistant") return message.text

@@ -14,7 +14,7 @@ function activeState(store: ProductStore, id: string) {
       { id: "active-user", role: "user", text: "继续补充范围", status: "complete", question: null, draftVersion: null },
       { id: "active-assistant", role: "assistant", text: "正在整理", status: "running", question: null, draftVersion: null },
     )
-    state.drafts.push({ version: 1, revision: 1, title: "历史草稿", markdown: "# 已保存的需求" })
+    state.drafts.push({ version: 1, revision: 1, title: "历史草稿", markdown: "# 已保存的需求", brief: null })
     state.turns.push(
       { id: "history-turn", revision: 1, userMessageId: "history-user", assistantMessageId: "history-assistant",
         status: "succeeded", reason: null, createdAt: "2026-09-06T00:00:00.000Z", completedAt: "2026-09-06T00:00:01.000Z" },

@@ -65,7 +65,7 @@ test("异常退出留下 stale 锁；全新 Node 进程在窗口后恢复轮次�
     assert.equal(recovered.state.turns[1].status, "interrupted")
     assert.equal(recovered.state.messages[3].status, "cancelled")
     assert.equal(recovered.state.messages[0].text, "保留历史原文")
-    assert.deepEqual(recovered.state.drafts, [{ version: 1, revision: 1, title: "历史草稿", markdown: "# 已保存的需求" }])
+    assert.deepEqual(recovered.state.drafts, [{ version: 1, revision: 1, title: "历史草稿", markdown: "# 已保存的需求", brief: null }])
     assert.deepEqual(await completed("probe", directory), { opened: true })
   } finally {
     if (seed.exitCode === null && seed.signalCode === null) { seed.kill("SIGKILL"); await once(seed, "exit") }

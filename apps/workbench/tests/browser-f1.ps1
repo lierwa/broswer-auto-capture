@@ -36,7 +36,7 @@ try {
   bsk press Enter --selector '.task-workspace:not([hidden]) .decision-option' --session $SessionId | Out-Null
   Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 4 && document.querySelector(".task-workspace:not([hidden]) .draft-artifact") !== null' 'continuous-answer-draft'
   $state = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
-  if ($state.decisions.Count -ne 1 -or $state.decisions[0].kind -ne 'option' -or $state.audits[0].model -ne 'fixture') { throw 'Option decision or fixture audit missing' }
+  if ($state.decisions.Count -ne 1 -or $state.decisions[0].kind -ne 'option' -or $state.audits[0].model -ne 'gpt-5.6-terra') { throw 'Option decision or fixture audit missing' }
   Activate 'button' '需求草稿 · v1'
   Activate 'button' '确认需求草稿'
   Assert-Page 'document.querySelector(".confirmed-next") !== null' 'formal-confirmation-visible'
@@ -44,6 +44,15 @@ try {
   bsk reload --session $SessionId | Out-Null
   bsk observe --session $SessionId | Out-Null
   Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 4 && document.querySelector(".confirmed-next") !== null' 'reload-retains-confirmed-history'
+  Send-Message 'F1开放问题：补充品牌与品类范围'
+  Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .decision-question")[1]?.textContent.includes("品牌或品类") === true && [...document.querySelectorAll(".task-workspace:not([hidden]) .decision-option")].every((item) => item.disabled) && document.querySelectorAll(".task-workspace:not([hidden]) .decision-block")[1]?.querySelectorAll("button").length === 0' 'open-question-needs-no-intermediate-button-history-readonly'
+  Send-Message '优先覆盖海尔和美的在售冰箱，没有现成商品链接'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .interview-bar")?.textContent.includes("v2") === true && document.querySelectorAll(".task-workspace:not([hidden]) textarea").length === 1' 'open-answer-produces-brief-draft-with-single-composer'
+  $openAnswered = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
+  if (@($openAnswered.decisions | Where-Object kind -eq 'option').Count -ne 1 -or @($openAnswered.decisions | Where-Object kind -eq 'draft_confirmation').Count -ne 1 -or $openAnswered.drafts.Count -ne 2 -or $null -eq $openAnswered.drafts[1].brief) { throw 'Open answer did not preserve option/confirmation history or structured brief' }
+  Activate 'button' '需求草稿 · v2'
+  Activate 'button' '确认需求草稿'
+  Activate 'button' '关闭需求草稿'
   Send-Message 'F1慢轮次：补充范围'
   Assert-Page 'document.querySelector("button[aria-label=停止生成]") !== null && !document.querySelector(".confirmed-next")' 'new-input-invalidates-confirmation'
   bsk reload --session $SessionId | Out-Null
@@ -58,15 +67,15 @@ try {
   Activate 'button' '停止生成'
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .assistant-body") !== null && !document.querySelector(".task-workspace:not([hidden]) button[aria-label=停止生成]") && document.querySelector(".task-workspace:not([hidden])").textContent.includes("本轮未提交草稿")' 'cancelled-turn-is-visible-terminal'
   $cancelled = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
-  if ($cancelled.active -or $cancelled.drafts.Count -ne 1 -or $cancelled.confirmedVersion -ne $null) { throw 'Cancelled round submitted or stayed active' }
+  if ($cancelled.active -or $cancelled.drafts.Count -ne 2 -or $cancelled.confirmedVersion -ne $null) { throw 'Cancelled round submitted or stayed active' }
   Send-Message 'F1失败轮次：验证可重试'
   Assert-Page 'document.querySelector(".task-workspace:not([hidden])").textContent.includes("结果未提交") && !document.querySelector(".task-workspace:not([hidden]) button[aria-label=停止生成]")' 'failure-is-visible-and-preserves-history'
   $failed = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
   $users = @($failed.messages | Where-Object role -eq 'user').Count
   Activate 'button' '重试本轮'
-  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .interview-bar").textContent.includes("v2")' 'retry-produces-new-valid-draft'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .interview-bar").textContent.includes("v3")' 'retry-produces-new-valid-draft'
   $retried = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
-  if (@($retried.messages | Where-Object role -eq 'user').Count -ne $users -or $retried.drafts.Count -ne 2) { throw 'Retry duplicated user input' }
+  if (@($retried.messages | Where-Object role -eq 'user').Count -ne $users -or $retried.drafts.Count -ne 3) { throw 'Retry duplicated user input' }
   bsk emulate --session $SessionId --width 804 --height 1000 --dpr 1 | Out-Null
   bsk observe --session $SessionId | Out-Null
   bsk press Escape --session $SessionId | Out-Null

@@ -49,15 +49,14 @@
 
 ```powershell
 npm install
-npm run build
-npm start --workspace @browser-capture/api
+npm run dev
 ```
 
-打开 [本机工作台](http://127.0.0.1:4175/)。Fastify 同时提供页面与正式 API；新建不调用模型，发送消息使用既有 ChatGPT managed 登录与 Terra/medium。数据库保存在忽略的 `data/workbench.sqlite`，任务、消息、轮次、问题、明确决策、草稿、确认及调用审计在同一事务内保存。
+打开 [本机工作台](http://127.0.0.1:4173/)。根目录一条命令同时启动 Vite 页面与 Fastify API（4175），无需预先构建；按 Ctrl+C 停止两者，一方退出时另一方也会停止。新建不调用模型，发送消息使用既有 ChatGPT managed 登录与 Terra/medium。数据库保存在忽略的 `data/workbench.sqlite`，任务、消息、轮次、问题、明确决策、草稿、确认及调用审计在同一事务内保存。
 
 首次启动自动导入 `data/tasks.json` 及各任务 JSON，或旧单会话 `data/interview.json`；保留原件，重复启动不重复导入、不覆盖后续数据库修改。迁移前关闭使用同一目录的旧原型服务。损坏文件导致整批导入失败，修复原文件后重启可重试。同一数据目录只允许一个正式服务；异常退出后数据锁约 10 秒过期，重启会把未完成轮次标记为可重试的中断。
 
-开发时保持 API 运行，再在另一终端执行 `npm run dev --workspace @browser-capture/workbench -- --port 4173 --strictPort`。Vite 将 `/api` 代理至 4175。API 端口通过 `BROWSER_CAPTURE_API_PORT` 配置（开发代理终端需使用相同值）；数据目录通过 `BROWSER_CAPTURE_DATA_DIRECTORY` 配置；仅后端开发可设 `BROWSER_CAPTURE_SERVE_UI=false`。
+Vite 将 `/api` 代理至 4175。API 端口通过 `BROWSER_CAPTURE_API_PORT` 配置；数据目录通过 `BROWSER_CAPTURE_DATA_DIRECTORY` 配置，根开发命令会将环境传给两个服务。部署式本地运行仍可使用 `npm run build` 后执行 `npm start --workspace @browser-capture/api`，由 Fastify 在 4175 同时提供构建页面与 API。
 
 五视图、连续消息、宽屏并排草稿/窄屏抽屉与节点主画布保留。刷新重新读取服务端事实；切任务保留各自未发送输入、页签与节点选择，视图临时状态不承诺跨刷新保存。取消绑定实际轮次，取消后不提交草稿；请求响应丢失时可用原请求标识重发。来源与浏览器执行从 F2/F3 继续，结构样例须显式打开。
 

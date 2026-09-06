@@ -4,10 +4,52 @@ import { randomUUID } from "node:crypto"
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "node:os"
+import Database from "better-sqlite3"
 import { emptyInterview } from "@browser-capture/contracts/interview"
 import { ProductStore } from "../src/database/store.js"
 import { importLegacy } from "../src/database/importLegacy.js"
 import { imports } from "../src/database/schema.js"
+import { migrate } from "../src/database/migrate.js"
+
+const brief = (goal: string) => ({
+  goal, scope: "一个站点的公开商品",
+  sourceStrategy: { mode: "discover" as const, scope: "由系统调查公开入口", providedUrls: [] },
+  deliverables: [{ entity: "商品", fields: ["名称", "价格"], coverage: "全部可见商品", limit: "完成公开目录后停止" }],
+  discoveryTasks: [{ objective: "定位目录", expectedOutput: "候选入口", acceptance: "页面可公开访问" }],
+  completionCriteria: ["商品均保留来源"], constraints: ["仅公开页面"], proposedDefaults: ["先调查入口"],
+})
+
+function createVersionOne(file: string) {
+  const connection = new Database(file)
+  connection.exec(`
+    CREATE TABLE tasks (id TEXT PRIMARY KEY, title TEXT NOT NULL, renamed INTEGER NOT NULL, archived INTEGER NOT NULL,
+      updatedAt TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision >= 0), sequence INTEGER NOT NULL CHECK(sequence >= 0),
+      confirmedVersion INTEGER, activeTurnId TEXT);
+    CREATE TABLE messages (taskId TEXT NOT NULL REFERENCES tasks(id), id TEXT NOT NULL, ordinal INTEGER NOT NULL,
+      body TEXT NOT NULL CHECK(json_valid(body)), PRIMARY KEY(taskId,id), UNIQUE(taskId,ordinal));
+    CREATE TABLE drafts (taskId TEXT NOT NULL REFERENCES tasks(id), version INTEGER NOT NULL, revision INTEGER NOT NULL,
+      title TEXT NOT NULL, markdown TEXT NOT NULL, PRIMARY KEY(taskId,version));
+    CREATE TABLE turns (taskId TEXT NOT NULL REFERENCES tasks(id), id TEXT NOT NULL, revision INTEGER NOT NULL,
+      userMessageId TEXT NOT NULL, assistantMessageId TEXT NOT NULL, status TEXT NOT NULL, reason TEXT, createdAt TEXT NOT NULL,
+      completedAt TEXT, PRIMARY KEY(taskId,id), UNIQUE(taskId,revision));
+    CREATE UNIQUE INDEX one_active_interview ON turns ((1)) WHERE status IN ('running','cancelling');
+    CREATE TABLE questions (taskId TEXT NOT NULL REFERENCES tasks(id), id TEXT NOT NULL, revision INTEGER NOT NULL,
+      question TEXT NOT NULL CHECK(json_valid(question)), status TEXT NOT NULL, answerMessageId TEXT, PRIMARY KEY(taskId,id));
+    CREATE TABLE decisions (taskId TEXT NOT NULL REFERENCES tasks(id), id TEXT NOT NULL, revision INTEGER NOT NULL,
+      kind TEXT NOT NULL, text TEXT NOT NULL, messageId TEXT, questionId TEXT, draftVersion INTEGER, createdAt TEXT NOT NULL,
+      PRIMARY KEY(taskId,id));
+    CREATE TABLE audits (taskId TEXT NOT NULL REFERENCES tasks(id), ordinal INTEGER NOT NULL, revision INTEGER NOT NULL,
+      model TEXT NOT NULL, effort TEXT NOT NULL, invocations INTEGER NOT NULL CHECK(invocations >= 0), PRIMARY KEY(taskId,ordinal));
+    CREATE TABLE operations (scope TEXT NOT NULL, requestId TEXT NOT NULL, digest TEXT NOT NULL, resultId TEXT NOT NULL,
+      PRIMARY KEY(scope,requestId));
+    CREATE TABLE imports (id TEXT PRIMARY KEY, digest TEXT NOT NULL, createdAt TEXT NOT NULL);
+    INSERT INTO tasks VALUES ('v1-task','旧任务',0,0,'2026-09-06T00:00:00.000Z',1,3,1,NULL);
+    INSERT INTO drafts VALUES ('v1-task',1,1,'旧草稿','# 原始内容');
+    INSERT INTO decisions VALUES ('v1-task','old-confirmation',1,'draft_confirmation','确认需求草稿 v1',NULL,NULL,1,'2026-09-06T00:00:01.000Z');
+    PRAGMA user_version = 1;
+  `)
+  connection.close()
+}
 
 async function fixture(run: (store: ProductStore, directory: string) => Promise<void>) {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-product-store-"))
@@ -23,6 +65,65 @@ test("任务创建幂等，失败事务不改变消息/草稿/确认/事件序�
   assert.throws(() => store.mutate(id, (state) => { state.revision++; state.confirmedVersion = 9 }))
   assert.deepEqual(store.snapshot(id), before)
   assert.equal(store.list().length, 1)
+}))
+test("v1 数据库原子迁移到 v2，旧草稿和确认历史保留且迁移幂等", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "browser-v1-migration-"))
+  const file = path.join(directory, "workbench.sqlite")
+  try {
+    createVersionOne(file)
+    const store = await ProductStore.open(directory)
+    try {
+      const state = store.snapshot("v1-task")
+      assert.equal(state.confirmedVersion, 1)
+      assert.deepEqual(state.drafts, [{ version: 1, revision: 1, title: "旧草稿", markdown: "# 原始内容", brief: null }])
+      assert.equal(state.decisions[0]?.id, "old-confirmation")
+      assert.equal(state.decisions[0]?.draftVersion, 1)
+    } finally { await store.close() }
+    const reopened = await ProductStore.open(directory)
+    await reopened.close()
+    const inspection = new Database(file, { readonly: true })
+    try {
+      assert.equal(inspection.pragma("user_version", { simple: true }), 2)
+      assert.equal(inspection.prepare("PRAGMA table_info(drafts)").all().filter((column: any) => column.name === "brief").length, 1)
+    } finally { inspection.close() }
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+test("不兼容的 v1 迁移失败不提前版本号，也不改变已有行", () => {
+  const connection = new Database(":memory:")
+  try {
+    connection.exec("CREATE TABLE drafts (taskId TEXT, version INTEGER, brief TEXT); INSERT INTO drafts VALUES ('old',1,NULL); PRAGMA user_version=1")
+    assert.throws(() => migrate(connection), /duplicate column name/i)
+    assert.equal(connection.pragma("user_version", { simple: true }), 1)
+    assert.deepEqual(connection.prepare("SELECT taskId, version, brief FROM drafts").all(), [{ taskId: "old", version: 1, brief: null }])
+  } finally { connection.close() }
+})
+test("结构化 brief 随草稿事务持久化，重启后按版本隔离并保留旧确认", async () => fixture(async (store, directory) => {
+  const id = store.taskAction({ type: "create", requestId: randomUUID() })
+  const firstBrief = brief("收集公开商品"), secondBrief = brief("收集公开商品及价格")
+  store.mutate(id, (state) => {
+    state.revision = 1
+    state.drafts.push({ version: 1, revision: 1, title: "第一版", markdown: "# 第一版", brief: firstBrief })
+    state.confirmedVersion = 1
+    state.decisions.push({ id: "confirmation-1", revision: 1, kind: "draft_confirmation", text: "确认需求草稿 v1",
+      messageId: null, questionId: null, draftVersion: 1, createdAt: "2026-09-06T00:00:00.000Z" })
+  })
+  store.mutate(id, (state) => {
+    state.revision = 2; state.confirmedVersion = null
+    state.drafts.push({ version: 2, revision: 2, title: "第二版", markdown: "# 第二版", brief: secondBrief })
+  })
+  assert.throws(() => store.mutate(id, (state) => {
+    state.revision = 3
+    state.drafts.push({ version: 3, revision: 3, title: "不应提交", markdown: "# 回滚", brief: brief("错误版本") })
+    state.confirmedVersion = 99
+  }))
+  await store.close()
+  const restored = await ProductStore.open(directory)
+  try {
+    const state = restored.snapshot(id)
+    assert.deepEqual(state.drafts.map((draft) => [draft.version, draft.brief]), [[1, firstBrief], [2, secondBrief]])
+    assert.equal(state.confirmedVersion, null)
+    assert.equal(state.decisions[0]?.draftVersion, 1)
+  } finally { await restored.close() }
 }))
 test("同一产品数据只能有一个协调服务，关闭后可重新打开", async () => fixture(async (store, directory) => {
   const id = store.taskAction({ type: "create", requestId: randomUUID() })
@@ -68,7 +169,7 @@ test("任务投影在事务和进程重启后仍按 taskId 隔离", async () => 
   store.mutate(first, (state) => {
     state.revision = 1
     state.messages.push({ id: "first-user", role: "user", text: "只属于任务一", status: "complete", question: null, draftVersion: null })
-    state.drafts.push({ version: 1, revision: 1, title: "任务一草稿", markdown: "# 任务一" })
+    state.drafts.push({ version: 1, revision: 1, title: "任务一草稿", markdown: "# 任务一", brief: null })
     state.confirmedVersion = 1
   })
   assert.deepEqual(store.snapshot(second), secondBefore)
@@ -84,11 +185,16 @@ test("任务投影在事务和进程重启后仍按 taskId 隔离", async () => 
   } finally { await restored.close() }
 }))
 test("旧单会话导入保留原件，重复执行和重启不重复导入、不覆盖后续修改", async () => fixture(async (store, directory) => {
-  const value = JSON.stringify({ ...emptyInterview, revision: 1, messages: [{ id: "u", role: "user", text: "只抓公开资料", status: "complete", question: null, draftVersion: null }] })
+  const value = JSON.stringify({ ...emptyInterview, revision: 1, confirmedVersion: 1,
+    drafts: [{ version: 1, revision: 1, title: "旧草稿", markdown: "# 只抓公开资料" }],
+    messages: [{ id: "u", role: "user", text: "只抓公开资料", status: "complete", question: null, draftVersion: null }] })
   const file = path.join(directory, "interview.json")
   await writeFile(file, value)
   await importLegacy(store, directory)
   assert.equal(store.snapshot("legacy").messages[0]?.text, "只抓公开资料")
+  assert.equal(store.snapshot("legacy").drafts[0]?.brief, null)
+  assert.equal(store.snapshot("legacy").confirmedVersion, 1)
+  assert.equal(store.snapshot("legacy").decisions[0]?.draftVersion, 1)
   store.taskAction({ type: "rename", id: "legacy", title: "已迁入" })
   await importLegacy(store, directory)
   assert.equal(store.list()[0]?.title, "已迁入")
