@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { setTimeout as delay } from "node:timers/promises"
 import assert from "node:assert/strict"
-import { createApplication } from "../src/app.js"
+import { createApplication, type AppOptions } from "../src/app.js"
 import { succeeded, brief } from "./helpers.js"
 import type { ResearchDecision, ResearchRecord } from "@browser-capture/contracts/research"
 import type { CodexAppServerClient } from "@browser-capture/model-runtime"
@@ -25,13 +25,14 @@ export function decisionFor(prompt: string): ResearchDecision {
   result.assessment = { ...result.assessment, adopted: true, reason: "目录归属与入口可见", fields: [{ name: "名称", evidence }], enumeration: { name: "目录下一页", evidence } }
   return { ...result, action: "finish", query: null, reason: "已观察到规划所需目录和字段", coverage: ["目录", "发现目录"].map((objective) => ({ objective, observationIds: [current.id], reason: "真实目录包含名称和下一页" })) }
 }
-export async function researchFixture(serveUi = false) {
+export async function researchFixture(serveUi = false, planOptions: Pick<AppOptions, "planFactory" | "planExecutor"> = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-research-test-"))
   const fake = { url: "about:blank", restricted: false, failure: false, badStop: false, calls: [] as string[][], modelCalls: 0, closeCalls: 0,
     decide: async (prompt: string) => decisionFor(prompt), close: () => {} }
   const client: CodexAppServerClient = { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => { fake.closeCalls++; fake.close() },
     async *runTurn(prompt) { fake.modelCalls++; yield succeeded(await fake.decide(prompt)) } }
   const options = { root: fileURLToPath(new URL("../../..", import.meta.url)), directory, serveUi,
+    ...planOptions,
     modelFactory: async () => ({ client: { ...client, async *runTurn() { yield succeeded({ assistantText: "已整理", question: null, draft: { title: "目录调研", brief: sourceBrief } }) } }, dispose: async () => {} }),
     researchFactory: async () => ({ client, dispose: () => client.close() }),
     browserExecutor: async (args: readonly string[]) => {

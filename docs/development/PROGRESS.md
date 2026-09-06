@@ -1,5 +1,31 @@
 # 开发进度
 
+## F4 正式计划、独立授权与持久队列（2026-09-06）
+
+基于 master/42790f169cc28884238ba82ef2f1c7a645a8f049 的干净保存目录完成本阶段；项目命令始终 workdir=D:/work/browser-capture-tool。本 session 仅实现 F4，收尾后主动创建全新 F5 task，F5 完成再交接全新 F6；不 fork、不跨阶段并行、不推送。实际 turn_context `01a07596-ab8e-73c0-aace-3c42566478e5` 为 gpt-6-astra/high，本阶段没有开发子 agent。
+
+- 正式 API：GET/POST `/api/plan?taskId=...`。显式 generate 使用现有 Terra/medium，保存独立 plan_creation 审计；生成中/失败/停止/崩溃恢复可查。计划绑定需求版本/revision、来源版本/摘要，保留完整需求、来源观察、步骤依赖、字段/目标/缺口映射、输入输出、终止/预算/风险。代表页字段和按确认规则生成的说明分别处理；F3 partial 不被一律拒绝，真正的用户待决缺口阻塞启动。
+- 授权与执行：用户审阅后显式 start，将计划摘要、需求与来源版本、本次预算及队列记录原子提交。每计划一个初始授权，不同幂等键重复点击也不产生新运行。SQLite v5 的任务待处理/全局running约束与 BrowserService/Host 互斥共同保护；非调研调用必须核验队列授权。取消、版本变化、重启不会重放旧授权。
+- F4 阶段出口：默认 PlanExecutor 未接入，授权持久 queued，界面明确等待探索执行器且尚未开始抓取。可注入的测试处理器证明 FIFO、单浏览器与停止回收；真实动作探索、图/DSL、逐步骤模型预算消费、换输入验证与完整生命周期由下一 F5/F6 实现。授权预算不是完整目录一定可在本次完成的承诺，达到上限应保留剩余目标并暂停。
+- 界面：正式计划替换空结构样例，来源 partial 可进入计划页；步骤详情、完整范围、缺口分类、预算、授权/停止与版本选择都读取正式事实。任务摘要反映计划/排队/浏览器状态。修复共享 DetailPane 在窄屏没有 Dialog.Trigger 时 Esc 关闭不返回入口焦点的问题。
+
+| 验证 | 结果与边界 |
+| --- | --- |
+| 普通测试 | 累计140项通过：API51、workbench30、browser13、contracts10、model-runtime24、runtime12。整仓npm test通过后新增2项API崩溃/迁移测试；最终API51、workbench30及计划7项针对性复核通过，无失败/跳过。类型检查与构建通过，git diff检查通过 |
+| 协议/持久化 | 完整字段与目标映射、伪造来源/字段拒绝、依赖环/预算越界、partial执行/派生与blocking、跨任务、过期摘要、同键与不同键防重、归档保护、取消/晚到结果、需求与来源变更、队列重启保留通过 |
+| 故障与调度 | 真实Node子进程走正式任务→替身来源→计划/授权路径后SIGKILL，锁窗口后生成/运行恢复interrupted，未回报调用保持null；不直接写库制造成功。v4→v5原子迁移/冲突回滚通过；FIFO第二任务等首任务取消及浏览器finally回收后启动 |
+| 真实规划 | `node --import tsx apps/api/tests/real-plan.ts --real`通过。沿用F3隔离正式任务fff00875-4d68-4fcd-ab82-340eedb57f4b、来源ee54ab2a-0d04-4aee-bd83-7bb37c3f81ed/v1。计划f9f99277-d24f-44d8-8d75-e027d1d3cf33/v1为ready，3步骤：完整目录枚举→逐商品字段复核→缺失说明及覆盖验收。名称/型号/链接3页面字段和1规则派生字段全部保留；3个gap分别execution/execution/derived。实际1次Terra/medium调用，无新增浏览器命令 |
+| 真实授权与重启 | 正式start重复请求仅生成执行6f45f603-298b-4beb-a047-92a4593ce439，queued；总预算480条底层命令/300000ms/6次首次探索模型调用。`real-plan-reopen.ts`重开服务后计划/授权逐项一致，重新校验真实引用通过，未触发模型/浏览器。隔离验收任务的需求事实不变 |
+| 浏览器UI | `pwsh -NoProfile -File apps/workbench/tests/browser-f4.ps1`20项断言通过：空态、生成、取消、失败重试、预算审阅、步骤来源详情、唯一授权canonical核对、排队刷新、390px无溢出、抽屉/Esc/焦点返回、停止队列、来源版本更新、阻塞缺口、需求失效及跨任务。UI模型和来源页面是明确替身，所有状态经正式API生成 |
+| 真实内容布局 | `browser-f4-real-view.ps1`读取真实计划与授权，宽屏和390px长文本无横向溢出；检查480命令预算、真实queued与派生规则。截图work/f4-real-plan-{wide,390}.png及work/f4-ui-390.png已视觉核验；所有BrowserSkill会话finally关闭，隔离4176/4177/4178均关闭 |
+| 已处理失败 | 初次类型检查发现exactOptionalPropertyTypes的undefined选项；迁移旧断言期待v4；浏览器脚本初始语义树省略任务按钮、来源版本轮询和侧栏动画时序；均修复并复验。Esc焦点返回为实际组件缺口，已修复。不把命令ACK或轮询前旧状态当验收成功 |
+| 基线提示 | Vite既有主块超过500kB提示保留，本次约947.58kB，未开展包体积优化 |
+| 未测/接续 | F5真实动作探索、步骤模型路由及预算执行、图/DSL与换输入验证；F6全目录末页与全量、真实登录恢复、第二站点、断点恢复/复跑/修复。F4 queued不冒充运行完成。模型自由文本语义仍需审阅，结构校验不证明所有措辞正确 |
+
+真实证据保留在忽略目录 `work/f3-real-1788678265551/{f4-plan-v1,f4-acceptance,f4-reopen}.json`。不应重复执行real-plan.ts来读取现有状态；它会创建新计划，已有待处理授权时正式门禁会拒绝。只读复核用real-plan-reopen.ts。F5可沿此隔离验收任务继续，不能把它混入用户data。
+
+服务收尾：备份SQLite到work/f4-before-api-restart.sqlite，核验无活动访谈/调研/浏览器后更新API。两个用户任务的完整访谈、浏览器与调研JSON哈希前后相同，证据work/f4-user-state-{before,after}.json仅保存哈希。没有替用户确认草稿、生成计划或新增授权。API4175/PID18016，Web4173/PID22976；4173同源health和新/api/plan通过，PID仅作本次快照。用户data与旧JSON原件保留。
+
 更新日期：2026-09-06。
 
 ## F3 真实来源调研（2026-09-06）

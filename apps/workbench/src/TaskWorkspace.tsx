@@ -5,7 +5,8 @@ import { useInterview } from "./useInterview.js"
 import { ChatTimeline } from "./ChatTimeline.js"
 import { DraftDialog } from "./DraftDialog.js"
 import { ChainView } from "./ChainView.js"
-import { Plan, Results, Sources } from "./ArtifactViews.js"
+import { Results, Sources } from "./ArtifactViews.js"
+import { Plan } from "./Plan.js"
 import type { StepId } from "./chainData.js"
 import type { TaskSummary } from "./taskContract.js"
 
@@ -30,7 +31,7 @@ export function TaskWorkspace({ task, visible, theme, otherRunning }: { task: Ta
         <Tabs.List aria-label="工作台视图">{views.map(({ id, name, icon: Icon }) => <Tabs.Trigger key={id} value={id} onClick={() => setActiveTab(id)}><Icon size={15} />{name}</Tabs.Trigger>)}</Tabs.List>
         <Tabs.Content value="interview" forceMount hidden={activeTab !== "interview"}><ChatTimeline interview={interview} onSources={() => setActiveTab("sources")} onDraft={openDraft} blocked={Boolean(blocked)} readOnly={task.archived} /></Tabs.Content>
         <Tabs.Content value="sources" forceMount hidden={activeTab !== "sources"}><Sources revision={interview.state.revision} readOnly={task.archived} onPlan={() => setActiveTab("plan")} taskId={task.id} active={visible && activeTab === "sources"} confirmedVersion={interview.state.confirmedVersion} onInterview={() => setActiveTab("interview")} onDraft={() => openDraft()} /></Tabs.Content>
-        <Tabs.Content value="plan" forceMount hidden={activeTab !== "plan"}><Plan onSources={() => setActiveTab("sources")} onChain={(value) => { setStep(value); setChainSample(true); setActiveTab("nodes") }} /></Tabs.Content>
+        <Tabs.Content value="plan" forceMount hidden={activeTab !== "plan"}><Plan taskId={task.id} active={visible && activeTab === "plan"} readOnly={task.archived} onSources={() => setActiveTab("sources")} /></Tabs.Content>
         <Tabs.Content value="nodes" forceMount hidden={activeTab !== "nodes"}><ChainView step={step} onStep={setStep} theme={theme} selected={selected} inspectorOpen={inspectorOpen} sample={chainSample} onSample={setChainSample} active={visible && activeTab === "nodes"} onPlan={() => setActiveTab("plan")} onClose={() => setInspectorOpen(false)} onSelect={(id, node) => { setSelected((value) => ({ ...value, [id]: node })); setInspectorOpen(true) }} /></Tabs.Content>
         <Tabs.Content value="results" forceMount hidden={activeTab !== "results"}><Results state={interview.state} active={visible && activeTab === "results"} onPlan={() => setActiveTab("plan")} /></Tabs.Content>
       </Tabs.Root>

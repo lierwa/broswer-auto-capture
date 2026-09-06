@@ -2,6 +2,18 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-011 F4 正式计划与授权（2026-09-06）
+
+复用现有 Codex App Server Terra/medium、Zod、SQLite/Drizzle、BrowserService 和 Radix；未新增运行依赖。计划制定是独立的 `plan_creation` 用途，一次显式模型判断，在服务端校验后持久化；规划不打开浏览器。输入为已确认 RequirementBrief 与真实 ResearchRecord；模型不接收宿主工具、原始页面、任意 URL 执行能力或数据库写能力。
+
+计划保存需求版本/revision、来源 id/version/内容摘要、完整需求、采纳来源、步骤图及字段/目标/缺口处理。每项需求字段和调研目标必须完整唯一映射；页面字段必须有同名实际来源依据。派生或允许缺失字段须引用已确认 constraints/proposedDefaults 的索引，页面字段与说明输出分别展示。每个来源 gap 都需解释并分配执行、派生或阻塞；requiresUser 的缺口必须阻塞。该机制结合模型语义判断、结构校验和用户审阅，不声称自由文本的所有语义均由静态规则证明。
+
+预算以现有 BrowserHost 的单会话硬边界为上限：全部步骤合计最多 500 条底层命令、300000ms、12 次首次探索模型调用，计划可更保守。预算不改变完整目标；耗尽应暂停并保留剩余范围，扩预算或新增来源产生新计划与授权。F4 校验/保存逐步骤预算，浏览器入口执行本次总命令/时间上限；逐步骤模型调用门、探索、验证和恢复接续由 F5/F6 执行器实现。当前真实验收计划的总预算为 480 条、300000ms、6 次探索调用，不表示足以完成整个目录。
+
+SQLite v5 原子增加 plans/executions；授权、队列与请求幂等在同一事务提交。唯一约束限定每计划一个初始授权、每任务一个待处理执行及全局一个 running。FIFO 队列复用已有 BrowserService 的进程内锁及 BrowserHost 的跨实例锁，清理待完成时不占用浏览器。非 source_research 浏览器调用必须通过队列校验 task/run/版本/来源域/预算，F4 只为已绑定 running 的 exploration 放行。
+
+F4 默认没有 PlanExecutor，授权记录持久停留 queued 并显示“等待探索执行器接入；尚未开始抓取”；`PlanExecutor` 是 F5 注入的内部依赖。测试处理器只验证串行调度、取消与回收，不是站点探索证明。进程重启时 generating/running 分别转 interrupted，queued 保留；需求/新来源使旧计划待复核，尚未开始的旧授权由队列转 stale。恢复不自动重放。真实范围、预算与队列证据见 PROGRESS。
+
 ## R-010 F3 真实来源调研（2026-09-06）
 
 复用 BrowserService、BrowserSkill 0.2.0、SQLite/Drizzle、现有 Codex App Server 和 Radix；未新增运行依赖。正式入口为 GET/POST `/api/research?taskId=...`。模型仍通过 [App Server 的结构化输出](https://learn.chatgpt.com/docs/app-server) 返回判断，沿用 Terra/medium；首次操作探索 Sol/high 与显式节点 Luna/medium 仍由后续阶段实现。宿主 shell、插件和网页搜索工具保持禁用，浏览器动作全部经过受控服务。

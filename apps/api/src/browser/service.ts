@@ -1,6 +1,6 @@
 import path from "node:path"
 import { desc, eq, sql } from "drizzle-orm"
-import { BrowserHost, BrowserError, grantSchema, type BrowserSession, type CommandExecutor } from "@browser-capture/browser"
+import { BrowserHost, BrowserError, grantSchema, type BrowserGrant, type BrowserSession, type CommandExecutor } from "@browser-capture/browser"
 import { browserControlSchema, browserRecordSchema, browserStatusSchema, type BrowserRecord } from "@browser-capture/contracts/browser"
 import { taskIdSchema } from "@browser-capture/contracts/task"
 import { ProductStore } from "../database/store.js"
@@ -10,6 +10,9 @@ import { conflict } from "../errors.js"
 export class BrowserService {
   private host: BrowserHost
   private active: { taskId: string; runId: string; controller: AbortController; done: Promise<void> } | null = null
+  private authorize: (grant: BrowserGrant) => void = () => { throw new BrowserError("permission_denied") }
+  setAuthorizationValidator(validate: (grant: BrowserGrant) => void) { this.authorize = validate }
+  owner() { return this.active ? { taskId: this.active.taskId, runId: this.active.runId } : null }
   constructor(private store: ProductStore, directory: string, execute: CommandExecutor) {
     this.host = new BrowserHost(path.join(directory, "browser"), execute)
     // WHY：进程重启不能把未提交的浏览器结果标成成功；所属 session 由独立命令日志负责核验和回收。
@@ -52,6 +55,7 @@ export class BrowserService {
     const validate = () => {
       const task = this.store.task(grant.taskId), state = this.store.snapshot(grant.taskId)
       if (task.archived || state.active || state.confirmedVersion !== grant.requirementVersion) throw new BrowserError("permission_denied")
+      if (grant.purpose !== "source_research") this.authorize(grant)
     }
     validate()
     if (this.active) throw new BrowserError("busy")

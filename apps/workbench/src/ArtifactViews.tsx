@@ -1,27 +1,11 @@
 import { useState } from "react"
 import { Badge, Button } from "@radix-ui/themes"
-import { ArrowRight, Database, FileSearch } from "lucide-react"
-import { planSteps, type StepId } from "./chainData.js"
+import { ArrowRight, Database } from "lucide-react"
 import { DetailPane } from "./DetailPane.js"
 import type { InterviewState } from "./interviewContract.js"
 
 
 export { Sources } from "./Sources.js"
-
-export function Plan({ onChain, onSources }: { onChain: (step: StepId) => void; onSources: () => void }) {
-  const [sample, setSample] = useState(false)
-  return <section className="artifact-view" aria-label="抓取计划">
-    <header className="view-heading"><h2>抓取计划</h2><Button variant="ghost" color="gray" onClick={() => setSample(!sample)}>{sample ? "收起步骤结构样例" : "查看步骤结构样例"}</Button></header>
-    {!sample ? <div className="stage-empty"><FileSearch size={26} /><h3>还没有正式抓取计划</h3><p>计划需要绑定当前需求和真实来源证据，明确步骤依赖、结果与停止条件。</p><Button variant="soft" onClick={onSources}>查看来源调研<ArrowRight size={14} /></Button></div> : <>
-      <p className="sample-notice">结构样例 · 以下冰箱步骤仅说明结构，不属于当前任务的正式计划。</p>
-      <div className="plan-dependency"><span>01 枚举商品</span><ArrowRight size={16} /><div><span>02 商品详情</span><span>03 商品评价</span></div></div>
-      <div className="plan-cards">{planSteps.map((step, index) => <article className="plan-card" key={step.id}>
-        <header><span className="large-number">0{index + 1}</span><div><h3>{step.title}</h3><span className="muted">{step.input} → {step.output}</span></div><Button size="1" variant="ghost" onClick={() => onChain(step.id)}>查看链路<ArrowRight size={13} /></Button></header>
-        <details className="plan-detail"><summary>来源、预算与完成条件</summary><dl className="plan-fields"><div><dt>来源 / 依赖</dt><dd>{step.source} · {step.depends}</dd></div><div><dt>完成条件</dt><dd>{step.finish}</dd></div><div><dt>预算</dt><dd>{step.budget}</dd></div></dl></details>
-      </article>)}</div></>}
-    <div className="action-gate"><p>当前任务尚无来源证据与正式计划，不能启动浏览器。</p><Button disabled>确认计划并启动</Button></div>
-  </section>
-}
 
 export function Results({ state, active, onPlan }: { state: InterviewState; active: boolean; onPlan: () => void }) {
   const [sample, setSample] = useState(false)

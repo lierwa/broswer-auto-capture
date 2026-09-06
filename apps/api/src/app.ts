@@ -14,8 +14,10 @@ import { BrowserService } from "./browser/service.js"
 import { BrowserError, bskExecutor, type CommandExecutor } from "@browser-capture/browser"
 import { ResearchService } from "./research/service.js"
 import { researchModelFactory } from "./research/model.js"
+import { PlanService } from "./plan/service.js"
+import type { PlanExecutor } from "./plan/queue.js"
 
-export interface AppOptions { root: string; directory: string; modelFactory?: ModelSessionFactory; researchFactory?: ModelSessionFactory; browserExecutor?: CommandExecutor; serveUi?: boolean }
+export interface AppOptions { root: string; directory: string; modelFactory?: ModelSessionFactory; researchFactory?: ModelSessionFactory; planFactory?: ModelSessionFactory; planExecutor?: PlanExecutor; browserExecutor?: CommandExecutor; serveUi?: boolean }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
@@ -27,6 +29,9 @@ export async function createApplication(options: AppOptions) {
   let research: ResearchService
   try { research = new ResearchService(store, browser, coordinator, options.researchFactory ?? researchModelFactory(options.root)) }
   catch (error) { await browser.close(); await coordinator.close(); await store.close(); throw error }
+  let plan: PlanService
+  try { plan = new PlanService(store, research, browser, options.planFactory ?? researchModelFactory(options.root), options.planExecutor) }
+  catch (error) { await research.close(); await browser.close(); await coordinator.close(); await store.close(); throw error }
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
   app.addHook("onRequest", async (request, reply) => {
     const host = request.headers.host ?? ""
@@ -41,8 +46,8 @@ export async function createApplication(options: AppOptions) {
     const status = publicStatus(error)
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
-  routes(app, coordinator, browser, research)
-  app.addHook("preClose", async () => { await research.close(); await browser.close(); await coordinator.close() })
+  routes(app, coordinator, browser, research, plan)
+  app.addHook("preClose", async () => { await plan.close(); await research.close(); await browser.close(); await coordinator.close() })
   app.addHook("onClose", async () => { await store.close() })
   try {
     if (options.serveUi) {
@@ -51,7 +56,7 @@ export async function createApplication(options: AppOptions) {
         ? reply.sendFile("index.html") : reply.code(404).send({ error: "页面或接口不存在。", code: "not_found" }))
     }
     await app.ready()
-    return { app, coordinator, store, browser, research }
+    return { app, coordinator, store, browser, research, plan }
   } catch (error) { await app.close(); throw error }
 }
 function publicStatus(error: unknown) {
@@ -62,19 +67,21 @@ function publicStatus(error: unknown) {
 }
 const taskQuery = z.object({ taskId: taskIdSchema })
 const eventsQuery = taskQuery.extend({ after: z.coerce.number().int().min(-1).default(-1) })
-function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, research: ResearchService) {
+function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, research: ResearchService, plan: PlanService) {
   app.get("/api/health", () => ({ service: "browser-capture-api", version: 1 }))
-  app.get("/api/tasks", () => coordinator.list())
+  app.get("/api/tasks", () => plan.projectTasks(coordinator.list()))
   app.post("/api/tasks", (request) => {
     const command = taskCommandSchema.parse(request.body)
-    if (command.type === "archive" && (browser.isActive(command.id) || research.isActive(command.id))) throw new DomainError("browser_busy", "请先停止浏览器运行，再归档任务。", 409)
+    if (command.type === "archive" && command.archived && (browser.isActive(command.id) || research.isActive(command.id) || plan.isActive(command.id))) throw new DomainError("browser_busy", "请先停止计划或授权运行，再归档任务。", 409)
     const id = coordinator.taskAction(command)
-    return { id, tasks: coordinator.list() }
+    return { id, tasks: plan.projectTasks(coordinator.list()) }
   })
   app.get("/api/interview", (request) => coordinator.snapshot(taskQuery.parse(request.query).taskId))
   app.get("/api/browser", (request) => browser.snapshot(taskQuery.parse(request.query).taskId))
   app.post("/api/browser", (request) => browser.control(taskQuery.parse(request.query).taskId, request.body))
   app.get("/api/research", (request) => research.snapshot(taskQuery.parse(request.query).taskId))
+  app.get("/api/plan", (request) => plan.snapshot(taskQuery.parse(request.query).taskId))
+  app.post("/api/plan", (request, reply) => reply.code(202).send(plan.dispatch(taskQuery.parse(request.query).taskId, request.body)))
   app.post("/api/research", async (request, reply) => reply.code(202).send(await research.dispatch(taskQuery.parse(request.query).taskId, request.body)))
   app.post("/api/interview", (request, reply) => {
     const id = taskQuery.parse(request.query).taskId, command = interviewCommandSchema.parse(request.body)
