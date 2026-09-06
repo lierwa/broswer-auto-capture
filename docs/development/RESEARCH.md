@@ -2,6 +2,16 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-009 F2 BrowserSkill 受控适配与生命周期（2026-09-06）
+
+采用固定 BrowserSkill CLI + Node spawn 参数数组的薄适配，复用已有 proper-lockfile 4.1.2 与 SQLite/Drizzle；不新增浏览器驱动或模型执行器。以实际 `session start/stop`、`tab list`、`observe`、`navigate/click/fill/press --help` 和本地真实页面核验协议。CLI 0.2.0、扩展 0.2.0、daemon protocol 1.1 当前 doctor 通过。命令形状通过 Zod 校验，语义动作重新观察，临时 ref 不作为外部输入；动作返回还校验 tab 归属。
+
+本机初始 CLI 0.1.11 出现更新提示但 Windows replacement helper 未完成替换。空 session 列表后停止 daemon，以[官方 0.2.0 release](https://github.com/Tencent/BrowserSkill/releases/tag/cli-v0.2.0) Windows 压缩包完成更新，下载 SHA-256 为 `57c0459711125c4a5c7f5759ef15b5e45c942e69afa43aaf22bfa06f7fec4590`，与 GitHub release asset digest 一致。旧二进制备份仅在忽略的 work/tools 中，不纳入交付。
+
+真实调试曾见输入命令返回但页面不变；只读命中检查指向自动化遮罩。[官方交互实现](https://github.com/Tencent/BrowserSkill/blob/cli-v0.2.0/apps/extension/src/tools/interaction.ts) 本身负责自动化期间遮罩与原生输入，产品没有注入遮罩修改脚本。不能由该观察推定每次失败原因相同；最终采用正常前台 session、最新语义定位与有界可见文本核验，通过真实 Enter 和 click 的两段导航。命令预算耗尽/就绪超时仍是失败，不能盲目重复点击或把命令 ACK 当业务完成。
+
+服务按任务/需求版本授予内部能力；HTTP 仅暴露状态及绑定 run 的停止/清理。所有权不明时阻止新任务；明确 session 才能做定向恢复。当前保守文本闸门只负责停止与待人工状态，F3 仍要用真实来源观察判断页面归属、字段和覆盖；完整实际站点、登录恢复与规模另设验收门。证据见 PROGRESS 的 F2 段。
+
 ## R-008 需求草稿可调宽抽屉（2026-09-06）
 
 草稿统一使用 Radix Dialog 管理模态、Esc 与焦点恢复；宽度拖拽复用 [re-resizable](https://github.com/bokuweb/re-resizable) 6.11.2 的 size、左侧 handle 与 onResizeStop。握柄使用 Radix IconButton 补充方向键/Home/End，业务层仅保存任务内宽度偏好并按视口约束。版本和节点选择复用现有 [Radix Select](https://www.radix-ui.com/themes/docs/components/select)。实际 TypeScript 与构建核验依赖 API，没有读取 node_modules。

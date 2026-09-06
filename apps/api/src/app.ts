@@ -10,13 +10,18 @@ import { importLegacy } from "./database/importLegacy.js"
 import { InterviewCoordinator } from "./interview/coordinator.js"
 import { modelSessionFactory, type ModelSessionFactory } from "./interview/modelSession.js"
 import { DomainError } from "./errors.js"
+import { BrowserService } from "./browser/service.js"
+import { BrowserError, bskExecutor, type CommandExecutor } from "@browser-capture/browser"
 
-export interface AppOptions { root: string; directory: string; modelFactory?: ModelSessionFactory; serveUi?: boolean }
+export interface AppOptions { root: string; directory: string; modelFactory?: ModelSessionFactory; browserExecutor?: CommandExecutor; serveUi?: boolean }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
   catch (error) { await store.close(); throw error }
   const coordinator = new InterviewCoordinator(store, options.modelFactory ?? modelSessionFactory(options.root))
+  let browser: BrowserService
+  try { browser = new BrowserService(store, options.directory, options.browserExecutor ?? bskExecutor(options.root)) }
+  catch (error) { await store.close(); throw error }
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
   app.addHook("onRequest", async (request, reply) => {
     const host = request.headers.host ?? ""
@@ -27,11 +32,12 @@ export async function createApplication(options: AppOptions) {
   })
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof DomainError) return reply.code(error.status).send({ error: error.message, code: error.code })
+    if (error instanceof BrowserError) return reply.code(409).send({ error: "浏览器操作未完成，请读取当前状态。", code: error.code })
     const status = publicStatus(error)
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
-  routes(app, coordinator)
-  app.addHook("preClose", async () => { await coordinator.close() })
+  routes(app, coordinator, browser)
+  app.addHook("preClose", async () => { await browser.close(); await coordinator.close() })
   app.addHook("onClose", async () => { await store.close() })
   try {
     if (options.serveUi) {
@@ -40,7 +46,7 @@ export async function createApplication(options: AppOptions) {
         ? reply.sendFile("index.html") : reply.code(404).send({ error: "页面或接口不存在。", code: "not_found" }))
     }
     await app.ready()
-    return { app, coordinator, store }
+    return { app, coordinator, store, browser }
   } catch (error) { await app.close(); throw error }
 }
 function publicStatus(error: unknown) {
@@ -51,14 +57,18 @@ function publicStatus(error: unknown) {
 }
 const taskQuery = z.object({ taskId: taskIdSchema })
 const eventsQuery = taskQuery.extend({ after: z.coerce.number().int().min(-1).default(-1) })
-function routes(app: FastifyInstance, coordinator: InterviewCoordinator) {
+function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService) {
   app.get("/api/health", () => ({ service: "browser-capture-api", version: 1 }))
   app.get("/api/tasks", () => coordinator.list())
   app.post("/api/tasks", (request) => {
-    const id = coordinator.taskAction(taskCommandSchema.parse(request.body))
+    const command = taskCommandSchema.parse(request.body)
+    if (command.type === "archive" && browser.isActive(command.id)) throw new DomainError("browser_busy", "请先停止浏览器运行，再归档任务。", 409)
+    const id = coordinator.taskAction(command)
     return { id, tasks: coordinator.list() }
   })
   app.get("/api/interview", (request) => coordinator.snapshot(taskQuery.parse(request.query).taskId))
+  app.get("/api/browser", (request) => browser.snapshot(taskQuery.parse(request.query).taskId))
+  app.post("/api/browser", (request) => browser.control(taskQuery.parse(request.query).taskId, request.body))
   app.post("/api/interview", (request, reply) => {
     const id = taskQuery.parse(request.query).taskId, command = interviewCommandSchema.parse(request.body)
     const state = coordinator.dispatch(id, command)

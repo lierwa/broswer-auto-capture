@@ -10,6 +10,7 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
+    "@browser-capture/browser": "0.0.0",
     "@browser-capture/contracts": "0.0.0",
     "@browser-capture/model-runtime": "0.0.0",
     "@fastify/static": "10.1.3",

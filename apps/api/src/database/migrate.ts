@@ -31,8 +31,15 @@ PRAGMA user_version = 2;
 
 export function migrate(connection: Database.Database) {
   const version = connection.pragma("user_version", { simple: true })
-  if (version === 2) return
-  if (version !== 0 && version !== 1) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
+  if (version === 3) return
+  if (version !== 0 && version !== 1 && version !== 2) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
   // WHY：结构变更也必须整体提交，不能让部分建表成为成功迁移标记。
-  connection.transaction(() => connection.exec(version === 0 ? schema : versionOneToTwo))()
+  connection.transaction(() => {
+    if (version === 0) connection.exec(schema)
+    if (version === 1) connection.exec(versionOneToTwo)
+    connection.exec(`CREATE TABLE browserRuns (runId TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id),
+      createdAt TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)));
+      CREATE INDEX browser_runs_task ON browserRuns(taskId,createdAt);
+      PRAGMA user_version = 3;`)
+  })()
 }

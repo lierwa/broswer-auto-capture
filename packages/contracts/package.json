@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./browser": "./src/browser.ts",
     "./interview": "./src/interview.ts",
     "./task": "./src/task.ts",
     "./run": "./src/run.ts",

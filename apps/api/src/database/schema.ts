@@ -1,5 +1,6 @@
 import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import type { InterviewMessage, RequirementBrief } from "@browser-capture/contracts/interview"
+import type { BrowserRecord } from "@browser-capture/contracts/browser"
 
 export const tasks = sqliteTable("tasks", {
   id: text().primaryKey(), title: text().notNull(), renamed: integer({ mode: "boolean" }).notNull(),
@@ -35,3 +36,6 @@ export const operations = sqliteTable("operations", {
   scope: text().notNull(), requestId: text().notNull(), digest: text().notNull(), resultId: text().notNull(),
 }, (table) => [primaryKey({ columns: [table.scope, table.requestId] })])
 export const imports = sqliteTable("imports", { id: text().primaryKey(), digest: text().notNull(), createdAt: text().notNull() })
+export const browserRuns = sqliteTable("browserRuns", {
+  runId: text().primaryKey(), taskId: taskId(), createdAt: text().notNull(), body: text({ mode: "json" }).$type<BrowserRecord>().notNull(),
+})

@@ -66,7 +66,7 @@ test("任务创建幂等，失败事务不改变消息/草稿/确认/事件序�
   assert.deepEqual(store.snapshot(id), before)
   assert.equal(store.list().length, 1)
 }))
-test("v1 数据库原子迁移到 v2，旧草稿和确认历史保留且迁移幂等", async () => {
+test("v1 数据库原子迁移到 v3，旧草稿和确认历史保留且迁移幂等", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-v1-migration-"))
   const file = path.join(directory, "workbench.sqlite")
   try {
@@ -83,7 +83,8 @@ test("v1 数据库原子迁移到 v2，旧草稿和确认历史保留且迁移�
     await reopened.close()
     const inspection = new Database(file, { readonly: true })
     try {
-      assert.equal(inspection.pragma("user_version", { simple: true }), 2)
+      assert.equal(inspection.pragma("user_version", { simple: true }), 3)
+      assert.deepEqual(inspection.prepare("SELECT * FROM browserRuns").all(), [])
       assert.equal(inspection.prepare("PRAGMA table_info(drafts)").all().filter((column: any) => column.name === "brief").length, 1)
     } finally { inspection.close() }
   } finally { await rm(directory, { recursive: true, force: true }) }
@@ -96,6 +97,20 @@ test("不兼容的 v1 迁移失败不提前版本号，也不改变已有行", (
     assert.equal(connection.pragma("user_version", { simple: true }), 1)
     assert.deepEqual(connection.prepare("SELECT taskId, version, brief FROM drafts").all(), [{ taskId: "old", version: 1, brief: null }])
   } finally { connection.close() }
+})
+
+test("已存在的 v2 数据库升级浏览器表，保留需求历史且可重复启动", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "browser-v2-migration-")), file = path.join(directory, "workbench.sqlite")
+  try {
+    createVersionOne(file)
+    const legacy = new Database(file)
+    try { legacy.exec("ALTER TABLE drafts ADD COLUMN brief TEXT; PRAGMA user_version=2") } finally { legacy.close() }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const store = await ProductStore.open(directory)
+      try { assert.equal(store.snapshot("v1-task").drafts[0]?.markdown, "# 原始内容"); assert.equal(store.snapshot("v1-task").confirmedVersion, 1) }
+      finally { await store.close() }
+    }
+  } finally { await rm(directory, { recursive: true, force: true }) }
 })
 test("结构化 brief 随草稿事务持久化，重启后按版本隔离并保留旧确认", async () => fixture(async (store, directory) => {
   const id = store.taskAction({ type: "create", requestId: randomUUID() })

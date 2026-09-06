@@ -4,10 +4,12 @@ import { ArrowRight, Database, FileSearch, Search } from "lucide-react"
 import { planSteps, type StepId } from "./chainData.js"
 import { DetailPane } from "./DetailPane.js"
 import type { InterviewState } from "./interviewContract.js"
+import { BrowserStatus } from "./BrowserStatus.js"
 
-export function Sources({ confirmedVersion, onInterview, onDraft }: { confirmedVersion: number | null; onInterview: () => void; onDraft: () => void }) {
+export function Sources({ confirmedVersion, onInterview, onDraft, taskId, active = false }: { confirmedVersion: number | null; onInterview: () => void; onDraft: () => void; taskId?: string; active?: boolean }) {
   return <section className="artifact-view" aria-label="来源调研">
     <header className="view-heading"><h2>来源调研</h2>{confirmedVersion && <Button variant="ghost" color="gray" onClick={onDraft}>需求 v{confirmedVersion}<ArrowRight size={14} /></Button>}</header>
+    {taskId && <BrowserStatus taskId={taskId} active={active} />}
     <div className="stage-empty"><Search size={26} /><h3>{confirmedVersion ? "范围已确认，准备核验来源" : "先明确这次任务的范围"}</h3><p>{confirmedVersion ? "当前任务尚无来源观察。真实来源调研服务还未接入，不能启动搜索或宣称页面已核验。" : "需求确认后，依据这份范围搜索真实入口、核验样本，并检查覆盖缺口。"}</p>
       {confirmedVersion ? <Button disabled>开始来源调研</Button> : <Button variant="soft" onClick={onInterview}>继续需求对话<ArrowRight size={14} /></Button>}
     </div>
