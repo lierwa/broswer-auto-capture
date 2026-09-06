@@ -31,8 +31,8 @@ PRAGMA user_version = 2;
 
 export function migrate(connection: Database.Database) {
   const version = connection.pragma("user_version", { simple: true })
-  if (version === 6) return
-  if (typeof version !== "number" || version < 0 || version > 5) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
+  if (version === 7) return
+  if (typeof version !== "number" || version < 0 || version > 6) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
   // WHY：结构变更也必须整体提交，不能让部分建表成为成功迁移标记。
   connection.transaction(() => {
     if (version === 0) connection.exec(schema)
@@ -50,7 +50,23 @@ export function migrate(connection: Database.Database) {
       CREATE UNIQUE INDEX one_running_execution ON executions((1)) WHERE status = 'running';
       CREATE UNIQUE INDEX one_pending_task ON executions(taskId) WHERE status IN ('queued','running','awaiting_next_stage','interrupted','manual_required','cleanup_required');
       PRAGMA user_version = 5;`)
-    connection.exec(`CREATE TABLE chains (id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), executionId TEXT NOT NULL REFERENCES executions(id), body TEXT NOT NULL CHECK(json_valid(body)));
+    if (version < 6) connection.exec(`CREATE TABLE chains (id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), executionId TEXT NOT NULL REFERENCES executions(id), body TEXT NOT NULL CHECK(json_valid(body)));
       CREATE INDEX chains_execution ON chains(executionId); PRAGMA user_version = 6;`)
+    // WHY：复跑属于独立运行；重建表解除每计划一个运行限制，同时保留链路外键与初次授权唯一性。
+    connection.exec(`CREATE TEMP TABLE saved_chains AS SELECT * FROM chains;
+      DROP TABLE chains;
+      CREATE TABLE executions_v7 (id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), planId TEXT NOT NULL REFERENCES plans(id),
+        status TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)));
+      INSERT INTO executions_v7 SELECT * FROM executions;
+      DROP TABLE executions;
+      ALTER TABLE executions_v7 RENAME TO executions;
+      CREATE UNIQUE INDEX one_initial_execution ON executions(planId) WHERE COALESCE(json_extract(body,'$.mode'),'initial')='initial';
+      CREATE UNIQUE INDEX one_running_execution ON executions((1)) WHERE status='running';
+      CREATE UNIQUE INDEX one_pending_task ON executions(taskId) WHERE status IN ('queued','running','awaiting_next_stage','interrupted','manual_required','cleanup_required','drift_paused');
+      CREATE TABLE chains (id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), executionId TEXT NOT NULL REFERENCES executions(id), body TEXT NOT NULL CHECK(json_valid(body)));
+      INSERT INTO chains SELECT * FROM saved_chains;
+      DROP TABLE saved_chains;
+      CREATE INDEX chains_execution ON chains(executionId);
+      PRAGMA user_version = 7;`)
   })()
 }

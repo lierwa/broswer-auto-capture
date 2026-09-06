@@ -47,10 +47,11 @@ function prompt(record: PlanRecord, source: ResearchRecord) {
     "fields 必须逐一映射 deliverables 的每一个字段（deliverable/field均从0开始）。有同名来源字段证据才 mode=observed；字段缺失说明等是 derived，并用 ruleIndex 引用 rules 的确切已确认规则。真实字段无证据时，仅用户已同意该字段缺失留空才 missing；不可借通用规则删掉必需来源或实体。其他情况用 blocking 缺口阻塞。",
     "objectives 必须逐一原样对应全部deliverables.entity和discoveryTasks.objective，引用source.coverage已有的观察及承担工作的步骤。缺少这些来源覆盖时不能伪造映射。",
     "source.gaps 全部按0起始gapIndex分类并解释：execution为正式枚举/末页/去重/全量验收尚未执行，分配步骤；derived为按确认规则生成的说明；blocking为访问限制、真实来源/必要字段或范围依据不足。requiresUser=true必须blocking。partial不代表不可计划，也不代表已完成全量。",
-    "每步明确目标、依赖、输入、输出、终止、风险及预算。终止必须包括业务范围终点和预算/人工/漂移闸门。预算是硬安全上限而非缩减范围或完成承诺：本次全部步骤合计最多500条底层浏览器命令、300000毫秒、12次探索模型调用；可保守分配，达到上限暂停并报告剩余范围，扩预算须新计划重新授权。maxCommands>=1 timeoutMs>=1000 maxModelCalls>=0。普通采集/派生不隐式调用模型；模型预算仅给首次探索，复跑显式LLM节点需后续独立协议。",
-    "F5 已接入逐步骤首次探索与固化链路验证。每一个尚无链路的步骤（包括collect/derive）都需要首次探索 maxModelCalls>=1；普通节点执行零模型不等于首次探索零模型。复杂枚举需多轮观察和编译，给它较多时间，后续字段/派生也需保留生成及换输入验证时间。全部步骤仍合计最多300000ms、500命令、12次探索。maxLlmCalls 是显式LLM节点的独立预算，普通网页提取与缺失说明填0；不得借首次探索预算调用显式LLM。全部显式预算合计最多12。",
-    "预算单位为底层CLI命令，不是业务节点：navigate约2条、page约5条、click约5条，样本与换输入验证都需要重新打开和读取。单浏览器步骤仅三次导航/读取已需至少21条，通常至少60条；模型每次需要约10至40秒。复杂枚举应有至少约150秒及多轮探索预算，采集与派生各保留生成/验证时间。可用3步参考分配：枚举180秒/8调用、采集90秒/2调用、派生30秒/1调用；根据实际操作调整，但总额不能超过原硬上限。",
+    "每步明确目标、依赖、输入、输出、终止、风险及预算。预算是硬上限而非缩减范围或完成承诺：全部步骤合计不能超过本次budgetCeiling；若提供stepBudgetLimits，同类步骤合计也不能超过对应额度，直接采用该申请分配作为三类步骤预算。达到上限暂停并报告剩余范围，扩预算须新计划重新授权。maxCommands>=1 timeoutMs>=1000 maxModelCalls>=0。",
+    "已接入逐步骤探索、固化验证及完整批量执行。每个尚无链路的步骤（包括collect/derive）需要首次探索maxModelCalls>=1；普通执行零模型与首次探索分别审计。时间预算须同时覆盖探索、代表窗口换输入验证和完整范围执行。maxLlmCalls为显式节点独立预算，普通网页提取与缺失说明填0，不能借探索预算调用显式LLM。",
+    "预算单位是底层CLI命令：navigate约2条、page约5条、click约5条，样本和换输入验证都重新打开读取。模型判断约10至50秒；完整详情每个输入通常至少7条命令。按完整目标估计消耗；不足时明确风险和剩余范围。存在stepBudgetLimits时用其完整已申请额度，不再套用早期代表样本预算。",
     "计划编排不执行抓取，正式授权后队列执行首次探索。风险说明代表页证据适用范围、页面变化、预算不足时保留部分结果及原完整目标。不要在计划中安排外部购买或写入。",
-    JSON.stringify({ requirement: record.requirement, rules: [...record.requirement.constraints, ...record.requirement.proposedDefaults], source: { ...source, candidates: undefined, audits: undefined } }),
+    JSON.stringify({ requirement: record.requirement, budgetCeiling: record.budgetCeiling, stepBudgetLimits: record.stepBudgetLimits,
+      rules: [...record.requirement.constraints, ...record.requirement.proposedDefaults], source: { ...source, candidates: undefined, audits: undefined } }),
   ].join("\n\n")
 }

@@ -17,6 +17,8 @@ export const actionNodeSchema = z.discriminatedUnion("kind", [
   base.extend({ kind: z.literal("extract_links"), ...next, pathPrefix: z.string().max(1000), pathSuffix: z.string().max(200), titleContains: z.string().max(300) }).strict(),
   base.extend({ kind: z.literal("extract_fields"), ...next, fields: z.array(captureFieldSchema).min(1).max(100) }).strict(),
   base.extend({ kind: z.literal("branch"), text, present: key, absent: key }).strict(),
+  base.extend({ kind: z.literal("branch_target"), target, available: key, unavailable: key }).strict(),
+  base.extend({ kind: z.literal("branch_page_changed"), changed: key, unchanged: key }).strict(),
   base.extend({ kind: z.literal("loop"), maxIterations: z.number().int().min(1).max(100), body: key, exhausted: key }).strict(),
   base.extend({ kind: z.literal("checkpoint"), ...next }).strict(),
   base.extend({ kind: z.literal("derive_missing"), ...next, outputField: text, ruleIndex: z.number().int().nonnegative() }).strict(),
@@ -32,7 +34,7 @@ export const explorationDecisionSchema = z.object({ action: z.enum(["command", "
     target: target.nullable(), value: z.string().max(2000) }).strict().nullable(),
   graph: actionGraphSchema.nullable(), sample: chainInputSchema.nullable(), verification: chainInputSchema.nullable(),
 }).strict()
-export const nodeEvidenceSchema = z.object({ nodeId: key, phase: z.enum(["sample", "verification"]), status: z.enum(["running", "passed", "failed"]),
+export const nodeEvidenceSchema = z.object({ nodeId: key, phase: z.enum(["sample", "verification", "execution"]), status: z.enum(["running", "passed", "failed"]),
   at: z.string().datetime(), detail: text, records: z.number().int().nonnegative() }).strict()
 export const captureRowSchema = z.object({ stableKey: text, url: z.string().url(), fields: z.record(z.string(), z.string()), missing: z.array(text) }).strict()
 export const chainRecordSchema = z.object({ id, taskId: taskIdSchema, executionId: id, planId: id, planVersion: z.number().int().positive(),
@@ -42,9 +44,9 @@ export const chainRecordSchema = z.object({ id, taskId: taskIdSchema, executionI
   sample: chainInputSchema.nullable(), verification: chainInputSchema.nullable(), sampleRows: z.array(captureRowSchema).max(1000), verificationRows: z.array(captureRowSchema).max(1000),
   observations: z.array(z.object({ url: z.string().url(), digest: z.string().length(64), at: z.string().datetime() }).strict()).max(100),
   decisions: z.array(z.object({ action: explorationDecisionSchema.shape.action, reason: text, commandType: text.nullable() }).strict()).default([]),
-  validationOutcomes: z.array(z.object({ phase: z.enum(["sample", "verification"]), termination: text, bounded: z.boolean(), rows: z.number().int().nonnegative() }).strict()).default([]),
+  validationOutcomes: z.array(z.object({ phase: z.enum(["sample", "verification"]), termination: text, bounded: z.boolean(), rows: z.number().int().nonnegative(), terminalDigest: z.string().length(64).nullable().optional() }).strict()).default([]),
   events: z.array(nodeEvidenceSchema).max(5000), consumed: z.object({ commands: z.number().int().nonnegative(), modelCalls: z.number().int().nonnegative(), elapsedMs: z.number().int().nonnegative() }).strict(),
-  audits: z.array(z.object({ purpose: z.enum(["exploration", "explicit_llm"]), nodeId: key.nullable(), phase: z.enum(["exploration", "sample", "verification"]),
+  audits: z.array(z.object({ purpose: z.enum(["exploration", "explicit_llm", "repair"]), nodeId: key.nullable(), phase: z.enum(["exploration", "sample", "verification", "execution"]),
     model: text, effort: text, invocations: z.number().int().nonnegative().nullable(), reportedModel: text.nullable(), reportedEffort: text.nullable(),
     status: z.enum(["intended", "completed", "interrupted", "failed"]) }).strict()),
 }).strict()

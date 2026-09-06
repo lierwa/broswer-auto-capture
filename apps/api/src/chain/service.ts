@@ -10,16 +10,20 @@ import type { PlanExecutor } from "../plan/queue.js"
 import { ChainRepository } from "./repository.js"
 import { chainModelFactory, modelDecision } from "./model.js"
 import { explore, remember, type StepContext } from "./exploration.js"
+import type { CaptureStep } from "@browser-capture/contracts/capture"
+import { executeCapture } from "../capture/executor.js"
 
 type ExecutionInput = Parameters<PlanExecutor>[0]
 export class ChainService {
   readonly repository: ChainRepository
   private explorationFactory: ModelSessionFactory
   private llmFactory: ModelSessionFactory
+  private repairFactory: ModelSessionFactory
   constructor(store: ProductStore, root: string, explorationFactory?: ModelSessionFactory, llmFactory?: ModelSessionFactory) {
     this.repository = new ChainRepository(store)
     this.explorationFactory = explorationFactory ?? chainModelFactory(root, "exploration")
     this.llmFactory = llmFactory ?? chainModelFactory(root, "explicit_llm")
+    this.repairFactory = explorationFactory ?? chainModelFactory(root, "repair")
   }
   snapshot(taskId: string, plan: PlanState) {
     const records = this.repository.list(taskId)
@@ -36,18 +40,32 @@ export class ChainService {
     }
     return { verified: true, reason: "各步骤已在记录的新输入上通过链路验证；完整范围的批量执行与结果验收由执行阶段继续。" }
   }
-  private async runStep(input: ExecutionInput, step: PlanProposal["steps"][number], rows: CaptureRow[]) {
-    const started = Date.now(), signal = AbortSignal.any([input.signal, AbortSignal.timeout(step.budget.timeoutMs)])
-    let calls = 0, llmCalls = 0, record = this.createRecord(input, step.id)
-    const save = () => { record.consumed.elapsedMs = Date.now() - Date.parse(record.createdAt); this.repository.save(record) }
-    input.browser.beginStep(step.budget.maxCommands, step.budget.timeoutMs, signal, () => { record.consumed.commands++; save() })
-    const context: StepContext = { plan: input.plan, step, record, rows, signal, save, current: null, known: new Set(), values: new Set(), history: [], rejected: null, lastFailure: null,
-      remaining: () => ({ modelCalls: step.budget.maxModelCalls - calls, timeMs: Math.max(0, step.budget.timeoutMs - (Date.now() - started)) }),
-      command: async (command) => { signal.throwIfAborted(); return input.browser.command(command) }, factory: this.explorationFactory,
+  executeBatch: PlanExecutor = (input) => executeCapture(input, this.repository, this.llmFactory,
+    (step, rows, progress, run) => this.runStep(input, step, rows, progress, run))
+  private async runStep(input: ExecutionInput, step: PlanProposal["steps"][number], rows: CaptureRow[], progress?: CaptureStep, run?: (context: StepContext) => Promise<void>) {
+    const started = Date.now(), priorElapsed = progress?.elapsedMs ?? 0, remainingTime = step.budget.timeoutMs - priorElapsed
+    if (remainingTime <= 0 || (progress?.commands ?? 0) >= step.budget.maxCommands) throw new BrowserError("budget_exceeded")
+    const signal = AbortSignal.any([input.signal, AbortSignal.timeout(remainingTime)])
+    let calls = progress?.explorationCalls ?? 0, llmCalls = progress?.llmCalls ?? 0, record = this.createRecord(input, step.id), validated = false
+    const save = () => {
+      record.consumed.elapsedMs = Date.now() - Date.parse(record.createdAt); this.repository.save(record)
+      if (progress) {
+        const history = this.repository.list(input.plan.taskId).filter((item) => item.executionId === input.execution.id && item.stepId === step.id).flatMap((item) => item.audits)
+        progress.audits = [...history, ...progress.audits.filter((audit) => audit.phase === "execution")]
+        progress.elapsedMs = priorElapsed + Date.now() - started; progress.activeSince = new Date().toISOString(); input.save()
+      }
+    }
+    input.browser.beginStep(step.budget.maxCommands - (progress?.commands ?? 0), remainingTime, signal, () => { record.consumed.commands++; if (progress) progress.commands++; save() })
+    const context: StepContext = { plan: input.plan, step, record, rows, signal, save, current: null, known: new Set(), values: new Set(), targets: new Set(), history: [], rejected: null, lastFailure: null,
+      priorCandidate: this.repository.candidate(input.plan, step),
+      remaining: () => ({ modelCalls: step.budget.maxModelCalls - calls, timeMs: Math.max(0, remainingTime - (Date.now() - started)) }),
+      command: async (command) => { signal.throwIfAborted(); return input.browser.command(command) }, factory: input.execution.mode === "repair" ? this.repairFactory : this.explorationFactory,
+      purpose: input.execution.mode === "repair" ? "repair" : "exploration",
       consumeModel: (purpose) => {
         const exceeded = purpose === "exploration" ? calls >= step.budget.maxModelCalls : llmCalls >= (step.budget.maxLlmCalls ?? 0)
         if (exceeded) throw new BrowserError("budget_exceeded")
         if (purpose === "exploration") calls++; else llmCalls++
+        if (progress) { progress.explorationCalls = calls; progress.llmCalls = llmCalls; input.save() }
       } }
     const sources = input.plan.sources.filter((source) => step.sourceIds.includes(source.id))
     for (const source of sources) context.known.add(source.url)
@@ -62,8 +80,12 @@ export class ChainService {
           await context.command({ type: "navigate", url: entry })
           remember(context, JSON.parse((await context.command({ type: "page" }))!))
         }
-        await explore(context); await this.validate(context); return
+        await explore(context); await this.validate(context); validated = true
+        if (progress) { progress.chainId = record.id; input.save() }
+        try { await run?.(context) } finally { save() }
+        return
       } catch (error) {
+        if (validated) throw error
         lastError = error; record.status = failureStatus(error, input.signal, signal)
         record.failureCode = record.status === "budget_exceeded" ? "budget_exceeded" : error instanceof BrowserError ? error.code : error instanceof Error && /^[a-z_]{1,80}$/.test(error.message) ? error.message : "step_failed"
         context.lastFailure = record.failureCode
@@ -105,7 +127,7 @@ export class ChainService {
         },
       }, phase, signal)
       if (phase === "sample") record.sampleRows = result.rows; else record.verificationRows = result.rows
-      record.validationOutcomes.push({ phase, termination: result.termination, bounded: result.termination === "validation_window", rows: result.rows.length })
+      record.validationOutcomes.push({ phase, termination: result.termination, bounded: result.termination === "validation_window", rows: result.rows.length, terminalDigest: result.pageDigest })
       save()
     }
     signal.throwIfAborted()
@@ -125,7 +147,7 @@ function failureStatus(error: unknown, parent: AbortSignal, signal: AbortSignal)
 }
 function failureReason(status: ChainRecord["status"]) {
   if (status === "budget_exceeded") return "本步骤预算已用尽；已验证步骤与完整剩余范围保留。调整预算需制定新计划并独立授权。"
-  if (status === "manual_required") return "页面需要人工处理登录或访问限制，已停止探索并保留证据。"
+  if (status === "manual_required") return "浏览器交互需要人工确认，已停止探索；具体原因见本步骤最后一条判断。"
   if (status === "cancelled") return "探索已停止，历史链路与验证证据保留。"
   return "本步骤探索、编译或验证未通过；已验证步骤保留，可查看失败节点与验证记录并复核计划。"
 }

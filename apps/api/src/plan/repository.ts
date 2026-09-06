@@ -13,6 +13,11 @@ export class PlanRepository {
     }
     for (const record of this.executions()) {
       if (record.status !== "running") continue
+      for (const step of record.capture?.steps ?? []) {
+        if (step.activeSince) { step.elapsedMs += Math.max(0, Date.now() - Date.parse(step.activeSince)); step.activeSince = null }
+        if (step.status === "running") step.status = "paused"
+        for (const audit of step.audits) if (audit.status === "intended") audit.status = "interrupted"
+      }
       record.status = "interrupted"; record.reason = "服务已重启，执行已中断；保留原授权，恢复前需要核验浏览器与检查点。"; this.saveExecution(record)
     }
   }

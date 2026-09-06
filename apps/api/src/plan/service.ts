@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { confirmedRequirement } from "@browser-capture/contracts/interview"
-import { planCommandSchema, planStateSchema, type PlanRecord, type PlanCommand, type ExecutionRecord } from "@browser-capture/contracts/plan"
+import { defaultPlanBudget, planCommandSchema, planStateSchema, type PlanRecord, type PlanCommand, type ExecutionRecord } from "@browser-capture/contracts/plan"
 import { taskIdSchema, type TaskSummary } from "@browser-capture/contracts/task"
 import type { ResearchService } from "../research/service.js"
 import type { BrowserService } from "../browser/service.js"
@@ -11,6 +11,7 @@ import { PlanRepository } from "./repository.js"
 import { generatePlan } from "./model.js"
 import { planDigest } from "./validation.js"
 import { ExecutionQueue, pendingExecution, type PlanExecutor } from "./queue.js"
+import { chains } from "../database/schema.js"
 
 export class PlanService {
   private repository: PlanRepository
@@ -66,7 +67,8 @@ export class PlanService {
     } else {
       if (this.store.operation(`plan:${taskId}`, command.requestId, command)) return this.snapshot(taskId)
       if (command.type === "generate") this.generate(taskId, command)
-      else this.start(taskId, command)
+      else if (command.type === "start") this.start(taskId, command)
+      else this.lifecycle(taskId, command)
     }
     return this.snapshot(taskId)
   }
@@ -79,6 +81,8 @@ export class PlanService {
       sourceId: source.id, sourceVersion: source.version, sourceDigest: digest(source), requirement: requirement.brief,
       sources: source.observations.filter((item) => !item.queryId && item.assessment?.adopted && item.assessment.access === "normal"), sourceGaps: source.gaps.map((item) => item.description),
       status: "generating", sequence: 0, createdAt: at, updatedAt: at, proposal: null, digest: null, reason: null,
+      budgetCeiling: command.budgetCeiling ?? defaultPlanBudget,
+      stepBudgetLimits: command.stepBudgetLimits ?? null,
       audit: { purpose: "plan_creation", model: "gpt-5.6-terra", effort: "medium", invocations: null, status: "intended", reportedModel: null, reportedEffort: null } }
     this.store.db.transaction(() => { this.repository.savePlan(record); this.store.recordOperation(`plan:${taskId}`, command.requestId, command, record.id) })
     const job = { record, controller: new AbortController(), done: Promise.resolve() }; this.jobs.set(taskId, job)
@@ -98,7 +102,46 @@ export class PlanService {
       const at = new Date().toISOString(), record: ExecutionRecord = { id: randomUUID(), taskId, planId: plan.id, planVersion: plan.version, planDigest: plan.digest,
         requirementVersion: plan.requirementVersion, requirementRevision: plan.requirementRevision, sourceId: plan.sourceId, sourceVersion: plan.sourceVersion,
         authorizedAt: at, requestId: command.requestId, budget: { ...budget, maxLlmCalls: plan.proposal.steps.reduce((sum, step) => sum + (step.budget.maxLlmCalls ?? 0), 0) }, status: "queued", sequence: 0, updatedAt: at,
-        reason: this.queue.available() ? "已授权，等待单浏览器执行位置。" : "已授权并持久排队，等待探索执行器接入；尚未开始抓取。" }
+        reason: this.queue.available() ? "已授权，等待单浏览器执行位置。" : "已授权并持久排队，等待探索执行器接入；尚未开始抓取。",
+        mode: "initial", parentExecutionId: null, attempt: 0, resumeRequested: false, repairStepId: null, capture: null, browserRunId: null, resumeAuthorizations: [] }
+      this.repository.saveExecution(record); this.store.recordOperation(`plan:${taskId}`, command.requestId, command, record.id)
+    })
+  }
+  private lifecycle(taskId: string, command: Extract<PlanCommand, { type: "resume" | "replay" | "repair" }>) {
+    this.store.db.transaction(() => {
+      const state = this.snapshot(taskId), previous = state.executions.find((item) => item.id === command.executionId)
+      const plan = state.records.find((item) => item.id === previous?.planId)
+      if (!previous || !plan || !this.valid(plan) || !plan.proposal || !plan.digest) conflict("请先复核当前需求与计划绑定。")
+      if (state.generating || state.executions.some((item) => item.id !== previous.id && pendingExecution(item))) conflict("当前任务已有待处理运行。")
+      if (["running", "queued"].includes(previous.status)) conflict("请等待或停止当前运行。")
+      if (command.type === "resume") {
+        if (previous.sequence !== command.sequence || !previous.capture || previous.status === "completed") conflict("请读取最新可恢复运行。")
+        const unfinished = previous.capture.steps.find((item) => item.status !== "completed")
+        const step = plan.proposal.steps.find((item) => item.id === unfinished?.stepId)
+        if (!unfinished || !step || unfinished.commands >= step.budget.maxCommands || unfinished.elapsedMs >= step.budget.timeoutMs) conflict("原步骤预算已用尽；请制定新计划并独立授权。")
+        if (!unfinished.chainId) conflict("当前步骤尚无已验证链路，请发起修复或复核新计划。")
+        previous.resumeRequested = true; previous.status = "queued"; previous.reason = "恢复已排队，将核验原运行的浏览器状态和检查点。"
+        previous.resumeAuthorizations.push({ requestId: command.requestId, authorizedAt: new Date().toISOString(), fromSequence: command.sequence })
+        this.repository.saveExecution(previous)
+        this.store.recordOperation(`plan:${taskId}`, command.requestId, command, previous.id); return
+      }
+      if (command.planDigest !== plan.digest) conflict("计划已更新，请重新审阅。")
+      if (command.type === "repair" && !plan.proposal.steps.some((step) => step.id === command.stepId)) conflict("修复步骤不属于计划。")
+      const versions = this.store.db.select().from(chains).all().map((row) => row.body).filter((item) => item.taskId === taskId && item.planId === plan.id && item.planDigest === plan.digest && item.status === "verified")
+      const bound = plan.proposal.steps.map((step) => {
+        const previousId = previous.capture?.steps.find((item) => item.stepId === step.id)?.chainId
+        const chain = previousId ? versions.find((item) => item.id === previousId) : versions.filter((item) => item.stepId === step.id).at(-1)
+        const repairing = command.type === "repair" && command.stepId === step.id
+        const followsRepair = command.type === "repair" && plan.proposal!.steps.findIndex((item) => item.id === step.id) > plan.proposal!.steps.findIndex((item) => item.id === command.stepId)
+        if (!chain && !repairing && !followsRepair) conflict("前置步骤需先具备已验证版本；请复核计划或修复缺失步骤。")
+        return { stepId: step.id, chainId: repairing ? null : chain?.id ?? null, status: "pending" as const, inputs: [], inputIndex: 0, rows: [], checkpoint: null,
+          commands: 0, elapsedMs: 0, activeSince: null, explorationCalls: 0, llmCalls: 0, termination: null, events: [], audits: [] }
+      })
+      if (pendingExecution(previous)) this.queue.cancel(previous)
+      const at = new Date().toISOString(), record: ExecutionRecord = { ...structuredClone(previous), id: randomUUID(), requestId: command.requestId,
+        mode: command.type, parentExecutionId: previous.id, repairStepId: command.type === "repair" ? command.stepId : null,
+        authorizedAt: at, updatedAt: at, sequence: 0, attempt: 0, browserRunId: null, resumeRequested: false, resumeAuthorizations: [], capture: { steps: bound, coverage: "pending", gaps: [], resumeChecks: [] },
+        status: "queued", reason: command.type === "repair" ? "已授权修复指定步骤并验证新版本，原运行历史保留。" : "已授权独立复跑，等待浏览器位置。" }
       this.repository.saveExecution(record); this.store.recordOperation(`plan:${taskId}`, command.requestId, command, record.id)
     })
   }

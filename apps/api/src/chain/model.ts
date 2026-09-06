@@ -13,8 +13,8 @@ export function chainModelFactory(root: string, purpose: ModelPurpose): ModelSes
     return { client, dispose: async () => { try { await client.close() } finally { await rm(directory, { recursive: true, force: true }) } } }
   }
 }
-export async function modelDecision<T>(input: { factory: ModelSessionFactory; schema: z.ZodType<T>; prompt: string; record: ChainRecord;
-  purpose: "exploration" | "explicit_llm"; phase: "exploration" | "sample" | "verification"; nodeId: string | null; signal: AbortSignal; save: () => void }) {
+export async function modelDecision<T>(input: { factory: ModelSessionFactory; schema: z.ZodType<T>; prompt: string; record: Pick<ChainRecord, "audits" | "consumed">;
+  purpose: "exploration" | "explicit_llm" | "repair"; phase: "exploration" | "sample" | "verification" | "execution"; nodeId: string | null; signal: AbortSignal; save: () => void }) {
   const { signal, record, purpose, save } = input, route = routeFor(purpose)
   const audit: ChainRecord["audits"][number] = { purpose, phase: input.phase, nodeId: input.nodeId, model: route.model, effort: route.effort,
     invocations: null, reportedModel: null, reportedEffort: null, status: "intended" }

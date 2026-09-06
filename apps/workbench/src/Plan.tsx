@@ -6,7 +6,7 @@ import { PlanConnection } from "./planConnection.js"
 import { DetailPane } from "./DetailPane.js"
 
 const labels = { generating: "正在制定计划", ready: "待确认", blocked: "来源缺口待处理", failed: "生成未通过", cancelled: "已停止生成", interrupted: "生成已中断" }
-const runLabels = { queued: "已授权 · 排队中", running: "正在探索与验证", awaiting_next_stage: "阶段结果待接续", interrupted: "运行已中断", cancelled: "已停止", stale: "授权绑定待复核", failed: "执行未完成", manual_required: "需要人工处理", cleanup_required: "会话待清理" }
+export const runLabels = { queued: "已授权 · 排队中", running: "正在执行", awaiting_next_stage: "阶段结果待接续", interrupted: "运行已中断", cancelled: "已停止", stale: "授权绑定待复核", failed: "执行未完成", manual_required: "需要人工处理", cleanup_required: "会话待清理", completed: "已完成", partial: "部分完成", drift_paused: "页面变化 · 已暂停" }
 const fieldLabels = { observed: "页面字段", derived: "按规则生成", missing: "按规则留空" }
 const gapLabels = { execution: "执行时核验", derived: "派生说明", blocking: "阻塞启动" }
 export function Plan({ taskId, active, readOnly, onSources }: { taskId: string; active: boolean; readOnly: boolean; onSources: () => void }) {

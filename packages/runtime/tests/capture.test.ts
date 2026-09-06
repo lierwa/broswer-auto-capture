@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { compileActionGraph, runActionGraph } from "../src/capture.js"
 import type { ActionGraph, ChainRecord } from "@browser-capture/contracts/chain"
+import type { CaptureCheckpoint } from "@browser-capture/contracts/capture"
 
 const loopGraph: ActionGraph = { entry: "open", coverage: "从输入页到实际末页", completion: "下一页消失且得到非空来源记录", maxTransitions: 300, nodes: [
   { id: "open", label: "打开", kind: "navigate", url: "$input.url", next: "loop" },
@@ -72,4 +73,52 @@ test("代表验证窗口在检查点保留部分记录，完整图继续保有�
   assert.ok(!env.events.some((event) => event.nodeId === "done"))
   const full = await runActionGraph(graph, { url: "https://example.com/catalog", value: "" }, env.dependencies, "sample", new AbortController().signal)
   assert.equal(full.termination, "实际末页"); assert.equal(full.rows.length, 31)
+})
+
+test("持久检查点恢复保留游标循环和去重；图输入或浏览器漂移拒绝执行", async () => {
+  const graph = structuredClone(loopGraph)
+  ;(graph.nodes.find((node) => node.id === "extract") as { next: string }).next = "checkpoint"
+  graph.nodes.push({ id: "checkpoint", kind: "checkpoint", label: "保存本页", next: "branch" })
+  const env = environment(5), controller = new AbortController(), input = { url: "https://example.com/catalog", value: "" }
+  let saved: CaptureCheckpoint | undefined
+  await assert.rejects(runActionGraph(graph, input, { ...env.dependencies, persist: (checkpoint) => { saved = checkpoint; controller.abort() } }, "execution", controller.signal))
+  assert.ok(saved); assert.equal(saved.cursor, "branch"); assert.equal(saved.rows.length, 2)
+  const before = env.events.length
+  await assert.rejects(runActionGraph(graph, input, { ...env.dependencies, resume: saved, verifyResume: async () => false }, "execution", new AbortController().signal), /browser_state_drift/)
+  assert.equal(env.events.length, before)
+  await assert.rejects(runActionGraph(graph, { ...input, value: "changed" }, { ...env.dependencies, resume: saved, verifyResume: async () => true }, "execution", new AbortController().signal), /checkpoint_binding/)
+  const result = await runActionGraph(graph, input, { ...env.dependencies, resume: saved, verifyResume: async () => true }, "execution", new AbortController().signal)
+  assert.equal(result.rows.length, 6); assert.equal(result.termination, "实际末页"); assert.equal(env.calls, 0)
+})
+
+test("语义末页分支区分存在、disabled和缺失控件，临时ref不进入图", async () => {
+  const graph = structuredClone(loopGraph)
+  graph.nodes = graph.nodes.map((node) => node.kind === "branch" ? { id: node.id, label: node.label, kind: "branch_target", target: { role: "link", name: "下一页" }, available: node.present, unavailable: node.absent } : node)
+  for (const ending of ['@e9 link "下一页" [disabled]', "目录结束"]) {
+    const env = environment(2), page = env.dependencies.page
+    const result = await runActionGraph(graph, { url: "https://example.com/catalog", value: "" }, { ...env.dependencies, page: (raw) => {
+      const value = page(raw); return { ...value, text: value.url.endsWith("page=1") ? '@e1 link "下一页"' : ending }
+    } }, "execution", new AbortController().signal)
+    assert.equal(result.rows.length, 3); assert.equal(env.events.filter((event) => event.status === "passed").at(-2)!.detail, "控件不可用：下一页")
+  }
+})
+
+test("下一页仍存在时以新旧语义页面比较终止，末页与换输入终态指纹一致", async () => {
+  const graph = structuredClone(loopGraph)
+  graph.nodes = graph.nodes.filter((node) => node.kind !== "branch")
+  ;(graph.nodes.find((node) => node.id === "extract") as { next: string }).next = "click"
+  ;(graph.nodes.find((node) => node.id === "click") as { next: string }).next = "read_next"
+  graph.nodes.push({ id: "read_next", label: "读取新页", kind: "read", next: "compare" },
+    { id: "compare", label: "比较翻页效果", kind: "branch_page_changed", changed: "loop", unchanged: "done" })
+  const env = environment(3), command = env.dependencies.command
+  let current = 1
+  const deps = { ...env.dependencies, command: async (raw: unknown) => {
+    const value = raw as { type: string; url: string }
+    if (value.type === "navigate") current = Number(new URL(value.url).searchParams.get("page") ?? "1")
+    if (value.type === "click" && current++ >= 3) return null
+    return command(raw)
+  } }
+  const full = await runActionGraph(graph, { url: "https://example.com/catalog", value: "" }, deps, "execution", new AbortController().signal)
+  const last = await runActionGraph(graph, { url: "https://example.com/catalog?page=3", value: "" }, deps, "verification", new AbortController().signal)
+  assert.equal(full.rows.length, 4); assert.equal(last.rows.length, 2); assert.equal(full.pageDigest, last.pageDigest)
 })

@@ -10,7 +10,7 @@ export const grantSchema = z.object({
     return ["http:", "https:"].includes(url.protocol) && url.origin === value
   })).max(64),
   actions: z.array(z.enum(["navigate", "observe", "click", "fill", "press", "page", "follow"])).min(1),
-  maxCommands: z.number().int().min(1).max(500), timeoutMs: z.number().int().min(1000).max(300_000),
+  maxCommands: z.number().int().min(1).max(3850), timeoutMs: z.number().int().min(1000).max(1_440_000),
 }).strict()
 export type BrowserGrant = z.infer<typeof grantSchema>
 export const targetSchema = z.object({ role: z.enum(["link", "button", "textbox", "combobox"]), name: z.string().min(1).max(300) }).strict()

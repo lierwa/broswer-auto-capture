@@ -47,5 +47,5 @@ export const researchRuns = sqliteTable("researchRuns", {
 })
 export const plans = sqliteTable("plans", { id: text().primaryKey(), taskId: taskId(), body: text({ mode: "json" }).$type<PlanRecord>().notNull() })
 export const chains = sqliteTable("chains", { id: text().primaryKey(), taskId: taskId(), executionId: text().notNull().references(() => executions.id), body: text({ mode: "json" }).$type<ChainRecord>().notNull() })
-export const executions = sqliteTable("executions", { id: text().primaryKey(), taskId: taskId(), planId: text().notNull().unique().references(() => plans.id),
+export const executions = sqliteTable("executions", { id: text().primaryKey(), taskId: taskId(), planId: text().notNull().references(() => plans.id),
   status: text().notNull(), body: text({ mode: "json" }).$type<ExecutionRecord>().notNull() })

@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./capture": "./src/capture.ts",
     "./chain": "./src/chain.ts",
     "./plan": "./src/plan.ts",
     "./research": "./src/research.ts",

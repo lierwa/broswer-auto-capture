@@ -34,7 +34,7 @@ export async function createApplication(options: AppOptions) {
   let chain: ChainService
   try {
     chain = new ChainService(store, options.root, options.explorationFactory, options.llmFactory)
-    plan = new PlanService(store, research, browser, options.planFactory ?? researchModelFactory(options.root), options.planExecutor === null ? undefined : options.planExecutor ?? chain.execute)
+    plan = new PlanService(store, research, browser, options.planFactory ?? researchModelFactory(options.root), options.planExecutor === null ? undefined : options.planExecutor ?? chain.executeBatch)
   }
   catch (error) { await research.close(); await browser.close(); await coordinator.close(); await store.close(); throw error }
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })

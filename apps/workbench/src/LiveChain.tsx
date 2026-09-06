@@ -9,6 +9,8 @@ export const chainLabels = { exploring: "正在探索", compiled: "已编译 · 
 function successors(node: ActionNode) {
   if (node.kind === "finish" || node.kind === "stop") return []
   if (node.kind === "branch") return [{ id: node.present, label: "满足" }, { id: node.absent, label: "不满足" }]
+  if (node.kind === "branch_target") return [{ id: node.available, label: "控件可用" }, { id: node.unavailable, label: "控件不可用" }]
+  if (node.kind === "branch_page_changed") return [{ id: node.changed, label: "页面变化" }, { id: node.unchanged, label: "页面未变化" }]
   if (node.kind === "loop") return [{ id: node.body, label: "继续" }, { id: node.exhausted, label: "预算闸门" }]
   return [{ id: node.next, label: "" }]
 }

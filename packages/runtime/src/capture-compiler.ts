@@ -3,6 +3,8 @@ import { actionGraphSchema, type ActionGraph, type ActionNode } from "@browser-c
 export function successors(node: ActionNode): string[] {
   if (node.kind === "finish" || node.kind === "stop") return []
   if (node.kind === "branch") return [node.present, node.absent]
+  if (node.kind === "branch_target") return [node.available, node.unavailable]
+  if (node.kind === "branch_page_changed") return [node.changed, node.unchanged]
   if (node.kind === "loop") return [node.body, node.exhausted]
   return [node.next]
 }

@@ -21,9 +21,9 @@ export function chainDecision(prompt: string): ExplorationDecision {
     sample: { url: step.kind === "enumerate" ? "https://example.com/catalog" : "https://example.com/item/one", value: "" },
     verification: { url: step.kind === "enumerate" ? "https://example.com/catalog?page=2" : "https://example.com/item/two", value: "" } }
 }
-export async function chainFixture(serveUi = false) {
+export async function chainFixture(serveUi = false, batch = false) {
   const fake = { calls: 0, llmCalls: 0, decide: async (prompt: string): Promise<unknown> => chainDecision(prompt), closed: 0 }
-  const fixture = await planFixture(serveUi, (input) => fixture.current.chain.execute(input), { explorationFactory: async () => ({
+  const fixture = await planFixture(serveUi, (input) => batch ? fixture.current.chain.executeBatch(input) : fixture.current.chain.execute(input), { explorationFactory: async () => ({
     client: { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => { fake.closed++ }, async *runTurn(prompt) {
       fake.calls++; const event = succeeded(await fake.decide(prompt)); if (event.type !== "turn_succeeded") throw new Error("fixture event"); yield { ...event, audit: { ...event.audit, requestedModel: "gpt-5.6-sol" as const, requestedEffort: "high" as const, reportedModel: "gpt-5.6-sol" as const, reportedEffort: "high" as const } }
     } }, dispose: async () => { fake.closed++ },

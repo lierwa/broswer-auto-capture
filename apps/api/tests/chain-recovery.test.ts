@@ -34,12 +34,12 @@ test("真实进程崩溃恢复探索为interrupted，未回报调用保持未知
     } finally { await app.app.close() }
   } finally { assert.ok(path.resolve(context.directory).startsWith(path.resolve(process.env.TEMP!))); await rm(context.directory, { recursive: true, force: true }) }
 })
-test("v5到v6链路迁移原子提交，表冲突回滚不损坏原计划授权", () => {
+test("v5到v7链路迁移原子提交，表冲突回滚不损坏原计划授权", () => {
   const db = new Database(":memory:")
   try {
-    db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY); CREATE TABLE executions(id TEXT PRIMARY KEY); INSERT INTO executions VALUES ('old'); PRAGMA user_version=5")
-    migrate(db); migrate(db); assert.equal(db.pragma("user_version", { simple: true }), 6)
-    assert.deepEqual(db.prepare("SELECT * FROM executions").all(), [{ id: "old" }])
+    db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY); INSERT INTO tasks VALUES ('task'); CREATE TABLE plans(id TEXT PRIMARY KEY); INSERT INTO plans VALUES ('plan'); CREATE TABLE executions(id TEXT PRIMARY KEY, taskId TEXT, planId TEXT, status TEXT, body TEXT); INSERT INTO executions VALUES ('old','task','plan','failed','{}'); PRAGMA user_version=5")
+    migrate(db); migrate(db); assert.equal(db.pragma("user_version", { simple: true }), 7)
+    assert.deepEqual(db.prepare("SELECT id FROM executions").all(), [{ id: "old" }])
     db.exec("PRAGMA user_version=5"); assert.throws(() => migrate(db)); assert.equal(db.pragma("user_version", { simple: true }), 5)
   } finally { db.close() }
 })

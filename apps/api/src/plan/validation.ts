@@ -4,6 +4,14 @@ import { digest } from "../database/store.js"
 
 export function validateProposal(raw: unknown, record: PlanRecord, source: ResearchRecord) {
   const proposal = planProposalSchema.parse(raw), brief = record.requirement
+  // WHY：程序可支持较大批量，但旧计划及默认计划仍绑定原上限；新预算只作用于显式请求的新版本。
+  for (const key of ["maxCommands", "timeoutMs", "maxModelCalls", "maxLlmCalls"] as const) {
+    if (proposal.steps.reduce((sum, step) => sum + (step.budget[key] ?? 0), 0) > (record.budgetCeiling[key] ?? 0)) throw new Error("计划超出本次申请预算")
+    for (const kind of ["enumerate", "collect", "derive"] as const) {
+      const limit = record.stepBudgetLimits?.[kind]
+      if (limit && proposal.steps.filter((step) => step.kind === kind).reduce((sum, step) => sum + (step.budget[key] ?? 0), 0) > (limit[key] ?? 0)) throw new Error("步骤类别超出申请预算")
+    }
+  }
   const adopted = source.observations.filter((item) => !item.queryId && item.assessment?.adopted && item.assessment.access === "normal")
   const sourceIds = new Set(adopted.map((item) => item.id)), stepIds = new Set(proposal.steps.map((item) => item.id))
   const sources = (ids: string[]) => { if (ids.some((id) => !sourceIds.has(id))) throw new Error("计划引用了未采纳来源") }

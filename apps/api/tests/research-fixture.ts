@@ -28,7 +28,7 @@ export function decisionFor(prompt: string): ResearchDecision {
 export async function researchFixture(serveUi = false, planOptions: Pick<AppOptions, "planFactory" | "planExecutor" | "explorationFactory" | "llmFactory"> = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-research-test-"))
   const fake = { url: "about:blank", restricted: false, failure: false, badStop: false, calls: [] as string[][], modelCalls: 0, closeCalls: 0,
-    decide: async (prompt: string) => decisionFor(prompt), close: () => {}, links: [] as { title: string; url: string }[], text: null as string | null, textForUrl: null as ((url: string) => string) | null, linksForUrl: null as ((url: string) => {title:string;url:string}[]) | null }
+    decide: async (prompt: string) => decisionFor(prompt), close: () => {}, beforeCommand: null as ((args: readonly string[]) => Promise<void>) | null, links: [] as { title: string; url: string }[], text: null as string | null, textForUrl: null as ((url: string) => string) | null, linksForUrl: null as ((url: string) => {title:string;url:string}[]) | null }
   const client: CodexAppServerClient = { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => { fake.closeCalls++; fake.close() },
     async *runTurn(prompt) { fake.modelCalls++; yield succeeded(await fake.decide(prompt)) } }
   const options = { root: fileURLToPath(new URL("../../..", import.meta.url)), directory, serveUi,
@@ -36,6 +36,7 @@ export async function researchFixture(serveUi = false, planOptions: Pick<AppOpti
     modelFactory: async () => ({ client: { ...client, async *runTurn() { yield succeeded({ assistantText: "已整理", question: null, draft: { title: "目录调研", brief: sourceBrief } }) } }, dispose: async () => {} }),
     researchFactory: async () => ({ client, dispose: () => client.close() }),
     browserExecutor: async (args: readonly string[]) => {
+      await fake.beforeCommand?.(args)
       fake.calls.push([...args])
       if (fake.failure && args[1] === "navigate") return { exitCode: 1, stdout: "{}" }
       const search = fake.url.startsWith("https://www.bing.com")
