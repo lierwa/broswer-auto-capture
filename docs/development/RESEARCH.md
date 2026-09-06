@@ -2,6 +2,10 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-008 需求草稿可调宽抽屉（2026-09-06）
+
+草稿统一使用 Radix Dialog 管理模态、Esc 与焦点恢复；宽度拖拽复用 [re-resizable](https://github.com/bokuweb/re-resizable) 6.11.2 的 size、左侧 handle 与 onResizeStop。握柄使用 Radix IconButton 补充方向键/Home/End，业务层仅保存任务内宽度偏好并按视口约束。版本和节点选择复用现有 [Radix Select](https://www.radix-ui.com/themes/docs/components/select)。实际 TypeScript 与构建核验依赖 API，没有读取 node_modules。
+
 ## R-007 目标驱动访谈与结构需求交接（2026-09-06）
 
 真实 Terra/medium 经正式 API 创建任务、持续对话与草稿落库验证。原先强制每个问题提供 2–3 个选项会把自由名称输入包装成无效操作选项；现在契约允许零选项，界面直接使用现有输入框。必要业务选择、系统调查事实及建议默认值分开处理。相同业务需求可以首轮出草稿，也可以补充一个必要名称后完成。

@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { Badge, Button } from "@radix-ui/themes"
+import { Badge, Button, Select } from "@radix-ui/themes"
 import { Background, Controls, ReactFlow } from "@xyflow/react"
 import { GitBranch } from "lucide-react"
 import { DetailPane } from "./DetailPane.js"
@@ -20,7 +20,7 @@ export function ChainView({ step, onStep, theme, selected, onSelect, inspectorOp
     <p className="sample-notice">结构样例 · 未验证，不属于当前任务的可执行链路。</p>
     <div className="step-switcher" aria-label="选择链路步骤">{planSteps.map((item, index) => <Button key={item.id} variant={step === item.id ? "soft" : "ghost"} color={step === item.id ? "amber" : "gray"} aria-pressed={step === item.id} onClick={() => onStep(item.id)}><span className="mono">0{index + 1}</span>{item.title}</Button>)}</div>
     <div className="chain-layout view-with-detail">
-      <div className="canvas-shell"><div className="canvas-heading"><span>点击节点查看详情</span><select aria-label="选择节点" value={inspectorOpen ? selectedIndex : ""} onChange={(event) => onSelect(step, Number(event.target.value))}><option value="" disabled>选择节点…</option>{graph.details.map((item, index) => <option key={index} value={index}>{item.title}</option>)}</select></div>
+      <div className="canvas-shell"><div className="canvas-heading"><span>点击节点查看详情</span><Select.Root value={inspectorOpen ? String(selectedIndex) : ""} onValueChange={(value) => onSelect(step, Number(value))}><Select.Trigger aria-label="选择节点" placeholder="选择节点…" /><Select.Content position="popper">{graph.details.map((item, index) => <Select.Item key={index} value={String(index)}>{item.title}</Select.Item>)}</Select.Content></Select.Root></div>
         <div className="flow-canvas" aria-label="抓取链路节点画布">
           {active && <ReactFlow key={step} nodes={graph.nodes.map((node, index) => ({ ...node, selected: inspectorOpen && index === selectedIndex }))} edges={graph.edges}
             colorMode={theme} fitView fitViewOptions={{ padding: 0.16 }} minZoom={0.3} maxZoom={1.8}

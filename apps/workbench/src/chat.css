@@ -55,7 +55,7 @@
 .draft-dialog { color: var(--sand-12); }
 .draft-dialog .section-line { align-items: flex-start; }
 .draft-version-label { display: flex; align-items: center; gap: 12px; margin: 24px 0 18px; font-size: 12px; color: var(--sand-11); }
-.draft-version-label select { flex: 1; border-color: var(--sand-6); background: var(--sand-2); color: var(--sand-12); }
+.draft-version-label .rt-SelectTrigger { flex: 1; min-width: 0; }
 .draft-document { max-height: 50dvh; overflow-y: auto; border-top: 1px solid var(--sand-6); border-bottom: 1px solid var(--sand-6); padding: 8px 0 22px; }
 .draft-document h3 { font-size: 16px; margin: 20px 0 8px; }
 .draft-document p { font-size: 13px; margin: 5px 0; white-space: pre-wrap; }

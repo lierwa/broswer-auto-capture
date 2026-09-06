@@ -43,10 +43,12 @@ try {
   Select-Task $legacyTitle
   Assert-Page 'document.querySelector(".task-workspace:not([hidden])").querySelectorAll(".chat-message").length === 6 && document.querySelectorAll(".task-workspace:not([hidden]) [role=tab]").length === 5' 'legacy-messages-and-five-views'
   Activate 'button' '需求草稿 · v2'
-  Assert-Page 'document.querySelector(".detail-pane") && !document.querySelector("[role=dialog]") && document.querySelector(".task-workspace:not([hidden]) .review-panel").getBoundingClientRect().width > 650' 'wide-draft-is-side-panel'
+  Assert-Page 'document.querySelector(".draft-drawer[role=dialog]") && !document.querySelector(".task-body > .detail-pane")' 'wide-draft-is-resizable-drawer'
   $versionRef = Find-Control 'combobox' '版本记录 [has-submenu]'
-  bsk select $versionRef --value '1' --session $SessionId | Out-Null
-  Assert-Page 'document.querySelector(".draft-dialog-footer button").disabled && document.querySelector(".draft-document").textContent.includes("20")' 'old-draft-read-only'
+  bsk press Enter --ref $versionRef --session $SessionId | Out-Null
+  bsk observe --session $SessionId | Out-Null
+  bsk click --selector '[role="option"]:first-child' --session $SessionId | Out-Null
+  Assert-Page 'document.querySelector(".draft-dialog-footer button").disabled && document.querySelector(".draft-document").textContent.includes("20") && !document.querySelector("[role=listbox]")' 'old-draft-read-only'
   bsk screenshot --session $SessionId --out D:/work/browser-capture-tool/work/ui-review/layout-draft-wide.png | Out-Null
   Activate 'button' '关闭需求草稿'
   $inputRef = Find-Control 'textbox' '输入需求或回答'
@@ -55,7 +57,9 @@ try {
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .empty-chain-canvas") !== null && document.querySelectorAll(".react-flow__node").length === 0' 'no-fake-task-chain'
   Activate 'button' '查看链路结构样例'
   $nodeRef = Find-Control 'combobox' '选择节点 [has-submenu]'
-  bsk select $nodeRef --value '3' --session $SessionId | Out-Null
+  bsk press Enter --ref $nodeRef --session $SessionId | Out-Null
+  bsk observe --session $SessionId | Out-Null
+  bsk click --selector '[role="option"]:nth-child(4)' --session $SessionId | Out-Null
   Assert-Page 'document.querySelectorAll(".react-flow__node").length === 6 && document.querySelector(".node-inspector").textContent.includes("还有下一页")' 'independent-node-canvas-and-condition-detail'
   Activate 'button' '新建需求'
   bsk observe --session $SessionId | Out-Null
@@ -74,7 +78,7 @@ try {
   Activate 'tab' '来源调研'
   Assert-Page '!document.querySelector(".task-workspace:not([hidden]) .supporting-detail").open && document.querySelector(".task-workspace:not([hidden]) [role=tab][data-state=active]").textContent.includes("来源调研")' 'source-detail-folded-by-default'
   Select-Task $legacyTitle
-  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [role=tab][data-state=active]").textContent.includes("抓取链路") && document.querySelector(".task-workspace:not([hidden]) select[aria-label=选择节点]").value === "3" && document.querySelectorAll(".react-flow__node").length === 6' 'task-A-tab-node-selection-retained'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [role=tab][data-state=active]").textContent.includes("抓取链路") && document.querySelector(".task-workspace:not([hidden]) [aria-label=选择节点]").textContent.includes("还有下一页") && document.querySelectorAll(".react-flow__node").length === 6' 'task-A-tab-node-selection-retained'
   Activate 'tab' '需求对话'
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .chat-input").value === "任务 A 尚未发送的补充"' 'task-A-unsent-input-retained'
   Select-Task $newTitle
@@ -116,7 +120,7 @@ try {
   Assert-Page 'document.querySelector(".task-nav-drawer") !== null' 'compact-task-list-is-left-drawer'
   Select-Task $legacyTitle
   Activate 'button' '需求草稿 · v2'
-  Assert-Page 'document.querySelector(".detail-drawer[role=dialog]") && !document.querySelector(".detail-pane") && document.documentElement.scrollWidth <= innerWidth' 'compact-draft-is-right-drawer'
+  Assert-Page 'document.querySelector(".draft-drawer[role=dialog]") && document.querySelector(".draft-drawer-body").offsetWidth <= innerWidth' 'compact-draft-is-right-drawer'
   bsk screenshot --session $SessionId --out D:/work/browser-capture-tool/work/ui-review/layout-draft-804.png | Out-Null
   bsk press Escape --session $SessionId | Out-Null
   Assert-Page '!document.querySelector("[role=dialog]") && document.activeElement.textContent.includes("需求草稿") && document.querySelector(".task-workspace:not([hidden]) .thread-bottom").getBoundingClientRect().bottom <= innerHeight' 'drawer-escape-restores-focus-and-composer'
