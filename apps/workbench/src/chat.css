@@ -3,26 +3,20 @@
 .review-panel [role="tabpanel"]:has(.interview-workspace) { overflow: hidden; }
 .interview-bar { height: 54px; flex-shrink: 0; padding: 0 28px; display: flex; justify-content: space-between; align-items: center; color: var(--color-text-muted); font-size: 12px; border-bottom: 1px solid var(--color-border); }
 .interview-bar > div { display: flex; align-items: center; gap: 8px; }
+.interview-notices { flex-shrink: 0; width: min(100%, 840px); margin: 0 auto; padding: 0 28px; }
+.interview-notices:empty { display: none; }
 .context-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-accent); }
-.interview-thread { min-height: 0; flex: 1; display: flex; flex-direction: column; }
-.thread-viewport { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
-.thread-column { width: min(100%, 840px); padding: 30px 28px 20px; margin: 0 auto; }
-.thread-welcome { padding: 28px 0 20px; max-width: 620px; }
-.welcome-mark { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-panel-raised); margin-bottom: 24px; color: var(--color-accent-foreground); }
-.thread-welcome h2 { font-size: 24px; font-weight: 500; letter-spacing: -.025em; }
-.thread-welcome p { color: var(--color-text-muted); font-size: 14px; margin-top: 16px; }
-.thread-welcome .welcome-example { font-size: 12px; padding: 14px 0; margin-top: 24px; border-top: 1px solid var(--color-border); }
-.chat-message { font-size: 14px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
-.user-message { width: fit-content; max-width: 85%; margin: 0 0 30px auto; padding: 11px 17px; border: 1px solid var(--color-border); background: var(--color-panel-raised); border-radius: 16px 16px 4px 16px; }
-.assistant-message { margin: 0 0 34px; width: 100%; }
-.assistant-label { display: flex; align-items: center; gap: 9px; font-size: 11px; color: var(--color-text-muted); margin-bottom: 10px; }
-.assistant-mark { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; color: var(--color-accent-foreground); background: var(--color-accent-muted); font-weight: 700; }
-.assistant-body { padding-left: 32px; }
+.interview-thread { min-height: 0; flex: 1; --chat-content-width: 784px; --chat-composer-width: 728px; }
+.interview-thread--time-incomplete [data-agent-turn-timestamp="true"] { display: none; }
+.thread-column { padding: 30px 28px 20px; }
+.thread-welcome { max-width: 620px; padding: 0 0 10px; }
+.thread-welcome h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.015em; }
+.thread-welcome p { margin: 6px 0 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.55; }
 .turn-status { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--color-text-muted); }
 .spin { animation: chat-spin 1.2s linear infinite; }
 @keyframes chat-spin { to { transform: rotate(360deg); } }
 .decision-block { margin-top: 18px; white-space: normal; }
-.decision-question { font-weight: 500; margin: 0 0 12px; }
+.decision-question { font-size: inherit; line-height: inherit; font-weight: 500; margin: 0 0 12px; }
 .decision-options { display: grid; gap: 8px; }
 .decision-option { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 13px 15px; text-align: left; color: var(--color-text); border: 1px solid var(--color-border); background: transparent; border-radius: 9px; }
 .decision-option:not(:disabled):hover { border-color: var(--color-accent); background: var(--color-panel-raised); }
@@ -37,15 +31,9 @@
 .draft-artifact strong { display: block; font-size: 13px; font-weight: 500; }
 .draft-artifact small { display: block; font-size: 11px; color: var(--color-text-muted); margin-top: 5px; }
 .thread-bottom { flex-shrink: 0; position: relative; width: min(100%, 840px); margin: 0 auto; padding: 8px 28px 17px; }
-.scroll-latest { position: absolute; top: -35px; left: calc(50% - 15px); display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--color-border); border-radius: 50%; background: var(--color-panel-raised); color: var(--color-text); box-shadow: var(--shadow-panel); }
-.scroll-latest:disabled { display: none; }
-.chat-composer { border: 1px solid var(--color-border); background: var(--color-panel-raised); border-radius: 14px; padding: 13px 13px 10px; }
-.chat-composer:focus-within { border-color: var(--color-focus); }
-.chat-input { color: var(--color-text); width: 100%; min-height: 48px; max-height: 150px; resize: none; border: 0; background: transparent; padding: 2px 3px; font-size: 14px; line-height: 1.65; outline: none; }
-.chat-input::placeholder { color: var(--color-text-muted); }
-.chat-composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--color-text-muted); font-size: 10px; }
-.send-message { display: grid; place-items: center; width: 32px; height: 32px; border: none; border-radius: 9px; color: var(--color-panel); background: var(--color-text); }
-.send-message:disabled { opacity: .3; cursor: default; }
+/* WHY：共享助手壳含 4px 水平内边距，正文左缘为 52px、右缘为 4px；Composer 同步这些边界。 */
+.thread-bottom [data-chat-composer-width] { width: calc(100% - 56px); transform: translateX(24px); }
+.interview-thread [data-interactive-timeline-composer-textarea="true"] { color: var(--color-text); font-size: 14px; line-height: 1.65; }
 .composer-caption { text-align: center; font-size: 10px; color: var(--color-text-muted); margin: 9px 0 0; }
 .thread-error { font-size: 13px; border-left: 2px solid var(--color-accent); padding: 10px 14px; margin-bottom: 16px; }
 .confirmed-next { display: flex; align-items: center; gap: 14px; padding: 18px 0; border-top: 1px solid var(--color-border); font-size: 12px; }
@@ -67,10 +55,9 @@
 @media (max-width: 600px) {
   .review-panel { height: calc(100dvh - 195px); min-height: 480px; }
   .thread-column { padding: 22px 16px 8px; }
-  .thread-bottom { padding: 8px 14px 12px; }
+  .thread-bottom { padding: 8px 16px 12px; }
+  .interview-notices { padding: 0 16px; }
   .interview-bar { padding: 0 16px; }
-  .assistant-body { padding-left: 0; }
-  .user-message { max-width: 90%; }
   .confirmed-next { flex-wrap: wrap; }
   .composer-caption { font-size: 9px; }
 }

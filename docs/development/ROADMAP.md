@@ -24,7 +24,7 @@ F6 已接通完整上游输入的批量执行、持久检查点、运行结果�
 ### F1 已实现（2026-09-06）
 
 - 输入：现有 taskContract/interviewContract、TaskService/InterviewService、useTasks/useInterview、官方模型 adapter 与已通过的 62 项测试；先查看实际 checkout 和差异，不从旧 HEAD 重建原型。
-- 实施范围：本项目正式本地 API、SQLite/Drizzle 持久边界、workbench 接口适配和所属测试。沿用已采用的模型、登录、私有 skill、assistant-ui、Radix 与 React Flow。
+- 实施范围：本项目正式本地 API、SQLite/Drizzle 持久边界、workbench 接口适配和所属测试。沿用已采用的模型、登录、私有 skill、AI Connect React 完整对话界面、Radix 与 React Flow。
 - 业务优先：保留任务、用户原文、轮次、建议/决策、待决事项、草稿版本及确认/失效语义；Decision/Unresolved 的具体表结构按当前业务不变量设计，不照搬相邻项目的商品领域。
 - 迁移和恢复：保留旧 JSON 原件，验证重复导入、失败回滚、取消后不提交草稿、服务重启后无永久 active；只对实际失败或缺口修复，不重写已正确工作的聊天交互。
 - 验收：协议与迁移测试、正式 API 集成测试、既有页面回归；普通测试使用替身。必要的真实模型验收另计用途和调用审计，不能用模型调用替代故障测试。
@@ -69,7 +69,7 @@ F1 已完成本地 API、事务、迁移、生命周期与界面验收，当前�
 | --- | --- | --- | --- | --- | --- |
 | S0-07 | S0-01、R-014现行实现核验 | `apps/api/src/ai/**`、`apps/api/src/interview/**` | AI Connect 账号选择、结构结果、typed event 与访谈流 | Sol high；Astra high集成 | API focused、typecheck、真实账号模型 smoke 与中断后进程退出 |
 | S0-08 | S0-02、S0-03 | `packages/runtime/**`、`packages/contracts/**` | LangGraph检查点/XState对照、真实调用边界审计；受控图校验 | Sol high；Astra high评审 | 25步以上循环、外部AbortSignal、独立运行/恢复隔离、调用审计拒绝伪零、跨进程恢复 |
-| S0-09 | S0-07、S0-04 | `apps/api/**`、`apps/workbench/**` | Fastify流式聊天与assistant-ui投影；用户会话事实源 | Sol high；Astra high集成 | 浏览器发送真实需求、收到流与已校验结果、取消不提交、重载保留会话 |
+| S0-09 | S0-07、S0-04 | `apps/api/**`、`apps/workbench/**` | Fastify流式聊天与AI Connect React受控投影；用户会话事实源 | Sol high；Astra high集成 | 浏览器发送真实需求、收到流与已校验结果、取消不提交、重载保留会话 |
 | S0-10 | S0-08、S0-09 | `packages/browser/**`、原型测试 | BrowserSkill受控命令边界、会话回收与权限 | Sol high；Astra high评审 | 限定session、语义定位刷新、登录/验证码暂停、零模型命令审计 |
 
 当前引擎已验证固定函数图、SQLite跨进程检查点和受控网关事件审计；尚未实现产品DSL编译与真实浏览器恢复。负责人同意原型先保留并转入功能开发，不表示所有状态已视觉签核。S0-07 的旧 App Server probe 已由 AI Connect focused 验证替代；正式 API/事务与生命周期沿 S0-09 继续验收。阶段0关键门均有证据后作选型评审；不将普通循环原型的0次网关事件称为真实站点零模型复跑。
@@ -85,7 +85,7 @@ F1 已完成本地 API、事务、迁移、生命周期与界面验收，当前�
 ### 本轮 UI 设计修订
 
 现行范围：需求与流程文档、Workbench 对话界面、本地 Fastify API、AI Connect 项目模型选择及所属测试；访谈、来源、计划和链路/采集共享同一模型端口，不修改相邻项目。
-产物：assistant-ui 连续时间线、正式访谈协议、版本化 Markdown 草稿与侧栏/抽屉审阅、本地多任务独立保存与旧单会话迁移、任务搜索/重命名/归档恢复、五视图上下文保持。全工作台的主层、折叠、侧栏、抽屉与短弹窗清单见 WORKBENCH_LAYOUT.md。
+产物：AI Connect React 连续时间线与Composer、正式访谈协议、版本化 Markdown 草稿与侧栏/抽屉审阅、本地多任务独立保存与旧单会话迁移、任务搜索/重命名/归档恢复、五视图上下文保持。全工作台的主层、折叠、侧栏、抽屉与短弹窗清单见 WORKBENCH_LAYOUT.md。
 验证：API/Workbench focused、类型检查与生产构建；真实多轮访谈、纠正/草稿确认/恢复；浏览器检查连续消息、文档层级、视图保持、节点选择、主题与窄屏。真实账号模型与完整业务浏览器验收仍单独设门。
 
 ## 阶段 2：真实来源验收

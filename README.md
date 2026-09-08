@@ -32,16 +32,16 @@
 
 ## 已确认的开发方向
 
-- 应用优先采用 TypeScript、Node.js 24、npm workspaces、React/Vite、Fastify 和 Zod；对话界面优先验证 assistant-ui，链路展示优先验证 React Flow。
+- 应用采用 TypeScript、Node.js 24、npm workspaces、React/Vite、Fastify 和 Zod；需求对话复用 AI Connect React 的完整 Timeline 与 Composer，链路展示使用 React Flow。
 - 数据采用 SQLite、Drizzle 和本地文件，具体驱动版本、并发行为与职责边界由原型确认。
 - 编排优先用 LangGraph JS 做最小原型，并以 XState 做对照；在原型通过前不视为最终选型。
 - 链路采用受控版本化节点图，记录已实现的浏览器动作及其参数、定位和提取规则；恢复按商品和步骤设置安全检查点。
 - 产品模型统一使用 `@agent-platform/ai-connect` 管理的本机账号与项目显式选择；访谈、调研、计划及一次执行内的探索/修复/验证冻结并复用同一选择，未选择或调用失败均明确返回，不自动改选模型或回退旧运行时。
 - 开发主 agent 固定使用 GPT-6 Astra high；所有开发子 agent 固定使用 GPT-5.6 Sol high，包括简单任务，按需最多同时运行两个。每项开发任务明确依赖、文件范围、产物和验收命令，并通过实际 `turn_context` 核验 model/effort。
 - 开发期模型规则独立于产品模型选择；产品运行时只读取工作台中已保存的同一项目选择。
-- Git 按验证阶段在本地提交，当前没有远程推送授权。
+- Git 按验证阶段完成检查、显式路径审阅和远程交付。
 
-当前已接入多任务列表、独立访谈保存、assistant-ui、AI Connect 本机账号与项目模型选择，以及来源调研、正式计划和 BrowserSkill 执行。整页布局与显示/折叠/侧栏/抽屉规则见 [工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见 [需求对话机制](docs/development/INTERVIEW_UI.md)。
+当前已接入多任务列表、独立访谈保存、AI Connect React 完整对话界面、AI Connect 本机账号与项目模型选择，以及来源调研、正式计划和 BrowserSkill 执行。整页布局与显示/折叠/侧栏/抽屉规则见 [工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见 [需求对话机制](docs/development/INTERVIEW_UI.md)。
 
 ## 启动本地工作台（F1）
 
@@ -52,7 +52,7 @@ npm install
 npm run dev
 ```
 
-打开 [本机工作台](http://127.0.0.1:4173/)。根目录一条命令同时启动 Vite 页面与 Fastify API（4175），无需预先构建；按 Ctrl+C 停止两者，一方退出时另一方也会停止。新建不调用模型，发送消息使用既有 ChatGPT managed 登录与 Terra/medium。数据库保存在忽略的 `data/workbench.sqlite`，任务、消息、轮次、问题、明确决策、草稿、确认及调用审计在同一事务内保存。
+打开 [本机工作台](http://127.0.0.1:4173/)。根目录一条命令同时启动 Vite 页面与 Fastify API（4175），无需预先构建；按 Ctrl+C 停止两者，一方退出时另一方也会停止。新建不调用模型，发送消息使用工作台保存的默认聊天模型和推理深度。数据库保存在忽略的 `data/workbench.sqlite`，任务、消息、轮次、问题、明确决策、草稿、确认及调用审计在同一事务内保存。
 
 首次启动自动导入 `data/tasks.json` 及各任务 JSON，或旧单会话 `data/interview.json`；保留原件，重复启动不重复导入、不覆盖后续数据库修改。迁移前关闭使用同一目录的旧原型服务。损坏文件导致整批导入失败，修复原文件后重启可重试。同一数据目录只允许一个正式服务；异常退出后数据锁约 10 秒过期，重启会把未完成轮次标记为可重试的中断。
 

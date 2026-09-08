@@ -27,14 +27,23 @@ function Activate([string]$Role, [string]$Name) {
 }
 function Send-Message([string]$Text) {
   bsk observe --session $SessionId | Out-Null
-  bsk fill '.task-workspace:not([hidden]) .chat-input' --value $Text --session $SessionId | Out-Null
-  Activate 'button' '发送消息'
+  bsk fill '.task-workspace:not([hidden]) [data-interactive-timeline-composer-textarea=true]' --value $Text --session $SessionId | Out-Null
+  bsk click --selector '.task-workspace:not([hidden]) button[aria-label=发送]' --session $SessionId | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Message send failed' }
+}
+function Open-Latest-Draft {
+  bsk press Enter --selector '.task-workspace:not([hidden]) .interview-bar button' --session $SessionId | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Latest draft activation failed' }
+}
+function Create-Task {
+  bsk click --selector '.new-task' --session $SessionId | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Task creation failed' }
 }
 try {
   bsk observe --session $SessionId | Out-Null
   Assert-Page 'location.port === "4174"' 'isolated-F1-fixture'
-  Activate 'button' '新建需求'
-  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .chat-input")?.disabled === false && document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 0' 'formal-create-empty-ready'
+  Create-Task
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [data-interactive-timeline-composer-textarea=true]")?.disabled === false && document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 0' 'formal-create-empty-ready'
   $taskId = (bsk evaluate 'document.querySelector(".task-workspace:not([hidden])").dataset.taskId' --session $SessionId | Out-String).Trim('"', "`r", "`n", ' ')
   Send-Message 'F1先提问：整理公开商品资料'
   Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .decision-option").length === 2 && !document.querySelector(".task-workspace:not([hidden]) .decision-option").disabled' 'formal-question-visible'
@@ -42,8 +51,8 @@ try {
   bsk press Enter --selector '.task-workspace:not([hidden]) .decision-option' --session $SessionId | Out-Null
   Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 4 && document.querySelector(".task-workspace:not([hidden]) .draft-artifact") !== null' 'continuous-answer-draft'
   $state = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
-  if ($state.decisions.Count -ne 1 -or $state.decisions[0].kind -ne 'option' -or $state.audits[0].model -ne 'gpt-5.6-terra') { throw 'Option decision or fixture audit missing' }
-  Activate 'button' '需求草稿 · v1'
+  if ($state.decisions.Count -ne 1 -or $state.decisions[0].kind -ne 'option' -or $state.audits[0].model -ne 'gpt-5.6-sol') { throw 'Option decision or fixture audit missing' }
+  Open-Latest-Draft
   Activate 'button' '确认需求草稿'
   Assert-Page 'document.querySelector(".confirmed-next") !== null' 'formal-confirmation-visible'
   Activate 'button' '关闭需求草稿'
@@ -56,7 +65,7 @@ try {
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .interview-bar")?.textContent.includes("v2") === true && document.querySelectorAll(".task-workspace:not([hidden]) textarea").length === 1' 'open-answer-produces-brief-draft-with-single-composer'
   $openAnswered = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
   if (@($openAnswered.decisions | Where-Object kind -eq 'option').Count -ne 1 -or @($openAnswered.decisions | Where-Object kind -eq 'draft_confirmation').Count -ne 1 -or $openAnswered.drafts.Count -ne 2 -or $null -eq $openAnswered.drafts[1].brief) { throw 'Open answer did not preserve option/confirmation history or structured brief' }
-  Activate 'button' '需求草稿 · v2'
+  Open-Latest-Draft
   Assert-Page 'document.querySelector(".draft-drawer[role=dialog]") !== null && Math.abs(document.querySelector(".draft-drawer").getBoundingClientRect().right - innerWidth) < 2 && document.querySelector(".draft-version-label .rt-SelectTrigger") !== null' 'draft-is-right-drawer-with-library-select'
   bsk press ArrowLeft --selector '[aria-label="调整需求草稿宽度"]' --session $SessionId | Out-Null
   Assert-Page 'document.querySelector(".draft-drawer-body").offsetWidth === 592' 'drawer-keyboard-resize'
@@ -71,7 +80,7 @@ try {
   Assert-Page 'document.querySelector(".draft-dialog-footer").textContent.includes("保存当前需求版本") && document.querySelector("[role=listbox]") === null' 'library-version-switch-restores-current'
   bsk press Escape --session $SessionId | Out-Null
   Assert-Page 'document.querySelector(".draft-drawer") === null && document.activeElement.textContent.includes("需求草稿")' 'drawer-escape-restores-trigger-focus'
-  Activate 'button' '需求草稿 · v2'
+  Open-Latest-Draft
   Assert-Page 'document.querySelector(".draft-drawer-body").offsetWidth === 752' 'drawer-reopen-retains-width'
   Activate 'button' '确认需求草稿'
   Activate 'button' '关闭需求草稿'
@@ -80,12 +89,12 @@ try {
   bsk reload --session $SessionId | Out-Null
   bsk observe --session $SessionId | Out-Null
   Assert-Page 'document.querySelector("button[aria-label=停止生成]") !== null' 'reload-reconnects-active-turn'
-  Activate 'button' '新建需求'
+  Create-Task
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .task-notice")?.textContent.includes("正在处理需求") === true' 'other-task-actual-running-notice'
   bsk observe --session $SessionId | Out-Null
-  bsk fill '.task-workspace:not([hidden]) .chat-input' --value '另一任务未发送的内容' --session $SessionId | Out-Null
-  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .chat-input").value === "另一任务未发送的内容" && document.querySelector(".task-workspace:not([hidden]) button[aria-label=发送消息]").disabled' 'other-task-editable-send-blocked'
-  bsk press Enter --selector 'button.task-select[aria-label="打开任务：F1 验收需求"]' --session $SessionId | Out-Null
+  bsk fill '.task-workspace:not([hidden]) [data-interactive-timeline-composer-textarea=true]' --value '另一任务未发送的内容' --session $SessionId | Out-Null
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [data-interactive-timeline-composer-textarea=true]").value === "另一任务未发送的内容" && document.querySelector(".task-workspace:not([hidden]) button[aria-label=发送]").disabled' 'other-task-editable-send-blocked'
+  bsk click --selector 'button.task-select[aria-label="打开任务：F1 验收需求"]' --session $SessionId | Out-Null
   Activate 'button' '停止生成'
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .assistant-body") !== null && !document.querySelector(".task-workspace:not([hidden]) button[aria-label=停止生成]") && document.querySelector(".task-workspace:not([hidden])").textContent.includes("本轮未提交草稿")' 'cancelled-turn-is-visible-terminal'
   $cancelled = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
@@ -94,7 +103,7 @@ try {
   Assert-Page 'document.querySelector(".task-workspace:not([hidden])").textContent.includes("结果未提交") && !document.querySelector(".task-workspace:not([hidden]) button[aria-label=停止生成]")' 'failure-is-visible-and-preserves-history'
   $failed = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
   $users = @($failed.messages | Where-Object role -eq 'user').Count
-  Activate 'button' '重试本轮'
+  Activate 'button' '重试消息'
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .interview-bar").textContent.includes("v3")' 'retry-produces-new-valid-draft'
   $retried = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
   if (@($retried.messages | Where-Object role -eq 'user').Count -ne $users -or $retried.drafts.Count -ne 3) { throw 'Retry duplicated user input' }
@@ -102,7 +111,7 @@ try {
   bsk observe --session $SessionId | Out-Null
   bsk press Escape --session $SessionId | Out-Null
   Assert-Page 'document.documentElement.scrollWidth <= innerWidth && document.querySelector(".task-workspace:not([hidden]) .thread-bottom").getBoundingClientRect().bottom <= innerHeight' 'F1-narrow-no-overflow-composer-visible'
-  Activate 'button' '需求草稿 · v3'
+  Open-Latest-Draft
   bsk emulate --session $SessionId --width 390 --height 844 --dpr 1 | Out-Null
   bsk observe --session $SessionId | Out-Null
   Assert-Page 'document.querySelector(".draft-drawer-body").offsetWidth <= innerWidth && document.querySelector(".draft-dialog-footer").getBoundingClientRect().bottom <= innerHeight' 'drawer-mobile-clamped-footer-visible'

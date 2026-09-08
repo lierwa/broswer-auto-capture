@@ -81,11 +81,3 @@ export function confirmedRequirement(taskId: string, state: InterviewState) {
   if (state.active || !draft?.brief || state.confirmedVersion !== draft.version) return null
   return requirementHandoffSchema.parse({ taskId, draftVersion: draft.version, revision: draft.revision, brief: draft.brief })
 }
-export function visibleMessageText(message: InterviewMessage) {
-  if (message.role !== "assistant") return message.text
-  const [first, ...rest] = message.text.split("\n")
-  // WHY：仅隔离可验证的旧供应商协议块，不改用户原文。
-  try { if (interviewOutputSchema.safeParse(JSON.parse(first ?? "")).success) return rest.join("\n").trim() }
-  catch { /* 普通中文原样显示。 */ }
-  return message.text
-}

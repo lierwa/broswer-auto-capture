@@ -1,3 +1,5 @@
+@import "./ai-theme.css";
+
 :root {
   font-family: "Aptos", "Microsoft YaHei UI", sans-serif;
   font-synthesis: none;
@@ -209,7 +211,7 @@ th { background: var(--color-panel-raised); color: var(--color-text-muted); font
 .sample-grid { display: grid; gap: 26px; margin-top: 30px; }
 .button-row { flex-wrap: wrap; }
 .dialog-actions { display: flex; justify-content: flex-end; margin-top: 20px; }
-:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+:focus-visible:not(:where(.ai-connect *)) { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 @media (max-width: 1250px) {
   .workbench-layout { grid-template-columns: 160px minmax(0, 1fr); gap: 16px; }
   .workspace { padding: 20px; }

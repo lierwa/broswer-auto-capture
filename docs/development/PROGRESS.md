@@ -1,5 +1,24 @@
 # 开发进度
 
+## 宿主主题、首次模型选择与真实调用修复（2026-09-09）
+
+- 共享 Timeline、Composer、头像、用户气泡与账号弹窗统一映射宿主 Sand / Amber 语义色阶；在 Radix 边界解析颜色别名，避免共享样式重置成浅色。深色侧栏与 Timeline 实测均为 `rgb(25, 25, 24)`；已查看深浅两套截图及聚焦输入框，去除叠加的 textarea 焦点线。
+- 公共模型弹窗全屏 Theme 使用透明背景，宿主 Overlay 为黑色 28% 且不模糊，底层页面可辨。修复 OAuth 账号无默认模型时无法首次选择的死锁：始终提供已有 ModelPicker，由用户显式选择模型。
+- Composer 复用公共 `ComposerModelControl`，在输入框内显示当前 `modelId · reasoning effort`，两级菜单分别选择默认聊天模型和推理深度；账号管理继续使用顶栏统一设置弹窗。共享 `sendDisabled` 阻止发送和快捷键提交，同时保留可编辑草稿与停止操作。BAC 从同一 `useModelSettings` 加载目录和选择，保存后立即更新 Composer，未配置或加载失败时不创建失败轮次。
+- 正常需求对话保留业务正文、问题、草稿与必要历史只读提示；逐消息的模型调用完成小字不再进入用户时间线，typed 调用事件仍保存在服务端审计中。当前开放问题不重复提示输入位置，问题沿用正文排版。
+- 对话宽屏内容列为 784px。共享助手壳的 4px 内边距、36px 头像列和 12px 间距使正文边界相对内容列为左 52px、右 4px；Composer 因此缩窄 56px 并右移 24px。窄屏内容和 Composer 均使用 16px 外边距，同一规则避免横向溢出。
+- 正式 4173 页面通过原生点击选择现有 ChatGPT 订阅账号的 `gpt-5.6-terra / medium`，保存后从 Composer 发送原输入成功。任务 `459029b6-4112-4af8-ab01-d337236e8f78` 的轮次 `25a449f0-7333-4450-9e64-4e571bec1b45` 为 `succeeded`，审计 `invocations=1`，助手生成需求问题；刷新后模型设置与对话恢复。该轮为真实模型调用，未启动来源浏览器抓取。
+- 验证：共享包专项测试、typecheck/build 通过；BAC 模型门与消息投影定向测试 7/7、Workbench typecheck 和生产构建通过，既有大于 500 kB 提示保留。最终 React vendor 为 `agent-platform-ai-connect-react-0.3.0-9fbf2fe0.tgz`，SHA-256 `9FBF2FE067CBEEFC63820099E1F6416ABB451769D20DA247621F9034BFB46D2B`。
+- 浏览器在最终包前已实际打开 Composer 主菜单与模型子菜单，截图为本机临时文件 `bac-composer-model-menu-desktop.png`。随后 BrowserSkill 收到 Stop 并按要求关闭会话；最终包的深色 Portal、上述 56px/24px 几何、模型/推理选择持久化和窄屏无溢出尚未在浏览器复测，因此不计为已通过。
+
+## 共享需求对话与账号授权收敛（2026-09-08）
+
+最终运行核验：4173 开发服务已强制重新优化依赖并重启；浏览器实测正式页面账号设置的两层主题标记均为 `dark`，同源 health 返回 200。隔离 4174 验收服务与 BrowserSkill 会话在验收结束后关闭，正式 4173/4175 保持运行。
+
+需求对话现直接复用 vendored `@agent-platform/ai-connect-react` 的完整受控 Timeline 与 Composer，保留业务正文、问题卡、草稿卡、确认、取消/恢复和每任务未发送草稿；结构化调用事件按 typed projection 独立显示，不再重复为助手正文。BAC 采用 Enter 发送、Shift+Enter 换行并保留输入法保护，界面只呈现当前支持的操作。共享账号授权同步为 OAuth 成功即保存，不要求先选模型或执行 probe；失败只公开可定位的脱敏 diagnostic，关闭、重开及重试使用新 job，旧轮询结果不能覆盖当前状态。
+
+验证：`@agent-platform/ai-connect` 完整测试 29/29 通过；账号创建、连接面板与 stale-job 专项 18/18、112 个断言通过；Workbench 18/18 通过，整仓 `npm run check` 与生产构建通过。换包后 4173/4175 已重启，同源 health、任务列表及 provider integrations DTO 读取通过；没有输出任务正文。隔离 4174 fake-model 页面通过 DOM 实际触发 React 表单和按钮，完成发送、问题选项、草稿 v1/v2、确认、慢轮次停止、任务切换后恢复未发送输入，并确认 Enter 默认拦截提交、Shift+Enter 不拦截及授权面板没有前置模型选择；共享 Composer、单一助手正文、问题/草稿卡和空态图标不裁切均已实际呈现。最终截图 `browser-capture-final-timeline.png` 与 `browser-capture-final-account-dialog.png` 已视觉核验深色完整 Timeline/Composer 和深色账号授权抽屉；DOM 中两层 `data-appearance` 均为 `dark`，消息使用真实时间 11:39/40/41/43 PM，无“会话出错”或残留“正在生成结构结果”，需求草稿 v2 已确认。BrowserSkill 覆盖层拦截原生输入，因此不声明完整原生键鼠自动化通过；未进行真实 OAuth 或模型调用。隔离运行未写入用户任务、凭证或登录态。
+
 ## 共享模型访谈接入（2026-09-07）
 
 需求访谈已接入 vendored `@agent-platform/ai-connect` / React 0.2.3。顶栏使用完整公共模型设置弹窗；用户显式保存共享选择后，单次 turn 冻结选择并通过公共结构调用，真实 typed 事件进入既有 assistant 消息并由公共 Timeline 投影显示。未选择时继续现有 Codex 配置；共享调用失败直接显示失败且不回退。其他模型用途不在本轮迁移范围。

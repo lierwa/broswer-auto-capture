@@ -1,0 +1,106 @@
+/* WHY：共享样式的作用域重置会重设原始色阶；在 Radix 主题边界解析别名，
+   让 Timeline、嵌套组件与 Portal 使用宿主实际的深浅色，而非重新落入默认色阶。 */
+.radix-themes {
+  --bac-sand-1: var(--sand-1);
+  --bac-sand-2: var(--sand-2);
+  --bac-sand-3: var(--sand-3);
+  --bac-sand-4: var(--sand-4);
+  --bac-sand-5: var(--sand-5);
+  --bac-sand-6: var(--sand-6);
+  --bac-sand-7: var(--sand-7);
+  --bac-sand-8: var(--sand-8);
+  --bac-sand-9: var(--sand-9);
+  --bac-sand-10: var(--sand-10);
+  --bac-sand-11: var(--sand-11);
+  --bac-sand-12: var(--sand-12);
+  --bac-amber-1: var(--amber-1);
+  --bac-amber-2: var(--amber-2);
+  --bac-amber-3: var(--amber-3);
+  --bac-amber-4: var(--amber-4);
+  --bac-amber-5: var(--amber-5);
+  --bac-amber-6: var(--amber-6);
+  --bac-amber-7: var(--amber-7);
+  --bac-amber-8: var(--amber-8);
+  --bac-amber-9: var(--amber-9);
+  --bac-amber-10: var(--amber-10);
+  --bac-amber-11: var(--amber-11);
+  --bac-amber-12: var(--amber-12);
+  --bac-red-1: var(--red-1);
+  --bac-red-2: var(--red-2);
+  --bac-red-3: var(--red-3);
+  --bac-red-4: var(--red-4);
+  --bac-red-5: var(--red-5);
+  --bac-red-6: var(--red-6);
+  --bac-red-7: var(--red-7);
+  --bac-red-8: var(--red-8);
+  --bac-red-9: var(--red-9);
+  --bac-red-10: var(--red-10);
+  --bac-red-11: var(--red-11);
+  --bac-red-12: var(--red-12);
+  --bac-amber-contrast: var(--amber-contrast);
+}
+
+/* WHY：共享 UI 负责结构与交互；宿主把同一套 Sand / Amber 色阶映射到其语义 token。
+   Portal 不在 app-shell 下，因此直接使用外层 Radix Theme 提供的色阶。 */
+.ai-connect {
+  --background: var(--bac-sand-2);
+  --foreground: var(--bac-sand-12);
+  --foreground-strong: var(--bac-sand-12);
+  --body-foreground: var(--bac-sand-12);
+  --secondary-foreground: var(--bac-sand-11);
+  --secondary-muted-foreground: var(--bac-sand-11);
+  --muted-foreground: var(--bac-sand-11);
+  --subtle-foreground: var(--bac-sand-10);
+  --disabled-foreground: var(--bac-sand-9);
+  --card: var(--bac-sand-3);
+  --popover: var(--bac-sand-2);
+  --surface-subtle: var(--bac-sand-2);
+  --surface-muted: var(--bac-sand-3);
+  --secondary: var(--bac-sand-3);
+  --surface-emphasis: var(--bac-sand-4);
+  --surface-inverse: var(--bac-sand-12);
+  --border-subtle: var(--bac-sand-4);
+  --border: var(--bac-sand-6);
+  --border-strong: var(--bac-sand-8);
+  --input: var(--bac-sand-6);
+  --ring: var(--bac-amber-8);
+  --primary: var(--bac-amber-9);
+  --accent-soft: var(--bac-amber-3);
+  --accent-subtle: var(--bac-amber-4);
+  --accent-border: var(--bac-amber-6);
+  --accent-border-strong: var(--bac-amber-7);
+  --accent-focus: var(--bac-amber-8);
+  --accent: var(--bac-amber-9);
+  --accent-icon: var(--bac-amber-11);
+  --accent-emphasis: var(--bac-amber-9);
+  --accent-emphasis-hover: var(--bac-amber-10);
+  --accent-foreground: var(--bac-amber-11);
+  --accent-foreground-emphasis: var(--bac-amber-11);
+  --accent-foreground-strong: var(--bac-amber-12);
+  --accent-on-emphasis: var(--bac-amber-contrast);
+  --user-message: var(--bac-amber-4);
+  --user-message-foreground: var(--bac-amber-12);
+  --user-message-muted: var(--bac-amber-11);
+  --user-message-border: var(--bac-amber-6);
+  --danger-soft: var(--bac-red-3);
+  --danger-border: var(--bac-red-6);
+  --danger-foreground: var(--bac-red-11);
+  --danger-icon: var(--bac-red-11);
+  --color-background: var(--bac-sand-2);
+}
+
+/* WHY：焦点由共享 Composer 外框统一表达，textarea 不再叠加宿主的第二条边框。 */
+.ai-connect [data-interactive-timeline-composer-textarea]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.ai-connect[data-ai-connect-dialog-overlay="true"] {
+  background: rgb(0 0 0 / 28%);
+  backdrop-filter: none;
+}
+
+.ai-connect [data-ui-inline-error="true"] {
+  color: var(--danger-foreground);
+  background: var(--danger-soft);
+}

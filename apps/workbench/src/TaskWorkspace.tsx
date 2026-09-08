@@ -10,12 +10,22 @@ import { Results } from "./Results.js"
 import { Plan } from "./Plan.js"
 import type { StepId } from "./chainData.js"
 import type { TaskSummary } from "./taskContract.js"
+import type { useModelSettings } from "./useModelSettings.js"
 
 const views = [
   { id: "interview", name: "需求对话", icon: MessageSquare }, { id: "sources", name: "来源调研", icon: Search },
   { id: "plan", name: "抓取计划", icon: FileSearch }, { id: "nodes", name: "抓取链路", icon: GitBranch }, { id: "results", name: "运行结果", icon: Database },
 ]
-export function TaskWorkspace({ task, visible, theme, otherRunning }: { task: TaskSummary; visible: boolean; theme: "light" | "dark"; otherRunning: TaskSummary | undefined }) {
+type WorkspaceModelSettings = Pick<ReturnType<typeof useModelSettings>,
+  "accounts" | "selection" | "loading" | "saving" | "error" | "ready" | "save" | "load">
+
+export function TaskWorkspace({ task, visible, theme, otherRunning, modelSettings }: {
+  task: TaskSummary
+  visible: boolean
+  theme: "light" | "dark"
+  otherRunning: TaskSummary | undefined
+  modelSettings: WorkspaceModelSettings
+}) {
   const interview = useInterview(task.id)
   const [activeTab, setActiveTab] = useState("interview")
   const [version, setVersion] = useState<number | null>(null)
@@ -30,7 +40,7 @@ export function TaskWorkspace({ task, visible, theme, otherRunning }: { task: Ta
     <div className="task-body"><section className="panel review-panel" aria-label="需求、来源、计划、链路与结果">
       <Tabs.Root value={activeTab} onValueChange={setActiveTab} activationMode="manual">
         <Tabs.List aria-label="工作台视图">{views.map(({ id, name, icon: Icon }) => <Tabs.Trigger key={id} value={id} onClick={() => setActiveTab(id)}><Icon size={15} />{name}</Tabs.Trigger>)}</Tabs.List>
-        <Tabs.Content value="interview" forceMount hidden={activeTab !== "interview"}><ChatTimeline interview={interview} onSources={() => setActiveTab("sources")} onDraft={openDraft} blocked={Boolean(blocked)} readOnly={task.archived} /></Tabs.Content>
+        <Tabs.Content value="interview" forceMount hidden={activeTab !== "interview"}><ChatTimeline taskId={task.id} interview={interview} onSources={() => setActiveTab("sources")} onDraft={openDraft} blocked={Boolean(blocked)} readOnly={task.archived} appearance={theme} modelSettings={modelSettings} /></Tabs.Content>
         <Tabs.Content value="sources" forceMount hidden={activeTab !== "sources"}><Sources revision={interview.state.revision} readOnly={task.archived} onPlan={() => setActiveTab("plan")} taskId={task.id} active={visible && activeTab === "sources"} confirmedVersion={interview.state.confirmedVersion} onInterview={() => setActiveTab("interview")} onDraft={() => openDraft()} /></Tabs.Content>
         <Tabs.Content value="plan" forceMount hidden={activeTab !== "plan"}><Plan taskId={task.id} active={visible && activeTab === "plan"} readOnly={task.archived} onSources={() => setActiveTab("sources")} /></Tabs.Content>
         <Tabs.Content value="nodes" forceMount hidden={activeTab !== "nodes"}><ChainView taskId={task.id} step={step} onStep={setStep} theme={theme} selected={selected} inspectorOpen={inspectorOpen} sample={chainSample} onSample={setChainSample} active={visible && activeTab === "nodes"} onPlan={() => setActiveTab("plan")} onClose={() => setInspectorOpen(false)} onSelect={(id, node) => { setSelected((value) => ({ ...value, [id]: node })); setInspectorOpen(true) }} /></Tabs.Content>

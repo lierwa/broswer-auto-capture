@@ -30,7 +30,7 @@ function Assert-Page([string]$Expression, [string]$Name) {
 }
 function Select-Task([string]$Title) {
   # BrowserSkill 的 aria 精简快照未收录整行按钮；使用已观察 DOM 的原生 selector 键盘定位。
-  bsk press Enter --selector "button.task-select[aria-label='打开任务：$Title']" --session $SessionId | Out-Null
+  bsk click --selector "button.task-select[aria-label='打开任务：$Title']" --session $SessionId | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Task selection failed' }
 }
 try {
@@ -61,7 +61,8 @@ try {
   bsk observe --session $SessionId | Out-Null
   bsk click --selector '[role="option"]:nth-child(4)' --session $SessionId | Out-Null
   Assert-Page 'document.querySelectorAll(".react-flow__node").length === 6 && document.querySelector(".node-inspector").textContent.includes("还有下一页")' 'independent-node-canvas-and-condition-detail'
-  Activate 'button' '新建需求'
+  bsk click --selector '.new-task' --session $SessionId | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Task creation failed' }
   bsk observe --session $SessionId | Out-Null
   Assert-Page 'document.querySelector(".task-workspace:not([hidden])").dataset.taskId !== "legacy" && document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 0' 'new-task-has-no-foreign-messages'
   $newTasks = Invoke-RestMethod 'http://127.0.0.1:4174/api/tasks'
@@ -80,11 +81,11 @@ try {
   Select-Task $legacyTitle
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [role=tab][data-state=active]").textContent.includes("抓取链路") && document.querySelector(".task-workspace:not([hidden]) [aria-label=选择节点]").textContent.includes("还有下一页") && document.querySelectorAll(".react-flow__node").length === 6' 'task-A-tab-node-selection-retained'
   Activate 'tab' '需求对话'
-  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .chat-input").value === "任务 A 尚未发送的补充"' 'task-A-unsent-input-retained'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [data-interactive-timeline-composer-textarea=true]").value === "任务 A 尚未发送的补充"' 'task-A-unsent-input-retained'
   Select-Task $newTitle
   Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [role=tab][data-state=active]").textContent.includes("来源调研")' 'task-B-tab-retained'
   Activate 'tab' '需求对话'
-  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .chat-input").value === "任务 B 独立的未发送内容" && !document.querySelector(".task-workspace:not([hidden]) .draft-artifact")' 'task-B-input-and-artifacts-isolated'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [data-interactive-timeline-composer-textarea=true]").value === "任务 B 独立的未发送内容" && !document.querySelector(".task-workspace:not([hidden]) .draft-artifact")' 'task-B-input-and-artifacts-isolated'
   Activate 'tab' '运行结果'
   Activate 'button' '调用审计'
   Assert-Page 'document.querySelector(".detail-pane").textContent.includes("暂无已返回的调用审计")' 'new-task-does-not-inherit-audits'
@@ -99,11 +100,11 @@ try {
   Activate 'button' '已归档任务'
   Select-Task $newTitle
   Activate 'tab' '需求对话'
-  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .chat-input").disabled && document.querySelector(".task-workspace:not([hidden]) .task-notice").textContent.includes("已归档")' 'archived-task-read-only'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [data-interactive-timeline-composer-textarea=true]") === null && document.querySelector(".task-workspace:not([hidden]) .task-notice").textContent.includes("已归档")' 'archived-task-read-only'
   Activate 'button' ($newTitle + '的更多操作 [has-submenu]')
   Activate 'menuitem' '恢复任务'
   Activate 'button' '返回最近任务'
-  Assert-Page '!document.querySelector(".task-workspace:not([hidden]) .chat-input").disabled' 'archive-is-reversible'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) [data-interactive-timeline-composer-textarea=true]")?.disabled === false' 'archive-is-reversible'
   Select-Task $legacyTitle
   Activate 'tab' '运行结果'
   Activate 'button' '调用审计'
