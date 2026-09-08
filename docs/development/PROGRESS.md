@@ -6,10 +6,10 @@
 - 公共模型弹窗全屏 Theme 使用透明背景，宿主 Overlay 为黑色 28% 且不模糊，底层页面可辨。修复 OAuth 账号无默认模型时无法首次选择的死锁：始终提供已有 ModelPicker，由用户显式选择模型。
 - Composer 复用公共 `ComposerModelControl`，在输入框内显示当前 `modelId · reasoning effort`，两级菜单分别选择默认聊天模型和推理深度；账号管理继续使用顶栏统一设置弹窗。共享 `sendDisabled` 阻止发送和快捷键提交，同时保留可编辑草稿与停止操作。BAC 从同一 `useModelSettings` 加载目录和选择，保存后立即更新 Composer，未配置或加载失败时不创建失败轮次。
 - 正常需求对话保留业务正文、问题、草稿与必要历史只读提示；逐消息的模型调用完成小字不再进入用户时间线，typed 调用事件仍保存在服务端审计中。当前开放问题不重复提示输入位置，问题沿用正文排版。
-- 对话宽屏内容列为 784px。共享助手壳的 4px 内边距、36px 头像列和 12px 间距使正文边界相对内容列为左 52px、右 4px；Composer 因此缩窄 56px 并右移 24px。窄屏内容和 Composer 均使用 16px 外边距，同一规则避免横向溢出。
+- 对话宽屏内容列为 784px。共享助手壳的 4px 内边距、36px 头像列和 12px 间距使正文边界相对内容列为左 52px、右 4px；Composer 因此缩窄 56px 并右移 24px。窄屏另镜像 Windows Chrome 滚动 viewport 左右各 15px 的稳定槽位，使滚动层外的 Composer 与助手正文对齐并避免横向溢出。
 - 正式 4173 页面通过原生点击选择现有 ChatGPT 订阅账号的 `gpt-5.6-terra / medium`，保存后从 Composer 发送原输入成功。任务 `459029b6-4112-4af8-ab01-d337236e8f78` 的轮次 `25a449f0-7333-4450-9e64-4e571bec1b45` 为 `succeeded`，审计 `invocations=1`，助手生成需求问题；刷新后模型设置与对话恢复。该轮为真实模型调用，未启动来源浏览器抓取。
 - 验证：共享包专项测试、typecheck/build 通过；BAC 模型门与消息投影定向测试 7/7、Workbench typecheck 和生产构建通过，既有大于 500 kB 提示保留。最终 React vendor 为 `agent-platform-ai-connect-react-0.3.0-9fbf2fe0.tgz`，SHA-256 `9FBF2FE067CBEEFC63820099E1F6416ABB451769D20DA247621F9034BFB46D2B`。
-- 浏览器在最终包前已实际打开 Composer 主菜单与模型子菜单，截图为本机临时文件 `bac-composer-model-menu-desktop.png`。随后 BrowserSkill 收到 Stop 并按要求关闭会话；最终包的深色 Portal、上述 56px/24px 几何、模型/推理选择持久化和窄屏无溢出尚未在浏览器复测，因此不计为已通过。
+- 最终包已在正式 4173 页面复测。深色 Portal 与宿主一致，截图为本机临时文件 `bac-final-model-menu-dark.png`；桌面助手正文与 Composer 均为 `left=570.5px/right=1298.5px/width=728px`。500px 浏览器 viewport 下两者均为 `left=92px/right=456px/width=364px`，`scrollWidth=clientWidth=500px`，截图为 `bac-final-narrow-alignment.png`。通过真实键盘菜单把 `gpt-5.6-terra · medium` 改为 `gpt-5.6-sol · high`，刷新后选择保持；随后恢复 `gpt-5.6-terra · medium` 并再次刷新确认。该项验收没有发送需求、调用模型或启动来源抓取，BrowserSkill 会话在验收后关闭。
 
 ## 共享需求对话与账号授权收敛（2026-09-08）
 
