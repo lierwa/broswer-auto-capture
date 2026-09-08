@@ -1,45 +1,29 @@
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import path from "node:path"
 import { z } from "zod"
-import { createCodexAppServerClient, routeFor, type ModelPurpose } from "@browser-capture/model-runtime"
 import type { ChainRecord } from "@browser-capture/contracts/chain"
-import type { ModelSession, ModelSessionFactory } from "../interview/modelSession.js"
+import type { AIModelResolver, PreparedAIModel } from "../ai/model.js"
 
-export function chainModelFactory(root: string, purpose: ModelPurpose): ModelSessionFactory {
-  return async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "browser-chain-model-"))
-    // WHY：详情页结构判断会携带真实语义页；仍由步骤总时限约束，但单轮需要覆盖高推理模型的正常响应窗口。
-    const client = createCodexAppServerClient({ cwd: directory, packageRoot: path.join(root, "packages/model-runtime"), purpose, turnTimeoutMs: 300_000 })
-    return { client, dispose: async () => { try { await client.close() } finally { await rm(directory, { recursive: true, force: true }) } } }
-  }
-}
-export async function modelDecision<T>(input: { factory: ModelSessionFactory; schema: z.ZodType<T>; prompt: string; record: Pick<ChainRecord, "audits" | "consumed">;
-  purpose: "exploration" | "explicit_llm" | "repair"; phase: "exploration" | "sample" | "verification" | "execution"; nodeId: string | null; signal: AbortSignal; save: () => void }) {
-  const { signal, record, purpose, save } = input, route = routeFor(purpose)
-  const audit: ChainRecord["audits"][number] = { purpose, phase: input.phase, nodeId: input.nodeId, model: route.model, effort: route.effort,
-    invocations: null, reportedModel: null, reportedEffort: null, status: "intended" }
+export async function modelDecision<T>(input: { shared: AIModelResolver; schema: z.ZodType<T>; prompt: string;
+  record: Pick<ChainRecord, "audits" | "consumed">; purpose: "exploration" | "explicit_llm" | "repair";
+  phase: "exploration" | "sample" | "verification" | "execution"; nodeId: string | null; signal: AbortSignal; save: () => void }) {
+  const { signal, record, purpose, save } = input, shared = await input.shared()
+  const audit: ChainRecord["audits"][number] = { purpose, phase: input.phase, nodeId: input.nodeId,
+    model: shared.selection.modelId, effort: shared.selection.reasoningEffort,
+    invocations: null, reportedModel: null, reportedEffort: null, status: "intended", aiEvents: [] }
   record.audits.push(audit); record.consumed.modelCalls++; save()
-  let session: ModelSession | undefined
-  const abort = () => { void session?.client.close().catch(() => {}) }
-  signal.addEventListener("abort", abort, { once: true })
+  return sharedDecision(input, audit, shared)
+}
+async function sharedDecision<T>(input: Parameters<typeof modelDecision<T>>[0], audit: ChainRecord["audits"][number], shared: PreparedAIModel) {
+  const { signal, save } = input
   try {
-    signal.throwIfAborted(); session = await input.factory(); signal.throwIfAborted()
-    const { $schema: _, ...schema } = z.toJSONSchema(input.schema, { target: "draft-7", override: ({ jsonSchema }) => {
-      for (const key of ["format", "pattern", "minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems"]) delete jsonSchema[key]
-    } })
-    let output: T | undefined
-    for await (const event of session.client.runTurn(input.prompt, schema, signal)) {
-      if (event.type !== "turn_succeeded" && event.type !== "interrupted") continue
-      audit.invocations = event.audit.invocationCount; audit.reportedModel = event.audit.reportedModel; audit.reportedEffort = event.audit.reportedEffort
-      audit.status = event.type === "turn_succeeded" ? "completed" : "interrupted"; save()
-      if (event.audit.requestedModel !== route.model || event.audit.requestedEffort !== route.effort || event.audit.reportedModel !== route.model || event.audit.reportedEffort !== route.effort) throw new Error("model_route_mismatch")
-      signal.throwIfAborted()
-      if (event.type === "turn_succeeded") output = input.schema.parse(JSON.parse(event.outputText))
-    }
-    signal.throwIfAborted()
-    if (!output) throw new Error("model_output_missing")
-    return output
+    const { $schema: _, ...jsonSchema } = structuredSchema(input.schema)
+    const output = await shared.generateObject({ prompt: input.prompt, jsonSchema, parse: (value) => input.schema.parse(value), signal,
+      onEvent: (event) => { audit.aiEvents.push(event); save() } })
+    signal.throwIfAborted(); audit.invocations = 1; audit.reportedModel = shared.selection.modelId
+    audit.reportedEffort = shared.selection.reasoningEffort; audit.status = "completed"; save(); return output
   } catch (error) { if (audit.status === "intended") audit.status = signal.aborted ? "interrupted" : "failed"; save(); throw error }
-  finally { signal.removeEventListener("abort", abort); await session?.dispose() }
+}
+function structuredSchema<T>(schema: z.ZodType<T>) {
+  return z.toJSONSchema(schema, { target: "draft-7", override: ({ jsonSchema }) => {
+    for (const key of ["format", "pattern", "minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems"]) delete jsonSchema[key]
+  } })
 }

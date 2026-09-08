@@ -3,7 +3,7 @@ import test from "node:test"
 import { randomUUID } from "node:crypto"
 import { confirmedRequirement, renderRequirementBrief } from "@browser-capture/contracts/interview"
 import { fixture, draft, succeeded } from "./helpers.js"
-import { outputSchema } from "../src/interview/modelSession.js"
+import { outputSchema } from "../src/interview/protocol.js"
 
 test("结构输出使用供应商支持的格式，同时保留本地必填交接约束", () => {
   const schema = outputSchema()

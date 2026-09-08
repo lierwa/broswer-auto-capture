@@ -67,12 +67,12 @@ F1 已完成本地 API、事务、迁移、生命周期与界面验收，当前�
 
 | ID | 依赖 | 文件范围 | 产物与复用组件 | 开发模型 | 验证门 |
 | --- | --- | --- | --- | --- | --- |
-| S0-07 | S0-01、R-003现行实现核验 | `packages/model-runtime/**` | 官方Codex App Server + execa/ndjson薄adapter；产品聊天结构结果与流 | Sol high；Astra high集成 | `npm test --workspace @browser-capture/model-runtime`、check、真实聊天probe、中断后进程退出 |
+| S0-07 | S0-01、R-014现行实现核验 | `apps/api/src/ai/**`、`apps/api/src/interview/**` | AI Connect 账号选择、结构结果、typed event 与访谈流 | Sol high；Astra high集成 | API focused、typecheck、真实账号模型 smoke 与中断后进程退出 |
 | S0-08 | S0-02、S0-03 | `packages/runtime/**`、`packages/contracts/**` | LangGraph检查点/XState对照、真实调用边界审计；受控图校验 | Sol high；Astra high评审 | 25步以上循环、外部AbortSignal、独立运行/恢复隔离、调用审计拒绝伪零、跨进程恢复 |
 | S0-09 | S0-07、S0-04 | `apps/api/**`、`apps/workbench/**` | Fastify流式聊天与assistant-ui投影；用户会话事实源 | Sol high；Astra high集成 | 浏览器发送真实需求、收到流与已校验结果、取消不提交、重载保留会话 |
 | S0-10 | S0-08、S0-09 | `packages/browser/**`、原型测试 | BrowserSkill受控命令边界、会话回收与权限 | Sol high；Astra high评审 | 限定session、语义定位刷新、登录/验证码暂停、零模型命令审计 |
 
-当前引擎已验证固定函数图、SQLite跨进程检查点和受控网关事件审计；尚未实现产品DSL编译与真实浏览器恢复。负责人同意原型先保留并转入功能开发，不表示所有状态已视觉签核。S0-07 probe 和工作台真实多轮访谈切片已通过，S0-09 尚需正式 API/事务与完整生命周期。阶段0关键门均有证据后作选型评审；不将普通循环原型的0次网关事件称为真实站点零模型复跑。
+当前引擎已验证固定函数图、SQLite跨进程检查点和受控网关事件审计；尚未实现产品DSL编译与真实浏览器恢复。负责人同意原型先保留并转入功能开发，不表示所有状态已视觉签核。S0-07 的旧 App Server probe 已由 AI Connect focused 验证替代；正式 API/事务与生命周期沿 S0-09 继续验收。阶段0关键门均有证据后作选型评审；不将普通循环原型的0次网关事件称为真实站点零模型复跑。
 
 ## 阶段 1：完整本地用户流程
 
@@ -84,9 +84,9 @@ F1 已完成本地 API、事务、迁移、生命周期与界面验收，当前�
 
 ### 本轮 UI 设计修订
 
-范围：需求与流程文档、workbench 对话界面和本地接口、model-runtime 私有 skill 注入、所属测试；本轮接通真实访谈，不接通来源搜索和实际抓取，不修改相邻项目。
-产物：assistant-ui 连续时间线、私有 skill 驱动的动态提问、版本化 Markdown 草稿与侧栏/抽屉审阅、本地多任务独立保存与旧单会话迁移、任务搜索/重命名/归档恢复、五视图上下文保持。全工作台的主层、折叠、侧栏、抽屉与短弹窗清单见 WORKBENCH_LAYOUT.md。Fastify/Drizzle、产品浏览器队列与完整 Decision/Unresolved 事务仍属后续门。
-验证：`npm test`、`npm run check`、`npm run build`；真实多轮访谈、纠正/草稿确认/恢复；浏览器检查连续消息、文档层级、视图保持、节点选择、主题与窄屏。真实来源和浏览器执行另设门。
+现行范围：需求与流程文档、Workbench 对话界面、本地 Fastify API、AI Connect 项目模型选择及所属测试；访谈、来源、计划和链路/采集共享同一模型端口，不修改相邻项目。
+产物：assistant-ui 连续时间线、正式访谈协议、版本化 Markdown 草稿与侧栏/抽屉审阅、本地多任务独立保存与旧单会话迁移、任务搜索/重命名/归档恢复、五视图上下文保持。全工作台的主层、折叠、侧栏、抽屉与短弹窗清单见 WORKBENCH_LAYOUT.md。
+验证：API/Workbench focused、类型检查与生产构建；真实多轮访谈、纠正/草稿确认/恢复；浏览器检查连续消息、文档层级、视图保持、节点选择、主题与窄屏。真实账号模型与完整业务浏览器验收仍单独设门。
 
 ## 阶段 2：真实来源验收
 

@@ -1,28 +1,18 @@
 import { z } from "zod"
 import { planProposalSchema, type PlanRecord } from "@browser-capture/contracts/plan"
 import type { ResearchRecord } from "@browser-capture/contracts/research"
-import type { ModelSessionFactory, ModelSession } from "../interview/modelSession.js"
+import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
 import { validateProposal, planDigest } from "./validation.js"
 
-export async function generatePlan(record: PlanRecord, source: ResearchRecord, factory: ModelSessionFactory, signal: AbortSignal, save: () => void, validate: () => void) {
-  let model: ModelSession | undefined
+export async function generatePlan(record: PlanRecord, source: ResearchRecord, signal: AbortSignal, save: () => void,
+  validate: () => void, aiModel: AIModelProvider) {
   const check = () => { signal.throwIfAborted(); validate() }
-  const abort = () => { void model?.client.close().catch(() => {}) }
-  signal.addEventListener("abort", abort, { once: true })
   try {
-    check(); model = await factory(); check()
-    const { $schema: _, ...schema } = z.toJSONSchema(planProposalSchema, { target: "draft-7", override: ({ jsonSchema }) => {
-      for (const key of ["format", "pattern", "minLength", "maxLength", "minItems", "maxItems"]) delete jsonSchema[key]
-      // WHY：供应商 strict schema 要求所有属性列入 required；历史计划本地仍允许缺少新增预算。
-      if (jsonSchema.type === "object" && jsonSchema.properties) jsonSchema.required = Object.keys(jsonSchema.properties)
-    } })
-    let output: unknown
-    for await (const event of model.client.runTurn(prompt(record, source), schema, signal)) {
-      if (event.type !== "turn_succeeded" && event.type !== "interrupted") continue
-      record.audit.invocations = event.audit.invocationCount; record.audit.reportedModel = event.audit.reportedModel; record.audit.reportedEffort = event.audit.reportedEffort
-      record.audit.status = event.type === "turn_succeeded" ? "completed" : "interrupted"; save(); check()
-      if (event.type === "turn_succeeded") output = JSON.parse(event.outputText)
-    }
+    check()
+    const shared = await aiModel.prepare(aiModel.selection(), signal)
+    check()
+    const schema = outputSchema()
+    const output = await generateShared(record, source, shared, schema, signal, save, check)
     check(); record.proposal = validateProposal(output, record, source); record.digest = planDigest(record)
     record.status = record.proposal.gaps.some((gap) => gap.disposition === "blocking") ? "blocked" : "ready"
     record.reason = record.status === "blocked" ? "来源存在影响可行性的缺口，请查看缺口处理并继续来源调研或需求讨论。" : null
@@ -32,12 +22,26 @@ export async function generatePlan(record: PlanRecord, source: ResearchRecord, f
     if (record.audit.status === "intended") record.audit.status = signal.aborted ? "interrupted" : "failed"
     record.proposal = null; record.digest = null
   } finally {
-    signal.removeEventListener("abort", abort)
-    await model?.dispose().catch(() => {})
     // WHY：取消和晚到结果先完全退出，再提交终态；刷新只读取持久事实。
     if (signal.aborted) { record.status = "cancelled"; record.proposal = null; record.digest = null; record.reason = "计划生成已停止，历史版本保留。" }
     save()
   }
+}
+function outputSchema() {
+  const { $schema: _, ...schema } = z.toJSONSchema(planProposalSchema, { target: "draft-7", override: ({ jsonSchema }) => {
+    for (const key of ["format", "pattern", "minLength", "maxLength", "minItems", "maxItems"]) delete jsonSchema[key]
+    // WHY：供应商 strict schema 要求所有属性列入 required；历史计划本地仍允许缺少新增预算。
+    if (jsonSchema.type === "object" && jsonSchema.properties) jsonSchema.required = Object.keys(jsonSchema.properties)
+  } })
+  return schema
+}
+async function generateShared(record: PlanRecord, source: ResearchRecord, model: PreparedAIModel, schema: Record<string, unknown>,
+  signal: AbortSignal, save: () => void, check: () => void) {
+  const output = await model.generateObject({ prompt: prompt(record, source), jsonSchema: schema, parse: (value) => value, signal,
+    onEvent: (event) => { record.audit.aiEvents.push(event); save() } })
+  check(); record.audit.invocations = 1; record.audit.reportedModel = model.selection.modelId
+  record.audit.reportedEffort = model.selection.reasoningEffort; record.audit.status = "completed"; save()
+  return output
 }
 function prompt(record: PlanRecord, source: ResearchRecord) {
   return [

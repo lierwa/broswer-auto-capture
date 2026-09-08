@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { aiEventSchema } from "./ai.js"
 import { taskIdSchema } from "./task.js"
 
 const text = z.string().trim().min(1).max(2000), key = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), id = z.string().uuid()
@@ -48,7 +49,7 @@ export const chainRecordSchema = z.object({ id, taskId: taskIdSchema, executionI
   events: z.array(nodeEvidenceSchema).max(5000), consumed: z.object({ commands: z.number().int().nonnegative(), modelCalls: z.number().int().nonnegative(), elapsedMs: z.number().int().nonnegative() }).strict(),
   audits: z.array(z.object({ purpose: z.enum(["exploration", "explicit_llm", "repair"]), nodeId: key.nullable(), phase: z.enum(["exploration", "sample", "verification", "execution"]),
     model: text, effort: text, invocations: z.number().int().nonnegative().nullable(), reportedModel: text.nullable(), reportedEffort: text.nullable(),
-    status: z.enum(["intended", "completed", "interrupted", "failed"]) }).strict()),
+    status: z.enum(["intended", "completed", "interrupted", "failed"]), aiEvents: z.array(aiEventSchema).max(5000).default([]) }).strict()),
 }).strict()
 export const chainStateSchema = z.object({ taskId: taskIdSchema, taskSequence: z.number().int().nonnegative(), records: z.array(chainRecordSchema), staleIds: z.array(id),
   plans: z.array(z.object({ id, version: z.number().int().positive(), steps: z.array(z.object({ id: key, title: text })) })) }).strict()

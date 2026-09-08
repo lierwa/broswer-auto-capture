@@ -22,14 +22,14 @@
 
 ## 读取与组件复用
 
-- 所有项目命令显式使用 `D:/work/browser-capture-tool` 作为workdir。禁止扫描或读取node_modules；通过官方文档、明确源码路径、类型检查和行为测试核验依赖。
+- 所有项目命令必须显式使用当前实际 checkout 根目录作为 workdir；本机 checkout 为 `/Users/guojunxi/Desktop/work/broswer-auto-capture`，不得使用历史路径 `D:/work/browser-capture-tool`。禁止扫描或读取node_modules；通过官方文档、明确源码路径、类型检查和行为测试核验依赖。
 - 结构查询优先CodeGraph；本项目未初始化时先请求初始化授权，已知具体文件可以定点读取。相邻项目只读参考。
 - 调研与验收门记录在 `docs/development/RESEARCH.md`，阶段计划在ROADMAP，当前证据在PROGRESS；先验证再冻结选型。
 - 通用能力复用成熟组件。基础UI使用已验证的成品组件，业务代码承担领域组合；同名主题Token和组件variants集中维护。
 
 ## 开发期模型与并发
 
-- 主 agent 固定使用 `gpt-6-astra` / `high`，负责拆分、协调、集成与最终验收。
-- 所有开发子 agent 固定使用 `gpt-5.6-sol` / `high`，包括边界清楚的简单任务；不得使用 Luna、Terra 或其他开发档位。
+- 主 agent 固定使用 `gpt-6-astra` / `high`，只负责拆分、派发、协调、决策和最终汇总；不得直接执行调查、文件修改、项目命令、测试或验收取证。
+- 所有开发执行固定由 `gpt-5.6-sol` / `high` 子 agent 完成，包括调查、文件修改、项目命令、测试、验收取证和边界清楚的简单任务；不得使用 Luna、Terra 或其他开发档位。
 - 同时运行的开发子 agent 最多两个。每次派发仍须写清目标、依赖、文件范围、产物和验收，并用实际 `turn_context` 核验 model/effort。
 - 本规则仅约束开发任务，不改变产品运行时的 Terra medium、Sol high、Luna medium 路由。

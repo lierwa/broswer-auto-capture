@@ -3,15 +3,17 @@ import test from "node:test"
 import { randomUUID } from "node:crypto"
 import { createApplication } from "../src/app.js"
 import { openFixture, succeeded, draft } from "./helpers.js"
+import { testAIModel } from "./fixtures/ai-model.js"
 
 async function fixture(run: (value: Awaited<ReturnType<typeof createApplication>>) => Promise<void>) {
   const original = await openFixture()
   await original.coordinator.close(); await original.store.close()
-  const value = await createApplication({ root: process.cwd(), directory: original.directory, modelFactory: async () => ({ client: original.client, dispose: () => original.client.close() }) })
+  const value = await createApplication({ root: process.cwd(), directory: original.directory, aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
   try { await run(value) }
   finally { await value.app.close(); const { rm } = await import("node:fs/promises"); await rm(original.directory, { recursive: true, force: true }) }
 }
 const headers = { host: "127.0.0.1:4175" }
+const aiHeaders = { ...headers, origin: "http://127.0.0.1:4175", "sec-fetch-site": "same-origin" }
 test("正式 API 拒绝跨站、越界输入与未知任务，错误不暴露内部字段", async () => fixture(async ({ app }) => {
   assert.equal((await app.inject({ url: "/api/tasks", headers: { host: "malicious.example:4175" } })).statusCode, 403)
   assert.equal((await app.inject({ url: "/api/tasks", headers: { ...headers, origin: "https://outside.example" } })).statusCode, 403)
@@ -19,6 +21,10 @@ test("正式 API 拒绝跨站、越界输入与未知任务，错误不暴露内
   const invalid = await app.inject({ method: "POST", url: "/api/tasks", headers, payload: { type: "create", secret: "do-not-echo" } })
   assert.equal(invalid.statusCode, 400); assert.doesNotMatch(invalid.body, /do-not-echo/)
   assert.equal((await app.inject({ method: "POST", url: "/api/tasks", headers: { ...headers, "content-type": "text/plain" }, payload: "x" })).statusCode, 400)
+  assert.equal((await app.inject({ url: "/api/model-settings", headers })).statusCode, 403)
+  assert.equal((await app.inject({ url: "/api/model-settings", headers: { ...aiHeaders, "sec-fetch-site": "cross-site" } })).statusCode, 403)
+  assert.deepEqual((await app.inject({ url: "/api/model-settings", headers: aiHeaders })).json(), { selection: null })
+  assert.deepEqual((await app.inject({ url: "/api/ai/catalog", headers: aiHeaders })).json(), { data: [] })
 }))
 test("任务/访谈/版本确认由正式 API 交付，重试同一请求不重复调用", async () => fixture(async ({ app, coordinator, store }) => {
   const createRequestId = randomUUID()
@@ -54,7 +60,7 @@ test("正式 API 重启后继续同一任务，并保留问题、决策、草稿
       : { assistantText: "范围已明确。", question: null, draft })
   }
   const open = () => createApplication({ root: process.cwd(), directory: original.directory,
-    modelFactory: async () => ({ client: original.client, dispose: () => original.client.close() }) })
+    aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
   let current: Awaited<ReturnType<typeof createApplication>> | undefined
   try {
     current = await open()

@@ -4,6 +4,7 @@ import { Background, Controls, ReactFlow } from "@xyflow/react"
 import type { ActionNode, ChainRecord } from "@browser-capture/contracts/chain"
 import { ChainConnection } from "./chainConnection.js"
 import { DetailPane } from "./DetailPane.js"
+import { InvocationEvents } from "./InvocationEvents.js"
 
 export const chainLabels = { exploring: "正在探索", compiled: "已编译 · 待验证", validating: "正在验证", verified: "换输入验证通过", failed: "步骤未通过", budget_exceeded: "步骤预算已用尽", manual_required: "等待人工处理", cancelled: "已停止", interrupted: "探索已中断" }
 function successors(node: ActionNode) {
@@ -65,7 +66,7 @@ function ChainEvidence({ record }: { record: ChainRecord }) {
     <details><summary>探索判断</summary>{record.decisions.map((decision, index) => <p key={index}>{decision.reason}</p>)}</details>
     <p>底层命令 {record.consumed.commands} 条 · 模型调用意图 {record.consumed.modelCalls} 次 · {Math.round(record.consumed.elapsedMs / 1000)} 秒</p>
     <p>样本：{record.sample?.url ?? "尚未选定"} {record.sample?.value} · {record.sampleRows.length} 条<br />换输入：{record.verification?.url ?? "尚未选定"} {record.verification?.value} · {record.verificationRows.length} 条</p>
-    {record.audits.map((audit, index) => <p key={index}>{audit.purpose === "exploration" ? "首次探索" : "显式 LLM 节点"} · {audit.model}/{audit.effort} · {audit.phase} · {audit.invocations === null ? "调用次数未回报" : `${audit.invocations} 次已回报调用`}</p>)}
+    {record.audits.map((audit, index) => <div key={index}><p>{audit.purpose === "exploration" ? "首次探索" : audit.purpose === "repair" ? "修复判断" : "显式 LLM 节点"} · {audit.model}/{audit.effort} · {audit.phase} · {audit.invocations === null ? "调用次数未回报" : `${audit.invocations} 次已回报调用`}</p><InvocationEvents events={audit.aiEvents} /></div>)}
     <details><summary>样本输出</summary><pre className="chain-json">{JSON.stringify({ sample: record.sampleRows, verification: record.verificationRows }, null, 2)}</pre></details>
   </details>
 }

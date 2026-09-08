@@ -1,19 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import path from "node:path"
 import { z } from "zod"
-import { createCodexAppServerClient } from "@browser-capture/model-runtime"
 import { researchDecisionSchema, type ResearchRecord } from "@browser-capture/contracts/research"
 import type { RequirementBrief } from "@browser-capture/contracts/interview"
-import type { ModelSessionFactory } from "../interview/modelSession.js"
-
-export function researchModelFactory(root: string): ModelSessionFactory {
-  return async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "browser-source-research-"))
-    const client = createCodexAppServerClient({ cwd: directory, packageRoot: path.join(root, "packages", "model-runtime") })
-    return { client, dispose: async () => { try { await client.close() } finally { await rm(directory, { recursive: true, force: true }) } } }
-  }
-}
 export function researchOutputSchema() {
   const { $schema: _, ...schema } = z.toJSONSchema(researchDecisionSchema, { target: "draft-7", override: ({ jsonSchema }) => {
     for (const key of ["format", "pattern", "minLength", "maxLength", "minItems", "maxItems"]) delete jsonSchema[key]

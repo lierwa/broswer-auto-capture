@@ -1,5 +1,11 @@
 # 开发进度
 
+## 共享模型访谈接入（2026-09-07）
+
+需求访谈已接入 vendored `@agent-platform/ai-connect` / React 0.2.3。顶栏使用完整公共模型设置弹窗；用户显式保存共享选择后，单次 turn 冻结选择并通过公共结构调用，真实 typed 事件进入既有 assistant 消息并由公共 Timeline 投影显示。未选择时继续现有 Codex 配置；共享调用失败直接显示失败且不回退。其他模型用途不在本轮迁移范围。
+
+验证：contracts、API、Workbench 三包类型检查和 Workbench 生产构建通过；合成 gpt-5.6-sol provider 的正式 coordinator fixture 证明 success/invalid JSON 两条路径、事件终态和 Codex 调用为0；API 跨站拒绝/同源读取套件通过。真实浏览器在正式 Workbench 打开完整厂商弹窗并完成同源读取；临时数据库由同一 coordinator 产生的真实任务显示单一调用组和唯一“结构结果生成完成”终态。临时服务与数据已删除，真实任务和凭证未改。真实厂商请求与 Windows 安装/构建未执行。
+
 ## F6 海尔隔离完整验收（2026-09-06）
 
 用户授权的 v6 海尔中国官网冰箱目录计划已按正式 API/队列/BrowserService 路径完成。开发协调保持 `gpt-6-astra/high`；本轮实现、修复与真实执行由实际 `turn_context` 为 `gpt-5.6-sol/high` 的开发子任务承担。产品运行中只有枚举与字段链路的显式修复使用 Sol/high；最终独立复跑的三个步骤均为 0 次探索模型、0 次显式 LLM。没有使用额度重置卡。

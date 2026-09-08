@@ -3,45 +3,57 @@ import { Readable } from "node:stream"
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify"
 import fastifyStatic from "@fastify/static"
 import { z } from "zod"
+import { createAI, localStore, parseModelSelection, type AI } from "@agent-platform/ai-connect/server"
+import { mountAI } from "@agent-platform/ai-connect/fastify"
 import { interviewCommandSchema } from "@browser-capture/contracts/interview"
 import { taskCommandSchema, taskIdSchema } from "@browser-capture/contracts/task"
 import { ProductStore } from "./database/store.js"
 import { importLegacy } from "./database/importLegacy.js"
 import { InterviewCoordinator } from "./interview/coordinator.js"
-import { modelSessionFactory, type ModelSessionFactory } from "./interview/modelSession.js"
 import { DomainError } from "./errors.js"
 import { BrowserService } from "./browser/service.js"
 import { BrowserError, bskExecutor, type CommandExecutor } from "@browser-capture/browser"
 import { ResearchService } from "./research/service.js"
-import { researchModelFactory } from "./research/model.js"
 import { PlanService } from "./plan/service.js"
 import type { PlanExecutor } from "./plan/queue.js"
 import { ChainService } from "./chain/service.js"
+import { createAIModelProvider, type AIModelProvider } from "./ai/model.js"
 
-export interface AppOptions { root: string; directory: string; modelFactory?: ModelSessionFactory; researchFactory?: ModelSessionFactory; planFactory?: ModelSessionFactory; explorationFactory?: ModelSessionFactory; llmFactory?: ModelSessionFactory; planExecutor?: PlanExecutor | null; browserExecutor?: CommandExecutor; serveUi?: boolean }
+export const SHARED_AI_SUBJECT = "browser-capture-local-user"
+export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider; planExecutor?: PlanExecutor | null; browserExecutor?: CommandExecutor; serveUi?: boolean }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
   catch (error) { await store.close(); throw error }
-  const coordinator = new InterviewCoordinator(store, options.modelFactory ?? modelSessionFactory(options.root))
+  let ai: AI
+  try { ai = options.ai ?? await createAI({ storage: localStore({ directory: path.join(options.directory, "ai-connect") }),
+    onAccountRemoved: (subjectId, connectionId) => store.clearSharedModelSelection(subjectId, connectionId),
+  }) }
+  catch (error) { await store.close(); throw error }
+  const aiModel = options.aiModel ?? createAIModelProvider(ai, store, SHARED_AI_SUBJECT)
+  const coordinator = new InterviewCoordinator(store, aiModel)
   let browser: BrowserService
   try { browser = new BrowserService(store, options.directory, options.browserExecutor ?? bskExecutor(options.root)) }
-  catch (error) { await store.close(); throw error }
+  catch (error) { ai.close(); await store.close(); throw error }
   let research: ResearchService
-  try { research = new ResearchService(store, browser, coordinator, options.researchFactory ?? researchModelFactory(options.root)) }
-  catch (error) { await browser.close(); await coordinator.close(); await store.close(); throw error }
+  try { research = new ResearchService(store, browser, coordinator, aiModel) }
+  catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   let plan: PlanService
   let chain: ChainService
   try {
-    chain = new ChainService(store, options.root, options.explorationFactory, options.llmFactory)
-    plan = new PlanService(store, research, browser, options.planFactory ?? researchModelFactory(options.root), options.planExecutor === null ? undefined : options.planExecutor ?? chain.executeBatch)
+    chain = new ChainService(store, aiModel)
+    plan = new PlanService(store, research, browser, options.planExecutor === null ? undefined : options.planExecutor ?? chain.executeBatch, aiModel)
   }
-  catch (error) { await research.close(); await browser.close(); await coordinator.close(); await store.close(); throw error }
+  catch (error) { await research.close(); await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
   app.addHook("onRequest", async (request, reply) => {
     const host = request.headers.host ?? ""
     if (!/^(127\.0\.0\.1|localhost):\d+$/.test(host) || (request.headers.origin && request.headers.origin !== `http://${host}`)) {
       return reply.code(403).send({ error: "仅允许本机同源访问。", code: "forbidden_origin" })
+    }
+    // WHY：账号与模型调用会使用本机凭据；浏览器必须提供同源 Fetch Metadata，不能沿用允许无 Origin 的 CLI 读取边界。
+    if (sensitiveAIPath(request.url) && request.headers["sec-fetch-site"] !== "same-origin") {
+      return reply.code(403).send({ error: "模型账号仅允许由当前工作台访问。", code: "forbidden_ai_origin" })
     }
     reply.header("Cache-Control", "no-store").header("X-Content-Type-Options", "nosniff")
   })
@@ -51,10 +63,11 @@ export async function createApplication(options: AppOptions) {
     const status = publicStatus(error)
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
-  routes(app, coordinator, browser, research, plan)
+  routes(app, coordinator, browser, research, plan, store)
+  await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
   app.get("/api/chains", (request) => { const { taskId } = taskQuery.parse(request.query); return chain.snapshot(taskId, plan.snapshot(taskId)) })
   app.addHook("preClose", async () => { await plan.close(); await research.close(); await browser.close(); await coordinator.close() })
-  app.addHook("onClose", async () => { await store.close() })
+  app.addHook("onClose", async () => { ai.close(); await store.close() })
   try {
     if (options.serveUi) {
       await app.register(fastifyStatic, { root: path.join(options.root, "apps", "workbench", "dist") })
@@ -73,8 +86,14 @@ function publicStatus(error: unknown) {
 }
 const taskQuery = z.object({ taskId: taskIdSchema })
 const eventsQuery = taskQuery.extend({ after: z.coerce.number().int().min(-1).default(-1) })
-function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, research: ResearchService, plan: PlanService) {
+function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, research: ResearchService, plan: PlanService, store: ProductStore) {
   app.get("/api/health", () => ({ service: "browser-capture-api", version: 1 }))
+  app.get("/api/model-settings", () => ({ selection: store.sharedModelSelection(SHARED_AI_SUBJECT) ?? null }))
+  app.put("/api/model-settings", (request) => {
+    const body = modelSettingsBody.parse(request.body)
+    try { return { selection: store.saveSharedModelSelection(SHARED_AI_SUBJECT, parseModelSelection(body.selection)) } }
+    catch { throw new DomainError("invalid_model_selection", "模型选择无效，请重新选择账号和模型。", 400) }
+  })
   app.get("/api/tasks", () => plan.projectTasks(coordinator.list()))
   app.post("/api/tasks", (request) => {
     const command = taskCommandSchema.parse(request.body)
@@ -99,6 +118,11 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
     coordinator.snapshot(taskId)
     return stream(reply, coordinator, taskId, after)
   })
+}
+const modelSettingsBody = z.object({ selection: z.unknown() }).strict()
+function sensitiveAIPath(url: string) {
+  const pathName = url.split("?", 1)[0]
+  return pathName === "/api/model-settings" || pathName === "/api/ai" || pathName?.startsWith("/api/ai/")
 }
 function stream(reply: FastifyReply, coordinator: InterviewCoordinator, id: string, after: number) {
   const controller = new AbortController()

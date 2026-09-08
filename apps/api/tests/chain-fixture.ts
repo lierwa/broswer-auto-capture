@@ -3,7 +3,6 @@ import assert from "node:assert/strict"
 import type { ActionGraph, ExplorationDecision } from "@browser-capture/contracts/chain"
 import type { PlanProposal } from "@browser-capture/contracts/plan"
 import { planFixture } from "./plan-fixture.js"
-import { succeeded } from "./helpers.js"
 
 export function graphFor(kind: "enumerate" | "collect"): ActionGraph {
   return { entry: "open", coverage: "已观察的目录和详情输入", completion: "完成当前输入并得到来源记录", maxTransitions: 10, nodes: [
@@ -23,14 +22,10 @@ export function chainDecision(prompt: string): ExplorationDecision {
 }
 export async function chainFixture(serveUi = false, batch = false) {
   const fake = { calls: 0, llmCalls: 0, decide: async (prompt: string): Promise<unknown> => chainDecision(prompt), closed: 0 }
-  const fixture = await planFixture(serveUi, (input) => batch ? fixture.current.chain.executeBatch(input) : fixture.current.chain.execute(input), { explorationFactory: async () => ({
-    client: { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => { fake.closed++ }, async *runTurn(prompt) {
-      fake.calls++; const event = succeeded(await fake.decide(prompt)); if (event.type !== "turn_succeeded") throw new Error("fixture event"); yield { ...event, audit: { ...event.audit, requestedModel: "gpt-5.6-sol" as const, requestedEffort: "high" as const, reportedModel: "gpt-5.6-sol" as const, reportedEffort: "high" as const } }
-    } }, dispose: async () => { fake.closed++ },
-  }), llmFactory: async () => ({ client: { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => {}, async *runTurn() {
-    fake.llmCalls++; const event = succeeded({ value: "说明" }); if (event.type !== "turn_succeeded") throw new Error("fixture event")
-    yield { ...event, audit: { ...event.audit, requestedModel: "gpt-5.6-luna" as const, reportedModel: "gpt-5.6-luna" as const } }
-  } }, dispose: async () => {} }) })
+  const fixture = await planFixture(serveUi, (input) => batch ? fixture.current.chain.executeBatch(input) : fixture.current.chain.execute(input), async (prompt) => {
+    if (prompt.startsWith("显式 llm 节点")) { fake.llmCalls++; return { value: "说明" } }
+    fake.calls++; return fake.decide(prompt)
+  })
   const ready = async () => {
     const id = await fixture.ready(); await fixture.generate(id); await fixture.waitPlan(id)
     fixture.fake.links = [{ title: "下一页", url: "https://example.com/catalog?page=2" }, { title: "条目一", url: "https://example.com/item/one" }, { title: "条目二", url: "https://example.com/item/two" }]

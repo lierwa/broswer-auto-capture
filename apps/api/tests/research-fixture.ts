@@ -8,7 +8,7 @@ import assert from "node:assert/strict"
 import { createApplication, type AppOptions } from "../src/app.js"
 import { succeeded, brief } from "./helpers.js"
 import type { ResearchDecision, ResearchRecord } from "@browser-capture/contracts/research"
-import type { CodexAppServerClient } from "@browser-capture/model-runtime"
+import { testAIModel } from "./fixtures/ai-model.js"
 
 export const sourceBrief = { ...brief, goal: "核验样例机构公开目录", scope: "样例机构目录与名称", deliverables: [{ entity: "目录", fields: ["名称"], coverage: "目录内全部条目", limit: "按目录终止" }],
   discoveryTasks: [{ objective: "发现目录", expectedOutput: "目录与详情链接", acceptance: "实际页面可见" }],
@@ -25,16 +25,19 @@ export function decisionFor(prompt: string): ResearchDecision {
   result.assessment = { ...result.assessment, adopted: true, reason: "目录归属与入口可见", fields: [{ name: "名称", evidence }], enumeration: { name: "目录下一页", evidence } }
   return { ...result, action: "finish", query: null, reason: "已观察到规划所需目录和字段", coverage: ["目录", "发现目录"].map((objective) => ({ objective, observationIds: [current.id], reason: "真实目录包含名称和下一页" })) }
 }
-export async function researchFixture(serveUi = false, planOptions: Pick<AppOptions, "planFactory" | "planExecutor" | "explorationFactory" | "llmFactory"> = {}) {
+export async function researchFixture(serveUi = false, planOptions: Pick<AppOptions, "planExecutor"> & { decide?: (prompt: string) => Promise<unknown> } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-research-test-"))
   const fake = { url: "about:blank", restricted: false, failure: false, badStop: false, calls: [] as string[][], modelCalls: 0, closeCalls: 0,
     decide: async (prompt: string) => decisionFor(prompt), close: () => {}, beforeCommand: null as ((args: readonly string[]) => Promise<void>) | null, links: [] as { title: string; url: string }[], text: null as string | null, textForUrl: null as ((url: string) => string) | null, linksForUrl: null as ((url: string) => {title:string;url:string}[]) | null }
-  const client: CodexAppServerClient = { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => { fake.closeCalls++; fake.close() },
-    async *runTurn(prompt) { fake.modelCalls++; yield succeeded(await fake.decide(prompt)) } }
+  const decide = planOptions.decide
+  const aiModel = testAIModel(async function* (prompt) {
+    if (prompt.startsWith("用途 requirement_interview")) {
+      yield succeeded({ assistantText: "已整理", question: null, draft: { title: "目录调研", brief: sourceBrief } }); return
+    }
+    fake.modelCalls++; yield succeeded(await (decide?.(prompt) ?? fake.decide(prompt)))
+  }, undefined, () => { fake.closeCalls++; fake.close() })
   const options = { root: fileURLToPath(new URL("../../..", import.meta.url)), directory, serveUi,
-    planExecutor: null, ...planOptions,
-    modelFactory: async () => ({ client: { ...client, async *runTurn() { yield succeeded({ assistantText: "已整理", question: null, draft: { title: "目录调研", brief: sourceBrief } }) } }, dispose: async () => {} }),
-    researchFactory: async () => ({ client, dispose: () => client.close() }),
+    planExecutor: planOptions.planExecutor ?? null, aiModel,
     browserExecutor: async (args: readonly string[]) => {
       await fake.beforeCommand?.(args)
       fake.calls.push([...args])

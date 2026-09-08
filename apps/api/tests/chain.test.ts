@@ -86,7 +86,7 @@ test("后续步骤换输入失败保留前置已验证版本和原样本，失�
   } finally { await f.close() }
 })
 
-test("显式LLM必须独立授权预算，普通探索与验证Luna调用分别审计", async () => {
+test("显式LLM必须独立授权预算，且沿用同一选择分别审计", async () => {
   for (const maxLlmCalls of [0, 2]) {
     const f = await chainFixture()
     try {
@@ -104,7 +104,7 @@ test("显式LLM必须独立授权预算，普通探索与验证Luna调用分别�
       assert.equal(f.chainFake.llmCalls, maxLlmCalls)
       const record = chains.records[0]!
       assert.equal(record.status, maxLlmCalls ? "verified" : "failed")
-      if (maxLlmCalls) assert.equal(record.audits.filter((audit) => audit.purpose === "explicit_llm" && audit.reportedModel === "gpt-5.6-luna").length, 2)
+      if (maxLlmCalls) assert.equal(record.audits.filter((audit) => audit.purpose === "explicit_llm" && audit.reportedModel === "gpt-5.6-sol").length, 2)
     } finally { await f.close() }
   }
 })

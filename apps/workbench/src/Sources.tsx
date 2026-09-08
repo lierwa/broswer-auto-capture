@@ -5,6 +5,7 @@ import type { ResearchRecord, SourceCandidate } from "@browser-capture/contracts
 import { ResearchConnection } from "./researchConnection.js"
 import { BrowserStatus } from "./BrowserStatus.js"
 import { DetailPane } from "./DetailPane.js"
+import { InvocationEvents } from "./InvocationEvents.js"
 
 const labels = { running: "调研中", completed: "规划证据已具备", partial: "存在覆盖缺口", failed: "调研未完成", cancelled: "已停止", manual_required: "需要人工处理", cleanup_required: "会话待清理", interrupted: "调研已中断" }
 const candidateLabels = { candidate: "候选", observed: "已观察", restricted: "受限", unavailable: "不可用" }
@@ -54,7 +55,7 @@ export function Sources({ confirmedVersion, revision = 0, onInterview, onDraft, 
         <div className="source-list">{(expanded ? candidates : candidates.slice(0, 12)).map((item) => <article className="source-row" key={item.id}><div><h3>{item.title || new URL(item.url).hostname}</h3><span className="muted">{new URL(item.url).hostname} · {candidateLabels[item.status]}</span><p>{item.reason}</p></div><Button size="1" variant="soft" onClick={() => setDetail(item.id)}>来源详情</Button></article>)}</div>
         {candidates.length > 12 && <Button variant="ghost" onClick={() => setExpanded(!expanded)}>{expanded ? "收起其余候选" : `查看全部 ${candidates.length} 个候选`}</Button>}
         {!record.candidates.length && <p className="muted">尚无真实候选链接；已有查询和状态保留在本次调研中。</p>}
-        <details className="supporting-detail"><summary>覆盖依据与模型审计</summary>{record.coverage.map((item, index) => <p key={index}><strong>{item.objective}</strong>：{item.reason}</p>)}{record.audits.map((item) => <p key={item.id}>来源调研 · {item.model}/{item.effort} · {item.status} · {item.invocations === null ? "请求次数未回报" : `${item.invocations} 次已回报调用`}</p>)}</details>
+        <details className="supporting-detail"><summary>覆盖依据与模型审计</summary>{record.coverage.map((item, index) => <p key={index}><strong>{item.objective}</strong>：{item.reason}</p>)}{record.audits.map((item) => <div key={item.id}><p>来源调研 · {item.model}/{item.effort} · {item.status} · {item.invocations === null ? "请求次数未回报" : `${item.invocations} 次已回报调用`}</p><InvocationEvents events={item.aiEvents} /></div>)}</details>
       </>}
     </>}
   </section><DetailPane title="来源详情" open={active && Boolean(candidate)} onClose={() => setDetail(null)}>{candidate && record && <SourceDetail candidate={candidate} record={record} />}</DetailPane></div>

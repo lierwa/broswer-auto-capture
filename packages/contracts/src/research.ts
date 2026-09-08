@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { aiEventSchema } from "./ai.js"
 import { taskIdSchema } from "./task.js"
 
 const text = z.string().trim().min(1).max(2000)
@@ -38,6 +39,7 @@ export const researchRecordSchema = z.object({
   audits: z.array(z.object({ id, purpose: z.literal("source_research"), at: z.string().datetime(),
     model: z.string(), effort: z.string(), status: z.enum(["intended", "completed", "interrupted", "failed"]),
     invocations: z.number().int().min(0).nullable(), reportedModel: z.string().nullable(), reportedEffort: z.string().nullable(),
+    aiEvents: z.array(aiEventSchema).max(5000).default([]),
   }).strict()).max(16),
 }).strict()
 export const researchStateSchema = z.object({ taskId: taskIdSchema, taskSequence: z.number().int().nonnegative().default(0), records: z.array(researchRecordSchema),

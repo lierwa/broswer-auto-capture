@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import { rm } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { tmpdir } from "node:os"
 import Database from "better-sqlite3"
 import { createApplication } from "../src/app.js"
 import { migrate } from "../src/database/migrate.js"
@@ -32,14 +33,15 @@ test("真实进程崩溃恢复探索为interrupted，未回报调用保持未知
       assert.equal(chains.records[0]!.audits[0]!.invocations, null)
       await app.plan.queue.tick(); assert.equal(app.browser.owner(), null)
     } finally { await app.app.close() }
-  } finally { assert.ok(path.resolve(context.directory).startsWith(path.resolve(process.env.TEMP!))); await rm(context.directory, { recursive: true, force: true }) }
+  } finally { assert.ok(path.resolve(context.directory).startsWith(path.resolve(tmpdir()))); await rm(context.directory, { recursive: true, force: true }) }
 })
-test("v5到v7链路迁移原子提交，表冲突回滚不损坏原计划授权", () => {
+test("v5到v8链路迁移原子提交，表冲突回滚不损坏原计划授权", () => {
   const db = new Database(":memory:")
   try {
     db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY); INSERT INTO tasks VALUES ('task'); CREATE TABLE plans(id TEXT PRIMARY KEY); INSERT INTO plans VALUES ('plan'); CREATE TABLE executions(id TEXT PRIMARY KEY, taskId TEXT, planId TEXT, status TEXT, body TEXT); INSERT INTO executions VALUES ('old','task','plan','failed','{}'); PRAGMA user_version=5")
-    migrate(db); migrate(db); assert.equal(db.pragma("user_version", { simple: true }), 7)
+    migrate(db); migrate(db); assert.equal(db.pragma("user_version", { simple: true }), 8)
     assert.deepEqual(db.prepare("SELECT id FROM executions").all(), [{ id: "old" }])
+    assert.deepEqual(db.prepare("SELECT * FROM aiSettings").all(), [])
     db.exec("PRAGMA user_version=5"); assert.throws(() => migrate(db)); assert.equal(db.pragma("user_version", { simple: true }), 5)
   } finally { db.close() }
 })

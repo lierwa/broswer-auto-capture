@@ -11,6 +11,7 @@ import { DomainError, conflict } from "../errors.js"
 import { migrate } from "./migrate.js"
 import { validateState } from "./invariants.js"
 import * as schema from "./schema.js"
+import { parseModelSelection, type ModelSelection } from "@agent-platform/ai-connect/client"
 
 export type ProductDatabase = ReturnType<typeof drizzle<typeof schema>>
 export function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex") }
@@ -76,6 +77,24 @@ export class ProductStore {
   }
   recordOperation(scope: string, requestId: string, input: unknown, resultId: string) {
     this.db.insert(schema.operations).values({ scope, requestId, digest: digest(input), resultId }).run()
+  }
+  sharedModelSelection(subjectId: string): ModelSelection | undefined {
+    this.assertAvailable()
+    const row = this.db.select().from(schema.aiSettings).where(eq(schema.aiSettings.subjectId, subjectId)).get()
+    return row ? parseModelSelection(row.selection) : undefined
+  }
+  saveSharedModelSelection(subjectId: string, input: unknown) {
+    this.assertAvailable()
+    const selection = parseModelSelection(input)
+    this.db.insert(schema.aiSettings).values({ subjectId, selection }).onConflictDoUpdate({
+      target: schema.aiSettings.subjectId, set: { selection },
+    }).run()
+    return selection
+  }
+  clearSharedModelSelection(subjectId: string, connectionId?: string) {
+    this.assertAvailable()
+    if (connectionId && this.sharedModelSelection(subjectId)?.connectionId !== connectionId) return
+    this.db.delete(schema.aiSettings).where(eq(schema.aiSettings.subjectId, subjectId)).run()
   }
   taskAction(command: TaskCommand) {
     this.assertAvailable()

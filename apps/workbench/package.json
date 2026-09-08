@@ -10,9 +10,10 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.0-5e13c121.tgz",
+    "@agent-platform/ai-connect-react": "file:../../vendor/agent-platform/agent-platform-ai-connect-react-0.3.0-e45178b6.tgz",
     "@assistant-ui/react": "0.15.14",
     "@browser-capture/contracts": "0.0.0",
-    "@browser-capture/model-runtime": "0.0.0",
     "@radix-ui/themes": "3.3.0",
     "@xyflow/react": "12.11.6",
     "lucide-react": "0.544.0",

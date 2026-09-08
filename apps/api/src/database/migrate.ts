@@ -31,8 +31,8 @@ PRAGMA user_version = 2;
 
 export function migrate(connection: Database.Database) {
   const version = connection.pragma("user_version", { simple: true })
-  if (version === 7) return
-  if (typeof version !== "number" || version < 0 || version > 6) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
+  if (version === 8) return
+  if (typeof version !== "number" || version < 0 || version > 7) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
   // WHY：结构变更也必须整体提交，不能让部分建表成为成功迁移标记。
   connection.transaction(() => {
     if (version === 0) connection.exec(schema)
@@ -53,7 +53,7 @@ export function migrate(connection: Database.Database) {
     if (version < 6) connection.exec(`CREATE TABLE chains (id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), executionId TEXT NOT NULL REFERENCES executions(id), body TEXT NOT NULL CHECK(json_valid(body)));
       CREATE INDEX chains_execution ON chains(executionId); PRAGMA user_version = 6;`)
     // WHY：复跑属于独立运行；重建表解除每计划一个运行限制，同时保留链路外键与初次授权唯一性。
-    connection.exec(`CREATE TEMP TABLE saved_chains AS SELECT * FROM chains;
+    if (version < 7) connection.exec(`CREATE TEMP TABLE saved_chains AS SELECT * FROM chains;
       DROP TABLE chains;
       CREATE TABLE executions_v7 (id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), planId TEXT NOT NULL REFERENCES plans(id),
         status TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)));
@@ -68,5 +68,8 @@ export function migrate(connection: Database.Database) {
       DROP TABLE saved_chains;
       CREATE INDEX chains_execution ON chains(executionId);
       PRAGMA user_version = 7;`)
+    if (version < 8) connection.exec(`CREATE TABLE aiSettings (
+      subjectId TEXT PRIMARY KEY, selection TEXT NOT NULL CHECK(json_valid(selection))
+    ); PRAGMA user_version = 8;`)
   })()
 }

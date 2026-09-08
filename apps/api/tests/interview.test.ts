@@ -111,14 +111,17 @@ test("取消绑定具体轮次，迟到成功仅保留审计不提交草稿，�
   assert.throws(() => coordinator.dispatch(id, { type: "cancel", turnId: first.activeTurnId! }), /过期/)
   assert.equal(store.snapshot(id).activeTurnId, next.activeTurnId)
 }))
-test("成功输出已到达但尚未提交时取消，仍以持久化的 cancelling 为准", async () => fixture(async ({ coordinator, store, client, create, send, gate }) => {
-  const disposing = gate(), releaseDispose = gate()
-  client.runTurn = async function* () { yield succeeded({ assistantText: "尚未提交", question: null, draft }) }
-  client.close = async () => { disposing.resolve(); await releaseDispose.promise }
+test("共享调用收到取消信号后不提交草稿，持久化 cancelling 优先", async () => fixture(async ({ coordinator, store, client, create, send, gate }) => {
+  const started = gate()
+  client.runTurn = async function* (_prompt, _schema, signal) {
+    started.resolve()
+    await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+    yield succeeded({ assistantText: "迟到结果", question: null, draft })
+  }
   const id = create(), active = send(id)
-  await disposing.promise
+  await started.promise
   coordinator.dispatch(id, { type: "cancel", turnId: active.activeTurnId! })
-  releaseDispose.resolve(); await coordinator.waitForIdle()
+  await coordinator.waitForIdle()
   const cancelled = store.snapshot(id)
   assert.equal(cancelled.turns[0]?.status, "cancelled")
   assert.equal(cancelled.drafts.length, 0)

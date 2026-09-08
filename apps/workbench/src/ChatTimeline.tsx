@@ -3,6 +3,7 @@ import { Badge, Button } from "@radix-ui/themes"
 import { ArrowDown, ArrowRight, ArrowUp, Check, FileText, LoaderCircle, RotateCcw, Square } from "lucide-react"
 import { createContext, useContext, useId } from "react"
 import { visibleMessageText, type InterviewMessage, type InterviewState } from "./interviewContract.js"
+import { AIInvocationTimeline } from "@agent-platform/ai-connect-react/components/AIInvocationTimeline"
 import type { useInterview } from "./useInterview.js"
 
 type Interview = ReturnType<typeof useInterview>
@@ -65,6 +66,7 @@ function AssistantMessage() {
   const isLast = context.interview.state.messages.at(-1)?.id === id
   return <MessagePrimitive.Root className="chat-message assistant-message"><div className="assistant-label"><span className="assistant-mark">B</span>需求助手</div>
     <div className="assistant-body"><MessagePrimitive.Parts />
+      {item.aiEvents.length > 0 && <AIInvocationTimeline events={item.aiEvents} emptyTitle="暂无模型调用" />}
       {isLast && context.interview.state.active && <div className="turn-status" role="status"><LoaderCircle size={13} className="spin" />{context.interview.state.cancellationRequested ? "正在停止，保留已有对话" : "正在思考"}</div>}
       {isLast && !context.interview.state.active && ["failed", "cancelled"].includes(item.status) && <Button disabled={context.blocked || context.interview.busy || Boolean(context.interview.pending)} size="1" variant="soft" color="gray" onClick={() => void context.interview.retry()}><RotateCcw size={13} />重试本轮</Button>}
       <TurnArtifacts item={item} state={context.interview.state} blocked={context.blocked || context.interview.busy || Boolean(context.interview.pending)} onDraft={context.openDraft} onAnswer={context.interview.answer} />

@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import { rm } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { tmpdir } from "node:os"
 import { createApplication } from "../src/app.js"
 const root = fileURLToPath(new URL("../../..", import.meta.url))
 
@@ -31,5 +32,5 @@ test("批量进程实际崩溃保留运行与已完成来源；重启不自动�
       assert.ok(run.capture!.steps[1]!.elapsedMs >= 10000)
       await app.plan.queue.tick(); assert.equal(app.browser.owner(), null)
     } finally { await app.app.close() }
-  } finally { assert.ok(path.resolve(context.directory).startsWith(path.resolve(process.env.TEMP!))); await rm(context.directory, { recursive: true, force: true }) }
+  } finally { assert.ok(path.resolve(context.directory).startsWith(path.resolve(tmpdir()))); await rm(context.directory, { recursive: true, force: true }) }
 })

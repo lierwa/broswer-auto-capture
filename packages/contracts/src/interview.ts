@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { aiEventSchema } from "./ai.js"
 import { requirementBriefSchema } from "./requirementBrief.js"
 import { taskIdSchema } from "./task.js"
 export { requirementBriefSchema, renderRequirementBrief, type RequirementBrief } from "./requirementBrief.js"
@@ -24,6 +25,7 @@ export const messageSchema = z.object({
   id: text, role: z.enum(["user", "assistant"]), text: z.string(),
   status: z.enum(["complete", "running", "failed", "cancelled"]),
   question: questionSchema.nullable(), draftVersion: z.number().int().nullable(),
+  aiEvents: z.array(aiEventSchema).default([]),
 })
 export const auditSchema = z.object({ revision, model: text, effort: text, invocations: z.number().int().nonnegative() })
 export const turnSchema = z.object({

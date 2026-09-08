@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./ai": "./src/ai.ts",
     "./capture": "./src/capture.ts",
     "./chain": "./src/chain.ts",
     "./plan": "./src/plan.ts",
@@ -19,6 +20,7 @@
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.0-5e13c121.tgz",
     "zod": "4.1.8"
   },
   "devDependencies": {

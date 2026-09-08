@@ -3,7 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { setTimeout as delay } from "node:timers/promises"
 import { createApplication } from "../../api/src/app.js"
-import type { CodexAppServerClient } from "@browser-capture/model-runtime"
+import { testAIModel } from "../../api/tests/fixtures/ai-model.js"
 
 const root = fileURLToPath(new URL("../../../", import.meta.url))
 const directory = process.env.BROWSER_CAPTURE_TEST_DIRECTORY
@@ -20,26 +20,18 @@ const brief = {
   constraints: ["不绕过登录、验证码或访问限制"],
   proposedDefaults: ["优先核验官方或旗舰店入口"],
 }
-const application = await createApplication({ root, directory, serveUi: true, modelFactory: async () => {
-  const client: CodexAppServerClient = {
-    readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => {},
-    async *runTurn(prompt, _schema, signal) {
-      calls += 1
-      const conversation = JSON.parse(prompt.split("\n\n").at(-1)!).conversation as Array<{ role: string; text: string }>
-      const text = conversation.findLast((message) => message.role === "user")!.text
-      yield { type: "commentary_delta", delta: "正在整理这次验收需求。", threadId: "fixture", turnId: `fixture-${calls}` }
-      await delay(text.includes("慢轮次") ? 20_000 : 700, undefined, { signal })
-      if (text.includes("失败轮次") && !failures.has(text)) { failures.add(text); throw new Error("注入失败") }
-      const question = text.includes("开放问题")
-        ? { prompt: "希望优先覆盖哪些品牌或品类范围？", options: [] }
-        : text.includes("先提问") ? { prompt: "希望覆盖多少条？", options: [{ label: "前 20 条", description: "先验证小范围", recommended: true }, { label: "前 100 条", description: "覆盖更多样本", recommended: false }] } : null
-      yield { type: "turn_succeeded", threadId: "fixture", turnId: `fixture-${calls}`, audit: { invocationCount: 1, requestedModel: "gpt-5.6-terra", requestedEffort: "medium", reportedModel: "gpt-5.6-terra", reportedEffort: "medium" },
-        outputText: JSON.stringify({ assistantText: "已整理本次需求范围。", question, draft: question ? null : { title: "F1 验收需求", brief } }),
-      }
-    },
-  }
-  return { client, dispose: () => client.close() }
-} })
+const application = await createApplication({ root, directory, serveUi: true, aiModel: testAIModel(async function* (prompt, _schema, signal) {
+  calls += 1
+  const conversation = JSON.parse(prompt.split("\n\n").at(-1)!).conversation as Array<{ role: string; text: string }>
+  const text = conversation.findLast((message) => message.role === "user")!.text
+  yield { type: "commentary_delta", delta: "正在整理这次验收需求。" }
+  await delay(text.includes("慢轮次") ? 20_000 : 700, undefined, { signal })
+  if (text.includes("失败轮次") && !failures.has(text)) { failures.add(text); throw new Error("注入失败") }
+  const question = text.includes("开放问题")
+    ? { prompt: "希望优先覆盖哪些品牌或品类范围？", options: [] }
+    : text.includes("先提问") ? { prompt: "希望覆盖多少条？", options: [{ label: "前 20 条", description: "先验证小范围", recommended: true }, { label: "前 100 条", description: "覆盖更多样本", recommended: false }] } : null
+  yield { type: "turn_succeeded", outputText: JSON.stringify({ assistantText: "已整理本次需求范围。", question, draft: question ? null : { title: "F1 验收需求", brief } }) }
+}) })
 await application.app.listen({ host: "127.0.0.1", port: 4174 })
 process.stdout.write("F1 UI fixture ready on 4174; no real model calls\n")
 process.once("SIGINT", () => { void application.app.close() })

@@ -66,7 +66,7 @@ test("任务创建幂等，失败事务不改变消息/草稿/确认/事件序�
   assert.deepEqual(store.snapshot(id), before)
   assert.equal(store.list().length, 1)
 }))
-test("v1 数据库原子迁移到 v7，旧草稿和确认历史保留且迁移幂等", async () => {
+test("v1 数据库原子迁移到 v8，旧草稿和确认历史保留且迁移幂等", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-v1-migration-"))
   const file = path.join(directory, "workbench.sqlite")
   try {
@@ -83,9 +83,10 @@ test("v1 数据库原子迁移到 v7，旧草稿和确认历史保留且迁移�
     await reopened.close()
     const inspection = new Database(file, { readonly: true })
     try {
-      assert.equal(inspection.pragma("user_version", { simple: true }), 7)
+      assert.equal(inspection.pragma("user_version", { simple: true }), 8)
       assert.deepEqual(inspection.prepare("SELECT * FROM browserRuns").all(), [])
       assert.deepEqual(inspection.prepare("SELECT * FROM researchRuns").all(), [])
+      assert.deepEqual(inspection.prepare("SELECT * FROM aiSettings").all(), [])
       assert.equal(inspection.prepare("PRAGMA table_info(drafts)").all().filter((column: any) => column.name === "brief").length, 1)
     } finally { inspection.close() }
   } finally { await rm(directory, { recursive: true, force: true }) }
@@ -105,7 +106,7 @@ test("F2 v3 升级来源表保持浏览器历史，并在迁移冲突时整体�
   try {
     connection.exec("CREATE TABLE tasks (id TEXT PRIMARY KEY); INSERT INTO tasks VALUES ('existing'); CREATE TABLE browserRuns (runId TEXT PRIMARY KEY, taskId TEXT, body TEXT); INSERT INTO browserRuns VALUES ('old','existing','{}'); PRAGMA user_version=3")
     migrate(connection); migrate(connection)
-    assert.equal(connection.pragma("user_version", { simple: true }), 7)
+    assert.equal(connection.pragma("user_version", { simple: true }), 8)
     assert.deepEqual(connection.prepare("SELECT * FROM browserRuns").all(), [{ runId: "old", taskId: "existing", body: "{}" }])
     assert.deepEqual(connection.prepare("SELECT * FROM researchRuns").all(), [])
     connection.exec("PRAGMA user_version=3")
@@ -168,8 +169,8 @@ test("服务重启把未完成轮次持久化为 interrupted，重复恢复不�
   store.mutate(id, (state) => {
     state.revision = 1; state.active = true; state.activeTurnId = "turn-1"; state.cancellationRequested = true
     state.messages.push(
-      { id: "user-1", role: "user", text: "继续访谈", status: "complete", question: null, draftVersion: null },
-      { id: "assistant-1", role: "assistant", text: "处理中", status: "running", question: null, draftVersion: null },
+      { id: "user-1", role: "user", text: "继续访谈", status: "complete", question: null, draftVersion: null, aiEvents: [] },
+      { id: "assistant-1", role: "assistant", text: "处理中", status: "running", question: null, draftVersion: null, aiEvents: [] },
     )
     state.turns.push({ id: "turn-1", revision: 1, userMessageId: "user-1", assistantMessageId: "assistant-1",
       status: "cancelling", reason: null, createdAt: "2026-09-06T00:00:00.000Z", completedAt: null })
@@ -199,7 +200,7 @@ test("任务投影在事务和进程重启后仍按 taskId 隔离", async () => 
   const secondBefore = store.snapshot(second)
   store.mutate(first, (state) => {
     state.revision = 1
-    state.messages.push({ id: "first-user", role: "user", text: "只属于任务一", status: "complete", question: null, draftVersion: null })
+    state.messages.push({ id: "first-user", role: "user", text: "只属于任务一", status: "complete", question: null, draftVersion: null, aiEvents: [] })
     state.drafts.push({ version: 1, revision: 1, title: "任务一草稿", markdown: "# 任务一", brief: null })
     state.confirmedVersion = 1
   })

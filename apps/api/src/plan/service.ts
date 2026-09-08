@@ -4,7 +4,7 @@ import { defaultPlanBudget, planCommandSchema, planStateSchema, type PlanRecord,
 import { taskIdSchema, type TaskSummary } from "@browser-capture/contracts/task"
 import type { ResearchService } from "../research/service.js"
 import type { BrowserService } from "../browser/service.js"
-import type { ModelSessionFactory } from "../interview/modelSession.js"
+import type { AIModelProvider } from "../ai/model.js"
 import { digest, type ProductStore } from "../database/store.js"
 import { conflict } from "../errors.js"
 import { PlanRepository } from "./repository.js"
@@ -18,7 +18,8 @@ export class PlanService {
   readonly queue: ExecutionQueue
   private jobs = new Map<string, { record: PlanRecord; controller: AbortController; done: Promise<void> }>()
   private closing = false
-  constructor(private store: ProductStore, private research: ResearchService, private browser: BrowserService, private factory: ModelSessionFactory, executor?: PlanExecutor) {
+  constructor(private store: ProductStore, private research: ResearchService, private browser: BrowserService,
+    executor: PlanExecutor | undefined, private aiModel: AIModelProvider) {
     this.repository = new PlanRepository(store)
     this.queue = new ExecutionQueue(this.repository, browser, (plan) => this.valid(plan), executor)
   }
@@ -76,18 +77,20 @@ export class PlanService {
     const state = this.snapshot(taskId), source = this.research.snapshot(taskId).records[0], requirement = confirmedRequirement(taskId, this.store.snapshot(taskId))
     if (!state.eligible || !source || !requirement) conflict(state.blocked ?? "当前任务有待处理的计划或授权运行。")
     if (source.id !== command.sourceId || source.version !== command.sourceVersion || requirement.draftVersion !== command.requirementVersion) conflict("需求或来源已更新，请刷新后重新生成。")
-    const at = new Date().toISOString()
+    const at = new Date().toISOString(), selection = this.aiModel.selection()
     const record: PlanRecord = { id: randomUUID(), taskId, version: (state.records[0]?.version ?? 0) + 1, requirementVersion: requirement.draftVersion, requirementRevision: requirement.revision,
       sourceId: source.id, sourceVersion: source.version, sourceDigest: digest(source), requirement: requirement.brief,
       sources: source.observations.filter((item) => !item.queryId && item.assessment?.adopted && item.assessment.access === "normal"), sourceGaps: source.gaps.map((item) => item.description),
       status: "generating", sequence: 0, createdAt: at, updatedAt: at, proposal: null, digest: null, reason: null,
       budgetCeiling: command.budgetCeiling ?? defaultPlanBudget,
       stepBudgetLimits: command.stepBudgetLimits ?? null,
-      audit: { purpose: "plan_creation", model: "gpt-5.6-terra", effort: "medium", invocations: null, status: "intended", reportedModel: null, reportedEffort: null } }
+      audit: { purpose: "plan_creation", model: selection.modelId, effort: selection.reasoningEffort,
+        invocations: null, status: "intended", reportedModel: null, reportedEffort: null, aiEvents: [] } }
     this.store.db.transaction(() => { this.repository.savePlan(record); this.store.recordOperation(`plan:${taskId}`, command.requestId, command, record.id) })
     const job = { record, controller: new AbortController(), done: Promise.resolve() }; this.jobs.set(taskId, job)
-    job.done = generatePlan(record, source, this.factory, AbortSignal.any([job.controller.signal, AbortSignal.timeout(190000)]), () => this.repository.savePlan(record),
-      () => { if (!this.valid(record)) conflict("计划绑定已失效。") }).finally(() => { if (this.jobs.get(taskId) === job) this.jobs.delete(taskId) })
+    job.done = generatePlan(record, source, AbortSignal.any([job.controller.signal, AbortSignal.timeout(190000)]), () => this.repository.savePlan(record),
+      () => { if (!this.valid(record)) conflict("计划绑定已失效。") }, this.aiModel)
+      .finally(() => { if (this.jobs.get(taskId) === job) this.jobs.delete(taskId) })
     void job.done.catch(() => { this.closing = true })
   }
   private start(taskId: string, command: Extract<PlanCommand, { type: "start" }>) {

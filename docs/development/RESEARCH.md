@@ -2,6 +2,29 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-014 共享模型接入与访谈调用（2026-09-07）
+
+需求访谈是本轮唯一迁移的产品模型入口。服务端保存显式共享模型选择，并在一次 turn 开始时冻结；存在该选择时，访谈通过 `@agent-platform/ai-connect` 的 JSON Schema 结构调用，原业务解析继续校验完整结果。公共 `AIEvent` 随 assistant 消息保存在既有任务事实中，Workbench 通过 `@agent-platform/ai-connect-react` 的现有 Timeline 投影展示调用过程，不维护流解析、delta 合并或终态状态机。
+
+未保存共享选择时明确提示先完成模型设置。共享调用失败会形成可见失败事实，不自动回退、切换模型或重试。来源调研、计划、探索、修复和显式 LLM 节点均通过同一 SharedAI port；一次 execution 首次需要模型时才准备，并在该 execution 内复用冻结选择。旧 Codex App Server 运行路径已删除。
+
+账号凭证由 AI Connect 的本机存储负责，选择由 ProductStore 负责，访谈草稿与状态仍由原任务数据库负责。新 AI 路由沿用 127.0.0.1、Host/Origin 边界，并要求浏览器修改请求提供 same-origin fetch metadata；它维持本机单用户信任模型，不声称区分其他本机进程。未迁移或读取真实凭证。
+
+Baseline Impact:
+- touched layers: contracts、API account/selection adapter、requirement interview coordinator、Workbench settings/Timeline。
+- owning fact source: AI Connect 拥有账号与调用事件协议；ProductStore 拥有选择和业务消息；访谈状态仍为唯一业务结果源。
+- public interface changed: 消费 `@agent-platform/ai-connect` 与 React 0.2.3 公共接口；BAC 自身消息契约增加已校验 `aiEvents`。
+- new protocol/adapter/fallback: 复用现有 HTTP/NDJSON 通道的 typed event 字段；无自动 fallback。
+- compatibility or legacy path changed: 未显式选择时不再执行旧 Codex 默认路径；现有设置提示、业务失败事实和历史 audit 数据保持兼容。
+- baseline update required: no；职责归属与现有本机单用户架构不变。
+- architecture tests to run: 结构结果、事件顺序/终态、失败不回退、路由来源保护、三包类型检查和 Workbench 构建。
+
+Patch Disposition:
+- keep: 原 Codex 默认访谈与所有未迁移模型用途、现有任务事实和 NDJSON 通道。
+- rewrite: 仅显式共享选择下的访谈调用分支与 assistant 事件展示。
+- delete: none。
+- reason: 渐进采用共享能力，同时保持已有配置和业务语义。
+
 ## R-013 F6 批量执行与生命周期（2026-09-06）
 
 复用已有 LangGraph、BrowserSkill、SQLite/Drizzle、Zod、Radix；没有新增运行依赖。正式队列改为消费完整上游去重结果，各步骤分别进行探索/验证后批量执行。检查点绑定图摘要、输入、节点游标、循环计数和页面证据；同运行恢复核验浏览器实际状态，独立复跑创建新运行。原始页面仅进入忽略的本地运行存储，导出排除检查点页面，日志只保留摘要、计数和用途审计。

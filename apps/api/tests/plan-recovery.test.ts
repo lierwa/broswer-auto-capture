@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import { rm } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { tmpdir } from "node:os"
 import { createApplication } from "../src/app.js"
 import Database from "better-sqlite3"
 import { migrate } from "../src/database/migrate.js"
@@ -41,16 +42,17 @@ test("实际进程崩溃后生成和执行恢复为中断，既有授权不自�
         }
       } finally { await current.app.close() }
     }
-  } finally { for (const item of fixtures) { assert.ok(path.resolve(item.directory).startsWith(path.resolve(process.env.TEMP!))); await rm(item.directory, { recursive: true, force: true }) } }
+  } finally { for (const item of fixtures) { assert.ok(path.resolve(item.directory).startsWith(path.resolve(tmpdir()))); await rm(item.directory, { recursive: true, force: true }) } }
 })
-test("v4到v7迁移保留来源事实；冲突整体回滚且不提前版本", () => {
+test("v4到v8迁移保留来源事实；冲突整体回滚且不提前版本", () => {
   const db = new Database(":memory:")
   try {
     db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY); CREATE TABLE researchRuns(id TEXT PRIMARY KEY, body TEXT); INSERT INTO researchRuns VALUES ('source','original'); PRAGMA user_version=4")
     migrate(db); migrate(db)
-    assert.equal(db.pragma("user_version", { simple: true }), 7)
+    assert.equal(db.pragma("user_version", { simple: true }), 8)
     assert.deepEqual(db.prepare("SELECT * FROM researchRuns").all(), [{ id: "source", body: "original" }])
     assert.deepEqual(db.prepare("SELECT * FROM executions").all(), [])
+    assert.deepEqual(db.prepare("SELECT * FROM aiSettings").all(), [])
   } finally { db.close() }
   const broken = new Database(":memory:")
   try {

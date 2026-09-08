@@ -4,6 +4,7 @@ import { ArrowRight, FileSearch } from "lucide-react"
 import type { PlanRecord, ExecutionRecord } from "@browser-capture/contracts/plan"
 import { PlanConnection } from "./planConnection.js"
 import { DetailPane } from "./DetailPane.js"
+import { InvocationEvents } from "./InvocationEvents.js"
 
 const labels = { generating: "正在制定计划", ready: "待确认", blocked: "来源缺口待处理", failed: "生成未通过", cancelled: "已停止生成", interrupted: "生成已中断" }
 export const runLabels = { queued: "已授权 · 排队中", running: "正在执行", awaiting_next_stage: "阶段结果待接续", interrupted: "运行已中断", cancelled: "已停止", stale: "授权绑定待复核", failed: "执行未完成", manual_required: "需要人工处理", cleanup_required: "会话待清理", completed: "已完成", partial: "部分完成", drift_paused: "页面变化 · 已暂停" }
@@ -47,7 +48,7 @@ export function Plan({ taskId, active, readOnly, onSources }: { taskId: string; 
           <BudgetReview record={record} />
           <div className="action-gate"><p>{stale ? "需求或来源已更新，请复核并制定新版本。" : record.status === "blocked" ? "请先处理上述阻塞来源缺口。" : execution ? "授权已保存，下面显示这次运行的真实状态。" : "确认后保存本计划范围与预算的授权并排队；达到预算暂停，保留完整目标。"}</p><Button disabled={pending || readOnly || stale || record.id !== latest?.id || record.status !== "ready" || Boolean(execution) || state.generating} onClick={() => { if (record.digest) void connection.dispatch({ type: "start", requestId: crypto.randomUUID(), planId: record.id, planDigest: record.digest }) }}>确认计划并启动</Button></div>
         </>}
-        <details className="supporting-detail"><summary>计划生成审计</summary><p>计划制定 · {record.audit.model}/{record.audit.effort} · {record.audit.status} · {record.audit.invocations === null ? "调用次数未回报" : `${record.audit.invocations} 次已回报调用`}</p><p>创建时间：{record.createdAt}</p></details>
+        <details className="supporting-detail"><summary>计划生成审计</summary><p>计划制定 · {record.audit.model}/{record.audit.effort} · {record.audit.status} · {record.audit.invocations === null ? "调用次数未回报" : `${record.audit.invocations} 次已回报调用`}</p><InvocationEvents events={record.audit.aiEvents} /><p>创建时间：{record.createdAt}</p></details>
         {execution && <ExecutionStatus execution={execution} pending={pending} onCancel={() => void connection.dispatch({ type: "cancel_execution", executionId: execution.id })} />}
       </>}
       {state.browserOwner && <p role="status">浏览器当前由“{state.browserOwner.title}”使用，排队任务等待释放。</p>}

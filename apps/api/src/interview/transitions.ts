@@ -9,12 +9,12 @@ export function beginRound(state: InterviewState, command: ModelCommand) {
   if (command.type === "message") {
     userMessageId = randomUUID()
     if (command.answer) acceptOption(state, command, userMessageId)
-    state.messages.push({ id: userMessageId, role: "user", text: command.text, status: "complete", question: null, draftVersion: null })
+    state.messages.push({ id: userMessageId, role: "user", text: command.text, status: "complete", question: null, draftVersion: null, aiEvents: [] })
   }
   if (!userMessageId) conflict("没有可以继续处理的用户原文。")
   state.revision += 1; state.confirmedVersion = null; state.active = true; state.cancellationRequested = false
   const assistantMessageId = randomUUID(), id = randomUUID()
-  state.messages.push({ id: assistantMessageId, role: "assistant", text: "", status: "running", question: null, draftVersion: null })
+  state.messages.push({ id: assistantMessageId, role: "assistant", text: "", status: "running", question: null, draftVersion: null, aiEvents: [] })
   state.turns.push({ id, revision: state.revision, userMessageId, assistantMessageId, status: "running", reason: null, createdAt: new Date().toISOString(), completedAt: null })
   state.activeTurnId = id
   return id

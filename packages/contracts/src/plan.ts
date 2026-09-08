@@ -3,6 +3,7 @@ import { taskIdSchema } from "./task.js"
 import { requirementBriefSchema } from "./requirementBrief.js"
 import { sourceObservationSchema } from "./research.js"
 import { captureStateSchema } from "./capture.js"
+import { aiEventSchema } from "./ai.js"
 
 const id = z.string().uuid(), text = z.string().trim().min(1).max(10000), index = z.number().int().nonnegative()
 export const planBudgetSchema = z.object({ maxCommands: z.number().int().min(1).max(3850), timeoutMs: z.number().int().min(1000).max(1440000), maxModelCalls: z.number().int().min(0).max(12), maxLlmCalls: z.number().int().min(0).max(12).optional() }).strict()
@@ -43,6 +44,7 @@ export const planRecordSchema = z.object({
   stepBudgetLimits: stepBudgetLimitsSchema.nullable().default(null),
   audit: z.object({ purpose: z.literal("plan_creation"), model: text, effort: text, invocations: index.nullable(),
     status: z.enum(["intended", "completed", "failed", "interrupted"]), reportedModel: z.string().nullable(), reportedEffort: z.string().nullable(),
+    aiEvents: z.array(aiEventSchema).max(5000).default([]),
   }).strict(),
 }).strict()
 export const executionRecordSchema = z.object({

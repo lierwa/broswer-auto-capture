@@ -6,7 +6,7 @@ import { taskIdSchema } from "@browser-capture/contracts/task"
 import { ProductStore } from "../database/store.js"
 import { BrowserService } from "../browser/service.js"
 import { InterviewCoordinator } from "../interview/coordinator.js"
-import type { ModelSessionFactory } from "../interview/modelSession.js"
+import type { AIModelProvider } from "../ai/model.js"
 import { conflict } from "../errors.js"
 import { ResearchRepository } from "./repository.js"
 import { runResearch } from "./runner.js"
@@ -16,7 +16,8 @@ export class ResearchService {
   private repository: ResearchRepository
   private job: Job | null = null
   private closing = false
-  constructor(private store: ProductStore, private browser: BrowserService, private interview: InterviewCoordinator, private modelFactory: ModelSessionFactory) {
+  constructor(private store: ProductStore, private browser: BrowserService, private interview: InterviewCoordinator,
+    private aiModel: AIModelProvider) {
     this.repository = new ResearchRepository(store)
   }
   isActive(taskId: string) { return this.job?.record.taskId === taskId }
@@ -76,8 +77,8 @@ export class ResearchService {
       status = await this.browser.run({ taskId: record.taskId, runId: record.id, requirementVersion: record.requirementVersion, purpose: "source_research",
         allowedOrigins: [...new Set(["https://www.bing.com", ...record.candidates.map((item) => new URL(item.url).origin)])],
         actions: ["navigate", "page", "follow"], maxCommands: 180, timeoutMs: 300_000 }, (browser, signal) => {
-        work = runResearch({ record, brief, browser, signal, modelFactory: this.modelFactory,
-          save: () => this.repository.save(record), validate: () => this.validate(record) })
+        work = runResearch({ record, brief, browser, signal, aiModel: this.aiModel,
+          selection: this.aiModel.selection(), save: () => this.repository.save(record), validate: () => this.validate(record) })
         return work
       }, job.controller.signal)
       this.validate(record)

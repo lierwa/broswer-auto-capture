@@ -1,18 +1,19 @@
 import { setTimeout as delay } from "node:timers/promises"
-import { ModelRuntimeError } from "@browser-capture/model-runtime"
+import type { AIEvent } from "@agent-platform/ai-connect/server"
 import { interviewCommandSchema, type InterviewCommand, type InterviewOutput } from "@browser-capture/contracts/interview"
 import { taskCommandSchema, type TaskCommand } from "@browser-capture/contracts/task"
 import { ProductStore } from "../database/store.js"
 import { conflict, DomainError } from "../errors.js"
 import { beginRound, confirmDraft, finishRound } from "./transitions.js"
-import { interviewPrompt, outputSchema, parseInterviewOutput, type ModelSession, type ModelSessionFactory } from "./modelSession.js"
+import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
+import { interviewPrompt, outputSchema, parseInterviewOutput } from "./protocol.js"
 
-interface Job { taskId: string; turnId: string; controller: AbortController; done: Promise<void>; session?: ModelSession; closeTimer?: ReturnType<typeof setTimeout> }
+interface Job { taskId: string; turnId: string; controller: AbortController; done: Promise<void> }
 export class InterviewCoordinator {
   private job: Job | null = null
   private closing = false
   private failed = false
-  constructor(readonly store: ProductStore, private createSession: ModelSessionFactory) {}
+  constructor(readonly store: ProductStore, private aiModel: AIModelProvider) {}
   private available() {
     if (this.closing || this.failed) throw new DomainError("service_unavailable", "访谈服务已停止或持久化异常，请重启后恢复。", 503)
   }
@@ -59,41 +60,39 @@ export class InterviewCoordinator {
     const job = this.job
     if (job?.taskId === id && job.turnId === turnId) {
       job.controller.abort()
-      job.closeTimer ??= setTimeout(() => { void job.session?.client.close().catch(() => {}) }, 2_000)
     }
     return this.snapshot(id)
   }
   private async run(job: Job) {
     let output: InterviewOutput | undefined, reason: string | undefined
-    let interrupted = false, commentary = ""
     try {
-      job.session = await this.createSession()
-      if (job.controller.signal.aborted) return
-      for await (const event of job.session.client.runTurn(interviewPrompt(this.store.snapshot(job.taskId)), outputSchema(), job.controller.signal)) {
-        if (event.type === "turn_succeeded" || event.type === "interrupted") {
-          this.store.mutate(job.taskId, (state) => {
-            state.audits.push({ revision: state.turns.find((turn) => turn.id === job.turnId)!.revision,
-              model: event.audit.requestedModel, effort: event.audit.requestedEffort, invocations: event.audit.invocationCount })
-          })
-        }
-        if (job.controller.signal.aborted) continue
-        if (event.type === "interrupted") interrupted = true
-        if (event.type === "turn_succeeded") output = parseInterviewOutput(JSON.parse(event.outputText), this.store.snapshot(job.taskId))
-        if (event.type === "commentary_delta") {
-          commentary += event.delta
-          if (!/^[\s]*[\{\[`]/.test(commentary)) this.store.mutate(job.taskId, (state) => {
-            const turn = state.turns.find((item) => item.id === job.turnId)!
-            state.messages.find((message) => message.id === turn.assistantMessageId)!.text = commentary
-          })
-        }
-      }
-    } catch (error) { output = undefined; reason = error instanceof ModelRuntimeError ? error.message : "本轮未完成，结果未提交。请重试。" }
+      // WHY：一次访谈冻结设置中已保存的模型；缺少选择时保留明确设置提示，不回退到第二套模型入口。
+      const signal = AbortSignal.any([job.controller.signal, AbortSignal.timeout(190_000)])
+      const selection = this.aiModel.selection()
+      output = await this.runShared(job, await this.aiModel.prepare(selection, signal), signal)
+    } catch (error) { output = undefined; reason = error instanceof DomainError ? error.message : "本轮未完成，结果未提交。请重试。" }
     finally {
-      if (job.closeTimer) clearTimeout(job.closeTimer)
-      try { await job.session?.dispose() }
-      finally { this.store.mutate(job.taskId, (state) => finishRound(state, job.turnId,
-        job.controller.signal.aborted || interrupted ? "cancelled" : output ? "succeeded" : "failed", output, reason)) }
+      this.store.mutate(job.taskId, (state) => finishRound(state, job.turnId,
+        job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason))
     }
+  }
+  private async runShared(job: Job, model: PreparedAIModel, signal: AbortSignal) {
+    const object = await model.generateObject({
+      prompt: interviewPrompt(this.store.snapshot(job.taskId)), jsonSchema: outputSchema(), signal,
+      parse: (value) => parseInterviewOutput(value, this.store.snapshot(job.taskId)),
+      onEvent: (event) => this.appendAIEvent(job, event),
+    })
+    this.store.mutate(job.taskId, (state) => state.audits.push({
+      revision: state.turns.find((turn) => turn.id === job.turnId)!.revision,
+      model: model.selection.modelId, effort: model.selection.reasoningEffort, invocations: 1,
+    }))
+    return object
+  }
+  private appendAIEvent(job: Job, event: AIEvent) {
+    this.store.mutate(job.taskId, (state) => {
+      const turn = state.turns.find((item) => item.id === job.turnId)!
+      state.messages.find((message) => message.id === turn.assistantMessageId)!.aiEvents.push(event)
+    })
   }
   async *observe(id: string, after: number, signal: AbortSignal) {
     // 已提交快照具有单调序号；观察短轮询不持有模型或事务，可跨刷新重新连接。

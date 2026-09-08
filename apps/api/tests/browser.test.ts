@@ -5,6 +5,7 @@ import { rm } from "node:fs/promises"
 import { BrowserError, type BrowserGrant, type CommandExecutor } from "@browser-capture/browser"
 import { createApplication } from "../src/app.js"
 import { openFixture, deferred } from "./helpers.js"
+import { testAIModel } from "./fixtures/ai-model.js"
 
 const headers = { host: "127.0.0.1:4175" }
 async function fixture(work: (value: Awaited<ReturnType<typeof context>>) => Promise<void>) {
@@ -26,7 +27,7 @@ async function context() {
     return { stdout: JSON.stringify(value), exitCode: 0 }
   }
   const open = () => createApplication({ root: process.cwd(), directory: original.directory, browserExecutor: executor,
-    modelFactory: async () => ({ client: original.client, dispose: () => original.client.close() }) })
+    aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
   const current = await open()
   const grant = (): BrowserGrant => ({ taskId, runId: randomUUID(), requirementVersion: 1, purpose: "source_research",
     allowedOrigins: ["https://example.com"], actions: ["observe"], maxCommands: 20, timeoutMs: 10_000 })

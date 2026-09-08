@@ -3,13 +3,14 @@ import { explorationDecisionSchema, type ChainRecord, type CaptureRow, type Expl
 import type { PlanProposal, PlanRecord } from "@browser-capture/contracts/plan"
 import { compileActionGraph } from "@browser-capture/runtime/capture"
 import { digest } from "../database/store.js"
-import type { ModelSessionFactory } from "../interview/modelSession.js"
+import type { AIModelResolver } from "../ai/model.js"
 import { modelDecision } from "./model.js"
 
 export interface StepContext {
   plan: PlanRecord; step: PlanProposal["steps"][number]; record: ChainRecord; rows: CaptureRow[];
   command: (input: unknown) => Promise<string | null>; signal: AbortSignal; save: () => void;
-  factory: ModelSessionFactory; consumeModel: (purpose: "exploration" | "explicit_llm") => void;
+  shared: AIModelResolver;
+  consumeModel: (purpose: "exploration" | "explicit_llm") => void;
   known: Set<string>; values: Set<string>; current: BrowserPage | null;
   targets: Set<string>;
   history: Array<{ reason: string; command: ExplorationDecision["command"]; changes: string[] }>;
@@ -39,7 +40,7 @@ function allowedOrigins(context: StepContext) { return new Set(context.plan.sour
 export async function explore(context: StepContext) {
   while (true) {
     context.signal.throwIfAborted(); context.consumeModel("exploration")
-    const decision = await modelDecision({ factory: context.factory, schema: explorationDecisionSchema, prompt: prompt(context), record: context.record,
+    const decision = await modelDecision({ shared: context.shared, schema: explorationDecisionSchema, prompt: prompt(context), record: context.record,
       purpose: context.purpose ?? "exploration", phase: "exploration", nodeId: null, signal: context.signal, save: context.save })
     context.record.decisions.push({ action: decision.action, reason: decision.reason, commandType: decision.command?.type ?? null }); context.save()
     context.history.push({ reason: decision.reason, command: decision.command, changes: [] })

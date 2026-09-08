@@ -9,10 +9,10 @@ function activeState(store: ProductStore, id: string) {
   store.mutate(id, (state) => {
     state.revision = 2; state.active = true; state.activeTurnId = "active-turn"; state.cancellationRequested = false
     state.messages.push(
-      { id: "history-user", role: "user", text: "保留历史原文", status: "complete", question: null, draftVersion: null },
-      { id: "history-assistant", role: "assistant", text: "历史草稿已生成", status: "complete", question: null, draftVersion: 1 },
-      { id: "active-user", role: "user", text: "继续补充范围", status: "complete", question: null, draftVersion: null },
-      { id: "active-assistant", role: "assistant", text: "正在整理", status: "running", question: null, draftVersion: null },
+      { id: "history-user", role: "user", text: "保留历史原文", status: "complete", question: null, draftVersion: null, aiEvents: [] },
+      { id: "history-assistant", role: "assistant", text: "历史草稿已生成", status: "complete", question: null, draftVersion: 1, aiEvents: [] },
+      { id: "active-user", role: "user", text: "继续补充范围", status: "complete", question: null, draftVersion: null, aiEvents: [] },
+      { id: "active-assistant", role: "assistant", text: "正在整理", status: "running", question: null, draftVersion: null, aiEvents: [] },
     )
     state.drafts.push({ version: 1, revision: 1, title: "历史草稿", markdown: "# 已保存的需求", brief: null })
     state.turns.push(

@@ -2,53 +2,44 @@ import { randomUUID } from "node:crypto"
 import { BrowserError, pageSchema, type BrowserSession } from "@browser-capture/browser"
 import { researchDecisionSchema, type ResearchRecord } from "@browser-capture/contracts/research"
 import type { RequirementBrief } from "@browser-capture/contracts/interview"
-import type { ModelSessionFactory, ModelSession } from "../interview/modelSession.js"
+import type { ModelSelection } from "@agent-platform/ai-connect/server"
+import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
 import { researchPrompt, researchOutputSchema } from "./model.js"
 import { assess, conclude, recordPage } from "./evidence.js"
 
 export interface ResearchWork {
   record: ResearchRecord; brief: RequirementBrief; browser: Pick<BrowserSession, "command">; signal: AbortSignal;
-  modelFactory: ModelSessionFactory; save(): void; validate(): void;
+  aiModel: AIModelProvider; selection: ModelSelection; save(): void; validate(): void;
 }
 export async function runResearch(work: ResearchWork) {
-  let model: ModelSession | undefined
-  const closeOnAbort = () => { void model?.client.close().catch(() => {}) }
-  work.signal.addEventListener("abort", closeOnAbort, { once: true })
-  try {
-    check(work); model = await work.modelFactory(); check(work)
-    return await loop(work, model)
-  } finally {
-    work.signal.removeEventListener("abort", closeOnAbort)
-    await model?.dispose()
-  }
+  check(work)
+  const model = await work.aiModel.prepare(work.selection, work.signal)
+  check(work)
+  return loop(work, model)
 }
 function check(work: ResearchWork) {
   if (work.signal.aborted) throw new BrowserError("cancelled")
   work.validate()
 }
-async function decide(work: ResearchWork, model: ModelSession, current: { id: string; text: string } | null) {
+async function decide(work: ResearchWork, model: PreparedAIModel, current: { id: string; text: string } | null) {
   check(work)
-  const audit: ResearchRecord["audits"][number] = { id: randomUUID(), purpose: "source_research", at: new Date().toISOString(), model: "gpt-5.6-terra", effort: "medium",
-    status: "intended", invocations: null, reportedModel: null, reportedEffort: null }
+  const selected = model.selection
+  const audit: ResearchRecord["audits"][number] = { id: randomUUID(), purpose: "source_research", at: new Date().toISOString(),
+    model: selected.modelId, effort: selected.reasoningEffort,
+    status: "intended", invocations: null, reportedModel: null, reportedEffort: null, aiEvents: [] }
   work.record.audits.push(audit); work.save()
-  let output: unknown
   try {
-    for await (const event of model.client.runTurn(researchPrompt(work.brief, work.record, current), researchOutputSchema(), work.signal)) {
-      if (event.type !== "turn_succeeded" && event.type !== "interrupted") continue
-      audit.invocations = event.audit.invocationCount; audit.reportedModel = event.audit.reportedModel; audit.reportedEffort = event.audit.reportedEffort
-      audit.status = event.type === "interrupted" ? "interrupted" : "completed"
-      work.save()
-      check(work)
-      if (event.type === "turn_succeeded") output = JSON.parse(event.outputText)
-    }
-    check(work)
-    return researchDecisionSchema.parse(output)
+    const output = await model.generateObject({ prompt: researchPrompt(work.brief, work.record, current), jsonSchema: researchOutputSchema(),
+      parse: (value) => researchDecisionSchema.parse(value), signal: work.signal,
+      onEvent: (event) => { audit.aiEvents.push(event); work.save() } })
+    check(work); audit.invocations = 1; audit.reportedModel = selected.modelId; audit.reportedEffort = selected.reasoningEffort
+    audit.status = "completed"; work.save(); return output
   } catch (error) {
     if (audit.status === "intended") { audit.status = work.signal.aborted ? "interrupted" : "failed"; work.save() }
     throw error
   }
 }
-async function loop(work: ResearchWork, model: ModelSession) {
+async function loop(work: ResearchWork, model: PreparedAIModel) {
   const { record, browser } = work
   let current: { id: string; text: string } | null = null
   for (let step = 0; step < 16; step++) {

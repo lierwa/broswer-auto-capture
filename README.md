@@ -36,12 +36,12 @@
 - 数据采用 SQLite、Drizzle 和本地文件，具体驱动版本、并发行为与职责边界由原型确认。
 - 编排优先用 LangGraph JS 做最小原型，并以 XState 做对照；在原型通过前不视为最终选型。
 - 链路采用受控版本化节点图，记录已实现的浏览器动作及其参数、定位和提取规则；恢复按商品和步骤设置安全检查点。
-- 产品聊天使用本机 Codex App Server 与现有官方登录，按 `domain-analysis` 当前实现适配；对话计划使用 Terra medium，探索链路生成使用 Sol high，简单且边界明确的 LLM 节点使用 Luna medium，均须经代表任务验证。
+- 产品模型统一使用 `@agent-platform/ai-connect` 管理的本机账号与项目显式选择；访谈、调研、计划及一次执行内的探索/修复/验证冻结并复用同一选择，未选择或调用失败均明确返回，不自动改选模型或回退旧运行时。
 - 开发主 agent 固定使用 GPT-6 Astra high；所有开发子 agent 固定使用 GPT-5.6 Sol high，包括简单任务，按需最多同时运行两个。每项开发任务明确依赖、文件范围、产物和验收命令，并通过实际 `turn_context` 核验 model/effort。
-- 开发期不再按任务复杂度使用 Luna 或 Terra；上述统一规则不改变产品运行时的 Terra medium、Sol high、Luna medium 路由。
+- 开发期模型规则独立于产品模型选择；产品运行时只读取工作台中已保存的同一项目选择。
 - Git 按验证阶段在本地提交，当前没有远程推送授权。
 
-当前已接入多任务列表、独立访谈保存、assistant-ui、私有访谈 skill 与本机模型；来源调研、正式计划和 BrowserSkill 执行仍待接通。整页布局与显示/折叠/侧栏/抽屉规则见 [工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见 [需求对话机制](docs/development/INTERVIEW_UI.md)。
+当前已接入多任务列表、独立访谈保存、assistant-ui、AI Connect 本机账号与项目模型选择，以及来源调研、正式计划和 BrowserSkill 执行。整页布局与显示/折叠/侧栏/抽屉规则见 [工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见 [需求对话机制](docs/development/INTERVIEW_UI.md)。
 
 ## 启动本地工作台（F1）
 
@@ -64,14 +64,9 @@ Vite 将 `/api` 代理至 4175。API 端口通过 `BROWSER_CAPTURE_API_PORT` 配
 
 ## 验证本机模型接入
 
-使用现有官方Codex登录；项目不保存API key、登录凭证或浏览器登录态。以下probe会实际提交产品模型轮次，消耗当前账号用量；不会抓取网页：
+在工作台模型设置中连接账号并保存模型后，执行一次访谈即可验证真实接入。访谈、来源调研、计划和授权执行都读取这项选择；未保存时会明确提示完成设置，不自动选择或回退其他模型。账号凭据由 ai-connect 本地存储管理，业务数据库只保存模型选择和调用审计。
 
-```powershell
-npm run probe --workspace @browser-capture/model-runtime -- --mode normal
-npm run probe --workspace @browser-capture/model-runtime -- --mode interrupt
-```
-
-普通测试使用注入的模型/浏览器替身，不消耗模型用量。probe只输出登录状态、生命周期与安全审计统计；成功结果须通过本地Zod校验，中断不产生已完成结果。SQLite测试使用独立临时数据库，检查新进程恢复与输入隔离，不构成真实浏览器恢复验收。
+普通测试使用 `tests/` 下的模型与浏览器替身，不消耗模型用量；成功结果仍须通过本地 Zod 校验，中断不产生已完成结果。SQLite 测试使用独立临时数据库，检查新进程恢复与输入隔离，不构成真实浏览器恢复验收。
 
 ## 文档入口
 
