@@ -2,15 +2,15 @@ import { Button } from "@radix-ui/themes";
 import { ArrowRight, FileText, LoaderCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
-  ChatTimelineView as SharedChatTimeline,
   ComposerModelControl,
 } from "@agent-platform/ai-connect-react";
+import { InteractiveTimeline as SharedChatTimeline } from "@agent-platform/ai-connect-react/chat";
 import {
   interviewErrorMessage,
   interviewMessageTimes,
   interviewQuestionRegistry,
   projectInterviewTimeline,
-  selectedInterviewOption,
+  submittedInterviewAnswer,
 } from "./interviewTimelineProjection.js";
 import type { useInterview } from "./useInterview.js";
 import type { useModelSettings } from "./useModelSettings.js";
@@ -58,7 +58,6 @@ export function ChatTimeline({
   const timeline = useMemo(
     () =>
       projectInterviewTimeline({
-        resetKey: taskId,
         state,
         blocked: controlsBlocked || readOnly || !modelReady,
         onDraft,
@@ -76,10 +75,6 @@ export function ChatTimeline({
       onSources,
     ],
   );
-  const openQuestion =
-    !state.active &&
-    latest?.role === "assistant" &&
-    latest.question?.options.length === 0;
   const errorMessage = interviewErrorMessage(latest);
 
   return (
@@ -167,8 +162,12 @@ export function ChatTimeline({
           stop: interview.cancel,
           retry: interview.retry,
           submit: async (submission) => {
-            const selected = selectedInterviewOption(state, submission);
-            await interview.answer(selected.label, selected.questionId);
+            const answer = submittedInterviewAnswer(state, submission);
+            if (answer.type === "choice") {
+              await interview.answer(answer.label, answer.questionId);
+            } else {
+              await interview.reply(answer.text, answer.questionId);
+            }
           },
         }}
         sendDisabled={!modelReady}
@@ -183,9 +182,7 @@ export function ChatTimeline({
           theme: {
             assistantName: "需求助手",
             composerLabel: "输入需求或回答",
-            composerPlaceholder: openQuestion
-              ? "直接回答当前问题，或补充你的要求……"
-              : "回答、补充、纠正或追问……",
+            composerPlaceholder: "回答、补充、纠正或追问……",
           },
           composerControls: (
             <ComposerModelControl

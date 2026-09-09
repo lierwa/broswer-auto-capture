@@ -18,7 +18,7 @@ import {
 } from "@agent-platform/ai-connect/integration/authoring/internal"
 import {
   modelInterviewOutputSchema,
-  questionSchema,
+  authoredQuestionSchema,
   renderRequirementBrief,
   type InterviewOutput,
   type InterviewState,
@@ -70,7 +70,7 @@ export function questionFromAuthoringBlock(block: AuthoringSemanticBlock | Autho
   if (!panel || panels.length !== 1 || values.length !== block.directives.length) return null
   const options = values.filter((item): item is CommonQuestionOptionDirective =>
     item.kind === "platform.question-option" && item.panelLocalId === panel.panelLocalId)
-  const parsed = questionSchema.safeParse({ prompt: panel.prompt,
+  const parsed = authoredQuestionSchema.safeParse({ prompt: panel.prompt,
     options: options.map((item) => ({ label: item.label, description: item.description, recommended: item.recommended })) })
   return parsed.success ? parsed.data : null
 }

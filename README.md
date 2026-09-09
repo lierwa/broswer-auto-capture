@@ -32,7 +32,7 @@
 
 ## 已确认的开发方向
 
-- 应用采用 TypeScript、Node.js 24、npm workspaces、React/Vite、Fastify 和 Zod；需求对话复用 AI Connect React 的完整 Timeline 与 Composer，链路展示使用 React Flow。
+- 应用采用 TypeScript、Node.js 24、npm workspaces、React/Vite、Fastify 和 Zod；需求对话与 opencode Examples 消费同一套 AI Connect 公共 Agent surface，包括生命周期投影、Timeline、Composer、模型设置、Question 注册与开放题答复。宿主只配置主题色、助手名称、图标和浏览器抓取业务能力；共享交互不得在本仓复制或裁成另一套实现。共同规范见相邻 checkout 的 [`ai-connect-host-surface-parity.md`](../opencode/docs/platform/ai-connect-host-surface-parity.md)。
 - 数据采用 SQLite、Drizzle 和本地文件，具体驱动版本、并发行为与职责边界由原型确认。
 - 编排优先用 LangGraph JS 做最小原型，并以 XState 做对照；在原型通过前不视为最终选型。
 - 链路采用受控版本化节点图，记录已实现的浏览器动作及其参数、定位和提取规则；恢复按商品和步骤设置安全检查点。
@@ -41,7 +41,7 @@
 - 开发期模型规则独立于产品模型选择；产品运行时只读取工作台中已保存的同一项目选择。
 - Git 按验证阶段完成检查、显式路径审阅和远程交付。
 
-当前已接入多任务列表、独立访谈保存、AI Connect React 完整对话界面、AI Connect 本机账号与项目模型选择，以及来源调研、正式计划和 BrowserSkill 执行。整页布局与显示/折叠/侧栏/抽屉规则见 [工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见 [需求对话机制](docs/development/INTERVIEW_UI.md)。
+当前已接入多任务列表、独立访谈保存、AI Connect React 基础 Timeline/Composer、本机账号与项目模型选择，以及来源调研、正式计划和 BrowserSkill 执行。完整公共 Agent surface 的一致性尚未验收，不能把基础组件出现视为与 Examples 行为一致。整页布局与显示/折叠/侧栏/抽屉规则见 [工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见 [需求对话机制](docs/development/INTERVIEW_UI.md)。
 
 ## 启动本地工作台（F1）
 
@@ -66,7 +66,7 @@ Vite 将 `/api` 代理至 4175。API 端口通过 `BROWSER_CAPTURE_API_PORT` 配
 
 ## 同步本地 AI Connect 源码制品
 
-在仓库根目录创建已忽略的 `.ai-connect.local.json`，只记录本机 producer 源码 checkout：
+脚本默认从同级 `../opencode` checkout 发现 producer。非标准目录布局可用已忽略的 `.ai-connect.local.json` 指向 producer checkout：
 
 ```json
 {
@@ -74,13 +74,13 @@ Vite 将 `/api` 代理至 4175。API 端口通过 `BROWSER_CAPTURE_API_PORT` 配
 }
 ```
 
-然后执行：
+同步会按 release manifest 重建本机安装树。Windows 上先确认没有活动采访或模型调用，并停止本仓 `npm run dev`，避免开发进程占用 esbuild 等需要替换的文件；然后执行：
 
 ```powershell
 npm run ai-connect:sync
 ```
 
-该命令委托 producer 源码中的同步工具完成制品暂存、vendor 更新、已配置直接依赖 manifest、lockfile 与本机安装树刷新，不在仓库中保存 producer 机器路径。切换到已发布包时使用 npm 的精确版本安装流程，不使用这个本地源码同步入口。两种方式都不改变 `apps/` 或 `packages/` 的业务 import；业务代码继续引用稳定的 `@agent-platform/ai-connect` exports。
+该命令委托 producer 源码中的同步工具完成制品暂存、vendor 更新、已配置直接依赖 manifest、lockfile 与本机安装树刷新，不在仓库中保存 producer 机器路径。同步会校验 release schema、版本、公开 exports、CSS 与制品 SHA-256，并在安装后用新 Node 进程验证 ESM server/authoring/chat/CSS 入口；任一环节不一致都会失败。两个同级 checkout 的常见布局无需机器专属文件，仍可用环境变量或本机文件显式覆盖。只有在已审阅且明确授权覆盖声明文件的开发工作区中，才使用 `npm run ai-connect:sync -- --allow-dirty-declared-files`；默认命令继续保护这些文件。同步成功后重新启动 `npm run dev` 并检查 `/api/health`。切换到已发布包时使用 npm 的精确版本安装流程；业务代码继续引用稳定公共 exports。
 
 ## 验证本机模型接入
 

@@ -157,6 +157,28 @@ test("结构化 brief 随草稿事务持久化，重启后按版本隔离并保�
     assert.equal(state.decisions[0]?.draftVersion, 1)
   } finally { await restored.close() }
 }))
+test("TEXT 决策列无需迁移即可在重启后读取旧选择与新自由文本历史", async () => fixture(async (store, directory) => {
+  const id = store.taskAction({ type: "create", requestId: randomUUID() })
+  store.mutate(id, (state) => {
+    state.decisions.push(
+      { id: "choice-1", revision: 1, kind: "option", text: "前 20 条", messageId: "answer-1",
+        questionId: "question-1", draftVersion: null, createdAt: "2026-09-06T00:00:00.000Z" },
+      { id: "free-text-1", revision: 2, kind: "free_text", text: "海尔", messageId: "answer-2",
+        questionId: "question-2", draftVersion: null, createdAt: "2026-09-06T00:00:01.000Z" },
+      { id: "confirmation-1", revision: 2, kind: "draft_confirmation", text: "确认需求草稿 v1", messageId: null,
+        questionId: null, draftVersion: 1, createdAt: "2026-09-06T00:00:02.000Z" },
+    )
+  })
+  await store.close()
+  const restored = await ProductStore.open(directory)
+  try {
+    assert.deepEqual(restored.snapshot(id).decisions.map(({ kind, text }) => ({ kind, text })), [
+      { kind: "option", text: "前 20 条" },
+      { kind: "free_text", text: "海尔" },
+      { kind: "draft_confirmation", text: "确认需求草稿 v1" },
+    ])
+  } finally { await restored.close() }
+}))
 test("同一产品数据只能有一个协调服务，关闭后可重新打开", async () => fixture(async (store, directory) => {
   const id = store.taskAction({ type: "create", requestId: randomUUID() })
   await assert.rejects(ProductStore.open(directory), /另一服务/)

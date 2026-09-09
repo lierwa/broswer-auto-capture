@@ -1,5 +1,20 @@
 # 开发路线
 
+## 公共 Agent surface 完整对齐（2026-09-10）
+
+开发先读相邻 opencode checkout 的唯一共同规范 [`docs/platform/ai-connect-host-surface-parity.md`](../../../opencode/docs/platform/ai-connect-host-surface-parity.md)，再沿现有两个 checkout 实施；不另写第二份共享技术规范。目标是让 BCT 与 opencode Examples 共用生命周期投影、Timeline、Composer、模型设置、Question 注册和开放题答复；BCT 只保留采访/抓取 Skill、Workflow、业务状态、命令接入及主题色、助手名称、图标配置。
+
+交付状态：
+
+1. 从 `d32a8e9410cb508e9469f4cc22d7c4899ce2f2b5^` 的 `interview-browser-task/SKILL.md` 恢复采访业务约束，只做共享 authoring/Question 输出格式适配；先固定开放题非空自由回答、决策/history 回写和草稿硬门。
+2. 在 opencode 公共包补齐统一生命周期/事件投影和 Question 契约，再由 BCT 删除薄投影并接入同一 surface；宿主不得复制共享布局或状态机。
+3. 让 producer stage 与 BCT sync 在同级 checkout 默认布局及显式覆盖下可重复执行，并以同一 release manifest、内容哈希、依赖 manifest 与 lockfile 为准。当前机器的手写本机配置和一次成功同步不是跨环境通过证据。
+4. 运行少量业务验收：共享包所属协议/组件测试，以及 BCT 正式业务路由中的无正文 `currentRun` 活动状态、开放题自由回答与历史回写、草稿确认和失败/取消链。fixture 只用于聚焦回归，不得用无合理 UI、无法回写的 fixture 或测试路由代替真实宿主验收。
+
+前 3 项已完成；第 4 项已完成 contracts/API/Workbench、隔离生产路由、正式页面只读历史和刷新验证。完整真实 provider 场景需单独授权，限定为 3 个采访业务轮次；provider 内部 attempt 以审计为准，任一步未形成预期状态即停止。确认、来源调研和浏览器抓取不包含在该场景内。公司 Windows/macOS 独立 checkout 的同步复现仍是交付环境验收项。
+
+接续边界：使用当前 `D:/work/browser-capture-tool` `master` 与 `D:/work/opencode` `codex/runtime-surface-spec` checkout，保留两仓全部未提交修改；禁止创建 worktree、reset、清理或 push。先按明确文件所有权协调两仓改动，不从 HEAD 重建。`domain-analysis` 本阶段不修改。
+
 ## F5 当前出口（2026-09-06）
 
 F6 已接通完整上游输入的批量执行、持久检查点、运行结果与来源导出、独立复跑、同运行恢复核验和独立修复授权；SQLite v7 保存运行历史与步骤消耗。普通节点无模型入口，实际末页与字段证据决定覆盖结论。当前海尔真实完整验收暂停在分页交互，已保存的258个目录链接不等同于完整三步骤产物。具体证据见 PROGRESS、RESEARCH R-013。

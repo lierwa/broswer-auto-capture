@@ -2,7 +2,21 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-015 公共 Agent surface 生产接入（2026-09-10）
+
+BCT 生产组合从 `@agent-platform/ai-connect-react/chat` 消费公共 Timeline 投影、answered Interaction entry 和 choice/multi-choice/free-form Question registry。BCT 的适配止于把 ProductStore 快照变成 canonical message/content entries、当前 waitpoint、Run 和合法命令；共享实现负责 turn/currentRun/Surface/history 的唯一投影。业务事实、幂等 command、revision 和任务隔离仍由 BCT ProductStore/SQLite 负责，没有新增 event、reducer、store 或公共 SDK envelope。
+
+采访 Skill 已按 blob `2f7588c637d014eeb9f2cbdfd96325aab1a0b949` 准确恢复。公共 Flat XML authoring 是独立运行格式层：普通文本仍是唯一 assistantText，`question-panel` 产生既有 Question，`interview-result` 产生既有结构草稿；terminal Zod 校验后才写入 ProductStore。协议测试核对 Skill 业务章节、authoring 标签与 JSON Schema 同时存在，因此恢复结论是业务基线准确、运行格式适配独立。
+
+可靠 `question-panel` 或 `interview-result` 可以在没有普通文本时单独提交；BCT 的 terminal schema 要求安全正文、问题或草稿至少存在一个，并继续拒绝问题与草稿同轮出现。Workbench 的 canonical message 只读取 ProductStore 已校验正文，公共 `text.delta` 仅保留为 typed lifecycle/activity 证据，不再形成第二条消息或泄漏 authoring JSON。
+
+`options=[]` 是正式开放题；答复携带同一 Question identity 和当前 revision，立即形成 `free_text` decision 与不可变 history，即使后续模型失败也保留，retry 不重复用户消息。SQLite decision 列原本为 TEXT，TypeScript enum 扩展即可读取 option、free_text 和 draft_confirmation；关闭重开测试已覆盖，无 schema migration。新选择题只在 terminal 接受边界拒绝重复 label；历史读取继续兼容，歧义记录不合成错误的 locked choice。
+
+release manifest 是跨仓同步事实：包含 producer HEAD/dirty、依赖 source hash、包名、版本、完整 tar SHA、exports 和 styles。consumer 支持 sibling 默认发现、`AI_CONNECT_PRODUCER_ROOT` 或 ignored 配置覆盖，并在复制/lockfile 更新后复验同一份 manifest。当前实际字段与 hash 见 PROGRESS；公司 Windows/macOS 的独立 checkout 复现仍需后续环境验收。
+
 ## R-014 共享模型接入与访谈调用（2026-09-07）
+
+2026-09-10 决策取代本节的“渐进采用/仅展示事件”边界：BCT 与 opencode Examples 必须消费同一套[公共 Agent host surface](../../../opencode/docs/platform/ai-connect-host-surface-parity.md)，完整复用生命周期投影、Timeline、Composer、模型设置及 Question 注册与开放题答复。BCT 只保留浏览器抓取 Skill、Workflow、业务事实和宿主命令；主题色、助手名称、图标可配置。下列内容作为 2026-09-07 的历史迁移证据保留，不能继续用来批准薄投影。
 
 需求访谈是本轮唯一迁移的产品模型入口。服务端保存显式共享模型选择，并在一次 turn 开始时冻结；存在该选择时，访谈通过 `@agent-platform/ai-connect` 的 JSON Schema 结构调用，原业务解析继续校验完整结果。公共 `AIEvent` 随 assistant 消息保存在既有任务事实中，Workbench 通过 `@agent-platform/ai-connect-react` 的现有 Timeline 投影展示调用过程，不维护流解析、delta 合并或终态状态机。
 
@@ -16,14 +30,14 @@ Baseline Impact:
 - public interface changed: 消费 `@agent-platform/ai-connect` 与 React 0.2.3 公共接口；BAC 自身消息契约增加已校验 `aiEvents`。
 - new protocol/adapter/fallback: 复用现有 HTTP/NDJSON 通道的 typed event 字段；无自动 fallback。
 - compatibility or legacy path changed: 未显式选择时不再执行旧 Codex 默认路径；现有设置提示、业务失败事实和历史 audit 数据保持兼容。
-- baseline update required: no；职责归属与现有本机单用户架构不变。
-- architecture tests to run: 结构结果、事件顺序/终态、失败不回退、路由来源保护、三包类型检查和 Workbench 构建。
+- baseline update required: yes；公共 surface 一致性成为宿主接入门，职责归属与本机单用户架构保持不变。
+- architecture tests to run: 公共协议与组件所属测试，加少量 BCT 真实宿主业务链；覆盖生命周期、事件终态、开放题答复、草稿门和失败不回退，不用重复大快照替代行为验收。
 
 Patch Disposition:
 - keep: 原 Codex 默认访谈与所有未迁移模型用途、现有任务事实和 NDJSON 通道。
-- rewrite: 仅显式共享选择下的访谈调用分支与 assistant 事件展示。
+- rewrite: 完整公共 Agent surface 的宿主接入；删除 BCT 自有的裁剪投影和重复交互实现。
 - delete: none。
-- reason: 渐进采用共享能力，同时保持已有配置和业务语义。
+- reason: 两个产品共享同一公共 Agent 能力与表现，只允许 Vertical 业务语义和宿主品牌配置不同。
 
 ## R-013 F6 批量执行与生命周期（2026-09-06）
 

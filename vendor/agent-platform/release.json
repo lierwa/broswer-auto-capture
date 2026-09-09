@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "producer": {
+    "head": "55aaf20ef20cb8afda601a74b7e6975313d899e2",
+    "dirty": true
+  },
+  "build": [
+    {
+      "name": "@agent-platform/flat-xml",
+      "sourceHash": "309bf68f1cc8ca36bddca13137dc383c427f445f6bbc782034f58c45c1b8d738"
+    },
+    {
+      "name": "@agent-platform/ai-connect",
+      "sourceHash": "a8802c2ce0cb5125198f38bebb3d692b86f4a4ecd53d218fff9580062721dc02"
+    },
+    {
+      "name": "@agent-platform/sdk",
+      "sourceHash": "07c08ecae7f02554da3c567434ef38f75294e3d35c023fad2ffb6af7ad8f0585"
+    },
+    {
+      "name": "@agent-platform/text-reveal",
+      "sourceHash": "c796e90f4f437423949b5e772e4aa27d70721df2e38f27515f6e75368cfc5194"
+    },
+    {
+      "name": "@agent-platform/ai-connect-react",
+      "sourceHash": "2725ff686a968c8a531bdb9e17681f4daf989933ba231ee96b6ee92a309ce9a6"
+    }
+  ],
+  "packages": {
+    "core": {
+      "name": "@agent-platform/ai-connect",
+      "version": "0.3.1",
+      "file": "agent-platform-ai-connect-0.3.1-7d7bf6ac.tgz",
+      "sha256": "7d7bf6ac3ede3e522c212ffd74e0471e264c1f22b701494661afa7b2c7f1a66e",
+      "exports": [
+        "./browser",
+        "./client",
+        "./fastify",
+        "./integration/authoring",
+        "./integration/authoring/internal",
+        "./integration/authoring/question",
+        "./integration/client",
+        "./integration/client/contracts",
+        "./integration/client/errors",
+        "./integration/client/events",
+        "./integration/client/fetch",
+        "./integration/client/http",
+        "./integration/codex-managed-profile",
+        "./integration/credentials/json",
+        "./integration/credentials/pi-credential-store",
+        "./integration/credentials/provider-credential-store",
+        "./integration/fastify",
+        "./integration/generation",
+        "./integration/http/accounts",
+        "./integration/provider-connection/auth-account-service",
+        "./integration/provider-connection/auth-presentation",
+        "./integration/provider-connection/catalog",
+        "./integration/provider-connection/credential-lifecycle",
+        "./integration/provider-connection/integrations",
+        "./integration/provider-connection/model-account-verifier",
+        "./integration/provider-connection/model-reasoning",
+        "./integration/provider-connection/oauth-runtime",
+        "./integration/provider-connection/provisioning-service",
+        "./integration/provider-connection/reasoning-policy",
+        "./integration/provider-connection/records",
+        "./integration/provider-connection/safe-endpoint-fetch",
+        "./integration/provider-connection/store",
+        "./integration/provider-connection/subject-lock",
+        "./integration/provider-connection/types",
+        "./integration/provider-connection/validation",
+        "./integration/provider/execution",
+        "./integration/provider/model-settings",
+        "./integration/provider/pi-builtin-provider",
+        "./integration/server",
+        "./integration/storage/access",
+        "./integration/storage/local",
+        "./integration/storage/local-schema",
+        "./integration/storage/repository",
+        "./integration/storage/schema",
+        "./server",
+        "./transport/contracts",
+        "./transport/errors",
+        "./transport/events",
+        "./transport/fetch",
+        "./transport/http"
+      ],
+      "styles": []
+    },
+    "react": {
+      "name": "@agent-platform/ai-connect-react",
+      "version": "0.3.1",
+      "file": "agent-platform-ai-connect-react-0.3.1-40835e81.tgz",
+      "sha256": "40835e818a4f8920a65942e4cf41b9ebbe5831ad41f541339fca9b0017618fa1",
+      "exports": [
+        ".",
+        "./chat",
+        "./components/AIInvocationTimeline",
+        "./components/AccountSettings",
+        "./components/ComposerModelControl",
+        "./components/CustomProviderCreationCards",
+        "./components/ExpandableSettingsCard",
+        "./components/ModelAccountConnectionPanel",
+        "./components/ModelAccountCreation",
+        "./components/ModelAccountPanel",
+        "./components/ModelPicker",
+        "./components/ModelReasoningControl",
+        "./components/ModelSettingsDialog",
+        "./components/ProviderBrandIcon",
+        "./components/index",
+        "./components/modelPresentation",
+        "./components/primitives",
+        "./components/useOfficialAuthFlow",
+        "./styles.css"
+      ],
+      "styles": [
+        "./styles.css"
+      ]
+    }
+  },
+  "core": "agent-platform-ai-connect-0.3.1-7d7bf6ac.tgz",
+  "react": "agent-platform-ai-connect-react-0.3.1-40835e81.tgz"
+}

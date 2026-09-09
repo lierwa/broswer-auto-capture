@@ -16,8 +16,10 @@ test("领域候选 Schema 保留本地必填交接约束且不扩散 provider fo
 
 test("负责人取舍输出保留三项比较与唯一推荐，并保留用户原文", async () => fixture(async ({ coordinator, store, client, create, send }) => {
   client.runTurn = async function* (prompt) {
-    assert.match(prompt, /交付字段、覆盖与数量\/终止要求足以判定结果/)
-    assert.equal(prompt.match(/交付字段、覆盖与数量\/终止要求足以判定结果/g)?.length, 1)
+    assert.match(prompt, /所需数据实体\/字段、覆盖与数量\/终止要求足以判定结果/)
+    assert.equal(prompt.match(/所需数据实体\/字段、覆盖与数量\/终止要求足以判定结果/g)?.length, 1)
+    assert.match(prompt, /question-panel/)
+    assert.match(prompt, /interview-result JSON Schema/)
     assert.match(prompt, /我想抓微波炉的数据/)
     yield authoredInterview({
       assistantText: "先明确这批数据的主要用途，才能确定字段与覆盖要求。",

@@ -1,86 +1,236 @@
 import { Button } from "@radix-ui/themes";
 import { ArrowRight, Check, FileText, LoaderCircle } from "lucide-react";
+import type { ReactNode } from "react";
+import { projectAIInvocationTimeline } from "@agent-platform/ai-connect-react/components/AIInvocationTimeline";
 import {
-  createChatTimelineValue,
-  type ChatMessage,
-  type ChatMessagePart,
-  type ChatTimelineViewProps,
-} from "@agent-platform/ai-connect-react";
-import {
-  commonChoiceQuestionModules,
+  commonQuestionModules,
+  createAnsweredInteractionTimelineEntry,
   createQuestionModuleRegistry,
+  projectInteractiveTimelineValue,
+  type ConversationEntry,
+  type InteractiveTimelineItem,
+  type InteractiveTimelineProps,
+  type InteractiveTimelineValue,
 } from "@agent-platform/ai-connect-react/chat";
 import type { InterviewMessage, InterviewState } from "./interviewContract.js";
 
-type TimelineValue = ChatTimelineViewProps["value"];
-type TimelineSubmit = Parameters<ChatTimelineViewProps["commands"]["submit"]>[0];
-type QuestionSurface = NonNullable<TimelineValue["presentedSurface"]>;
-export const interviewQuestionRegistry = createQuestionModuleRegistry(commonChoiceQuestionModules);
-
-export function projectInterviewTimeline(input: {
-  resetKey: string;
+type TimelineSubmit = Parameters<InteractiveTimelineProps["commands"]["submit"]>[0];
+type QuestionSurface = NonNullable<InteractiveTimelineValue["presentedSurface"]>;
+type ProjectionInput = {
   state: InterviewState;
   blocked: boolean;
   onDraft(version: number): void;
   onSources(): void;
   onRetry(): Promise<void>;
-}): TimelineValue {
+};
+
+export const interviewQuestionRegistry = createQuestionModuleRegistry(commonQuestionModules);
+
+export function projectInterviewTimeline(input: ProjectionInput): InteractiveTimelineValue {
   const latest = input.state.messages.at(-1);
-  const errorMessage = interviewErrorMessage(latest);
-  const base = createChatTimelineValue({
-    resetKey: input.resetKey,
-    messages: projectInterviewMessages(input),
-    running: input.state.active,
-    ...(errorMessage ? { errorMessage } : {}),
-    canRetry: latest?.role === "assistant" && latest.status === "failed",
-  });
-  const withHistory = projectAnsweredInteractions(base, input.state);
-  const activeMessage = activeChoiceMessage(input.state);
-  const presentedSurface = activeMessage
-    ? interviewQuestionSurface(activeMessage)
+  const active = activeQuestionMessage(input.state);
+  const activeSurface = active ? interviewQuestionSurface(active) : null;
+  const activeInteraction = active && activeSurface
+    ? {
+        interactionId: active.id,
+        kind: "question" as const,
+        title: active.question!.prompt,
+        submitLabel: "提交回答",
+        questions: [{
+          header: active.question!.prompt,
+          question: active.question!.prompt,
+          options: active.question!.options.map(({ label, description }) => ({ label, description })),
+        }],
+        surface: activeSurface,
+      }
     : null;
-  return {
-    ...withHistory,
-    activeInteraction: presentedSurface
-      ? {
-          interactionId: activeMessage!.id,
-          kind: "question",
-          title: activeMessage!.question!.prompt,
-          submitLabel: presentedSurface.submitLabel ?? "提交回答",
-          questions: [],
-          surface: presentedSurface,
-        }
-      : null,
-    presentedSurface,
+  const errorMessage = interviewErrorMessage(latest);
+  return projectInteractiveTimelineValue({
+    entries: projectInterviewEntries(input),
+    activeInteraction,
     status: input.state.active
       ? "generating"
-      : presentedSurface
+      : activeInteraction
         ? "waiting_for_user"
         : errorMessage
           ? "error"
           : "idle",
+    hooks: projectInterviewActivity(input.state).hooks,
+    currentRun: currentInterviewRun(input.state),
+    canRetry: latest?.role === "assistant" && latest.status === "failed",
+  });
+}
+
+export function projectInterviewEntries(input: ProjectionInput): ConversationEntry<InteractiveTimelineItem>[] {
+  const times = interviewMessageTimes(input.state);
+  const decisions = new Map(
+    input.state.decisions
+      .filter((decision) => decision.messageId && (decision.kind === "option" || decision.kind === "free_text"))
+      .map((decision) => [decision.messageId!, decision] as const),
+  );
+  return input.state.messages.flatMap((message, index) => {
+    const createdAt = times.incomplete ? index : times.byMessage.get(message.id)!;
+    const decision = decisions.get(message.id);
+    if (decision) {
+      const answered = answeredInteractionEntry(input.state, decision, createdAt);
+      if (answered) return [answered];
+    }
+    return messageEntries(message, index, createdAt, input);
+  });
+}
+
+function messageEntries(
+  message: InterviewMessage,
+  index: number,
+  createdAt: number,
+  input: ProjectionInput,
+): ConversationEntry<InteractiveTimelineItem>[] {
+  const entries: ConversationEntry<InteractiveTimelineItem>[] = [];
+  // WHY：ProductStore 的 message.text 是 authoring parser 过滤后的业务正文；AI text.delta 仍含
+  // 非渲染结构块。调用事件只进入公共 lifecycle/activity hooks，避免正文重复或泄露结构协议。
+  if (message.text || message.status !== "running") {
+    entries.push({
+      id: message.id,
+      role: message.role,
+      createdAt,
+      value: {
+        kind: "message",
+        message: {
+          id: message.id,
+          role: message.role,
+          createdAt,
+          items: [{
+            id: `${message.id}:text`, messageId: message.id, role: message.role, createdAt,
+            kind: "text", text: message.text, isStreaming: message.status === "running",
+          }],
+        },
+      },
+    });
+  }
+  entries.push(...assistantContentEntries(message, index, createdAt, input));
+  return entries;
+}
+
+function assistantContentEntries(
+  message: InterviewMessage,
+  index: number,
+  createdAt: number,
+  input: ProjectionInput,
+): ConversationEntry<InteractiveTimelineItem>[] {
+  if (message.role !== "assistant") return [];
+  const content: Array<{ id: string; node: ReactNode }> = [];
+  if (message.draftVersion) content.push({ id: "artifacts", node: (
+    <TurnArtifacts item={message} state={input.state} onDraft={input.onDraft} />
+  ) });
+  if (index === input.state.messages.length - 1 && input.state.confirmedVersion) {
+    content.push({ id: "confirmed", node: (
+      <ConfirmedNext version={input.state.confirmedVersion} onSources={input.onSources} />
+    ) });
+  }
+  if (index === input.state.messages.length - 1 && input.state.cancellationRequested) {
+    content.push({ id: "cancelling", node: (
+      <div className="turn-status" role="status"><LoaderCircle size={13} className="spin" />正在停止，保留已有对话</div>
+    ) });
+  }
+  if (index === input.state.messages.length - 1 && message.status === "cancelled" && !input.blocked) {
+    content.push({ id: "cancelled-retry", node: (
+      <Button size="1" variant="soft" onClick={() => void input.onRetry().catch(() => undefined)}>重新提交本轮</Button>
+    ) });
+  }
+  return content.map(({ id, node }) => ({
+    id: `${message.id}:${id}`,
+    role: "assistant" as const,
+    createdAt,
+    value: { kind: "content" as const, id: `${message.id}:${id}`, content: node },
+  }));
+}
+
+function answeredInteractionEntry(
+  state: InterviewState,
+  decision: InterviewState["decisions"][number],
+  createdAt: number,
+): ConversationEntry<InteractiveTimelineItem> | null {
+  if (!decision.questionId) return null;
+  const source = state.messages.find((message) => message.id === decision.questionId);
+  const surface = source ? interviewQuestionSurface(source) : null;
+  if (!surface) return null;
+  const data = answerData(source!, decision);
+  if (!data) return null;
+  return createAnsweredInteractionTimelineEntry({
+    createdAt,
+    interaction: {
+      interactionId: decision.questionId,
+      kind: "common_surface",
+      state: "submitted",
+      surface,
+      surfaceSubmit: {
+        answers: [{ questionId: decision.questionId, data }],
+        displayText: decision.text,
+      },
+    },
+  });
+}
+
+function answerData(message: InterviewMessage, decision: InterviewState["decisions"][number]) {
+  if (decision.kind === "free_text" && message.question?.options.length === 0) return { text: decision.text };
+  if (decision.kind !== "option" || !message.question?.options.length) return null;
+  const selectedIndex = message.question.options.findIndex((option) => option.label === decision.text);
+  return selectedIndex < 0 ? null : { selectedOptionIds: [optionId(selectedIndex)] };
+}
+
+function activeQuestionMessage(state: InterviewState) {
+  if (state.active) return undefined;
+  const latest = state.messages.at(-1);
+  if (latest?.role !== "assistant" || !latest.question) return undefined;
+  return state.unresolved.some((item) => item.id === latest.id && item.status === "open") ? latest : undefined;
+}
+
+const optionId = (index: number) => `option:${index + 1}`;
+
+function interviewQuestionSurface(message: InterviewMessage): QuestionSurface | null {
+  if (message.role !== "assistant" || !message.question) return null;
+  const question = message.question;
+  if (question.options.length > 0
+    && new Set(question.options.map((option) => option.label)).size !== question.options.length) return null;
+  return {
+    id: message.id,
+    submitLabel: "提交回答",
+    questions: question.options.length
+      ? [{
+          id: message.id,
+          type: "choice",
+          data: {
+            stem: question.prompt,
+            options: question.options.map((option, index) => ({
+              id: optionId(index), label: option.label, subtitle: option.description, recommended: option.recommended,
+            })),
+          },
+        }]
+      : [{
+          id: message.id,
+          type: "free_form",
+          data: { stem: question.prompt, placeholder: "直接回答当前问题，或补充你的要求……", multiline: true },
+        }],
   };
 }
 
-export function projectInterviewMessages(input: {
-  state: InterviewState;
-  blocked: boolean;
-  onDraft(version: number): void;
-  onSources(): void;
-  onRetry(): Promise<void>;
-}): ChatMessage[] {
-  const { byMessage: createdAtByMessage, incomplete } = interviewMessageTimes(
-    input.state,
-  );
-  return input.state.messages.map((item, index) => {
-    return {
-      id: item.id,
-      role: item.role,
-      createdAt: incomplete ? index : createdAtByMessage.get(item.id)!,
-      content:
-        item.role === "user" ? item.text : assistantParts(item, index, input),
-    };
-  });
+export function submittedInterviewAnswer(state: InterviewState, submission: TimelineSubmit) {
+  const active = activeQuestionMessage(state);
+  const answer = submission.answers.length === 1 ? submission.answers[0] : null;
+  if (!active || answer?.questionId !== active.id || !answer.data || typeof answer.data !== "object" || Array.isArray(answer.data)) {
+    throw new Error("interview_answer_invalid");
+  }
+  if (active.question!.options.length === 0) {
+    const text = "text" in answer.data && typeof answer.data.text === "string" ? answer.data.text.trim() : "";
+    if (!text) throw new Error("interview_answer_invalid");
+    return { type: "free_text" as const, questionId: active.id, text };
+  }
+  const selected = "selectedOptionIds" in answer.data && Array.isArray(answer.data.selectedOptionIds)
+    && answer.data.selectedOptionIds.length === 1 ? answer.data.selectedOptionIds[0] : null;
+  const optionIndex = active.question!.options.findIndex((_option, index) => optionId(index) === selected);
+  if (optionIndex < 0) throw new Error("interview_answer_invalid");
+  const label = active.question!.options[optionIndex]!.label;
+  return { type: "choice" as const, questionId: active.id, label };
 }
 
 export function interviewMessageTimes(state: InterviewState) {
@@ -91,291 +241,41 @@ export function interviewMessageTimes(state: InterviewState) {
     byMessage.set(turn.userMessageId, createdAt);
     byMessage.set(turn.assistantMessageId, createdAt);
   }
-  // WHY：旧数据没有保存逐消息时间；保留原数组顺序，并由本地壳隐藏占位时间，避免显示 1970 年。
-  return {
-    byMessage,
-    incomplete: state.messages.some((message) => !byMessage.has(message.id)),
-  };
+  return { byMessage, incomplete: state.messages.some((message) => !byMessage.has(message.id)) };
 }
 
-function assistantParts(
-  item: InterviewMessage,
-  index: number,
-  input: Parameters<typeof projectInterviewMessages>[0],
-): ChatMessagePart[] {
-  const parts: ChatMessagePart[] = [
-    {
-      id: "text",
-      type: "text",
-      text: item.text,
-      ...(item.status === "running" ? { streaming: true } : {}),
-    },
-  ];
-  // WHY：模型调用事件仍由需求状态保存用于审计，正常对话只呈现用户完成下一步所需的信息。
-  // 非权威 authoring preview 不进入原 Timeline/Composer；只有 terminal open Interaction 才展示 Question。
-  if (item.draftVersion)
-    parts.push({
-      id: "artifacts",
-      type: "content",
-      content: (
-        <TurnArtifacts
-          item={item}
-          state={input.state}
-          onDraft={input.onDraft}
-        />
-      ),
-    });
-  if (
-    index === input.state.messages.length - 1 &&
-    input.state.confirmedVersion
-  ) {
-    parts.push({
-      id: "confirmed",
-      type: "content",
-      content: (
-        <ConfirmedNext
-          version={input.state.confirmedVersion}
-          onSources={input.onSources}
-        />
-      ),
-    });
-  }
-  if (
-    index === input.state.messages.length - 1 &&
-    input.state.cancellationRequested
-  ) {
-    parts.push({
-      id: "cancelling",
-      type: "content",
-      content: (
-        <div className="turn-status" role="status">
-          <LoaderCircle size={13} className="spin" />
-          正在停止，保留已有对话
-        </div>
-      ),
-    });
-  }
-  if (
-    index === input.state.messages.length - 1 &&
-    item.status === "cancelled" &&
-    !input.blocked
-  ) {
-    parts.push({
-      id: "cancelled-retry",
-      type: "content",
-      content: (
-        <Button
-          size="1"
-          variant="soft"
-          onClick={() => void input.onRetry().catch(() => undefined)}
-        >
-          重新提交本轮
-        </Button>
-      ),
-    });
-  }
-  return parts;
+function projectInterviewActivity(state: InterviewState) {
+  return projectAIInvocationTimeline(state.messages.flatMap((message) => message.aiEvents));
 }
 
-function activeChoiceMessage(state: InterviewState) {
-  if (state.active) return undefined;
+function currentInterviewRun(state: InterviewState): InteractiveTimelineValue["currentRun"] {
   const latest = state.messages.at(-1);
-  if (latest?.role !== "assistant" || !latest.question?.options.length) return undefined;
-  return state.unresolved.some(
-    (item) => item.id === latest.id && item.status === "open",
-  )
-    ? latest
-    : undefined;
-}
-
-const optionId = (index: number) => `option:${index + 1}`;
-
-export function interviewQuestionSurface(
-  message: InterviewMessage,
-): QuestionSurface | null {
-  if (message.role !== "assistant" || !message.question?.options.length)
-    return null;
+  if (!state.active && latest?.status !== "failed") return null;
+  const turn = state.turns.find((candidate) => candidate.id === state.activeTurnId)
+    ?? state.turns.findLast((candidate) => candidate.assistantMessageId === latest?.id);
+  if (!turn) return null;
+  const createdAt = Date.parse(turn.createdAt);
   return {
-    id: message.id,
-    submitLabel: "提交回答",
-    questions: [
-      {
-        id: message.id,
-        type: "choice",
-        data: {
-          stem: message.question.prompt,
-          options: message.question.options.map((option, index) => ({
-            id: optionId(index),
-            label: option.label,
-            subtitle: option.description,
-            recommended: option.recommended,
-          })),
-          inputs: [
-            {
-              id: "free-answer",
-              label: "不同答案",
-              kind: "textarea",
-              role: "follow_up",
-              placeholder: "输入不同答案，或继续追问",
-            },
-          ],
-        },
-      },
-    ],
-  };
-}
-
-function projectAnsweredInteractions(
-  value: TimelineValue,
-  state: InterviewState,
-): TimelineValue {
-  let turns = value.turns;
-  for (const decision of state.decisions) {
-    if (
-      decision.kind !== "option" ||
-      !decision.questionId ||
-      !decision.messageId
-    )
-      continue;
-    const source = state.messages.find(
-      (message) => message.id === decision.questionId,
-    );
-    if (!source) continue;
-    const surface = interviewQuestionSurface(source);
-    const selectedIndex = source.question?.options.findIndex(
-      (option) => option.label === decision.text,
-    );
-    if (!surface || selectedIndex === undefined || selectedIndex < 0) continue;
-    turns = turns.map((turn) => {
-      const original = turn.entries.find(
-        (entry) =>
-          entry.value.kind === "message" &&
-          entry.value.message.id === decision.messageId,
-      );
-      if (!original) return turn;
-      const interaction = {
-        interactionId: source.id,
-        kind: "common_surface" as const,
-        state: "submitted" as const,
-        surface,
-        surfaceSubmit: {
-          answers: [
-            {
-              questionId: source.id,
-              data: { selectedOptionIds: [optionId(selectedIndex)] },
-            },
-          ],
-          displayText: decision.text,
-        },
-      };
-      return {
-        ...turn,
-        entries: [
-          {
-            id: `answered-interaction:${source.id}`,
-            role: "user" as const,
-            createdAt: original.createdAt,
-            value: { kind: "answered-interaction" as const, interaction },
-          },
-          ...turn.entries.filter(
-            (entry) =>
-              entry.value.kind !== "message" ||
-              entry.value.message.id !== decision.messageId,
-          ),
-        ],
-      };
-    });
-  }
-  return { ...value, turns };
-}
-
-export function selectedInterviewOption(
-  state: InterviewState,
-  submission: TimelineSubmit,
-) {
-  const active = activeChoiceMessage(state);
-  const answer = submission.answers.length === 1 ? submission.answers[0] : null;
-  const selected =
-    answer?.data &&
-    typeof answer.data === "object" &&
-    !Array.isArray(answer.data) &&
-    Array.isArray(answer.data.selectedOptionIds) &&
-    answer.data.selectedOptionIds.length === 1
-      ? answer.data.selectedOptionIds[0]
-      : null;
-  const optionIndex = active?.question?.options.findIndex(
-    (_option, index) => optionId(index) === selected,
-  );
-  if (
-    !active ||
-    answer?.questionId !== active.id ||
-    optionIndex === undefined ||
-    optionIndex < 0
-  )
-    throw new Error("interview_option_selection_invalid");
-  return {
-    questionId: active.id,
-    label: active.question!.options[optionIndex]!.label,
+    id: turn.id,
+    createdAt: Number.isFinite(createdAt) ? createdAt : 0,
+    status: latest?.status === "failed" ? "error" : latest?.text ? "streaming" : "working",
+    ...(state.cancellationRequested ? { statusText: "正在停止" } : {}),
   };
 }
 
 export function interviewErrorMessage(message: InterviewMessage | undefined) {
-  return message?.role === "assistant" && message.status === "failed"
-    ? "本轮结果未提交，可以重试。"
-    : undefined;
+  return message?.role === "assistant" && message.status === "failed" ? "本轮结果未提交，可以重试。" : undefined;
 }
 
-function ConfirmedNext({
-  version,
-  onSources,
-}: {
-  version: number;
-  onSources(): void;
-}) {
-  return (
-    <div className="confirmed-next">
-      <Check size={16} />
-      <div>
-        <strong>需求 v{version} 已确认</strong>
-        <p>接下来依据这份范围调研真实来源，再制定抓取计划。</p>
-      </div>
-      <Button variant="soft" onClick={onSources}>
-        查看来源调研
-        <ArrowRight size={14} />
-      </Button>
-    </div>
-  );
+function ConfirmedNext({ version, onSources }: { version: number; onSources(): void }) {
+  return <div className="confirmed-next"><Check size={16} /><div><strong>需求 v{version} 已确认</strong>
+    <p>接下来依据这份范围调研真实来源，再制定抓取计划。</p></div>
+    <Button variant="soft" onClick={onSources}>查看来源调研<ArrowRight size={14} /></Button></div>;
 }
 
-function TurnArtifacts({
-  item,
-  state,
-  onDraft,
-}: {
-  item: InterviewMessage;
-  state: InterviewState;
-  onDraft: (v: number) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="draft-artifact"
-      onClick={() => onDraft(item.draftVersion!)}
-    >
-      <FileText size={22} />
-      <span>
-        <strong>
-          {state.drafts.find((draft) => draft.version === item.draftVersion)
-            ?.title ?? "需求草稿"}
-        </strong>
-        <small>
-          需求草稿 · v{item.draftVersion} ·{" "}
-          {state.confirmedVersion === item.draftVersion
-            ? "已确认"
-            : "查看内容"}
-        </small>
-      </span>
-      <ArrowRight size={16} />
-    </button>
-  );
+function TurnArtifacts({ item, state, onDraft }: { item: InterviewMessage; state: InterviewState; onDraft: (v: number) => void }) {
+  return <button type="button" className="draft-artifact" onClick={() => onDraft(item.draftVersion!)}>
+    <FileText size={22} /><span><strong>{state.drafts.find((draft) => draft.version === item.draftVersion)?.title ?? "需求草稿"}</strong>
+      <small>需求草稿 · v{item.draftVersion} · {state.confirmedVersion === item.draftVersion ? "已确认" : "查看内容"}</small>
+    </span><ArrowRight size={16} /></button>;
 }

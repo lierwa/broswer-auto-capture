@@ -10,8 +10,8 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.0-40fa2c37.tgz",
-    "@agent-platform/ai-connect-react": "file:../../vendor/agent-platform/agent-platform-ai-connect-react-0.3.0-863227a5.tgz",
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.1-7d7bf6ac.tgz",
+    "@agent-platform/ai-connect-react": "file:../../vendor/agent-platform/agent-platform-ai-connect-react-0.3.1-40835e81.tgz",
     "@browser-capture/contracts": "0.0.0",
     "@radix-ui/themes": "3.3.0",
     "@xyflow/react": "12.11.6",

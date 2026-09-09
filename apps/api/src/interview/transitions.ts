@@ -8,7 +8,7 @@ export function beginRound(state: InterviewState, command: ModelCommand) {
   let userMessageId = state.messages.findLast((message) => message.role === "user")?.id
   if (command.type === "message") {
     userMessageId = randomUUID()
-    if (command.answer) acceptOption(state, command, userMessageId)
+    if (command.answer) acceptAnswer(state, command, userMessageId)
     state.messages.push({ id: userMessageId, role: "user", text: command.text, status: "complete", question: null, draftVersion: null, aiEvents: [] })
   }
   if (!userMessageId) conflict("没有可以继续处理的用户原文。")
@@ -19,13 +19,17 @@ export function beginRound(state: InterviewState, command: ModelCommand) {
   state.activeTurnId = id
   return id
 }
-function acceptOption(state: InterviewState, command: Extract<ModelCommand, { type: "message" }>, messageId: string) {
+function acceptAnswer(state: InterviewState, command: Extract<ModelCommand, { type: "message" }>, messageId: string) {
   const answer = command.answer!
   const item = state.unresolved.find((question) => question.id === answer.questionId)
   if (!item || item.status !== "open" || state.messages.at(-1)?.id !== item.id) conflict("这个问题已不属于当前轮次，请查看最新对话。")
-  if (command.text !== answer.label || !item.question.options.some((option) => option.label === answer.label)) conflict("选项与当前问题不匹配。")
+  const answerText = answer.type === "choice" ? answer.label : answer.text
+  if (command.text !== answerText) conflict("提交内容与当前回答不匹配。")
+  if (answer.type === "choice" && !item.question.options.some((option) => option.label === answer.label)) conflict("选项与当前问题不匹配。")
+  if (answer.type === "free_text" && item.question.options.length > 0) conflict("当前问题需要选择或补充说明。")
   item.status = "answered"; item.answerMessageId = messageId
-  state.decisions.push({ id: randomUUID(), revision: state.revision + 1, kind: "option", text: answer.label, messageId,
+  state.decisions.push({ id: randomUUID(), revision: state.revision + 1,
+    kind: answer.type === "choice" ? "option" : "free_text", text: answerText, messageId,
     questionId: item.id, draftVersion: null, createdAt: new Date().toISOString(),
   })
 }

@@ -30,7 +30,7 @@ export const questions = sqliteTable("questions", {
   status: text({ enum: ["open", "answered", "superseded", "resolved"] }).notNull(), answerMessageId: text(),
 }, (table) => [primaryKey({ columns: [table.taskId, table.id] })])
 export const decisions = sqliteTable("decisions", {
-  taskId: taskId(), id: text().notNull(), revision: integer().notNull(), kind: text({ enum: ["option", "draft_confirmation"] }).notNull(),
+  taskId: taskId(), id: text().notNull(), revision: integer().notNull(), kind: text({ enum: ["option", "free_text", "draft_confirmation"] }).notNull(),
   text: text().notNull(), messageId: text(), questionId: text(), draftVersion: integer(), createdAt: text().notNull(),
 }, (table) => [primaryKey({ columns: [table.taskId, table.id] })])
 export const audits = sqliteTable("audits", {
