@@ -12,3 +12,4 @@ runs/
 .env
 .env.*
 !.env.example
+.ai-connect.local.json

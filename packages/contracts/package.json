@@ -20,7 +20,7 @@
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
-    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.0-044229c4.tgz",
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.0-40fa2c37.tgz",
     "zod": "4.1.8"
   },
   "devDependencies": {
