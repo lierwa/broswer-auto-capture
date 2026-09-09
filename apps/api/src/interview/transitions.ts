@@ -47,13 +47,17 @@ export function finishRound(state: InterviewState, id: string, outcome: "succeed
   turn.status = status; turn.completedAt = new Date().toISOString(); turn.reason = reason ?? (status === "cancelled" ? "已停止本轮" : null)
   assistant.status = status === "succeeded" ? "complete" : status
   if (status === "succeeded" && output) {
-    assistant.text = [assistant.text.trim(), output.assistantText].filter(Boolean).join("\n\n"); assistant.question = output.question
+    // WHY：流中正文已由唯一 authoring parser 原位增长；终态只以同一解析结果校准，不能再次追加而制造重复消息。
+    assistant.text = output.assistantText; assistant.question = output.question
     for (const question of state.unresolved) if (question.status === "open") question.status = "superseded"
     if (output.question) state.unresolved.push({ id: assistant.id, revision: state.revision, question: output.question, status: "open", answerMessageId: null })
     if (output.draft) {
       const version = (state.drafts.at(-1)?.version ?? 0) + 1
       state.drafts.push({ ...output.draft, version, revision: state.revision }); assistant.draftVersion = version
     }
-  } else assistant.text += `\n${status === "cancelled" ? "已停止，本轮未提交草稿。" : reason ?? "本轮未完成，结果未提交。请重试。"}`
+  } else {
+    assistant.question = null
+    assistant.text += `\n${status === "cancelled" ? "已停止，本轮未提交草稿。" : reason ?? "本轮未完成，结果未提交。请重试。"}`
+  }
   state.active = false; state.activeTurnId = null; state.cancellationRequested = false
 }

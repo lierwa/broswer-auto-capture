@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto"
 import { rm } from "node:fs/promises"
 import { BrowserError, type BrowserGrant, type CommandExecutor } from "@browser-capture/browser"
 import { createApplication } from "../src/app.js"
-import { openFixture, deferred } from "./helpers.js"
+import { openFixture, deferred, projectRoot } from "./helpers.js"
 import { testAIModel } from "./fixtures/ai-model.js"
 
 const headers = { host: "127.0.0.1:4175" }
@@ -26,7 +26,7 @@ async function context() {
       : { tab_id: 1, text: fake.text, truncated: false }
     return { stdout: JSON.stringify(value), exitCode: 0 }
   }
-  const open = () => createApplication({ root: process.cwd(), directory: original.directory, browserExecutor: executor,
+  const open = () => createApplication({ root: projectRoot, directory: original.directory, browserExecutor: executor,
     aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
   const current = await open()
   const grant = (): BrowserGrant => ({ taskId, runId: randomUUID(), requirementVersion: 1, purpose: "source_research",

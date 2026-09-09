@@ -10,6 +10,7 @@ import { taskCommandSchema, taskIdSchema } from "@browser-capture/contracts/task
 import { ProductStore } from "./database/store.js"
 import { importLegacy } from "./database/importLegacy.js"
 import { InterviewCoordinator } from "./interview/coordinator.js"
+import { loadInterviewSkill } from "./interview/protocol.js"
 import { DomainError } from "./errors.js"
 import { BrowserService } from "./browser/service.js"
 import { BrowserError, bskExecutor, type CommandExecutor } from "@browser-capture/browser"
@@ -31,7 +32,7 @@ export async function createApplication(options: AppOptions) {
   }) }
   catch (error) { await store.close(); throw error }
   const aiModel = options.aiModel ?? createAIModelProvider(ai, store, SHARED_AI_SUBJECT)
-  const coordinator = new InterviewCoordinator(store, aiModel)
+  const coordinator = new InterviewCoordinator(store, aiModel, loadInterviewSkill(options.root))
   let browser: BrowserService
   try { browser = new BrowserService(store, options.directory, options.browserExecutor ?? bskExecutor(options.root)) }
   catch (error) { ai.close(); await store.close(); throw error }

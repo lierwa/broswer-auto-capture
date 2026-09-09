@@ -6,14 +6,26 @@ import { ProductStore } from "../database/store.js"
 import { conflict, DomainError } from "../errors.js"
 import { beginRound, confirmDraft, finishRound } from "./transitions.js"
 import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
-import { interviewPrompt, outputSchema, parseInterviewOutput } from "./protocol.js"
+import {
+  createInterviewAuthoringSession,
+  interviewPrompt,
+  parseInterviewAuthoringOutput,
+  questionFromAuthoringBlock,
+} from "./protocol.js"
 
 interface Job { taskId: string; turnId: string; controller: AbortController; done: Promise<void> }
+const modelUnavailable = "model_account_model_unavailable"
+function failureReason(error: unknown) {
+  if (error instanceof DomainError) return error.message
+  // WHY：只消费 AI Connect 的稳定错误码，避免把供应商原文或 cause 变成业务协议。
+  if (error instanceof Error && error.message === modelUnavailable) return "当前账号不支持所选模型，请选择其他可用模型。"
+  return "本轮未完成，结果未提交。请重试。"
+}
 export class InterviewCoordinator {
   private job: Job | null = null
   private closing = false
   private failed = false
-  constructor(readonly store: ProductStore, private aiModel: AIModelProvider) {}
+  constructor(readonly store: ProductStore, private aiModel: AIModelProvider, private interviewSkill: string) {}
   private available() {
     if (this.closing || this.failed) throw new DomainError("service_unavailable", "访谈服务已停止或持久化异常，请重启后恢复。", 503)
   }
@@ -70,28 +82,75 @@ export class InterviewCoordinator {
       const signal = AbortSignal.any([job.controller.signal, AbortSignal.timeout(190_000)])
       const selection = this.aiModel.selection()
       output = await this.runShared(job, await this.aiModel.prepare(selection, signal), signal)
-    } catch (error) { output = undefined; reason = error instanceof DomainError ? error.message : "本轮未完成，结果未提交。请重试。" }
+    } catch (error) { output = undefined; reason = failureReason(error) }
     finally {
       this.store.mutate(job.taskId, (state) => finishRound(state, job.turnId,
         job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason))
     }
   }
   private async runShared(job: Job, model: PreparedAIModel, signal: AbortSignal) {
-    const object = await model.generateObject({
-      prompt: interviewPrompt(this.store.snapshot(job.taskId)), jsonSchema: outputSchema(), signal,
-      parse: (value) => parseInterviewOutput(value, this.store.snapshot(job.taskId)),
-      onEvent: (event) => this.appendAIEvent(job, event),
+    const authoring = createInterviewAuthoringSession()
+    let streamedText = ""
+    let pendingQuestion: InterviewOutput["question"] = null
+    const acceptText = (text: string) => {
+      if (!text) return undefined
+      streamedText += text
+      const update = authoring.push(text)
+      let visibleText = "", question: InterviewOutput["question"] | undefined
+      for (const item of update.events) {
+        if (item.type === "text.delta") visibleText += item.delta
+        if (item.type === "authoring.started") pendingQuestion = null
+        if (item.type === "authoring.preview") pendingQuestion = questionFromAuthoringBlock(item.block)
+        if (item.type === "presentation.checkpoint" && (
+          item.checkpoint.reason === "authoring.closed" || item.checkpoint.tag === "question-panel"
+        )) {
+          question = pendingQuestion
+          pendingQuestion = null
+        }
+      }
+      return visibleText || question !== undefined ? { text: visibleText, question } : undefined
+    }
+    const returnedText = await model.generateText({
+      prompt: interviewPrompt(this.store.snapshot(job.taskId), this.interviewSkill), signal,
+      onEvent: (event) => {
+        const projection = event.type === "text.delta" ? acceptText(event.text) : undefined
+        this.appendAIEvent(job, event, projection)
+      },
     })
+    if (!streamedText) {
+      const projection = acceptText(returnedText)
+      if (projection) this.appendProjection(job, projection.text, projection.question)
+    }
+    else if (returnedText !== streamedText) throw new Error("interview_authoring_stream_text_mismatch")
+    const result = authoring.finish()
+    if (result.textDelta) this.appendProjection(job, result.textDelta)
+    const object = parseInterviewAuthoringOutput(result, this.store.snapshot(job.taskId))
     this.store.mutate(job.taskId, (state) => state.audits.push({
       revision: state.turns.find((turn) => turn.id === job.turnId)!.revision,
       model: model.selection.modelId, effort: model.selection.reasoningEffort, invocations: 1,
     }))
     return object
   }
-  private appendAIEvent(job: Job, event: AIEvent) {
+  private appendProjection(job: Job, text: string, question?: InterviewOutput["question"]) {
     this.store.mutate(job.taskId, (state) => {
       const turn = state.turns.find((item) => item.id === job.turnId)!
-      state.messages.find((message) => message.id === turn.assistantMessageId)!.aiEvents.push(event)
+      const message = state.messages.find((item) => item.id === turn.assistantMessageId)!
+      message.text += text
+      if (question !== undefined) message.question = question
+    })
+  }
+  private appendAIEvent(job: Job, event: AIEvent, projection?: {
+    text: string
+    question: InterviewOutput["question"] | undefined
+  }) {
+    this.store.mutate(job.taskId, (state) => {
+      const turn = state.turns.find((item) => item.id === job.turnId)!
+      const message = state.messages.find((item) => item.id === turn.assistantMessageId)!
+      message.aiEvents.push(event)
+      if (projection) {
+        message.text += projection.text
+        if (projection.question !== undefined) message.question = projection.question
+      }
     })
   }
   async *observe(id: string, after: number, signal: AbortSignal) {

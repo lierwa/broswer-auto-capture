@@ -45,10 +45,12 @@
 
 ## 启动本地工作台（F1）
 
-在项目目录使用 Node.js 24 与 npm：
+项目要求 Node.js 24+ 与 npm 11+。使用 nvm 时以仓库的 `.nvmrc` 选择 Node 24：
 
 ```powershell
-npm install
+nvm install 24
+nvm use 24
+npm ci
 npm run dev
 ```
 
@@ -61,6 +63,24 @@ Vite 将 `/api` 代理至 4175。API 端口通过 `BROWSER_CAPTURE_API_PORT` 配
 五视图、连续消息、宽屏并排草稿/窄屏抽屉与节点主画布保留。刷新重新读取服务端事实；切任务保留各自未发送输入、页签与节点选择，视图临时状态不承诺跨刷新保存。取消绑定实际轮次，取消后不提交草稿；请求响应丢失时可用原请求标识重发。来源与浏览器执行从 F2/F3 继续，结构样例须显式打开。
 
 `npm test`、`npm run check` 与 `npm run build` 执行所属工作区验证。普通测试用替身；`apps/workbench/tests/f1-browser-server.ts` 只为 `work/` 下隔离浏览器验收提供替身，生产入口没有模型替换开关。各阶段实际证据和待验证范围见 PROGRESS。
+
+## 同步本地 AI Connect 源码制品
+
+在仓库根目录创建已忽略的 `.ai-connect.local.json`，只记录本机 producer 源码 checkout：
+
+```json
+{
+  "opencodeRoot": "/absolute/path/to/opencode-dev"
+}
+```
+
+然后执行：
+
+```powershell
+npm run ai-connect:sync
+```
+
+该命令委托 producer 源码中的同步工具完成制品暂存、vendor 更新、已配置直接依赖 manifest、lockfile 与本机安装树刷新，不在仓库中保存 producer 机器路径。切换到已发布包时使用 npm 的精确版本安装流程，不使用这个本地源码同步入口。两种方式都不改变 `apps/` 或 `packages/` 的业务 import；业务代码继续引用稳定的 `@agent-platform/ai-connect` exports。
 
 ## 验证本机模型接入
 

@@ -3,14 +3,14 @@ import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import { createApplication } from "../src/app.js"
-import { succeeded, draft } from "./helpers.js"
+import { authoredInterview, draft } from "./helpers.js"
 import { testAIModel } from "./fixtures/ai-model.js"
 
 // 隔离验收：模型和页面内容是替身；所有状态均经过正式服务，禁止直接写成功记录。
 const root = fileURLToPath(new URL("../../../", import.meta.url)), directory = path.join(root, "work", `f2-ui-${Date.now()}`)
 let mode = "normal"
 const application = await createApplication({ root, directory, serveUi: true,
-  aiModel: testAIModel(async function* () { yield succeeded({ assistantText: "验收范围已整理。", question: null, draft }) }),
+  aiModel: testAIModel(async function* () { yield authoredInterview({ assistantText: "验收范围已整理。", question: null, draft }) }),
   browserExecutor: async (args, signal) => {
     if (args[1] === "observe" && mode === "waiting") await new Promise<void>((resolve) => signal!.addEventListener("abort", () => resolve(), { once: true }))
     if (args[1] === "observe" && mode === "failed") return { stdout: "{}", exitCode: 1 }

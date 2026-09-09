@@ -12,9 +12,10 @@ import { listModelIntegrations } from "@agent-platform/ai-connect/integration/pr
 import { ProductStore } from "../src/database/store.js"
 import { InterviewCoordinator } from "../src/interview/coordinator.js"
 import { createAIModelProvider } from "../src/ai/model.js"
-import { draft } from "./helpers.js"
+import { loadInterviewSkill } from "../src/interview/protocol.js"
+import { authoredInterview, draft, projectRoot } from "./helpers.js"
 
-test("保存共享选择后访谈走公共结构调用与事件链，失败不回退 Codex", async () => {
+test("保存共享选择后访谈走公共 authoring 调用与事件链，失败不回退 Codex", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "browser-shared-ai-"))
   const originalFetch = globalThis.fetch
   const subjectId = "browser-capture-local-user"
@@ -37,7 +38,10 @@ test("保存共享选择后访谈走公共结构调用与事件链，失败不�
     store = await ProductStore.open(directory)
     store.saveSharedModelSelection(subjectId, { connectionId: account.id, modelId: model.id, reasoningEffort: "medium" })
     let providerCalls = 0
-    let responseText = JSON.stringify({ assistantText: "范围已整理。", question: null, draft })
+    const authored = authoredInterview({ assistantText: "范围已整理。", question: null, draft })
+    assert.equal(authored.type, "turn_succeeded")
+    if (authored.type !== "turn_succeeded") throw new Error("fixture authoring missing")
+    let responseText = authored.outputText
     globalThis.fetch = async (url, init) => {
       providerCalls += 1
       const request = new Request(url, init)
@@ -45,7 +49,7 @@ test("保存共享选择后访谈走公共结构调用与事件链，失败不�
       assert.equal((await request.json()).model, "gpt-5.6-sol")
       return responsesStream(responseText, model.id)
     }
-    coordinator = new InterviewCoordinator(store, createAIModelProvider(ai, store, subjectId))
+    coordinator = new InterviewCoordinator(store, createAIModelProvider(ai, store, subjectId), loadInterviewSkill(projectRoot))
     const id = coordinator.taskAction({ type: "create", requestId: randomUUID() })
     const send = (text: string) => coordinator!.dispatch(id, { type: "message", requestId: randomUUID(),
       expectedRevision: store!.snapshot(id).revision, text,
@@ -56,12 +60,12 @@ test("保存共享选择后访谈走公共结构调用与事件链，失败不�
     assert.deepEqual(completed.messages.at(-1)?.aiEvents.map((event) => event.type),
       ["generation.started", "text.delta", "generation.completed"])
 
-    responseText = "{bad"
+    responseText = "<authoring><interview-result>{bad</interview-result></authoring>"
     send("把范围改为公开在售商品"); await coordinator.waitForIdle()
     const failed = store.snapshot(id)
     assert.equal(failed.messages.at(-1)?.status, "failed")
     assert.deepEqual(failed.messages.at(-1)?.aiEvents.map((event) => event.type),
-      ["generation.started", "text.delta", "generation.failed"])
+      ["generation.started", "text.delta", "generation.completed"])
     assert.equal(providerCalls, 2)
     ai.close()
   } finally {

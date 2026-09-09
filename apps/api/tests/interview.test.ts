@@ -2,14 +2,14 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
 import { currentDraft } from "@browser-capture/contracts/interview"
-import { fixture, question, draft, succeeded, audit } from "./helpers.js"
+import { fixture, question, draft, authoredInterview, audit } from "./helpers.js"
 
 test("每个请求先持久化再启动模型，重复请求不重复用户消息和调用", async () => fixture(async ({ coordinator, store, client, create }) => {
   const id = create(); let calls = 0
   client.runTurn = async function* () {
     calls++
     assert.equal(store.snapshot(id).messages[0]?.text, "  原文\n")
-    yield succeeded({ assistantText: "已理解", question: null, draft })
+    yield authoredInterview({ assistantText: "已理解", question: null, draft })
   }
   const command = { type: "message" as const, requestId: randomUUID(), expectedRevision: 0, text: "  原文\n" }
   assert.equal(coordinator.dispatch(id, command).active, true)
@@ -43,7 +43,7 @@ test("新输入立即使旧确认失效，历史版本只读且历史确认保�
   assert.equal(store.snapshot(id).drafts.length, 2)
 }))
 test("自由追问保留原文与问题上下文，不擅自转成建议决策；明确点击才记选项", async () => fixture(async ({ coordinator, store, client, create, send, prompts }) => {
-  client.runTurn = async function* (prompt) { prompts.push(prompt); yield succeeded({ assistantText: "请确定范围", question, draft: null }) }
+  client.runTurn = async function* (prompt) { prompts.push(prompt); yield authoredInterview({ assistantText: "请确定范围", question, draft: null }) }
   const id = create(); send(id); await coordinator.waitForIdle()
   send(id, "我不选这两个，为什么要限制？"); await coordinator.waitForIdle()
   assert.equal(store.snapshot(id).decisions.length, 0)
@@ -60,7 +60,7 @@ test("Decision/Unresolved 随问题、明确选项和草稿确认投影，不把
   let turn = 0
   client.runTurn = async function* () {
     turn += 1
-    yield succeeded(turn === 1
+    yield authoredInterview(turn === 1
       ? { assistantText: "需要确认评价范围。", question, draft: null }
       : { assistantText: "已形成草稿。", question: null, draft })
   }
@@ -82,9 +82,33 @@ test("Decision/Unresolved 随问题、明确选项和草稿确认投影，不把
   assert.deepEqual(confirmed.decisions.map((item) => item.kind), ["option", "draft_confirmation"])
   assert.equal(confirmed.unresolved[0]?.status, "resolved")
 }))
+test("authoring 流只增长安全正文，闭合题块保持非权威候选，终态成功才开放回答", async () => fixture(async ({ coordinator, store, client, create, send, gate }) => {
+  const previewed = gate(), finish = gate()
+  client.runTurn = async function* () {
+    const output = authoredInterview({ assistantText: "先明确范围。", question, draft: null })
+    assert.equal(output.type, "turn_succeeded")
+    if (output.type !== "turn_succeeded") return
+    const boundary = output.outputText.indexOf("<authoring>")
+    yield { type: "text_delta", delta: output.outputText.slice(0, boundary) }
+    yield { type: "text_delta", delta: output.outputText.slice(boundary) }
+    previewed.resolve(); await finish.promise
+    yield output
+  }
+  const id = create(); send(id); await previewed.promise
+  const live = store.snapshot(id)
+  assert.equal(live.active, true)
+  assert.equal(live.messages.at(-1)?.text.trim(), "先明确范围。")
+  assert.deepEqual(live.messages.at(-1)?.question, question)
+  assert.equal(live.unresolved.length, 0)
+  assert.doesNotMatch(live.messages.at(-1)?.text ?? "", /authoring|question-panel/)
+  finish.resolve(); await coordinator.waitForIdle()
+  const completed = store.snapshot(id)
+  assert.equal(completed.unresolved[0]?.id, completed.messages.at(-1)?.id)
+  assert.equal(completed.unresolved[0]?.status, "open")
+}))
 test("断开观察不会停止执行；重新观察收到提交后的单调序号和最终草稿", async () => fixture(async ({ coordinator, store, client, create, send, gate }) => {
   const ready = gate(), release = gate()
-  client.runTurn = async function* () { ready.resolve(); await release.promise; yield succeeded({ assistantText: "已完成", question: null, draft }) }
+  client.runTurn = async function* () { ready.resolve(); await release.promise; yield authoredInterview({ assistantText: "已完成", question: null, draft }) }
   const id = create(), state = send(id)
   const observer = coordinator.observe(id, -1, new AbortController().signal)
   assert.equal((await observer.next()).value?.state.activeTurnId, state.activeTurnId)
@@ -100,7 +124,7 @@ test("断开观察不会停止执行；重新观察收到提交后的单调序�
 }))
 test("取消绑定具体轮次，迟到成功仅保留审计不提交草稿，旧取消不影响下一轮", async () => fixture(async ({ coordinator, store, client, create, send, gate }) => {
   const ready = gate(), release = gate()
-  client.runTurn = async function* () { ready.resolve(); await release.promise; yield succeeded({ assistantText: "迟到", question: null, draft }) }
+  client.runTurn = async function* () { ready.resolve(); await release.promise; yield authoredInterview({ assistantText: "迟到", question: null, draft }) }
   const id = create(), first = send(id); await ready.promise
   coordinator.dispatch(id, { type: "cancel", turnId: first.activeTurnId! })
   assert.equal(store.snapshot(id).cancellationRequested, true)
@@ -116,7 +140,7 @@ test("共享调用收到取消信号后不提交草稿，持久化 cancelling �
   client.runTurn = async function* (_prompt, _schema, signal) {
     started.resolve()
     await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
-    yield succeeded({ assistantText: "迟到结果", question: null, draft })
+    yield authoredInterview({ assistantText: "迟到结果", question: null, draft })
   }
   const id = create(), active = send(id)
   await started.promise
@@ -142,12 +166,18 @@ test("取消期间保持执行互斥，不能误取消其他任务或归档活�
 test("供应商协议块不进入消息；校验失败/成功后异常均不提交草稿", async () => fixture(async ({ coordinator, store, client, create, send }) => {
   const id = create()
   client.runTurn = async function* () {
-    yield { type: "commentary_delta", delta: '{"assistantText": "机器协议"}' }
-    yield succeeded({ assistantText: "结果", question, draft })
+    const output = authoredInterview({ assistantText: "结果", question, draft })
+    assert.equal(output.type, "turn_succeeded")
+    if (output.type !== "turn_succeeded") return
+    const middle = output.outputText.indexOf("<authoring>") + 6
+    yield { type: "text_delta", delta: output.outputText.slice(0, middle) }
+    yield { type: "text_delta", delta: output.outputText.slice(middle) }
+    yield output
   }
   send(id); await coordinator.waitForIdle()
-  assert.equal(store.snapshot(id).drafts.length, 0); assert.doesNotMatch(store.snapshot(id).messages.at(-1)!.text, /assistantText/)
-  client.runTurn = async function* () { yield succeeded({ assistantText: "提前成功", question: null, draft }); throw new Error("private-provider-path") }
+  assert.equal(store.snapshot(id).drafts.length, 0)
+  assert.doesNotMatch(store.snapshot(id).messages.at(-1)!.text, /authoring|interview-result|question-panel/)
+  client.runTurn = async function* () { yield authoredInterview({ assistantText: "提前成功", question: null, draft }); throw new Error("private-provider-path") }
   coordinator.dispatch(id, { type: "retry", requestId: randomUUID(), expectedRevision: 1 }); await coordinator.waitForIdle()
   assert.equal(store.snapshot(id).drafts.length, 0)
   assert.equal(store.snapshot(id).messages.filter((message) => message.role === "user").length, 1)

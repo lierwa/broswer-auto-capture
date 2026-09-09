@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { setTimeout as delay } from "node:timers/promises"
 import assert from "node:assert/strict"
 import { createApplication, type AppOptions } from "../src/app.js"
-import { succeeded, brief } from "./helpers.js"
+import { authoredInterview, succeeded, brief } from "./helpers.js"
 import type { ResearchDecision, ResearchRecord } from "@browser-capture/contracts/research"
 import { testAIModel } from "./fixtures/ai-model.js"
 
@@ -32,7 +32,7 @@ export async function researchFixture(serveUi = false, planOptions: Pick<AppOpti
   const decide = planOptions.decide
   const aiModel = testAIModel(async function* (prompt) {
     if (prompt.startsWith("用途 requirement_interview")) {
-      yield succeeded({ assistantText: "已整理", question: null, draft: { title: "目录调研", brief: sourceBrief } }); return
+      yield authoredInterview({ assistantText: "已整理", question: null, draft: { title: "目录调研", brief: sourceBrief } }); return
     }
     fake.modelCalls++; yield succeeded(await (decide?.(prompt) ?? fake.decide(prompt)))
   }, undefined, () => { fake.closeCalls++; fake.close() })

@@ -4,6 +4,11 @@ import { DomainError } from "../errors.js"
 
 export type PreparedAIModel = Readonly<{
   selection: ModelSelection
+  generateText(input: Readonly<{
+    prompt: string
+    signal: AbortSignal
+    onEvent(event: AIEvent): void
+  }>): Promise<string>
   generateObject<T>(input: Readonly<{
     prompt: string
     jsonSchema: Record<string, unknown>
@@ -41,6 +46,11 @@ export function createAIModelProvider(ai: AI, store: ProductStore, subjectId: st
       await subject.verifyCapabilities({ model: selection, require: ["structuredOutput"], signal })
       return Object.freeze({
         selection: Object.freeze({ ...selection }),
+        async generateText(input) {
+          const result = await subject.generate({ model: selection,
+            messages: [{ role: "user", content: input.prompt }], signal: input.signal, onEvent: input.onEvent })
+          return result.text
+        },
         async generateObject<T>(input: Readonly<{ prompt: string; jsonSchema: Record<string, unknown>; parse(value: unknown): T; signal: AbortSignal; onEvent(event: AIEvent): void }>) {
           const result = await subject.generateObject({ model: selection, requiredCapabilities: ["structuredOutput"], messages: [{ role: "user", content: input.prompt }],
             schema: { jsonSchema: input.jsonSchema, parse: input.parse }, signal: input.signal, onEvent: input.onEvent })

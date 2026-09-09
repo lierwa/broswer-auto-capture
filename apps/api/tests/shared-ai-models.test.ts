@@ -30,6 +30,7 @@ function providerFor(decide: (prompt: string) => unknown) {
       assert.deepEqual(model, selection)
       const prepared: PreparedAIModel = {
         selection,
+        async generateText() { throw new Error("text generation not used by this fixture") },
         async generateObject<T>(input: Readonly<{ prompt: string; jsonSchema: Record<string, unknown>; parse(value: unknown): T; signal: AbortSignal; onEvent(event: AIEvent): void }>): Promise<T> {
           const invocationId = `fixture-${++state.generates}`
           input.onEvent(parseAIEvent({ type: "generation.started", invocationId, sequence: 0, createdAt: 1, output: "object", model: selection }))

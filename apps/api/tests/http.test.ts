@@ -2,13 +2,13 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
 import { createApplication } from "../src/app.js"
-import { openFixture, succeeded, draft } from "./helpers.js"
+import { openFixture, authoredInterview, draft, projectRoot } from "./helpers.js"
 import { testAIModel } from "./fixtures/ai-model.js"
 
 async function fixture(run: (value: Awaited<ReturnType<typeof createApplication>>) => Promise<void>) {
   const original = await openFixture()
   await original.coordinator.close(); await original.store.close()
-  const value = await createApplication({ root: process.cwd(), directory: original.directory, aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
+  const value = await createApplication({ root: projectRoot, directory: original.directory, aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
   try { await run(value) }
   finally { await value.app.close(); const { rm } = await import("node:fs/promises"); await rm(original.directory, { recursive: true, force: true }) }
 }
@@ -52,14 +52,14 @@ test("正式 API 重启后继续同一任务，并保留问题、决策、草稿
   let turn = 0
   original.client.runTurn = async function* () {
     turn += 1
-    yield succeeded(turn === 1
+    yield authoredInterview(turn === 1
       ? { assistantText: "请先确认评价范围。", question: { prompt: "收集多少评价？", options: [
         { label: "前 20 条", description: "先覆盖核心范围", recommended: true },
         { label: "前 100 条", description: "覆盖范围更大", recommended: false },
       ] }, draft: null }
       : { assistantText: "范围已明确。", question: null, draft })
   }
-  const open = () => createApplication({ root: process.cwd(), directory: original.directory,
+  const open = () => createApplication({ root: projectRoot, directory: original.directory,
     aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
   let current: Awaited<ReturnType<typeof createApplication>> | undefined
   try {
