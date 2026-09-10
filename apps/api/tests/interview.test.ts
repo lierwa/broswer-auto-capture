@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
+import { CommonContentUIProtocol } from "@agent-platform/ai-connect/ui-contracts"
 import { currentDraft } from "@browser-capture/contracts/interview"
 import { fixture, question, draft, authoredInterview, audit } from "./helpers.js"
 
@@ -82,6 +83,40 @@ test("Decision/Unresolved 随问题、明确选项和草稿确认投影，不把
   assert.deepEqual(confirmed.decisions.map((item) => item.kind), ["option", "draft_confirmation"])
   assert.equal(confirmed.unresolved[0]?.status, "resolved")
 }))
+test("公共 compound choice 在一次原子提交中保留选项、补充、Surface 与 identity", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+  let turn = 0
+  client.runTurn = async function* () {
+    yield authoredInterview(++turn === 1
+      ? { assistantText: "需要确认范围。", question, draft: null }
+      : { assistantText: "已形成草稿。", question: null, draft })
+  }
+  const id = create(); send(id); await coordinator.waitForIdle()
+  const asked = store.snapshot(id), questionId = asked.unresolved[0]!.id
+  const surfaceSubmit = { answers: [{ questionId, data: {
+    selectedOptionIds: ["1"], inputValues: { other: "只看公开在售商品" },
+  } }], displayText: "前 20 条\n其他补充：只看公开在售商品" }
+  assert.throws(() => coordinator.dispatch(id, {
+    type: "message", requestId: randomUUID(), expectedRevision: asked.revision,
+    text: "前 20 条\n其他补充：只看公开在售商品",
+    answer: { type: "common_question", questionId, surfaceSubmit: {
+      ...surfaceSubmit, answers: [{ questionId, data: { selectedOptionIds: ["stale"], inputValues: { other: "不能绕过" } } }],
+    } },
+  }), /提交内容/)
+  assert.equal(store.snapshot(id).messages.length, asked.messages.length)
+
+  const accepted = coordinator.dispatch(id, {
+    type: "message", requestId: randomUUID(), expectedRevision: asked.revision,
+    text: "前 20 条\n其他补充：只看公开在售商品",
+    answer: { type: "common_question", questionId, surfaceSubmit },
+  })
+  const reply = accepted.messages.at(-2)?.interactionReply
+  assert.equal(reply?.surfaceId, questionId)
+  assert.deepEqual(reply?.surfaceSubmit, surfaceSubmit)
+  assert.deepEqual(reply?.surface.questions[0], asked.unresolved[0]?.question)
+  assert.equal(accepted.decisions.at(-1)?.text, "前 20 条\n其他补充：只看公开在售商品")
+  assert.equal(accepted.unresolved[0]?.answerMessageId, accepted.messages.at(-2)?.id)
+  await coordinator.waitForIdle()
+}))
 test("开放题 typed reply 绑定 identity/revision 并持久化不可变回答历史", async () => fixture(async ({ coordinator, store, client, create, send }) => {
   let turn = 0
   const openQuestion = { prompt: "你希望采集哪个品牌？", options: [] }
@@ -121,7 +156,8 @@ test("仅含可靠开放题的 authoring 输出可提交为正式 waitpoint", as
   const state = store.snapshot(id)
   assert.equal(state.turns[0]?.status, "succeeded")
   assert.equal(state.messages.at(-1)?.text, "")
-  assert.deepEqual(state.messages.at(-1)?.question, openQuestion)
+  const projected = state.messages.at(-1)?.question
+  assert.equal(projected && "type" in projected ? projected.type : null, "free_form")
   assert.equal(state.unresolved[0]?.id, state.messages.at(-1)?.id)
   assert.equal(state.unresolved[0]?.status, "open")
 }))
@@ -171,7 +207,8 @@ test("authoring 流只增长安全正文，闭合题块保持非权威候选，�
   const live = store.snapshot(id)
   assert.equal(live.active, true)
   assert.equal(live.messages.at(-1)?.text.trim(), "先明确范围。")
-  assert.deepEqual(live.messages.at(-1)?.question, question)
+  const projected = live.messages.at(-1)?.question
+  assert.equal(projected && "type" in projected ? projected.type : null, "choice")
   assert.equal(live.unresolved.length, 0)
   assert.doesNotMatch(live.messages.at(-1)?.text ?? "", /authoring|question-panel/)
   finish.resolve(); await coordinator.waitForIdle()
@@ -255,4 +292,94 @@ test("供应商协议块不进入消息；校验失败/成功后异常均不提�
   assert.equal(store.snapshot(id).drafts.length, 0)
   assert.equal(store.snapshot(id).messages.filter((message) => message.role === "user").length, 1)
   assert.doesNotMatch(store.snapshot(id).messages.at(-1)!.text, /private-provider-path/)
+}))
+
+test("未知 UI capability 在任何访谈副作用前拒绝", async () => fixture(async ({ coordinator, store, create }) => {
+  const id = create(), before = store.snapshot(id)
+  const invalid = [
+    { schemaVersion: 1 as const, packages: [{ id: "unknown.content", version: 1 }] },
+    { schemaVersion: 1 as const, packages: [{ ...CommonContentUIProtocol, version: CommonContentUIProtocol.version + 1 }] },
+    { schemaVersion: 1 as const, packages: [CommonContentUIProtocol, CommonContentUIProtocol] },
+  ]
+  for (const ui of invalid) {
+    assert.throws(() => coordinator.dispatch(id, {
+      type: "message", requestId: randomUUID(), expectedRevision: 0, text: "整理范围", ui,
+    }))
+    assert.deepEqual(store.snapshot(id), before)
+  }
+}))
+
+test("Content Card 终态成功后才按作者化顺序持久化，历史快照保持 stable identity", async () => fixture(async ({ coordinator, store, client, create, gate }) => {
+  const previewed = gate(), finish = gate()
+  const ui = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
+  const text = [
+    "前文",
+    '<authoring><content-callout variant="highlight" label="范围">关键范围</content-callout></authoring>',
+    "后文",
+    `<authoring><interview-result>${JSON.stringify({ draft })}</interview-result></authoring>`,
+  ].join("")
+  client.runTurn = async function* (prompt) {
+    assert.match(prompt, /content-callout/)
+    yield { type: "text_delta", delta: text }
+    previewed.resolve(); await finish.promise
+    yield { type: "turn_succeeded", outputText: text }
+  }
+  const id = create()
+  const active = coordinator.dispatch(id, {
+    type: "message", requestId: randomUUID(), expectedRevision: 0, text: "整理范围", ui,
+  })
+  await previewed.promise
+  const live = store.snapshot(id)
+  assert.equal(live.active, true)
+  assert.equal(live.messages.at(-1)?.text, "前文后文")
+  assert.equal(live.messages.at(-1)?.parts, undefined)
+  finish.resolve(); await coordinator.waitForIdle()
+
+  const completed = store.snapshot(id), message = completed.messages.at(-1)!
+  assert.equal(message.status, "complete")
+  assert.deepEqual(message.parts?.map((part) => part.type), ["text", "card", "text"])
+  assert.deepEqual(message.parts?.flatMap((part) => part.type === "text" ? [part.text] : []), ["前文", "后文"])
+  const card = message.parts?.find((part) => part.type === "card")
+  assert.equal(card?.type === "card" ? card.card.type : undefined, "content.callout")
+  assert.match(card?.id ?? "", new RegExp(`^content:${active.activeTurnId}:`))
+  assert.deepEqual(store.snapshot(id).messages.at(-1)?.parts, message.parts)
+}))
+
+test("坏 Content 只降为安全正文且不越过 BAC 终态门；未注册 UI 不接受 Card", async () => fixture(async ({ coordinator, store, client, create }) => {
+  const ui = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
+  const invalid = [
+    '<authoring><content-callout variant="highlight" title="invalid">安全提示</content-callout></authoring>',
+    `<authoring><interview-result>${JSON.stringify({ draft })}</interview-result></authoring>`,
+  ].join("")
+  client.runTurn = async function* () { yield { type: "turn_succeeded", outputText: invalid } }
+  const first = create()
+  coordinator.dispatch(first, {
+    type: "message", requestId: randomUUID(), expectedRevision: 0, text: "整理范围", ui,
+  })
+  await coordinator.waitForIdle()
+  const rejected = store.snapshot(first), rejectedMessage = rejected.messages.at(-1)!
+  assert.equal(rejectedMessage.status, "failed")
+  assert.equal(rejected.drafts.length, 0)
+  assert.equal(rejectedMessage.parts, undefined)
+  assert.match(rejectedMessage.text, /安全提示/)
+  assert.doesNotMatch(rejectedMessage.text, /authoring|content-callout|interview-result/)
+
+  const unregistered = [
+    '<authoring><content-callout variant="highlight">未注册展示</content-callout></authoring>',
+    `<authoring><interview-result>${JSON.stringify({ draft })}</interview-result></authoring>`,
+  ].join("")
+  client.runTurn = async function* (prompt) {
+    assert.doesNotMatch(prompt, /content-callout/)
+    yield { type: "turn_succeeded", outputText: unregistered }
+  }
+  const second = create()
+  coordinator.dispatch(second, {
+    type: "message", requestId: randomUUID(), expectedRevision: 0, text: "整理范围",
+  })
+  await coordinator.waitForIdle()
+  const unsupported = store.snapshot(second), unsupportedMessage = unsupported.messages.at(-1)!
+  assert.equal(unsupportedMessage.status, "failed")
+  assert.equal(unsupported.drafts.length, 0)
+  assert.equal(unsupportedMessage.parts, undefined)
+  assert.doesNotMatch(unsupportedMessage.text, /authoring|content-callout|interview-result/)
 }))

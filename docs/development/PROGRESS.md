@@ -1,5 +1,44 @@
 # 开发进度
 
+## 固定开发端口安全重启（2026-09-10）
+
+Baseline Impact:
+- touched layers: 根目录开发启动脚本与开发期进程占用确认；API、Workbench 和产品状态层不变。
+- owning fact source: API 端口继续由 `BROWSER_CAPTURE_API_PORT`/默认 4175 决定，Workbench 固定 4173，Vite proxy 继续读取同一 API 端口。
+- public interface changed: no，正式 HTTP、事件、消息与持久化契约均不变。
+- new protocol/adapter/fallback: no，仅在启动两个既有开发命令前增加本机端口占用门禁。
+- compatibility or legacy path changed: yes，`npm run dev` 遇到占用时从直接失败改为显示可核实进程并默认拒绝、明确确认后安全重启；根开发入口在同一进程内管理 Fastify 与 Vite。
+- baseline update required: no，变更不改变运行时层级、事实源或跨层协议。
+- architecture tests to run: 固定端口空闲启动、Web/API 占用默认拒绝、确认重启、身份变化拒绝、代理关联及子服务失败回收。
+
+Patch Disposition:
+- delete: 端口失败时可能遗留 npm 孙进程的根目录 `concurrently` 启动胶水及其无调用依赖。
+- keep: 上轮 Authoring 组合、Interview 业务、固定端口、Vite proxy 和 ProductStore 独占锁。
+- rewrite: 根目录 `dev` 入口先做端口预检，确认后由 Fastify/Vite 官方编程入口同进程启动并按序关闭。
+- reason: 本轮没有待清算的业务修复；既有并发 CLI 在端口失败竞态下可先结束 npm 包装进程、留下刚创建的孙进程，因此不能满足“失败后仅清理本次服务”的门禁。
+
+- 实现：`npm run dev` 先精确检查 Web 4173 与实际 `BROWSER_CAPTURE_API_PORT`（默认 4175）。macOS 使用 `lsof -iTCP:<port> -sTCP:LISTEN`、Windows 使用 `Get-NetTCPConnection -State Listen` 只取得 TCP 监听 PID，再按 PID 查询进程名和入口目录；不把 UDP 占用者或 TCP 客户端当成服务。交互提示说明会中断现有请求/任务且默认否；非交互、归属不完整、复核时 PID/PPID/命令/目录变化均关闭启动门。
+- 生命周期：确认后只向复核一致的 PID 发送终止信号并等待固定端口释放。新实例由同一 Node 进程持有 Fastify 与 Vite middleware，显式绑定 Workbench root/config、HMR upgrade 和当前 API proxy；host 是唯一 SIGINT/SIGTERM 权威，任一启动失败或退出都先中止本实例连接，再等待 Vite、Fastify 及 ProductStore 既有关闭钩子完成。
+- 验证：Node 24 专项 12/12 通过，覆盖 Web/API 冲突默认拒绝、确认 fixture、占用身份变化、UDP/TCP 客户端排除、API+Workbench+proxy/HMR、真实 active turn 的代理事件流关闭、部分启动失败回收，以及 SIGTERM 后同数据目录立即重开；全 workspace typecheck、`git diff --check`、Windows lockfile dry-run 通过。当前真实旧 checkout 的 4173/4175 在 TTY 直接回车和非交互检查前后 PID 均为 67467/67515，没有停止或启动真实服务。
+- 回归边界：全 `npm test` 中 Workbench 27/27、browser 13/13、contracts 15/15、runtime 22/22 通过；API 82/85，保留既有的三项 Interview 审计/fixture 失败；最终启动专项另行复验 12/12。本机没有 Windows 启动环境，因此不宣称 Windows 进程停止与真实启动已验；`npm audit` 的 3 项公告仍来自既有 AI Connect 的 Hono 依赖，不由本轮端口依赖引入。
+
+## 外部宿主 Authoring 组合接入（2026-09-10，实施中）
+
+Baseline Impact:
+- touched layers: 采访命令契约、API authoring 组合、消息有序 typed parts、Workbench Timeline composition。
+- owning fact source: 公共包拥有 XML grammar、客户端 UI 能力过滤与通用内容卡；BCT 继续拥有采访 Skill、Question/waitpoint、需求草稿、确认与查源顺序。
+- public interface changed: yes，触发模型的采访命令增加可选客户端 UI capabilities；消息增加向后兼容的有序 typed parts。
+- new protocol/adapter/fallback: yes，仅新增外部宿主 capability/有序消息 parts 适配；XML 协议、parser、Card schema 与 fallback 继续复用公共实现。
+- compatibility or legacy path changed: yes，旧命令默认无 UI package；旧消息继续从安全正文投影。
+- baseline update required: no，本次落实已确认的公共宿主 Surface 与外部 vertical 组合边界。
+- architecture tests to run: capabilities 边界拒绝、同一 effective turn 的 prompt/parser、内容卡顺序与 preview/terminal、Question/草稿既有回归。
+
+Patch Disposition:
+- delete: BAC 手工拼接的公共 authoring envelope 与独立 registry/session 组合。
+- keep: 私有采访 Skill、`interview-result` 到 brief、URL 校验、确认/查源顺序、Question/waitpoint 与宿主状态适配。
+- rewrite: 仅将上述公共组合接到已存在的模型事件、ProductStore 消息和 SharedChatTimeline 链路。
+- reason: 两种宿主使用同一 grammar、能力协商和内容卡，同时保持 BCT 业务事实与授权边界。
+
 ## 公共 Agent surface 对齐决策（2026-09-10）
 
 - BCT 与 opencode Examples 的公共 Agent 能力和表现必须一致：生命周期与事件投影、Timeline、Composer、模型设置、Question 注册和开放题答复由同一公共 surface 提供；BCT 只保留浏览器抓取业务 Skill、Workflow、事实状态、宿主命令以及主题色、助手名称和图标配置。唯一共同规范维护在相邻 opencode checkout 的 [`ai-connect-host-surface-parity.md`](../../../opencode/docs/platform/ai-connect-host-surface-parity.md)，本轮公共包交付证据见 [`ai-connect-host-surface-parity-delivery-2026-09-10.md`](../../../opencode/docs/platform/ai-connect-host-surface-parity-delivery-2026-09-10.md)。
@@ -329,3 +368,18 @@
 未测范围还包括：产品多任务队列、跨实例互斥、SQLite多进程锁冲突、实际浏览器恢复、探索Sol/high及显式节点Luna/medium的代表性任务。当前没有环境阻塞导致的测试失败。
 
 交付状态：本地源码检查点与可查看的UI演示；无远程分发、跨电脑迁移或完整抓取产品交付。
+## 公共 Question 真实消费者接入（2026-09-10）
+
+B-A-T 已通过既有 `ai-connect:sync` 接入 `@agent-platform/ai-connect@0.3.2` 的公共 Question 能力。新问题由公共 authoring policy 投影为公共 choice/free_form Question；正式 choice 要求二到三个选项且恰好一个推荐项，choice 同时带可选 `follow_up` 补充输入。提交由公共 normalizer 校验完整 Surface answer set，选项与补充作为一次 compound answer 原子提交。
+
+职责边界：公共包拥有 question-panel 结构校验、Question/Surface 组装和 submit 归一化；B-A-T 保留 interview decision/unresolved/brief、任务互斥、revision/requestId/cancel 与 SQLite 提交权。回答历史继续使用消息 body 的既有 JSON envelope，保存公共 `surface + surfaceSubmit`；旧压缩题只保留兼容读取，不成为新题事实源。浏览器侧从 `ui-contracts` 的 browser-safe 出口读取纯 Question helper，服务端 authoring 使用 `integration/authoring/question`。
+
+原始 red 命令：
+
+`PATH=/Users/guojunxi/.nvm/versions/node/v24.12.0/bin:/usr/bin:/bin npm exec --workspace @browser-capture/workbench -- tsx --test --test-name-pattern='正式采访决策题|补充文字|compound choice history' tests/chat-timeline.test.ts`
+
+结果为 3 项中 1 通过、2 失败：选择题 Surface 缺少 `data.inputs`；带补充的 decision 无法通过 label 反解恢复 answered interaction。最终同命令 3/3 通过。
+
+最终验证：contracts tests 16/16、workbench tests 30/30、本能力 API/HTTP focused tests 5/5；contracts/API/workbench `tsc --noEmit` 全通过；`npm run build` 通过（保留既有 >500 kB chunk 提示）。完整 API 套件本轮观测为 83/87，余下三个失败属于非 Question 的 provider/audit 生命周期断言，不作为本能力通过证据。未启动服务、未调用模型、未运行真实浏览任务；Windows 未实机验证。
+
+同步制品：release manifest SHA256 `ab394c405548b945d0db4a39d5f10335eb8d26506ed2241af2eefe439b494e50`；core SHA256 `3c17954c4726a7d5ad02ca1c621fd404b38fee9e59595d8b8a2d8cb64d60d025`；React SHA256 `93b6baab5be0318d652f3318c2057a3b077d0d02f9d6a332c27414ffae708945`。根 workspace 显式复用既有 Zod 4.1.8 作为 core/react required peer host；`npm ls zod --all` 显示 AI Connect、React 与 Drizzle 均 dedupe 到 4.1.8，lockfile 无 AI Connect package-scoped Zod。

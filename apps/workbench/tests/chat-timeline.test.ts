@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { renderToStaticMarkup } from "react-dom/server"
+import { createCommonQuestionFromPanel } from "@agent-platform/ai-connect/ui-contracts"
 import { interviewStateSchema, type InterviewState } from "../src/interviewContract.js"
 import {
   interviewErrorMessage,
@@ -8,6 +9,7 @@ import {
   projectInterviewTimeline,
   submittedInterviewAnswer,
 } from "../src/interviewTimelineProjection.js"
+import { interviewAgentUI } from "../src/interviewAgentUI.js"
 
 const noop = () => undefined
 const noopAnswer = async () => undefined
@@ -61,12 +63,89 @@ test("只有最新 open waitpoint 成为选择题 Interaction，提交保留 ide
   assert.equal(timeline.activeInteraction?.interactionId, "current")
   assert.equal(timeline.presentedSurface?.questions[0]?.type, "choice")
   assert.equal(timeline.status, "waiting_for_user")
-  assert.deepEqual(submittedInterviewAnswer(value, {
+  const submission = {
     answers: [{ questionId: "current", data: { selectedOptionIds: ["option:1"] } }], displayText: "小范围",
-  }), { type: "choice", questionId: "current", label: "小范围" })
+  }
+  assert.deepEqual(submittedInterviewAnswer(value, submission), {
+    type: "common_question", questionId: "current", surfaceSubmit: submission, text: "小范围",
+  })
   assert.throws(() => submittedInterviewAnswer(value, {
     answers: [{ questionId: "old", data: { selectedOptionIds: ["option:1"] } }], displayText: "小范围",
   }), /interview_answer_invalid/)
+})
+
+test("正式采访决策题保留推荐单选、follow_up 补充和一次 compound 提交", () => {
+  const question = createCommonQuestionFromPanel({ id: "current", panel: {
+    prompt: "选择范围",
+    options: [
+      { id: "small", label: "小范围", description: "较快交付", recommended: true },
+      { id: "all", label: "全范围", description: "覆盖完整", recommended: false },
+    ],
+    inputs: [{ id: "other", label: "其他补充", kind: "textarea", role: "follow_up",
+      placeholder: "补充选项之外的约束或说明（可选）" }],
+  } })
+  const value = state({ revision: 2, sequence: 4,
+    unresolved: [{ id: "current", revision: 2, question, status: "open", answerMessageId: null }],
+    messages: [assistant("current", question)],
+  })
+  const timeline = projectInterviewTimeline(projection(value))
+  assert.deepEqual(timeline.presentedSurface?.questions[0], {
+    id: "current",
+    type: "choice",
+    data: {
+      stem: "选择范围",
+      options: [
+        { id: "small", label: "小范围", subtitle: "较快交付", recommended: true },
+        { id: "all", label: "全范围", subtitle: "覆盖完整", recommended: false },
+      ],
+      inputs: [{
+        id: "other",
+        label: "其他补充",
+        kind: "textarea",
+        role: "follow_up",
+        placeholder: "补充选项之外的约束或说明（可选）",
+      }],
+    },
+  })
+  assert.deepEqual(submittedInterviewAnswer(value, {
+    answers: [{ questionId: "current", data: {
+      selectedOptionIds: ["small"],
+      inputValues: { other: "只看公开在售商品" },
+    } }],
+    displayText: "选择范围\n小范围\n其他补充：只看公开在售商品",
+  }), {
+    type: "common_question", questionId: "current",
+    surfaceSubmit: {
+      answers: [{ questionId: "current", data: {
+        selectedOptionIds: ["small"], inputValues: { other: "只看公开在售商品" },
+      } }],
+      displayText: "选择范围\n小范围\n其他补充：只看公开在售商品",
+    },
+    text: "小范围\n其他补充：只看公开在售商品",
+  })
+})
+
+test("补充文字不能绕过非法或过期的 choice option", () => {
+  const question = { prompt: "选择范围", options: [
+    { label: "小范围", description: "较快交付", recommended: true },
+    { label: "全范围", description: "覆盖完整", recommended: false },
+  ] }
+  const value = state({ revision: 2, sequence: 4,
+    unresolved: [
+      { id: "old", revision: 1, question, status: "superseded", answerMessageId: null },
+      { id: "current", revision: 2, question, status: "open", answerMessageId: null },
+    ],
+    messages: [assistant("old", question), assistant("current", question)],
+  })
+  for (const [questionId, optionId] of [["old", "option:1"], ["current", "option:stale"]] as const) {
+    assert.throws(() => submittedInterviewAnswer(value, {
+      answers: [{ questionId, data: {
+        selectedOptionIds: [optionId],
+        inputValues: { other: "把这段补充当成答案" },
+      } }],
+      displayText: "补充文字",
+    }), /interview_answer_invalid/)
+  }
 })
 
 test("options=[] 映成公共 free_form Module 并提交 typed free-text reply", () => {
@@ -82,7 +161,10 @@ test("options=[] 映成公共 free_form Module 并提交 typed free-text reply",
   })
   assert.deepEqual(submittedInterviewAnswer(value, {
     answers: [{ questionId: "current", data: { text: " 100 个型号，名称与主图 " } }], displayText: "回答",
-  }), { type: "free_text", questionId: "current", text: "100 个型号，名称与主图" })
+  }), {
+    type: "common_question", questionId: "current", text: "100 个型号，名称与主图",
+    surfaceSubmit: { answers: [{ questionId: "current", data: { text: " 100 个型号，名称与主图 " } }], displayText: "回答" },
+  })
 })
 
 test("当前 Run 在首段正文到达前仍建立共享空壳，闭合题块不提前可答", () => {
@@ -138,6 +220,61 @@ test("choice 与 free_text decision 使用同一共享 locked history，替换�
   assert.equal(entries.some((entry) => entry.id === "choice-a" || entry.id === "free-a"), false)
 })
 
+test("compound choice history 恢复原题、选项、补充和 interaction identity", () => {
+  const question = { prompt: "选择范围", options: [
+    { label: "小范围", description: "较快交付", recommended: true },
+    { label: "全范围", description: "覆盖完整", recommended: false },
+  ] }
+  const surface = {
+    id: "choice-q",
+    submitLabel: "继续",
+    questions: [{
+      id: "choice-q",
+      type: "choice",
+      data: {
+        stem: "选择范围",
+        options: [
+          { id: "option:1", label: "小范围", subtitle: "较快交付", recommended: true },
+          { id: "option:2", label: "全范围", subtitle: "覆盖完整", recommended: false },
+        ],
+        inputs: [{
+          id: "other",
+          label: "其他补充",
+          kind: "textarea",
+          role: "follow_up",
+          placeholder: "补充选项之外的约束或说明（可选）",
+        }],
+      },
+    }],
+  } as const
+  const surfaceSubmit = {
+    answers: [{ questionId: "choice-q", data: {
+      selectedOptionIds: ["option:1"],
+      inputValues: { other: "只看公开在售商品" },
+    } }],
+    displayText: "选择范围\n小范围\n其他补充：只看公开在售商品",
+  }
+  const value = state({ revision: 2, sequence: 4,
+    unresolved: [{ id: "choice-q", revision: 1, question, status: "answered", answerMessageId: "choice-a" }],
+    decisions: [{ id: "d1", revision: 2, kind: "option", text: "小范围\n其他补充：只看公开在售商品",
+      messageId: "choice-a", questionId: "choice-q", draftVersion: null, createdAt: "2026-09-08T04:05:08.000Z" }],
+    messages: [
+      assistant("choice-q", question),
+      { id: "choice-a", role: "user", text: "小范围\n其他补充：只看公开在售商品", status: "complete",
+        question: null, draftVersion: null, aiEvents: [] },
+    ],
+  })
+  Object.assign(value.messages[1]!, {
+    interactionReply: { kind: "common_surface.submit", surfaceId: "choice-q", surface, surfaceSubmit },
+  })
+  const answered = projectInterviewTimeline(projection(value)).turns.flatMap((turn) => turn.entries)
+    .find((entry) => entry.value.kind === "answered-interaction")
+  assert.ok(answered?.value.kind === "answered-interaction")
+  assert.equal(answered.value.interaction.interactionId, "choice-q")
+  assert.deepEqual(answered.value.interaction.surface, surface)
+  assert.deepEqual(answered.value.interaction.surfaceSubmit, surfaceSubmit)
+})
+
 test("旧重复 label 选择题保留原文本，不伪造 option identity 或可答 Surface", () => {
   const question = { prompt: "选择范围", options: [
     { label: "同一范围", description: "方案一", recommended: true },
@@ -180,4 +317,22 @@ test("真实 typed AI event 只进入公共 activity hooks，结构 text.delta �
   const failed = { ...assistant("assistant-failed"), status: "failed" as const }
   assert.equal(projectInterviewTimeline(projection(state({ messages: [failed] }))).canRetry, true)
   assert.equal(interviewErrorMessage(failed), "本轮结果未提交，可以重试。")
+})
+
+test("同一 UI 注册同时提供 capability 与 Card renderer，有序 parts 保留正文卡片位置", () => {
+  assert.deepEqual(interviewAgentUI.capabilities.packages, [{ id: "agent-platform.common-content", version: 1 }])
+  const card = { id: "card-1", type: "content.callout", data: { variant: "highlight", body: "关键范围" } }
+  assert.doesNotThrow(() => interviewAgentUI.cards.resolve(card))
+  const value = state({ messages: [{ ...assistant("assistant-1"), text: "前文后文", parts: [
+    { id: "text-1", type: "text", text: "前文" },
+    { id: "card-1", type: "card", card },
+    { id: "text-2", type: "text", text: "后文" },
+  ] }] })
+  const entries = projectInterviewEntries(projection(value))
+  assert.deepEqual(entries.map((entry) => [entry.id, entry.value.kind]), [
+    ["assistant-1", "message"],
+    ["card-1", "card"],
+    ["assistant-1:part:text-2", "message"],
+  ])
+  assert.equal(entries[1]?.value.kind === "card" ? entries[1].value.streaming : undefined, undefined)
 })

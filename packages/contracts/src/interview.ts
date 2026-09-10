@@ -1,4 +1,14 @@
 import { z } from "zod"
+import {
+  parseClientUIProtocolCapabilities,
+  sanitizeCommonCardBlock,
+  commonChoiceQuestionDataSchema,
+  commonFreeFormQuestionDataSchema,
+  commonSurfaceReplyPayloadSchema,
+  commonSurfaceSubmitPayloadSchema,
+  type ClientUIProtocolCapabilitiesV1,
+  type CommonCardBlock,
+} from "@agent-platform/ai-connect/ui-contracts"
 import { aiEventSchema } from "./ai.js"
 import { requirementBriefSchema } from "./requirementBrief.js"
 import { taskIdSchema } from "./task.js"
@@ -9,16 +19,26 @@ const text = z.string().trim().min(1).max(30_000)
 const optionalAssistantText = z.string().trim().max(30_000)
 const revision = z.number().int().nonnegative()
 const userText = z.string().min(1).max(30_000).refine((value) => value.trim().length > 0, "请输入需求内容")
-export const questionSchema = z.object({
+const clientUICapabilitiesSchema = publicContract(parseClientUIProtocolCapabilities)
+const commonCardSchema = publicContract(sanitizeCommonCardBlock)
+const legacyQuestionSchema = z.object({
   prompt: text,
   options: z.array(z.object({ label: text, description: text, recommended: z.boolean() })).max(3),
 }).refine((value) => value.options.length === 0 || (value.options.length >= 2 && value.options.filter((item) => item.recommended).length === 1), "开放问题无选项；选择题需要两到三个选项且仅一个推荐项")
-export const authoredQuestionSchema = questionSchema.refine(
-  (value) => new Set(value.options.map((option) => option.label)).size === value.options.length,
-  "同一问题的选项名称必须唯一",
-)
+const commonQuestionSchema = z.discriminatedUnion("type", [
+  z.object({ id: text, type: z.literal("choice"), data: commonChoiceQuestionDataSchema }).strict(),
+  z.object({ id: text, type: z.literal("free_form"), data: commonFreeFormQuestionDataSchema }).strict(),
+])
+// WHY：公共 Question 是新记录的唯一事实源；旧压缩结构只为读取既有 SQLite 消息，不能再用于组装新题。
+export const questionSchema = z.union([commonQuestionSchema, legacyQuestionSchema])
+export const authoredQuestionSchema = commonQuestionSchema
+export const interviewMessagePartSchema = z.discriminatedUnion("type", [
+  z.object({ id: text, type: z.literal("text"), text: z.string() }).strict(),
+  z.object({ id: text, type: z.literal("card"), card: commonCardSchema }).strict(),
+])
 export const interviewOutputSchema = z.object({
   assistantText: text, question: questionSchema.nullable(), draft: z.object({ title: text, markdown: text, brief: requirementBriefSchema.nullable().default(null) }).nullable(),
+  parts: z.array(interviewMessagePartSchema).default([]),
 }).refine((value) => !(value.question && value.draft), "有负责人问题时不得生成可确认草稿")
 export const modelInterviewOutputSchema = z.object({
   assistantText: optionalAssistantText, question: authoredQuestionSchema.nullable(),
@@ -34,6 +54,8 @@ export const messageSchema = z.object({
   status: z.enum(["complete", "running", "failed", "cancelled"]),
   question: questionSchema.nullable(), draftVersion: z.number().int().nullable(),
   aiEvents: z.array(aiEventSchema).default([]),
+  parts: z.array(interviewMessagePartSchema).optional(),
+  interactionReply: commonSurfaceReplyPayloadSchema.optional(),
 })
 export const auditSchema = z.object({ revision, model: text, effort: text, invocations: z.number().int().nonnegative() })
 export const turnSchema = z.object({
@@ -70,22 +92,27 @@ export const choiceInterviewAnswerSchema = z.object({
 export const freeTextInterviewAnswerSchema = z.object({
   type: z.literal("free_text"), questionId: text, text: userText,
 }).strict()
+export const commonQuestionInterviewAnswerSchema = z.object({
+  type: z.literal("common_question"), questionId: text, surfaceSubmit: commonSurfaceSubmitPayloadSchema,
+}).strict()
 const legacyChoiceInterviewAnswerSchema = z.object({ questionId: text, label: text }).strict()
   .transform((answer) => ({ type: "choice" as const, ...answer }))
 export const interviewAnswerSchema = z.union([
   choiceInterviewAnswerSchema,
   freeTextInterviewAnswerSchema,
+  commonQuestionInterviewAnswerSchema,
   legacyChoiceInterviewAnswerSchema,
 ])
 export const interviewCommandSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("message"), text: userText, ...operation, answer: interviewAnswerSchema.optional() }).strict(),
-  z.object({ type: z.literal("retry"), ...operation }).strict(),
+  z.object({ type: z.literal("message"), text: userText, ...operation, answer: interviewAnswerSchema.optional(), ui: clientUICapabilitiesSchema.optional() }).strict(),
+  z.object({ type: z.literal("retry"), ...operation, ui: clientUICapabilitiesSchema.optional() }).strict(),
   z.object({ type: z.literal("confirm"), version: z.number().int().positive(), ...operation }).strict(),
   z.object({ type: z.literal("cancel"), turnId: text }).strict(),
 ])
 export type InterviewOutput = z.infer<typeof interviewOutputSchema>
 export type InterviewState = z.infer<typeof interviewStateSchema>
 export type InterviewMessage = z.infer<typeof messageSchema>
+export type InterviewMessagePart = z.infer<typeof interviewMessagePartSchema>
 export type InterviewRequest = z.infer<typeof interviewRequestSchema>
 export type InterviewCommand = z.infer<typeof interviewCommandSchema>
 export type InterviewTurn = z.infer<typeof turnSchema>
@@ -101,4 +128,14 @@ export function confirmedRequirement(taskId: string, state: InterviewState) {
   // WHY：后续阶段只能使用当前明确确认的结构需求；旧 Markdown 保留可读，不猜造交接数据。
   if (state.active || !draft?.brief || state.confirmedVersion !== draft.version) return null
   return requirementHandoffSchema.parse({ taskId, draftVersion: draft.version, revision: draft.revision, brief: draft.brief })
+}
+
+function publicContract<T extends ClientUIProtocolCapabilitiesV1 | CommonCardBlock>(parse: (input: unknown) => T) {
+  return z.unknown().transform((input, context): T => {
+    try { return parse(input) }
+    catch {
+      context.addIssue({ code: "custom", message: "公共 UI 协议无效" })
+      return z.NEVER
+    }
+  })
 }

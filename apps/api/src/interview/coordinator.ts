@@ -1,19 +1,32 @@
 import { setTimeout as delay } from "node:timers/promises"
 import type { AIEvent } from "@agent-platform/ai-connect/server"
-import { interviewCommandSchema, type InterviewCommand, type InterviewOutput } from "@browser-capture/contracts/interview"
+import type { ClientUIProtocolCapabilitiesV1 } from "@agent-platform/ai-connect/ui-contracts"
+import {
+  interviewCommandSchema,
+  type InterviewCommand,
+  type InterviewMessagePart,
+  type InterviewOutput,
+} from "@browser-capture/contracts/interview"
 import { taskCommandSchema, type TaskCommand } from "@browser-capture/contracts/task"
 import { ProductStore } from "../database/store.js"
 import { conflict, DomainError } from "../errors.js"
 import { beginRound, confirmDraft, finishRound } from "./transitions.js"
 import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
 import {
-  createInterviewAuthoringSession,
-  interviewPrompt,
+  cardFromAuthoringBlock,
+  createInterviewAuthoring,
   parseInterviewAuthoringOutput,
+  parseInterviewUIAuthoringCapabilities,
   questionFromAuthoringBlock,
 } from "./protocol.js"
 
-interface Job { taskId: string; turnId: string; controller: AbortController; done: Promise<void> }
+interface Job {
+  taskId: string
+  turnId: string
+  controller: AbortController
+  done: Promise<void>
+  ui: ClientUIProtocolCapabilitiesV1
+}
 const modelUnavailable = "model_account_model_unavailable"
 function failureReason(error: unknown) {
   if (error instanceof DomainError) return error.message
@@ -35,6 +48,9 @@ export class InterviewCoordinator {
   dispatch(id: string, input: InterviewCommand) {
     this.available()
     const command = interviewCommandSchema.parse(input)
+    const ui = command.type === "message" || command.type === "retry"
+      ? parseClientUI(command.ui)
+      : undefined
     if (command.type === "cancel") return this.cancel(id, command.turnId)
     this.store.task(id)
     if (this.store.operation(id, command.requestId, command)) return this.snapshot(id)
@@ -53,7 +69,7 @@ export class InterviewCoordinator {
       return value
     })
     if (turnId) {
-      const job: Job = { taskId: id, turnId, controller: new AbortController(), done: Promise.resolve() }
+      const job: Job = { taskId: id, turnId, controller: new AbortController(), done: Promise.resolve(), ui: ui! }
       this.job = job
       // WHY：执行由服务持有，不依赖 HTTP 客户端消费；断线只取消观察，不取消模型轮次。
       job.done = this.run(job).catch(() => { this.failed = true }).finally(() => { if (this.job === job) this.job = null })
@@ -89,18 +105,28 @@ export class InterviewCoordinator {
     }
   }
   private async runShared(job: Job, model: PreparedAIModel, signal: AbortSignal) {
-    const authoring = createInterviewAuthoringSession()
+    const state = this.store.snapshot(job.taskId)
+    const assistantMessageId = state.turns.find((turn) => turn.id === job.turnId)!.assistantMessageId
+    const { session: authoring, prompt } = createInterviewAuthoring(state, this.interviewSkill, job.ui)
     let streamedText = ""
     let pendingQuestion: InterviewOutput["question"] = null
+    const parts: InterviewMessagePart[] = []
     const acceptText = (text: string) => {
       if (!text) return undefined
       streamedText += text
       const update = authoring.push(text)
       let visibleText = "", question: InterviewOutput["question"] | undefined
       for (const item of update.events) {
-        if (item.type === "text.delta") visibleText += item.delta
+        if (item.type === "text.delta") {
+          visibleText += item.delta
+          appendTextPart(parts, job.turnId, item.delta)
+        }
         if (item.type === "authoring.started") pendingQuestion = null
-        if (item.type === "authoring.preview") pendingQuestion = questionFromAuthoringBlock(item.block)
+        if (item.type === "authoring.preview") {
+          pendingQuestion = questionFromAuthoringBlock(item.block, assistantMessageId)
+          const card = cardFromAuthoringBlock(item.block, job.turnId)
+          if (card) upsertCardPart(parts, card)
+        }
         if (item.type === "presentation.checkpoint" && (
           item.checkpoint.reason === "authoring.closed" || item.checkpoint.tag === "question-panel"
         )) {
@@ -111,7 +137,7 @@ export class InterviewCoordinator {
       return visibleText || question !== undefined ? { text: visibleText, question } : undefined
     }
     const returnedText = await model.generateText({
-      prompt: interviewPrompt(this.store.snapshot(job.taskId), this.interviewSkill), signal,
+      prompt, signal,
       onEvent: (event) => {
         const projection = event.type === "text.delta" ? acceptText(event.text) : undefined
         this.appendAIEvent(job, event, projection)
@@ -123,8 +149,11 @@ export class InterviewCoordinator {
     }
     else if (returnedText !== streamedText) throw new Error("interview_authoring_stream_text_mismatch")
     const result = authoring.finish()
-    if (result.textDelta) this.appendProjection(job, result.textDelta)
-    const object = parseInterviewAuthoringOutput(result, this.store.snapshot(job.taskId))
+    if (result.textDelta) {
+      appendTextPart(parts, job.turnId, result.textDelta)
+      this.appendProjection(job, result.textDelta)
+    }
+    const object = parseInterviewAuthoringOutput(result, this.store.snapshot(job.taskId), parts, job.turnId, assistantMessageId)
     this.store.mutate(job.taskId, (state) => state.audits.push({
       revision: state.turns.find((turn) => turn.id === job.turnId)!.revision,
       model: model.selection.modelId, effort: model.selection.reasoningEffort, invocations: 1,
@@ -169,4 +198,26 @@ export class InterviewCoordinator {
     this.closing = true
     await this.job?.done
   }
+}
+
+function parseClientUI(input: unknown) {
+  try { return parseInterviewUIAuthoringCapabilities(input) }
+  catch { throw new DomainError("invalid_client_ui_capabilities", "客户端界面能力无效或不受支持。", 400) }
+}
+
+function appendTextPart(parts: InterviewMessagePart[], runId: string, text: string) {
+  if (!text) return
+  const previous = parts.at(-1)
+  if (previous?.type === "text") previous.text += text
+  else parts.push({ id: `${runId}:text:${parts.length + 1}`, type: "text", text })
+}
+
+function upsertCardPart(
+  parts: InterviewMessagePart[],
+  card: Extract<InterviewMessagePart, { type: "card" }>["card"],
+) {
+  const index = parts.findIndex((part) => part.type === "card" && part.card.id === card.id)
+  const value = { id: card.id, type: "card" as const, card }
+  if (index < 0) parts.push(value)
+  else parts[index] = value
 }

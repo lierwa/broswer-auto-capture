@@ -280,3 +280,10 @@ Token 覆盖颜色、字体、间距、圆角、阴影、交互状态和必要�
 当前已只读核验的设计系统证据路径：`D:/work/opencode/apps/examples/DESIGN.md`（语义 tokens、typography、rounded、spacing、components、control hierarchy）、`DARK.DESIGN.md`（仅替换同名颜色）、`src/styles.css`（运行映射）、`apps/examples/tests/theme/example-theme.test.ts`（两主题 key 一致、DESIGN/CSS 同值、核心颜色对比度、目标源组件禁止具体 palette 色阶）。本轮仅读源码，未执行这些测试，不能表述为本轮通过。
 
 职责边界：frontend-design 是设计指导，Tailwind 是样式工具，Radix Primitives 是基础交互原语，三者均不能单独代表完整成品组件库选型完成；assistant-ui ExternalStoreRuntime 与 React Flow 只对应专业界面，仍受各自原型验证门约束。仅复用已核对许可的视觉资产与组件模式，不整体引入 opencode 会话或运行时。官方参考：[Radix Primitives](https://www.radix-ui.com/primitives/docs/overview/introduction)、[Tailwind theme](https://tailwindcss.com/docs/theme)、[React Flow](https://reactflow.dev/learn)、[assistant-ui ExternalStoreRuntime](https://www.assistant-ui.com/docs/runtimes/custom/external-store)。
+## R-005 公共 Question 消费边界（2026-09-10）
+
+采用 AI Connect core 的公共 Question 作为通用事实源，不在 B-A-T 新增 parser、Surface 协议或答案反解器。`commonQuestionAuthoring({ recommendation: "required", minimumChoiceOptions: 2 })` 同源约束 authoring 注册与终态投影；`createCommonQuestionFromPanel`、`createCommonQuestionSurface`、`commonQuestionAnswerFromSubmit` 和 `buildCommonSurfaceReplyPayload` 分别承担 Question、Surface、answer normalization 与 history reply。options 为空时仍为合法 free_form；required recommendation 只约束有 options 的 choice。
+
+B-A-T 的领域职责是把公共 normalized answer 记为 interview decision，并维护 unresolved、brief、revision、requestId、cancel、事务与任务互斥。历史消息使用既有 JSON body 承载公共 reply，因此无需数据库迁移；旧 `{prompt, options}` 结构仅用于既有记录兼容。Workbench 从 `@agent-platform/ai-connect/ui-contracts` 消费 browser-safe helper，避免 server authoring 聚合出口进入浏览器构建图。
+
+core/react 将 Zod 声明为 required peer `>=4.1.8 <5`。本 monorepo 根声明既有 4.1.8 作为 peer host，使 contracts 的本地 Zod schema 组合与 declaration emit 使用同一实例；不使用 overrides，也不新增第三个 vendor artifact。

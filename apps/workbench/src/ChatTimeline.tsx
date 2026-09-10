@@ -14,6 +14,7 @@ import {
 } from "./interviewTimelineProjection.js";
 import type { useInterview } from "./useInterview.js";
 import type { useModelSettings } from "./useModelSettings.js";
+import { interviewAgentUI } from "./interviewAgentUI.js";
 
 type Interview = ReturnType<typeof useInterview>;
 type TimelineModelSettings = Pick<
@@ -163,11 +164,7 @@ export function ChatTimeline({
           retry: interview.retry,
           submit: async (submission) => {
             const answer = submittedInterviewAnswer(state, submission);
-            if (answer.type === "choice") {
-              await interview.answer(answer.label, answer.questionId);
-            } else {
-              await interview.reply(answer.text, answer.questionId);
-            }
+            await interview.submit(answer.text, answer);
           },
         }}
         sendDisabled={!modelReady}
@@ -177,6 +174,7 @@ export function ChatTimeline({
         contentEntrance={{ mode: "queued" }}
         composition={{
           questions: interviewQuestionRegistry,
+          cards: interviewAgentUI.cards,
           ...(errorMessage ? { errorMessage } : {}),
           composerDraft: { value: draft, onChange: setDraft },
           theme: {

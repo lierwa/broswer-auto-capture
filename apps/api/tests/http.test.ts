@@ -76,8 +76,13 @@ test("正式 API 重启后继续同一任务，并保留问题、决策、草稿
 
     const restored = await current.app.inject({ url: `/api/interview?taskId=${id}`, headers })
     assert.equal(restored.json().unresolved[0].id, questionId)
+    const surfaceSubmit = { answers: [{ questionId, data: {
+      selectedOptionIds: ["1"], inputValues: { other: "只看公开在售商品" },
+    } }], displayText: "前 20 条\n其他补充：只看公开在售商品" }
     await current.app.inject({ method: "POST", url: `/api/interview?taskId=${id}`, headers, payload: {
-      type: "message", requestId: randomUUID(), expectedRevision: 1, text: "前 20 条", answer: { questionId, label: "前 20 条" },
+      type: "message", requestId: randomUUID(), expectedRevision: 1,
+      text: "前 20 条\n其他补充：只看公开在售商品",
+      answer: { type: "common_question", questionId, surfaceSubmit },
     } })
     await current.coordinator.waitForIdle()
     await current.app.inject({ method: "POST", url: `/api/interview?taskId=${id}`, headers,
@@ -88,6 +93,9 @@ test("正式 API 重启后继续同一任务，并保留问题、决策、草稿
     assert.equal(confirmed.confirmedVersion, 1)
     assert.deepEqual(confirmed.decisions.map((item: { kind: string }) => item.kind), ["option", "draft_confirmation"])
     assert.equal(confirmed.unresolved[0].status, "resolved")
+    const reply = confirmed.messages.find((message: { interactionReply?: unknown }) => message.interactionReply)?.interactionReply
+    assert.equal(reply.surfaceId, questionId)
+    assert.deepEqual(reply.surfaceSubmit, surfaceSubmit)
   } finally {
     await current?.app.close()
     const { rm } = await import("node:fs/promises")

@@ -1,37 +1,37 @@
 {
   "schemaVersion": 1,
   "producer": {
-    "head": "55aaf20ef20cb8afda601a74b7e6975313d899e2",
+    "head": "8ad9a9e9f5eebc2a5110caa6e8001678f64d28e7",
     "dirty": true
   },
   "build": [
     {
       "name": "@agent-platform/flat-xml",
-      "sourceHash": "309bf68f1cc8ca36bddca13137dc383c427f445f6bbc782034f58c45c1b8d738"
+      "sourceHash": "24d6187ab48b1da1a5a218c509c43bb79d65b02e20aa808a4159f9bf4c4d5eff"
     },
     {
       "name": "@agent-platform/ai-connect",
-      "sourceHash": "a8802c2ce0cb5125198f38bebb3d692b86f4a4ecd53d218fff9580062721dc02"
+      "sourceHash": "8cda1a72b3aa162f4b3cbb8a2f608998b32fdf679c15f8da35b68252f7df5146"
     },
     {
       "name": "@agent-platform/sdk",
-      "sourceHash": "07c08ecae7f02554da3c567434ef38f75294e3d35c023fad2ffb6af7ad8f0585"
+      "sourceHash": "93aa7492aec68e8066fae4f8bb7be009e552b61b546671082152ba8eefe8e3bf"
     },
     {
       "name": "@agent-platform/text-reveal",
-      "sourceHash": "c796e90f4f437423949b5e772e4aa27d70721df2e38f27515f6e75368cfc5194"
+      "sourceHash": "4389a0dc0b20cd5df6a07ea01c343bdc3c3bc5c20c3db3185e780597c4953b8d"
     },
     {
       "name": "@agent-platform/ai-connect-react",
-      "sourceHash": "2725ff686a968c8a531bdb9e17681f4daf989933ba231ee96b6ee92a309ce9a6"
+      "sourceHash": "c442f8fa703e1ffe3685b4c2214dfff0ebe5403e1ab1cb9b8094404d3e0bea2f"
     }
   ],
   "packages": {
     "core": {
       "name": "@agent-platform/ai-connect",
-      "version": "0.3.1",
-      "file": "agent-platform-ai-connect-0.3.1-7d7bf6ac.tgz",
-      "sha256": "7d7bf6ac3ede3e522c212ffd74e0471e264c1f22b701494661afa7b2c7f1a66e",
+      "version": "0.3.2",
+      "file": "agent-platform-ai-connect-0.3.2-3c17954c.tgz",
+      "sha256": "3c17954c4726a7d5ad02ca1c621fd404b38fee9e59595d8b8a2d8cb64d60d025",
       "exports": [
         "./browser",
         "./client",
@@ -82,15 +82,16 @@
         "./transport/errors",
         "./transport/events",
         "./transport/fetch",
-        "./transport/http"
+        "./transport/http",
+        "./ui-contracts"
       ],
       "styles": []
     },
     "react": {
       "name": "@agent-platform/ai-connect-react",
-      "version": "0.3.1",
-      "file": "agent-platform-ai-connect-react-0.3.1-40835e81.tgz",
-      "sha256": "40835e818a4f8920a65942e4cf41b9ebbe5831ad41f541339fca9b0017618fa1",
+      "version": "0.3.2",
+      "file": "agent-platform-ai-connect-react-0.3.2-93b6baab.tgz",
+      "sha256": "93b6baab5be0318d652f3318c2057a3b077d0d02f9d6a332c27414ffae708945",
       "exports": [
         ".",
         "./chat",
@@ -117,6 +118,6 @@
       ]
     }
   },
-  "core": "agent-platform-ai-connect-0.3.1-7d7bf6ac.tgz",
-  "react": "agent-platform-ai-connect-react-0.3.1-40835e81.tgz"
+  "core": "agent-platform-ai-connect-0.3.2-3c17954c.tgz",
+  "react": "agent-platform-ai-connect-react-0.3.2-93b6baab.tgz"
 }

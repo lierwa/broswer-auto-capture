@@ -36,8 +36,31 @@ test("负责人取舍输出保留三项比较与唯一推荐，并保留用户�
   assert.equal(state.turns[0]?.status, "succeeded")
   assert.equal(state.drafts.length, 0)
   assert.equal(state.unresolved.length, 1)
-  assert.equal(state.unresolved[0]?.question.options.length, 3)
-  assert.equal(state.unresolved[0]?.question.options.filter((option) => option.recommended).length, 1)
+  const projected = state.unresolved[0]?.question
+  assert.equal(projected && "type" in projected ? projected.type : null, "choice")
+  if (!projected || !("type" in projected) || projected.type !== "choice") throw new Error("choice expected")
+  assert.equal(projected.data.options.length, 3)
+  assert.equal(projected.data.options.filter((option) => option.recommended).length, 1)
+}))
+
+test("正式选择题由公共 authoring policy 拒绝缺失推荐项，开放题仍合法", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+  client.runTurn = async function* () {
+    yield authoredInterview({ assistantText: "请确认范围。", question: { prompt: "选择范围", options: [
+      { label: "小范围", description: "较快交付", recommended: false },
+      { label: "全范围", description: "覆盖完整", recommended: false },
+    ] }, draft: null })
+  }
+  const id = create(); send(id); await coordinator.waitForIdle()
+  assert.equal(store.snapshot(id).messages.at(-1)?.status, "failed")
+  assert.equal(store.snapshot(id).unresolved.length, 0)
+
+  client.runTurn = async function* () {
+    yield authoredInterview({ assistantText: "", question: { prompt: "请提供品牌", options: [] }, draft: null })
+  }
+  const open = create(); send(open); await coordinator.waitForIdle()
+  assert.equal(store.snapshot(open).messages.at(-1)?.status, "complete")
+  const projectedOpen = store.snapshot(open).unresolved[0]?.question
+  assert.equal(projectedOpen && "type" in projectedOpen ? projectedOpen.type : null, "free_form")
 }))
 
 test("信息完整时首轮草稿仍需用户确认才能交接", async () => fixture(async ({ coordinator, store, client, create, send }) => {
@@ -74,7 +97,8 @@ test("开放问题可自然回复，最新已确认需求按 task/version/revisi
       : { assistantText: "范围已明确。", question: null, draft })
   }
   const id = create(); send(id); await coordinator.waitForIdle()
-  assert.deepEqual(store.snapshot(id).messages.at(-1)?.question?.options, [])
+  const projectedOpen = store.snapshot(id).messages.at(-1)?.question
+  assert.equal(projectedOpen && "type" in projectedOpen ? projectedOpen.type : null, "free_form")
   send(id, "海尔，入口请系统查找"); await coordinator.waitForIdle()
   let state = store.snapshot(id)
   assert.equal(state.decisions.length, 0)

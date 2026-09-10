@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
-import { authoredQuestionSchema, interviewCommandSchema, interviewOutputSchema, modelInterviewOutputSchema, questionSchema } from "../src/interview.js"
+import { CommonContentUIProtocol } from "@agent-platform/ai-connect/ui-contracts"
+import { createCommonQuestionFromPanel, createCommonQuestionSurface } from "@agent-platform/ai-connect/integration/authoring/question"
+import { authoredQuestionSchema, interviewCommandSchema, interviewOutputSchema, messageSchema, modelInterviewOutputSchema, questionSchema } from "../src/interview.js"
 import { taskCommandSchema } from "../src/task.js"
 
 const brief = {
@@ -39,19 +41,21 @@ test("开放事实问题保留自由回答，负责人取舍题使用二到三�
 })
 
 test("模型可只提交可靠问题或草稿，但完全空输出不能成为成功结果", () => {
-  const openQuestion = { prompt: "请提供要采集的品牌名称。", options: [] }
+  const openQuestion = createCommonQuestionFromPanel({ id: "question-1", panel: {
+    prompt: "请提供要采集的品牌名称。", options: [],
+  } })
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: openQuestion, draft: null }).success, true)
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: null, draft: { title: "采集范围", brief } }).success, true)
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: null, draft: null }).success, false)
 })
 
-test("新生成选择题拒绝重复 label，历史读取 schema 保持兼容", () => {
+test("新生成问题只接受公共 Question，历史读取 schema 保持兼容", () => {
   const legacy = { prompt: "选择范围", options: [
     { label: "同一范围", description: "方案一", recommended: true },
     { label: "同一范围", description: "方案二", recommended: false },
   ] }
   assert.equal(questionSchema.safeParse(legacy).success, true)
-  assert.throws(() => authoredQuestionSchema.parse(legacy), /选项名称必须唯一/)
+  assert.equal(authoredQuestionSchema.safeParse(legacy).success, false)
 })
 
 test("开放题答复使用 typed free-text，旧选择题命令仍解析为 typed choice", () => {
@@ -71,4 +75,63 @@ test("开放题答复使用 typed free-text，旧选择题命令仍解析为 typ
   assert.equal(interviewCommandSchema.safeParse({ ...common, text: "海尔", answer: {
     type: "free_text", questionId: "question-1", text: "  ",
   } }).success, false)
+})
+
+test("公共 Question、compound submit 与原 Surface reply 可按既有消息 envelope 往返", () => {
+  const canonical = createCommonQuestionFromPanel({ id: "question-1", panel: {
+    prompt: "选择范围",
+    options: [
+      { id: "small", label: "小范围", description: "较快交付", recommended: true },
+      { id: "all", label: "全范围", description: "覆盖完整", recommended: false },
+    ],
+    inputs: [{ id: "other", label: "其他补充", kind: "textarea", role: "follow_up" }],
+  } })
+  const surface = createCommonQuestionSurface({ id: "question-1", questions: [canonical], submitLabel: "提交回答" })
+  const surfaceSubmit = { answers: [{ questionId: "question-1", data: {
+    selectedOptionIds: ["small"], inputValues: { other: "只看公开在售商品" },
+  } }], displayText: "小范围\n其他补充：只看公开在售商品" }
+  const command = interviewCommandSchema.parse({
+    type: "message", requestId: randomUUID(), expectedRevision: 1,
+    text: "小范围\n其他补充：只看公开在售商品",
+    answer: { type: "common_question", questionId: "question-1", surfaceSubmit },
+  })
+  assert.equal(command.type, "message")
+  const persisted = messageSchema.parse({
+    id: "answer-1", role: "user", text: surfaceSubmit.displayText, status: "complete",
+    question: null, draftVersion: null, aiEvents: [],
+    interactionReply: { kind: "common_surface.submit", surfaceId: surface.id, surface, surfaceSubmit },
+  })
+  assert.deepEqual(persisted.interactionReply?.surface, surface)
+  assert.deepEqual(persisted.interactionReply?.surfaceSubmit, surfaceSubmit)
+})
+
+test("模型命令携带严格 UI capability，确认命令不携带模型展示能力", () => {
+  const ui = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
+  const command = { type: "message" as const, requestId: randomUUID(), expectedRevision: 0, text: "整理范围", ui }
+  const parsed = interviewCommandSchema.parse(command)
+  assert.equal(parsed.type, "message")
+  if (parsed.type !== "message") throw new Error("message command expected")
+  assert.deepEqual(parsed.ui, ui)
+  assert.equal(interviewCommandSchema.safeParse({ ...command, ui: {
+    schemaVersion: 1, packages: [CommonContentUIProtocol, CommonContentUIProtocol],
+  } }).success, false)
+  assert.equal(interviewCommandSchema.safeParse({
+    type: "confirm", requestId: randomUUID(), expectedRevision: 1, version: 1, ui,
+  }).success, false)
+})
+
+test("消息可持久化有序正文与 typed Card，旧消息仍可读取", () => {
+  const legacy = messageSchema.parse({
+    id: "legacy", role: "assistant", text: "旧正文", status: "complete",
+    question: null, draftVersion: null, aiEvents: [],
+  })
+  assert.equal(legacy.parts, undefined)
+  const message = messageSchema.parse({ ...legacy, parts: [
+    { id: "text-1", type: "text", text: "前文" },
+    { id: "card-1", type: "card", card: {
+      id: "card-1", type: "content.callout", data: { variant: "highlight", body: "重点" },
+    } },
+    { id: "text-2", type: "text", text: "后文" },
+  ] })
+  assert.deepEqual(message.parts?.map((part) => part.type), ["text", "card", "text"])
 })

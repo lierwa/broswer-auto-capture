@@ -31,7 +31,7 @@ export async function researchFixture(serveUi = false, planOptions: Pick<AppOpti
     decide: async (prompt: string) => decisionFor(prompt), close: () => {}, beforeCommand: null as ((args: readonly string[]) => Promise<void>) | null, links: [] as { title: string; url: string }[], text: null as string | null, textForUrl: null as ((url: string) => string) | null, linksForUrl: null as ((url: string) => {title:string;url:string}[]) | null }
   const decide = planOptions.decide
   const aiModel = testAIModel(async function* (prompt) {
-    if (prompt.startsWith("用途 requirement_interview")) {
+    if (prompt.includes("用途 requirement_interview")) {
       yield authoredInterview({ assistantText: "已整理", question: null, draft: { title: "目录调研", brief: sourceBrief } }); return
     }
     fake.modelCalls++; yield succeeded(await (decide?.(prompt) ?? fake.decide(prompt)))

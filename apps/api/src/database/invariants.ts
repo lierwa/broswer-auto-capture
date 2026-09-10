@@ -11,5 +11,15 @@ export function validateState(input: InterviewState) {
     if (!state.messages.some((message) => message.id === turn.userMessageId && message.role === "user")) throw new Error("轮次缺少用户原文")
     if (!state.messages.some((message) => message.id === turn.assistantMessageId && message.role === "assistant")) throw new Error("轮次缺少助手消息")
   }
+  for (const message of state.messages.filter((item) => item.interactionReply)) {
+    const reply = message.interactionReply!
+    if (message.role !== "user"
+      || reply.surface.questions.length !== 1
+      || reply.surface.questions[0]?.id !== reply.surfaceId
+      || !state.decisions.some((decision) => decision.messageId === message.id && decision.questionId === reply.surfaceId)
+      || !state.unresolved.some((question) => question.id === reply.surfaceId && question.answerMessageId === message.id)) {
+      throw new Error("Question 回答历史归属错误")
+    }
+  }
   return state
 }

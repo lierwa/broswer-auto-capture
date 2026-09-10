@@ -1,6 +1,13 @@
 import { Button } from "@radix-ui/themes";
 import { ArrowRight, Check, FileText, LoaderCircle } from "lucide-react";
 import type { ReactNode } from "react";
+import {
+  buildCommonSurfaceReplyPayload,
+  commonQuestionAnswerFromSubmit,
+  createCommonQuestionFromPanel,
+  createCommonQuestionSurface,
+  type CommonSurfaceQuestion,
+} from "@agent-platform/ai-connect/ui-contracts";
 import { projectAIInvocationTimeline } from "@agent-platform/ai-connect-react/components/AIInvocationTimeline";
 import {
   commonQuestionModules,
@@ -34,12 +41,12 @@ export function projectInterviewTimeline(input: ProjectionInput): InteractiveTim
     ? {
         interactionId: active.id,
         kind: "question" as const,
-        title: active.question!.prompt,
+        title: questionStem(activeSurface.questions[0]!),
         submitLabel: "提交回答",
         questions: [{
-          header: active.question!.prompt,
-          question: active.question!.prompt,
-          options: active.question!.options.map(({ label, description }) => ({ label, description })),
+          header: questionStem(activeSurface.questions[0]!),
+          question: questionStem(activeSurface.questions[0]!),
+          options: questionOptions(activeSurface.questions[0]!),
         }],
         surface: activeSurface,
       }
@@ -85,30 +92,61 @@ function messageEntries(
   createdAt: number,
   input: ProjectionInput,
 ): ConversationEntry<InteractiveTimelineItem>[] {
-  const entries: ConversationEntry<InteractiveTimelineItem>[] = [];
-  // WHY：ProductStore 的 message.text 是 authoring parser 过滤后的业务正文；AI text.delta 仍含
-  // 非渲染结构块。调用事件只进入公共 lifecycle/activity hooks，避免正文重复或泄露结构协议。
-  if (message.text || message.status !== "running") {
-    entries.push({
-      id: message.id,
-      role: message.role,
-      createdAt,
-      value: {
-        kind: "message",
-        message: {
-          id: message.id,
-          role: message.role,
-          createdAt,
-          items: [{
-            id: `${message.id}:text`, messageId: message.id, role: message.role, createdAt,
-            kind: "text", text: message.text, isStreaming: message.status === "running",
-          }],
-        },
-      },
-    });
-  }
+  const entries = message.parts?.length
+    ? orderedMessagePartEntries(message, createdAt)
+    : legacyMessageEntry(message, createdAt);
+  // WHY：终态 parts 是正文与 Card 顺序的权威；旧消息才读取 parser 过滤后的 message.text。
+  // AI text.delta 仍只进入公共 lifecycle/activity hooks，避免重复或泄露结构协议。
   entries.push(...assistantContentEntries(message, index, createdAt, input));
   return entries;
+}
+
+function orderedMessagePartEntries(
+  message: InterviewMessage,
+  createdAt: number,
+): ConversationEntry<InteractiveTimelineItem>[] {
+  return (message.parts ?? []).map((part, index) => {
+    if (part.type === "card") return {
+      id: part.card.id,
+      role: message.role,
+      createdAt,
+      value: { kind: "card" as const, card: part.card },
+    };
+    const entryId = index === 0 ? message.id : `${message.id}:part:${part.id}`;
+    return messageEntry(message, entryId, part.id, part.text, createdAt);
+  });
+}
+
+function legacyMessageEntry(
+  message: InterviewMessage,
+  createdAt: number,
+): ConversationEntry<InteractiveTimelineItem>[] {
+  return message.text || message.status !== "running"
+    ? [messageEntry(message, message.id, `${message.id}:text`, message.text, createdAt)]
+    : [];
+}
+
+function messageEntry(
+  message: InterviewMessage,
+  entryId: string,
+  partId: string,
+  text: string,
+  createdAt: number,
+): ConversationEntry<InteractiveTimelineItem> {
+  return {
+    id: entryId,
+    role: message.role,
+    createdAt,
+    value: { kind: "message", message: {
+      id: entryId,
+      role: message.role,
+      createdAt,
+      items: [{
+        id: partId, messageId: message.id, role: message.role, createdAt,
+        kind: "text", text, isStreaming: message.status === "running",
+      }],
+    } },
+  };
 }
 
 function assistantContentEntries(
@@ -151,6 +189,22 @@ function answeredInteractionEntry(
   createdAt: number,
 ): ConversationEntry<InteractiveTimelineItem> | null {
   if (!decision.questionId) return null;
+  const answerMessage = decision.messageId
+    ? state.messages.find((message) => message.id === decision.messageId)
+    : undefined;
+  if (answerMessage?.interactionReply
+    && answerMessage.interactionReply.surfaceId === decision.questionId) {
+    return createAnsweredInteractionTimelineEntry({
+      createdAt,
+      interaction: {
+        interactionId: decision.questionId,
+        kind: "common_surface",
+        state: "submitted",
+        surface: answerMessage.interactionReply.surface,
+        surfaceSubmit: answerMessage.interactionReply.surfaceSubmit,
+      },
+    });
+  }
   const source = state.messages.find((message) => message.id === decision.questionId);
   const surface = source ? interviewQuestionSurface(source) : null;
   if (!surface) return null;
@@ -172,8 +226,9 @@ function answeredInteractionEntry(
 }
 
 function answerData(message: InterviewMessage, decision: InterviewState["decisions"][number]) {
-  if (decision.kind === "free_text" && message.question?.options.length === 0) return { text: decision.text };
-  if (decision.kind !== "option" || !message.question?.options.length) return null;
+  if (!message.question || !("prompt" in message.question)) return null;
+  if (decision.kind === "free_text" && message.question.options.length === 0) return { text: decision.text };
+  if (decision.kind !== "option" || !message.question.options.length) return null;
   const selectedIndex = message.question.options.findIndex((option) => option.label === decision.text);
   return selectedIndex < 0 ? null : { selectedOptionIds: [optionId(selectedIndex)] };
 }
@@ -190,47 +245,60 @@ const optionId = (index: number) => `option:${index + 1}`;
 function interviewQuestionSurface(message: InterviewMessage): QuestionSurface | null {
   if (message.role !== "assistant" || !message.question) return null;
   const question = message.question;
-  if (question.options.length > 0
-    && new Set(question.options.map((option) => option.label)).size !== question.options.length) return null;
-  return {
-    id: message.id,
-    submitLabel: "提交回答",
-    questions: question.options.length
-      ? [{
-          id: message.id,
-          type: "choice",
-          data: {
-            stem: question.prompt,
-            options: question.options.map((option, index) => ({
-              id: optionId(index), label: option.label, subtitle: option.description, recommended: option.recommended,
-            })),
-          },
-        }]
-      : [{
-          id: message.id,
-          type: "free_form",
-          data: { stem: question.prompt, placeholder: "直接回答当前问题，或补充你的要求……", multiline: true },
-        }],
-  };
+  let canonical: CommonSurfaceQuestion;
+  if ("prompt" in question) {
+    if (question.options.length > 0
+      && new Set(question.options.map((option) => option.label)).size !== question.options.length) return null;
+    canonical = createCommonQuestionFromPanel({ id: message.id, panel: {
+      prompt: question.prompt,
+      options: question.options.map((option, index) => ({ id: optionId(index), ...option })),
+      ...(question.options.length ? { inputs: [{ id: "other", label: "其他补充", kind: "textarea", role: "follow_up",
+        placeholder: "补充选项之外的约束或说明（可选）" }] } : {
+        placeholder: "直接回答当前问题，或补充你的要求……", multiline: true,
+      }),
+    } });
+  } else canonical = question;
+  try {
+    return createCommonQuestionSurface({ id: message.id, submitLabel: "提交回答", questions: [canonical] });
+  } catch { return null; }
 }
 
 export function submittedInterviewAnswer(state: InterviewState, submission: TimelineSubmit) {
   const active = activeQuestionMessage(state);
-  const answer = submission.answers.length === 1 ? submission.answers[0] : null;
-  if (!active || answer?.questionId !== active.id || !answer.data || typeof answer.data !== "object" || Array.isArray(answer.data)) {
-    throw new Error("interview_answer_invalid");
+  const surface = active ? interviewQuestionSurface(active) : null;
+  const answer = surface ? commonQuestionAnswerFromSubmit({
+    surface, submit: submission, questionId: active!.id,
+  }) : undefined;
+  if (!active || !surface || !answer) throw new Error("interview_answer_invalid");
+  return {
+    type: "common_question" as const,
+    questionId: active.id,
+    surfaceSubmit: buildCommonSurfaceReplyPayload({ surface, submit: submission }).surfaceSubmit,
+    text: commonAnswerText(surface.questions[0]!, answer),
+  };
+}
+
+function questionStem(question: CommonSurfaceQuestion) {
+  return (question.data as { stem: string }).stem;
+}
+
+function questionOptions(question: CommonSurfaceQuestion) {
+  if (question.type !== "choice") return [];
+  return (question.data as { options: Array<{ label: string; subtitle?: string }> }).options
+    .map(({ label, subtitle }) => ({ label, description: subtitle ?? "" }));
+}
+
+function commonAnswerText(question: CommonSurfaceQuestion, answer: Record<string, unknown>) {
+  if (question.type === "free_form") return String(answer.text);
+  const data = question.data as { options: Array<{ id: string; label: string }>; inputs?: Array<{ id: string; label: string }> };
+  const lines = (answer.selectedOptionIds as string[])
+    .map((id) => data.options.find((option) => option.id === id)!.label);
+  const values = answer.inputValues as Record<string, string> | undefined;
+  for (const input of data.inputs ?? []) {
+    const value = values?.[input.id]?.trim();
+    if (value) lines.push(`${input.label}：${value}`);
   }
-  if (active.question!.options.length === 0) {
-    const text = "text" in answer.data && typeof answer.data.text === "string" ? answer.data.text.trim() : "";
-    if (!text) throw new Error("interview_answer_invalid");
-    return { type: "free_text" as const, questionId: active.id, text };
-  }
-  const selected = "selectedOptionIds" in answer.data && Array.isArray(answer.data.selectedOptionIds)
-    && answer.data.selectedOptionIds.length === 1 ? answer.data.selectedOptionIds[0] : null;
-  const optionIndex = active.question!.options.findIndex((_option, index) => optionId(index) === selected);
-  if (optionIndex < 0) throw new Error("interview_answer_invalid");
-  const label = active.question!.options[optionIndex]!.label;
-  return { type: "choice" as const, questionId: active.id, label };
+  return lines.join("\n");
 }
 
 export function interviewMessageTimes(state: InterviewState) {

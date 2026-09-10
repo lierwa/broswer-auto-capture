@@ -12,6 +12,7 @@ const packageNames = {
   react: "@agent-platform/ai-connect-react",
 }
 const requiredReactExports = [".", "./chat", "./styles.css"]
+const requiredCoreExports = ["./integration/authoring/question"]
 
 async function main() {
   const allowed = new Set(["--allow-dirty-declared-files"])
@@ -99,6 +100,9 @@ export function validateReleaseManifest(release) {
       || !Array.isArray(metadata.exports) || !Array.isArray(metadata.styles)) {
       throw new Error(`ai_connect_sync_release_invalid:${kind}`)
     }
+  }
+  if (!requiredCoreExports.every((entry) => release.packages.core.exports.includes(entry))) {
+    throw new Error("ai_connect_sync_release_invalid:core_question_surface")
   }
   if (!requiredReactExports.every((entry) => release.packages.react.exports.includes(entry))
     || !release.packages.react.styles.includes("./styles.css")) {
