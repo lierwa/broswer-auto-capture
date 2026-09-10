@@ -345,6 +345,39 @@ test("Content Card 终态成功后才按作者化顺序持久化，历史快照�
   assert.deepEqual(store.snapshot(id).messages.at(-1)?.parts, message.parts)
 }))
 
+test("格式化 authoring 的 Card 两侧空白不阻止草稿和审计提交", async () => fixture(async ({ coordinator, store, client, create }) => {
+  const ui = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
+  const text = [
+    "已按默认口径整理草稿。",
+    "",
+    "<authoring>",
+    '<content-callout variant="highlight" label="范围">保留来源关联和覆盖缺口。</content-callout>',
+    "</authoring>",
+    "",
+    "<authoring>",
+    `<interview-result>${JSON.stringify({ draft })}</interview-result>`,
+    "</authoring>",
+  ].join("\n")
+  client.runTurn = async function* () {
+    yield { type: "text_delta", delta: text }
+    yield { type: "turn_succeeded", outputText: text }
+  }
+
+  const id = create()
+  coordinator.dispatch(id, {
+    type: "message", requestId: randomUUID(), expectedRevision: 0, text: "整理范围", ui,
+  })
+  await coordinator.waitForIdle()
+
+  const completed = store.snapshot(id), message = completed.messages.at(-1)!
+  assert.equal(completed.turns[0]?.status, "succeeded")
+  assert.equal(completed.drafts.length, 1)
+  assert.equal(completed.audits.length, 1)
+  assert.equal(message.text, "已按默认口径整理草稿。")
+  assert.deepEqual(message.parts?.map((part) => part.type), ["text", "card"])
+  assert.equal(message.parts?.[0]?.type === "text" ? message.parts[0].text : null, message.text)
+}))
+
 test("坏 Content 只降为安全正文且不越过 BAC 终态门；未注册 UI 不接受 Card", async () => fixture(async ({ coordinator, store, client, create }) => {
   const ui = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
   const invalid = [

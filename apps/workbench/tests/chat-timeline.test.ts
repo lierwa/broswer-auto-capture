@@ -1,8 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { randomUUID } from "node:crypto"
 import { renderToStaticMarkup } from "react-dom/server"
 import { createCommonQuestionFromPanel } from "@agent-platform/ai-connect/ui-contracts"
-import { interviewStateSchema, type InterviewState } from "../src/interviewContract.js"
+import { interviewCommandSchema, interviewStateSchema, type InterviewState } from "../src/interviewContract.js"
+import { InterviewConnection } from "../src/interviewConnection.js"
 import {
   interviewErrorMessage,
   projectInterviewEntries,
@@ -67,7 +69,7 @@ test("只有最新 open waitpoint 成为选择题 Interaction，提交保留 ide
     answers: [{ questionId: "current", data: { selectedOptionIds: ["option:1"] } }], displayText: "小范围",
   }
   assert.deepEqual(submittedInterviewAnswer(value, submission), {
-    type: "common_question", questionId: "current", surfaceSubmit: submission, text: "小范围",
+    text: "小范围", answer: { type: "common_question", questionId: "current", surfaceSubmit: submission },
   })
   assert.throws(() => submittedInterviewAnswer(value, {
     answers: [{ questionId: "old", data: { selectedOptionIds: ["option:1"] } }], displayText: "小范围",
@@ -114,14 +116,16 @@ test("正式采访决策题保留推荐单选、follow_up 补充和一次 compou
     } }],
     displayText: "选择范围\n小范围\n其他补充：只看公开在售商品",
   }), {
-    type: "common_question", questionId: "current",
-    surfaceSubmit: {
-      answers: [{ questionId: "current", data: {
-        selectedOptionIds: ["small"], inputValues: { other: "只看公开在售商品" },
-      } }],
-      displayText: "选择范围\n小范围\n其他补充：只看公开在售商品",
-    },
     text: "小范围\n其他补充：只看公开在售商品",
+    answer: {
+      type: "common_question", questionId: "current",
+      surfaceSubmit: {
+        answers: [{ questionId: "current", data: {
+          selectedOptionIds: ["small"], inputValues: { other: "只看公开在售商品" },
+        } }],
+        displayText: "选择范围\n小范围\n其他补充：只看公开在售商品",
+      },
+    },
   })
 })
 
@@ -162,9 +166,44 @@ test("options=[] 映成公共 free_form Module 并提交 typed free-text reply",
   assert.deepEqual(submittedInterviewAnswer(value, {
     answers: [{ questionId: "current", data: { text: " 100 个型号，名称与主图 " } }], displayText: "回答",
   }), {
-    type: "common_question", questionId: "current", text: "100 个型号，名称与主图",
-    surfaceSubmit: { answers: [{ questionId: "current", data: { text: " 100 个型号，名称与主图 " } }], displayText: "回答" },
+    text: "100 个型号，名称与主图",
+    answer: { type: "common_question", questionId: "current",
+      surfaceSubmit: { answers: [{ questionId: "current", data: { text: " 100 个型号，名称与主图 " } }], displayText: "回答" } },
   })
+})
+
+test("公共 Question builder 只把严格 answer 发送到采访命令", async () => {
+  const question = createCommonQuestionFromPanel({ id: "current", panel: {
+    prompt: "选择范围",
+    options: [
+      { id: "1", label: "主流平台", description: "系统发现公开入口", recommended: true },
+      { id: "2", label: "指定平台", description: "仅处理指定来源", recommended: false },
+    ],
+    inputs: [{ id: "other", label: "其他补充", kind: "textarea", role: "follow_up" }],
+  } })
+  const value = state({ revision: 1, sequence: 3,
+    unresolved: [{ id: "current", revision: 1, question, status: "open", answerMessageId: null }],
+    messages: [assistant("current", question)],
+  })
+  const submission = {
+    answers: [{ questionId: "current", data: { selectedOptionIds: ["1"] } }],
+    displayText: "主流平台",
+  }
+  const submitted = submittedInterviewAnswer(value, submission)
+  const command = interviewCommandSchema.parse({
+    type: "message", requestId: randomUUID(), expectedRevision: value.revision,
+    text: submitted.text, answer: submitted.answer, ui: interviewAgentUI.capabilities,
+  })
+  let posted: unknown
+  const connection = new InterviewConnection("task-a", async (_input, options) => {
+    posted = JSON.parse(String(options?.body))
+    return Response.json({ taskId: "task-a", state: value })
+  })
+
+  await connection.dispatch(command)
+
+  assert.deepEqual((posted as { answer: unknown }).answer, submitted.answer)
+  assert.equal("text" in (posted as { answer: object }).answer, false)
 })
 
 test("当前 Run 在首段正文到达前仍建立共享空壳，闭合题块不提前可答", () => {

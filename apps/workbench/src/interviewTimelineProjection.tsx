@@ -271,10 +271,12 @@ export function submittedInterviewAnswer(state: InterviewState, submission: Time
   }) : undefined;
   if (!active || !surface || !answer) throw new Error("interview_answer_invalid");
   return {
-    type: "common_question" as const,
-    questionId: active.id,
-    surfaceSubmit: buildCommonSurfaceReplyPayload({ surface, submit: submission }).surfaceSubmit,
     text: commonAnswerText(surface.questions[0]!, answer),
+    answer: {
+      type: "common_question" as const,
+      questionId: active.id,
+      surfaceSubmit: buildCommonSurfaceReplyPayload({ surface, submit: submission }).surfaceSubmit,
+    },
   };
 }
 

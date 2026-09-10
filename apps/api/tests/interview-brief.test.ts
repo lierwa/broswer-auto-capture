@@ -20,6 +20,9 @@ test("负责人取舍输出保留三项比较与唯一推荐，并保留用户�
     assert.equal(prompt.match(/所需数据实体\/字段、覆盖与数量\/终止要求足以判定结果/g)?.length, 1)
     assert.match(prompt, /question-panel/)
     assert.match(prompt, /interview-result JSON Schema/)
+    assert.match(prompt, /每个 question 前都先用一条简短、自然的 assistantText 承接已知意图/)
+    assert.match(prompt, /返回 question 且不同时返回 draft；这不表示省略前述简短 assistantText/)
+    assert.match(prompt, /生成问题时，先用一条简短自然的普通文本承接已知意图或说明本轮确认的意义/)
     assert.match(prompt, /我想抓微波炉的数据/)
     yield authoredInterview({
       assistantText: "先明确这批数据的主要用途，才能确定字段与覆盖要求。",

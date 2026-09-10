@@ -163,8 +163,8 @@ export function ChatTimeline({
           stop: interview.cancel,
           retry: interview.retry,
           submit: async (submission) => {
-            const answer = submittedInterviewAnswer(state, submission);
-            await interview.submit(answer.text, answer);
+            const submitted = submittedInterviewAnswer(state, submission);
+            await interview.submit(submitted.text, submitted.answer);
           },
         }}
         sendDisabled={!modelReady}
