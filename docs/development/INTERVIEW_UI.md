@@ -6,7 +6,7 @@
 
 参考 domain-analysis 现行 `InterviewThread.tsx`、`codexCategoryInterviewRuntime.ts`、`categoryInterviewModule.ts` 与私有 `interview-product-category/SKILL.md`。借鉴的是持续对话、逐轮决策、草稿版本及独立规划机制，不是它的商品品类、品牌策略或 ZOL 限定。
 
-本工具的基础产物是基于 BrowserSkill 的浏览器操作链：输入、动作、条件、循环、检查点和可验证结果。数据抓取是当前首个场景；未来浏览器自动化需要独立定义读写权限、人工确认、幂等性和恢复规则，不能从本轮讨论推断已经允许支付、发布、提交等动作。
+本工具的基础产物是基于 BrowserSkill 的浏览器操作链：输入、动作、条件、循环、检查点和可验证结果。需求访谈按最终结果为数据采集、信息核实、媒体控制、事务办理和站内管理等任务提供领域引导；只有数据采集 brief 已接入后续链路。其他类别仍需独立定义执行能力、读写权限、人工确认、幂等性和恢复规则，确认需求不能推断已经允许支付、发布、提交等动作。
 
 ## 信息价值与展示层级
 
@@ -25,7 +25,9 @@
 
 ## 当前访谈实现
 
-### 业务目标驱动的访谈（2026-09-06 修订）
+### 业务目标驱动的访谈（2026-09-11 修订）
+
+访谈按用户最终要得到的结果选择领域知识，不要求用户先选类别。各类别均可形成并确认版本化需求草稿；混合任务保留可独立验收的全部目标和依赖。数据采集使用结构化 brief，其他类别和混合任务使用 `brief=null` 的完整 Markdown。后者确认后不会产生 `confirmedRequirement`，因此不能暗中进入现有来源调研、抓取计划或执行链路。
 
 访谈负责得到足以开展来源调研和制定计划的业务要求。用户可以只给品牌、品类或目标，系统负责发现可核验的入口和对象集合；用户提供链接是可选线索。先判断信息属于哪一类，再决定是否追问：
 
@@ -48,15 +50,15 @@
 1. AI Connect React 的公共 Agent surface 负责生命周期与事件投影、完整 Timeline、滚动、Composer、模型设置、Question 注册与答复、发送、停止和重试；第一段正文到达前也必须由 `currentRun` 呈现生成状态，不能用有无正文或 reasoning 推断运行。BCT 与 opencode Examples 必须使用同一组件、布局、状态和交互。工作台服务继续持有业务消息与抓取状态，宿主适配只提供主题色、助手名称、图标、业务事实和命令，不再维护裁剪版时间线或第二套交互协议。共同规范见 [`ai-connect-host-surface-parity.md`](../../../opencode/docs/platform/ai-connect-host-surface-parity.md)。
 2. 用户原文完整送入当前轮次；选择题和开放题都以原文消息加 typed answer 提交，并绑定当前 Question identity/revision。已回答的问题由同一公共 Module 呈现 locked history，不能重复提交；普通补充、纠正和追问仍可作为自由消息进入下一轮。
 3. 每轮从工作台模型设置读取并冻结同一账号与模型，通过 ai-connect 结构调用执行；未保存选择时明确提示先完成设置，不自动选择或回退模型。
-4. 私有 `interview-browser-task` Skill 是访谈业务规则的唯一来源。实施应以删除提交 `d32a8e9410cb508e9469f4cc22d7c4899ce2f2b5` 的父提交中该文件（blob `2f7588c637d014eeb9f2cbdfd96325aab1a0b949`）为业务基线，只增加公共 authoring/Question 协议需要的格式适配，不能借适配改写采访判断。服务启动时读取并随每轮模型请求注入；每轮最多一个必要问题。`options=[]` 必须进入公共 free-form Question Module，复用原 Composer 校验并提交非空 typed answer，成功后形成不可变历史并推进同一 waitpoint；完整需求可以首轮成稿。
+4. 私有 `interview-browser-task` Skill 是访谈业务规则的唯一来源，服务启动时读取并随每轮模型请求注入；每轮最多一个必要问题。自由输入的 `question-panel` 不包含 `question-option`，必须进入公共 free-form Question Module；可点击选择题包含 2–3 个真实结果方案且仅一个推荐项。两者复用原 Composer 校验并提交非空 typed answer，成功后形成不可变历史并推进同一 waitpoint；完整需求可以首轮成稿。
 5. ProductStore 校验并保存的安全正文是聊天消息的唯一事实。公共 typed AI event 只投影生成、推理与工具活动；原始 `text.delta` 不再作为第二份消息正文，因此机器 JSON、原始 chain-of-thought、凭据和敏感诊断不会进入 Timeline 正文。
-6. 可靠问题或完整草稿本身可以构成成功结果，无需模型重复一段 `assistantText`；完全没有安全正文、问题或草稿的输出仍失败。完整成功且 Zod 校验通过才提交结构草稿。模型建议只能进入 `proposedDefaults`，不能替代关键业务输入或写成用户事实。问题和可确认草稿互斥，选择题推荐项唯一。单轮串行；旧 revision 请求拒绝。新模型不再单独输出 Markdown；用户未提供的 URL 不能写入 providedUrls。
+6. 可靠问题或完整草稿本身可以构成成功结果；问题前仍需自然正文承接已知意图或说明确认意义。完全没有安全正文、问题或草稿的输出失败。完整成功且 Zod 校验通过才提交草稿。采集 brief 使用宿主私有 `interview-result` JSON candidate，再由系统确定性生成 Markdown；其他类别和混合任务使用宿主私有 `interview-markdown` raw body，投影为完整 Markdown 与 `brief=null`。两者进入同一既有草稿事实源。模型建议不能替代关键业务输入或写成用户事实。问题和草稿互斥，选择题推荐项唯一。单轮串行；旧 revision 请求拒绝；用户未提供的 URL 不能写入 providedUrls。
 7. 需求确认绑定草稿版本及会话 revision。任意新输入立即使旧确认失效；历史草稿保留、只读。确认操作不调用模型，不产生浏览器授权。
 8. 失败/中断保留对话并允许重试最近一次用户原文，不重复追加同一条用户消息。刷新恢复已保存历史；恢复时若服务仍在运行则持续读取快照直到终态。
 
-## 来源调研与真正计划的交接
+## 数据采集的来源调研与真正计划交接
 
-访谈输出是需求范围，不是抓取计划。以下仍是后续实施门：
+结构化数据采集 brief 是当前唯一可进入后续流程的需求交接。通用 Markdown 草稿即使已经确认，也只保存需求版本，不进入以下实施门：
 
 1. 从已确认版本创建独立来源调研；检索候选入口并保存实际搜索事件。
 2. 通过受控 BrowserSkill 打开代表页面，检查字段、枚举/分页依据、访问状态和终止信号。搜索命中不能被标记为页面已观察。

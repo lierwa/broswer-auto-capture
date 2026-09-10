@@ -10,7 +10,7 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-3c17954c.tgz",
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-9c78ea59.tgz",
     "@browser-capture/runtime": "0.0.0",
     "@browser-capture/browser": "0.0.0",
     "@browser-capture/contracts": "0.0.0",

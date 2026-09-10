@@ -239,7 +239,7 @@ test("取消绑定具体轮次，迟到成功仅保留审计不提交草稿，�
   coordinator.dispatch(id, { type: "cancel", turnId: first.activeTurnId! })
   assert.equal(store.snapshot(id).cancellationRequested, true)
   release.resolve(); await coordinator.waitForIdle()
-  assert.equal(store.snapshot(id).drafts.length, 0); assert.equal(store.snapshot(id).audits.length, 1)
+  assert.equal(store.snapshot(id).drafts.length, 0); assert.equal(store.snapshot(id).audits.length, 0)
   assert.equal(store.snapshot(id).turns[0]?.status, "cancelled")
   const next = send(id)
   assert.throws(() => coordinator.dispatch(id, { type: "cancel", turnId: first.activeTurnId! }), /过期/)
@@ -286,10 +286,12 @@ test("供应商协议块不进入消息；校验失败/成功后异常均不提�
   }
   send(id); await coordinator.waitForIdle()
   assert.equal(store.snapshot(id).drafts.length, 0)
+  assert.equal(store.snapshot(id).audits.length, 1)
   assert.doesNotMatch(store.snapshot(id).messages.at(-1)!.text, /authoring|interview-result|question-panel/)
   client.runTurn = async function* () { yield authoredInterview({ assistantText: "提前成功", question: null, draft }); throw new Error("private-provider-path") }
   coordinator.dispatch(id, { type: "retry", requestId: randomUUID(), expectedRevision: 1 }); await coordinator.waitForIdle()
   assert.equal(store.snapshot(id).drafts.length, 0)
+  assert.equal(store.snapshot(id).audits.length, 1)
   assert.equal(store.snapshot(id).messages.filter((message) => message.role === "user").length, 1)
   assert.doesNotMatch(store.snapshot(id).messages.at(-1)!.text, /private-provider-path/)
 }))
@@ -376,6 +378,26 @@ test("格式化 authoring 的 Card 两侧空白不阻止草稿和审计提交", 
   assert.equal(message.text, "已按默认口径整理草稿。")
   assert.deepEqual(message.parts?.map((part) => part.type), ["text", "card"])
   assert.equal(message.parts?.[0]?.type === "text" ? message.parts[0].text : null, message.text)
+}))
+
+test("采集 JSON 多写尾字符时拒绝提交，合法采集格式保持可提交", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+  const envelope = JSON.stringify({ draft })
+  // WHY：通用长文不再经过 JSON；仍使用 JSON 的采集候选必须严格拒绝尾字符，不能猜修或提交部分草稿。
+  const malformed = `<authoring><interview-result>${envelope}}</interview-result></authoring>`
+  client.runTurn = async function* () { yield { type: "turn_succeeded", outputText: malformed } }
+  const rejectedId = create(); send(rejectedId, "采集商品和评价"); await coordinator.waitForIdle()
+  const rejected = store.snapshot(rejectedId)
+  assert.equal(rejected.turns[0]?.status, "failed")
+  assert.equal(rejected.drafts.length, 0)
+  assert.equal(rejected.audits.length, 1)
+
+  const valid = `已整理采集草稿。\n\n<authoring><interview-result>${envelope}</interview-result></authoring>`
+  client.runTurn = async function* () { yield { type: "turn_succeeded", outputText: valid } }
+  const acceptedId = create(); send(acceptedId, "采集商品和评价"); await coordinator.waitForIdle()
+  const accepted = store.snapshot(acceptedId)
+  assert.equal(accepted.turns[0]?.status, "succeeded")
+  assert.equal(accepted.drafts[0]?.brief?.goal, draft.brief.goal)
+  assert.equal(accepted.audits.length, 1)
 }))
 
 test("坏 Content 只降为安全正文且不越过 BAC 终态门；未注册 UI 不接受 Card", async () => fixture(async ({ coordinator, store, client, create }) => {

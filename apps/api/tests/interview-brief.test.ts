@@ -9,20 +9,22 @@ test("领域候选 Schema 保留本地必填交接约束且不扩散 provider fo
   const schema = outputSchema()
   assert.doesNotMatch(JSON.stringify(schema), /"format":"uri"/)
   const parsed = JSON.parse(JSON.stringify(schema))
-  const branch = parsed.properties.draft.anyOf.find((item: { type: string }) => item.type === "object")
-  assert.ok(branch.required.includes("brief"))
-  assert.ok(branch.properties.brief.required.includes("discoveryTasks"))
+  const capture = parsed.properties.draft
+  assert.ok(capture.required.includes("brief"))
+  assert.ok(capture.properties.brief.required.includes("discoveryTasks"))
+  assert.equal(capture.properties.markdown, undefined)
 })
 
 test("负责人取舍输出保留三项比较与唯一推荐，并保留用户原文", async () => fixture(async ({ coordinator, store, client, create, send }) => {
   client.runTurn = async function* (prompt) {
-    assert.match(prompt, /所需数据实体\/字段、覆盖与数量\/终止要求足以判定结果/)
-    assert.equal(prompt.match(/所需数据实体\/字段、覆盖与数量\/终止要求足以判定结果/g)?.length, 1)
+    assert.match(prompt, /以最终结果和可观察完成状态为中心/)
+    assert.equal(prompt.match(/以最终结果和可观察完成状态为中心/g)?.length, 1)
     assert.match(prompt, /question-panel/)
     assert.match(prompt, /interview-result JSON Schema/)
-    assert.match(prompt, /每个 question 前都先用一条简短、自然的 assistantText 承接已知意图/)
-    assert.match(prompt, /返回 question 且不同时返回 draft；这不表示省略前述简短 assistantText/)
-    assert.match(prompt, /生成问题时，先用一条简短自然的普通文本承接已知意图或说明本轮确认的意义/)
+    assert.match(prompt, /每个 question 或 draft 前都先输出一条简短、自然的普通 assistantText/)
+    assert.match(prompt, /自由输入题只使用没有任何 `question-option` 子元素的 `question-panel`/)
+    assert.match(prompt, /其他类别或混合任务使用 `interview-markdown`/)
+    assert.match(prompt, /生成问题或草稿时，先用一条简短自然的普通文本承接已知意图或说明本轮产物的意义/)
     assert.match(prompt, /我想抓微波炉的数据/)
     yield authoredInterview({
       assistantText: "先明确这批数据的主要用途，才能确定字段与覆盖要求。",
@@ -55,6 +57,8 @@ test("正式选择题由公共 authoring policy 拒绝缺失推荐项，开放�
   }
   const id = create(); send(id); await coordinator.waitForIdle()
   assert.equal(store.snapshot(id).messages.at(-1)?.status, "failed")
+  assert.equal(store.snapshot(id).turns.at(-1)?.reason, "生成的问题格式无效，结果未提交。请重试。")
+  assert.equal(store.snapshot(id).audits.length, 1)
   assert.equal(store.snapshot(id).unresolved.length, 0)
 
   client.runTurn = async function* () {
@@ -64,6 +68,23 @@ test("正式选择题由公共 authoring policy 拒绝缺失推荐项，开放�
   assert.equal(store.snapshot(open).messages.at(-1)?.status, "complete")
   const projectedOpen = store.snapshot(open).unresolved[0]?.question
   assert.equal(projectedOpen && "type" in projectedOpen ? projectedOpen.type : null, "free_form")
+}))
+
+test("通用任务草稿可确认保存但不进入数据采集交接", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+  const markdown = "# 任务目标\n播放指定内容。\n\n# 可观察完成标准\n目标媒体处于用户指定播放位置。\n\n# 当前支持边界\n确认只保存需求，不授权浏览器操作。"
+  client.runTurn = async function* () {
+    yield authoredInterview({ assistantText: "需求已经足够形成草稿。", question: null,
+      draft: { title: "媒体播放需求", markdown, brief: null },
+    })
+  }
+  const id = create(); send(id, "播放最新一集并定位到180秒"); await coordinator.waitForIdle()
+  let state = store.snapshot(id)
+  assert.deepEqual(state.drafts[0], { title: "媒体播放需求", markdown, brief: null, version: 1, revision: 1 })
+  assert.equal(confirmedRequirement(id, state), null)
+  coordinator.dispatch(id, { type: "confirm", requestId: randomUUID(), expectedRevision: state.revision, version: 1 })
+  state = store.snapshot(id)
+  assert.equal(state.confirmedVersion, 1)
+  assert.equal(confirmedRequirement(id, state), null)
 }))
 
 test("信息完整时首轮草稿仍需用户确认才能交接", async () => fixture(async ({ coordinator, store, client, create, send }) => {

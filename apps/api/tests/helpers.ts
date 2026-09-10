@@ -27,8 +27,18 @@ export const authoredInterview = (output: {
   output.assistantText,
   output.question ? `<authoring><question-panel prompt="${attribute(output.question.prompt)}">${output.question.options.map((option, index) =>
     `<question-option slot="${index + 1}" label="${attribute(option.label)}"${option.recommended ? ' recommended="true"' : ""}>${text(option.description)}</question-option>`).join("")}</question-panel></authoring>` : "",
-  output.draft ? `<authoring><interview-result>${JSON.stringify({ draft: output.draft })}</interview-result></authoring>` : "",
+  output.draft ? authoredDraft(output.draft) : "",
 ].filter(Boolean).join("\n\n") })
+function authoredDraft(value: unknown) {
+  if (isGenericDraft(value)) {
+    return `<authoring><interview-markdown title="${attribute(value.title)}">${value.markdown}</interview-markdown></authoring>`
+  }
+  return `<authoring><interview-result>${JSON.stringify({ draft: value })}</interview-result></authoring>`
+}
+function isGenericDraft(value: unknown): value is { title: string; markdown: string; brief: null } {
+  return typeof value === "object" && value !== null && "title" in value && typeof value.title === "string"
+    && "markdown" in value && typeof value.markdown === "string" && "brief" in value && value.brief === null
+}
 function attribute(value: string) { return text(value).replaceAll('"', "&quot;") }
 function text(value: string) { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") }
 export const projectRoot = fileURLToPath(new URL("../../../", import.meta.url))

@@ -40,9 +40,12 @@ export const interviewOutputSchema = z.object({
   assistantText: text, question: questionSchema.nullable(), draft: z.object({ title: text, markdown: text, brief: requirementBriefSchema.nullable().default(null) }).nullable(),
   parts: z.array(interviewMessagePartSchema).default([]),
 }).refine((value) => !(value.question && value.draft), "有负责人问题时不得生成可确认草稿")
+const captureModelDraftSchema = z.object({ title: text, brief: requirementBriefSchema }).strict()
+const genericModelDraftSchema = z.object({ title: text, markdown: text, brief: z.null() }).strict()
 export const modelInterviewOutputSchema = z.object({
   assistantText: optionalAssistantText, question: authoredQuestionSchema.nullable(),
-  draft: z.object({ title: text, brief: requirementBriefSchema }).nullable(),
+  // WHY：持久化契约已支持 Markdown + nullable brief；只有采集 brief 能进入现有执行链，其他类别保留可审阅需求而不伪造采集结构。
+  draft: z.union([captureModelDraftSchema, genericModelDraftSchema]).nullable(),
 }).strict()
   .refine((value) => !(value.question && value.draft), "有负责人问题时不得生成可确认草稿")
   .refine((value) => Boolean(value.assistantText || value.question || value.draft), "采访输出必须包含安全正文、问题或草稿")

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "producer": {
-    "head": "8ad9a9e9f5eebc2a5110caa6e8001678f64d28e7",
-    "dirty": true
+    "head": "97d9f90bc146b550cf13be2f932cfe91410f6ab1",
+    "dirty": false
   },
   "build": [
     {
@@ -11,7 +11,7 @@
     },
     {
       "name": "@agent-platform/ai-connect",
-      "sourceHash": "8cda1a72b3aa162f4b3cbb8a2f608998b32fdf679c15f8da35b68252f7df5146"
+      "sourceHash": "ca8cb7ed40eb3d45e7a008f7fdc6145d68b60f47362fd8fb86bb74d33f1d46bf"
     },
     {
       "name": "@agent-platform/sdk",
@@ -23,15 +23,15 @@
     },
     {
       "name": "@agent-platform/ai-connect-react",
-      "sourceHash": "c442f8fa703e1ffe3685b4c2214dfff0ebe5403e1ab1cb9b8094404d3e0bea2f"
+      "sourceHash": "e1f93f32167ac280c3e3c5bb1f453e4ed7233a3c8adf9546fcf19db15701ab32"
     }
   ],
   "packages": {
     "core": {
       "name": "@agent-platform/ai-connect",
       "version": "0.3.2",
-      "file": "agent-platform-ai-connect-0.3.2-3c17954c.tgz",
-      "sha256": "3c17954c4726a7d5ad02ca1c621fd404b38fee9e59595d8b8a2d8cb64d60d025",
+      "file": "agent-platform-ai-connect-0.3.2-9c78ea59.tgz",
+      "sha256": "9c78ea593f3d1d67a0796355c0a8a52e4acf80e8029923eaa4ffa48ea3290b6a",
       "exports": [
         "./browser",
         "./client",
@@ -90,8 +90,8 @@
     "react": {
       "name": "@agent-platform/ai-connect-react",
       "version": "0.3.2",
-      "file": "agent-platform-ai-connect-react-0.3.2-93b6baab.tgz",
-      "sha256": "93b6baab5be0318d652f3318c2057a3b077d0d02f9d6a332c27414ffae708945",
+      "file": "agent-platform-ai-connect-react-0.3.2-6cf6702e.tgz",
+      "sha256": "6cf6702e33f66f1c78f428c2692cd5fe07d315cd0e88abd7fc2482e27728cfa2",
       "exports": [
         ".",
         "./chat",
@@ -118,6 +118,6 @@
       ]
     }
   },
-  "core": "agent-platform-ai-connect-0.3.2-3c17954c.tgz",
-  "react": "agent-platform-ai-connect-react-0.3.2-93b6baab.tgz"
+  "core": "agent-platform-ai-connect-0.3.2-9c78ea59.tgz",
+  "react": "agent-platform-ai-connect-react-0.3.2-6cf6702e.tgz"
 }

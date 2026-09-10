@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "freeze": {
+    "skillSha256": "03af80ee986af4494c8d3851d166b8c9b8e3ad01bd4b039843e25cdc746caf9c",
+    "protocolSha256": "d528bf7f988df0c520b42f705ab5f03f9b9759bcaf515c462d6848d4383d12f0",
+    "promptSha256": "7020f1858627827d0f0172252c35159dd2eb17f5ea053020594928080991e34c",
+    "vendorTarSha256": "9c78ea593f3d1d67a0796355c0a8a52e4acf80e8029923eaa4ffa48ea3290b6a",
+    "modelId": "gpt-5.6-terra",
+    "reasoningEffort": "medium"
+  },
+  "runs": [
+    "2026-09-10T19-32-52-531Z-878e819e",
+    "2026-09-10T19-33-41-194Z-297442fe",
+    "2026-09-10T19-35-13-202Z-7681d87d"
+  ],
+  "userState": {
+    "taskCount": 14,
+    "beforeSha256": "46b6c7f2c20e3ad9334316724b597d4e7b9e6d4a04c4776e8c9b392531518ae1",
+    "afterSha256": "46b6c7f2c20e3ad9334316724b597d4e7b9e6d4a04c4776e8c9b392531518ae1"
+  },
+  "totals": { "cases": 14, "accepted": 14, "finalInvocations": 25, "extraFixtureInvocations": 2 },
+  "cases": [
+    { "id": "ambiguous-microwave", "invocations": 2, "path": ["choice", "draft"], "confirmedVersion": 1 },
+    { "id": "refrigerator-choice-free-text", "invocations": 3, "path": ["choice", "choice", "draft-ui"], "confirmedVersion": 1 },
+    { "id": "official-complete-products", "invocations": 1, "path": ["draft"], "confirmedVersion": 1 },
+    { "id": "recruitment-list", "invocations": 2, "path": ["free_form", "draft"], "confirmedVersion": 1 },
+    { "id": "official-fact-check", "invocations": 2, "path": ["free_form", "draft"], "confirmedVersion": 1 },
+    { "id": "bilibili-specific-episode", "invocations": 1, "path": ["draft"], "confirmedVersion": 1 },
+    { "id": "bilibili-latest-seek", "invocations": 1, "path": ["draft"], "confirmedVersion": 1 },
+    { "id": "content-reading-location", "invocations": 1, "path": ["draft"], "confirmedVersion": 1 },
+    { "id": "reservation-no-execution", "invocations": 5, "path": ["free_form", "free_form", "choice", "draft", "correction-draft"], "confirmedVersion": 2 },
+    { "id": "favorites-management-no-execution", "invocations": 1, "path": ["draft"], "confirmedVersion": 1 },
+    { "id": "bill-and-expense-mixed", "invocations": 2, "path": ["free_form", "draft"], "confirmedVersion": 1 },
+    { "id": "cross-turn-correction", "invocations": 2, "path": ["draft", "correction-draft"], "confirmedVersion": 2 },
+    { "id": "delegated-recommendation", "invocations": 1, "path": ["draft"], "confirmedVersion": 1 },
+    { "id": "capture-and-media-composite", "invocations": 1, "path": ["draft"], "confirmedVersion": 1 }
+  ]
+}

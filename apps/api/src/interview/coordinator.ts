@@ -31,7 +31,16 @@ const modelUnavailable = "model_account_model_unavailable"
 function failureReason(error: unknown) {
   if (error instanceof DomainError) return error.message
   // WHY：只消费 AI Connect 的稳定错误码，避免把供应商原文或 cause 变成业务协议。
-  if (error instanceof Error && error.message === modelUnavailable) return "当前账号不支持所选模型，请选择其他可用模型。"
+  if (error instanceof Error) {
+    if (error.message === modelUnavailable) return "当前账号不支持所选模型，请选择其他可用模型。"
+    if (error.message === "interview_question_projection_invalid") return "生成的问题格式无效，结果未提交。请重试。"
+    if (error.message === "interview_authoring_invalid") return "生成内容格式无效，结果未提交。请重试。"
+    if (error.message === "interview_authoring_cardinality_invalid") return "生成内容包含多个互斥结果，结果未提交。请重试。"
+    if (["interview_authoring_stream_text_mismatch", "interview_authoring_part_text_mismatch", "interview_authoring_card_order_missing"].includes(error.message)) {
+      return "生成内容前后不一致，结果未提交。请重试。"
+    }
+    if (error.message === "interview_output_invalid") return "生成的需求草稿不符合要求，结果未提交。请重试。"
+  }
   return "本轮未完成，结果未提交。请重试。"
 }
 export class InterviewCoordinator {
@@ -143,6 +152,11 @@ export class InterviewCoordinator {
         this.appendAIEvent(job, event, projection)
       },
     })
+    // WHY：调用已完整返回就是可审计事实；本地 authoring/领域校验失败不能抹掉这次真实调用。
+    this.store.mutate(job.taskId, (state) => state.audits.push({
+      revision: state.turns.find((turn) => turn.id === job.turnId)!.revision,
+      model: model.selection.modelId, effort: model.selection.reasoningEffort, invocations: 1,
+    }))
     if (!streamedText) {
       const projection = acceptText(returnedText)
       if (projection) this.appendProjection(job, projection.text, projection.question)
@@ -154,10 +168,6 @@ export class InterviewCoordinator {
       this.appendProjection(job, result.textDelta)
     }
     const object = parseInterviewAuthoringOutput(result, this.store.snapshot(job.taskId), parts, job.turnId, assistantMessageId)
-    this.store.mutate(job.taskId, (state) => state.audits.push({
-      revision: state.turns.find((turn) => turn.id === job.turnId)!.revision,
-      model: model.selection.modelId, effort: model.selection.reasoningEffort, invocations: 1,
-    }))
     return object
   }
   private appendProjection(job: Job, text: string, question?: InterviewOutput["question"]) {
