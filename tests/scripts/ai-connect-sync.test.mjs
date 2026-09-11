@@ -13,22 +13,26 @@ import {
 const hash = (value) => createHash("sha256").update(value).digest("hex")
 const sourceHash = "a".repeat(64)
 
-function release(core, react) {
+function release(core, react, agentSession) {
   return {
     schemaVersion: 1,
     producer: { head: "1".repeat(40), dirty: true },
     build: [
       { name: "@agent-platform/ai-connect", sourceHash },
       { name: "@agent-platform/ai-connect-react", sourceHash },
+      { name: "@agent-platform/pi-agent-session", sourceHash },
     ],
     packages: {
       core: { name: "@agent-platform/ai-connect", version: "0.3.0", file: "core.tgz",
-        sha256: hash(core), exports: ["./browser"], styles: [] },
+        sha256: hash(core), exports: ["./browser", "./integration/authoring/question"], styles: [] },
       react: { name: "@agent-platform/ai-connect-react", version: "0.3.0", file: "react.tgz",
         sha256: hash(react), exports: [".", "./chat", "./styles.css"], styles: ["./styles.css"] },
+      agentSession: { name: "@agent-platform/pi-agent-session", version: "0.1.0", file: "agent-session.tgz",
+        sha256: hash(agentSession), exports: ["."], styles: [] },
     },
     core: "core.tgz",
     react: "react.tgz",
+    agentSession: "agent-session.tgz",
   }
 }
 
@@ -43,24 +47,28 @@ async function fixture() {
     mkdir(vendor, { recursive: true }), mkdir(join(consumer, "apps", "web"), { recursive: true })])
   const core = "core artifact"
   const react = "react artifact"
-  const manifest = release(core, react)
+  const agentSession = "agent-session artifact"
+  const manifest = release(core, react, agentSession)
   await Promise.all([
     writeFile(join(scripts, "sync-local.mjs"), "export const syncLocalAIConnect = () => undefined\n"),
     writeFile(join(artifacts, "release.json"), JSON.stringify(manifest)),
     writeFile(join(vendor, "core.tgz"), core),
     writeFile(join(vendor, "react.tgz"), react),
+    writeFile(join(vendor, "agent-session.tgz"), agentSession),
     writeFile(join(consumer, "package.json"), JSON.stringify({ aiConnect: {
       vendorDirectory: "vendor/agent-platform",
       manifests: {
         "@agent-platform/ai-connect": ["apps/web/package.json"],
         "@agent-platform/ai-connect-react": ["apps/web/package.json"],
+        "@agent-platform/pi-agent-session": ["apps/web/package.json"],
       },
     } })),
     writeFile(join(consumer, "apps", "web", "package.json"), JSON.stringify({ dependencies: {
       "@agent-platform/ai-connect": "file:../../vendor/agent-platform/core.tgz",
       "@agent-platform/ai-connect-react": "file:../../vendor/agent-platform/react.tgz",
+      "@agent-platform/pi-agent-session": "file:../../vendor/agent-platform/agent-session.tgz",
     } })),
-    writeFile(join(consumer, "package-lock.json"), JSON.stringify({ core: "core.tgz", react: "react.tgz" })),
+    writeFile(join(consumer, "package-lock.json"), JSON.stringify({ core: "core.tgz", react: "react.tgz", agentSession: "agent-session.tgz" })),
   ])
   return { root, producer, consumer, manifest, vendor }
 }

@@ -2,12 +2,16 @@ import { spawn } from "node:child_process"
 import type { CommandExecutor } from "./contracts.js"
 import { BrowserError } from "./contracts.js"
 
+export class CommandLaunchError extends BrowserError {
+  constructor() { super("command_failed") }
+}
+
 // WHY：只启动固定 BrowserSkill 可执行文件和参数数组，不接受 shell/脚本/模型命令；stderr 不进入产品日志。
 export function bskExecutor(cwd: string): CommandExecutor {
   return async (args, signal) => new Promise((resolve, reject) => {
     signal?.throwIfAborted()
     const child = spawn(process.platform === "win32" ? "bsk.exe" : "bsk", [...args], { cwd, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })
-    let stdout = "", oversized = false
+    let stdout = "", oversized = false, spawned = false
     const cancel = () => child.kill()
     const timeout = setTimeout(cancel, 30_000)
     signal?.addEventListener("abort", cancel, { once: true })
@@ -17,7 +21,11 @@ export function bskExecutor(cwd: string): CommandExecutor {
       stdout += chunk
     })
     const cleanup = () => { clearTimeout(timeout); signal?.removeEventListener("abort", cancel) }
-    child.once("error", () => { cleanup(); reject(new BrowserError("command_failed")) })
+    child.once("spawn", () => { spawned = true })
+    child.once("error", () => {
+      cleanup()
+      reject(spawned ? new BrowserError("command_failed") : new CommandLaunchError())
+    })
     child.once("close", (code) => { cleanup(); resolve({ stdout, exitCode: oversized ? -1 : code ?? -1 }) })
   })
 }

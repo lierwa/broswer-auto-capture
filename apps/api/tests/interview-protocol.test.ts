@@ -1,16 +1,18 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { parseAIEvent } from "@agent-platform/ai-connect/client"
 import { CommonContentUIProtocol } from "@agent-platform/ai-connect/ui-contracts"
-import { emptyInterview, type InterviewMessagePart } from "@browser-capture/contracts/interview"
+import { emptyInterview, type InterviewMessage, type InterviewMessagePart } from "@browser-capture/contracts/interview"
 import {
   cardFromAuthoringBlock,
-  createInterviewAuthoring,
+  createInterviewMainAuthoring,
+  interviewCanonicalMessages,
   parseInterviewAuthoringOutput,
   settleInterviewMessageParts,
 } from "../src/interview/protocol.js"
 
 function calloutFixture() {
-  const { session } = createInterviewAuthoring(structuredClone(emptyInterview), "test skill", {
+  const { session } = createInterviewMainAuthoring(structuredClone(emptyInterview), "test skill", {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   })
@@ -22,6 +24,13 @@ function calloutFixture() {
 
 function text(id: string, value: string): InterviewMessagePart {
   return { id, type: "text", text: value }
+}
+
+function message(value: Partial<InterviewMessage> & Pick<InterviewMessage, "id" | "role" | "text">): InterviewMessage {
+  return {
+    status: "complete", question: null, draftVersion: null, aiEvents: [],
+    ...value,
+  }
 }
 
 test("消息首尾空白跨过 Card 收敛，多个非空文本之间的间隔保持不变", () => {
@@ -71,7 +80,7 @@ test("消息 parts 的真实内容不一致时继续拒绝终态", () => {
 
 test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草稿且不伪造采集 brief", () => {
   const state = structuredClone(emptyInterview)
-  const { session } = createInterviewAuthoring(state, "test skill", {
+  const { session } = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   })
@@ -102,7 +111,7 @@ test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草�
 
 test("实际 composed prompt 的采集 JSON 与通用 raw Markdown 示例均可由现有协议提交", () => {
   const state = structuredClone(emptyInterview)
-  const first = createInterviewAuthoring(state, "test skill", {
+  const first = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   })
@@ -116,7 +125,7 @@ test("实际 composed prompt 的采集 JSON 与通用 raw Markdown 示例均可�
   assert.equal(capture.draft?.title, "short title")
   assert.notEqual(capture.draft?.brief, null)
 
-  const second = createInterviewAuthoring(state, "test skill", {
+  const second = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   })
@@ -127,20 +136,43 @@ test("实际 composed prompt 的采集 JSON 与通用 raw Markdown 示例均可�
   assert.match(generic.draft?.markdown ?? "", /Complete browser-automation requirement/)
 })
 
+test("访谈注册 choice 与 multi_choice，缺失或未启用 free_form 都不进入业务状态", () => {
+  const state = structuredClone(emptyInterview)
+  const options = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
+  const prompt = createInterviewMainAuthoring(state, "test skill", options).prompt
+  assert.match(prompt, /Enabled Question modes: choice, multi_choice\./)
+  assert.match(prompt, /<question-panel mode="choice"/)
+  assert.match(prompt, /<question-panel mode="multi_choice"/)
+  assert.doesNotMatch(prompt, /<question-panel mode="free_form"/)
+
+  const multi = createInterviewMainAuthoring(state, "test skill", options)
+  multi.session.push('<authoring><question-panel mode="multi_choice" prompt="选择字段"><question-option slot="name" label="名称" recommended="true"></question-option><question-option slot="price" label="价格"></question-option></question-panel></authoring>')
+  assert.match(JSON.stringify(parseInterviewAuthoringOutput(multi.session.finish(), state, [], "run").question), /"multi_choice"/)
+
+  for (const panel of [
+    '<question-panel prompt="采集哪些数据？"></question-panel>',
+    '<question-panel mode="free_form" prompt="采集哪些数据？"></question-panel>',
+  ]) {
+    const authored = createInterviewMainAuthoring(state, "test skill", options)
+    authored.session.push(`<authoring>${panel}</authoring>`)
+    assert.throws(() => parseInterviewAuthoringOutput(authored.session.finish(), state, [], "run"), /interview_authoring_invalid/)
+  }
+})
+
 test("Question、采集和通用候选混用或产生多个结果时拒绝", () => {
   const state = structuredClone(emptyInterview)
   const options = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
-  const reference = createInterviewAuthoring(state, "test skill", options).prompt
+  const reference = createInterviewMainAuthoring(state, "test skill", options).prompt
   const capture = reference.match(/<interview-result>.*?<\/interview-result>/s)?.[0]
   const markdown = reference.match(/<interview-markdown .*?<\/interview-markdown>/s)?.[0]
   assert.ok(capture && markdown)
 
-  const multiple = createInterviewAuthoring(state, "test skill", options)
+  const multiple = createInterviewMainAuthoring(state, "test skill", options)
   multiple.session.push(`<authoring>${capture}</authoring><authoring>${markdown}</authoring>`)
   assert.throws(() => parseInterviewAuthoringOutput(multiple.session.finish(), state, [], "run"), /interview_authoring_cardinality_invalid/)
 
-  const mixed = createInterviewAuthoring(state, "test skill", options)
-  mixed.session.push('需要确认。<authoring><question-panel prompt="选择范围"><question-option slot="1" label="小范围" recommended="true">较快</question-option><question-option slot="2" label="全范围">完整</question-option></question-panel></authoring>')
+  const mixed = createInterviewMainAuthoring(state, "test skill", options)
+  mixed.session.push('需要确认。<authoring><question-panel mode="choice" prompt="选择范围"><question-option slot="1" label="小范围" recommended="true">较快</question-option><question-option slot="2" label="全范围">完整</question-option></question-panel></authoring>')
   mixed.session.push(`<authoring>${markdown}</authoring>`)
 
   assert.throws(() => parseInterviewAuthoringOutput(mixed.session.finish(), state, [text("message", "需要确认。")], "run"), /interview_output_invalid/)
@@ -148,7 +180,7 @@ test("Question、采集和通用候选混用或产生多个结果时拒绝", () 
 
 test("通用 Markdown 只有私有 raw candidate 一个生产入口", () => {
   const state = structuredClone(emptyInterview)
-  const legacy = createInterviewAuthoring(state, "test skill", {
+  const legacy = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   })
@@ -157,4 +189,59 @@ test("通用 Markdown 只有私有 raw candidate 一个生产入口", () => {
   })}</interview-result></authoring>`)
 
   assert.throws(() => parseInterviewAuthoringOutput(legacy.session.finish(), state, [], "run"), /interview_authoring_invalid/)
+})
+
+test("Main active task 不重复完整对话，canonical history 保留同一 ProductStore 的原始模型输出", () => {
+  const state = structuredClone(emptyInterview)
+  const raw = "已确认范围。\n<authoring><interview-markdown title=\"草稿\"># 目标\n完整需求。</interview-markdown></authoring>"
+  state.messages.push(
+    message({ id: "u1", role: "user", text: "整理完整需求" }),
+    message({
+      id: "a1", role: "assistant", text: "已确认范围。", parts: [text("a1:text", "已确认范围。")],
+      aiEvents: [
+        parseAIEvent({ type: "generation.started", invocationId: "i1", sequence: 0, createdAt: 1, output: "text",
+          model: { connectionId: "c1", modelId: "m1", reasoningEffort: "medium" } }),
+        parseAIEvent({ type: "text.delta", invocationId: "i1", sequence: 1, createdAt: 2, text: raw }),
+        parseAIEvent({ type: "generation.completed", invocationId: "i1", sequence: 2, createdAt: 3,
+          providerId: "fixture", modelId: "m1", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }),
+      ],
+    }),
+  )
+
+  const main = createInterviewMainAuthoring(state, "test skill", {
+    schemaVersion: 1,
+    packages: [CommonContentUIProtocol],
+  })
+  assert.doesNotMatch(main.prompt, /整理完整需求/)
+  assert.doesNotMatch(main.prompt, /已确认范围。/)
+  assert.deepEqual(interviewCanonicalMessages(state), [
+    { role: "user", content: [{ type: "text", text: "整理完整需求" }] },
+    { role: "assistant", content: [{ type: "text", text: raw }] },
+  ])
+})
+
+test("accepted assistant 的模型事件不完整时 canonical history 失败关闭", () => {
+  const state = structuredClone(emptyInterview)
+  state.messages.push(message({
+    id: "a1", role: "assistant", text: "安全投影",
+    aiEvents: [parseAIEvent({ type: "text.delta", invocationId: "i1", sequence: 0, createdAt: 1, text: "原始输出" })],
+  }))
+
+  assert.throws(() => interviewCanonicalMessages(state), /interview_model_history_incomplete/)
+})
+
+test("迁移前无模型事件的 accepted assistant 只用已有安全事实建立首个 Pi session", () => {
+  const state = structuredClone(emptyInterview)
+  state.messages.push(message({
+    id: "a1", role: "assistant", text: "旧安全正文", draftVersion: 2,
+    parts: [text("a1:text", "旧安全正文")],
+  }))
+
+  assert.deepEqual(interviewCanonicalMessages(state), [{
+    role: "assistant",
+    content: [{ type: "text", text: JSON.stringify({
+      assistantText: "旧安全正文", question: null, draftVersion: 2,
+      parts: [text("a1:text", "旧安全正文")],
+    }) }],
+  }])
 })

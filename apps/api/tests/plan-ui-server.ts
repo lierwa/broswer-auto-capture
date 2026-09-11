@@ -1,8 +1,7 @@
 import Fastify from "fastify"
 import { z } from "zod"
 import { randomUUID } from "node:crypto"
-import { planFixture, proposalFor } from "./plan-fixture.js"
-import { decisionFor, headers } from "./research-fixture.js"
+import { evidenceDecisionFor, headers, planFixture, proposalFor } from "./plan-fixture.js"
 import { deferred } from "./helpers.js"
 
 // 模型与来源页面是显式替身；全部计划/授权/版本变化通过正式服务产生，独立于用户 data。
@@ -20,11 +19,10 @@ controls.post("/mode", async (request) => {
   }
   if (mode === "blocking") {
     fixture.fake.decide = async (prompt) => {
-      const result = decisionFor(prompt)
+      const result = evidenceDecisionFor(prompt)
       if (result.action === "finish") result.gaps = [{ description: "来源归属口径需要确认", observationIds: result.coverage[0]!.observationIds, requiresUser: true }]
       return result
     }
-    await fixture.start(taskId); await fixture.wait(taskId)
   }
   if (mode === "invalidate") {
     await fixture.current.app.inject({ method: "POST", url: `/api/interview?taskId=${taskId}`, headers,

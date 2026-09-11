@@ -5,7 +5,7 @@ import { BrowserSession, BrowserError, pageSchema, publicUrl } from "../src/inde
 import type { BrowserGrant } from "../src/contracts.js"
 import { PAGE_LINKS_EXPRESSION } from "../src/page.js"
 
-function context(purpose: BrowserGrant["purpose"] = "source_research") {
+function context(purpose: BrowserGrant["purpose"] = "plan_evidence") {
   const fake = { url: "https://www.bing.com/search?q=brand", error: false, restricted: false, calls: [] as string[] }
   const grant: BrowserGrant = { taskId: "task", runId: randomUUID(), requirementVersion: 1, purpose, allowedOrigins: ["https://www.bing.com"], actions: ["page", "follow"], maxCommands: 50, timeoutMs: 10000 }
   const session = new BrowserSession(grant, "abcd", async (name, args) => {

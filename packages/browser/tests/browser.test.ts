@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { BrowserHost, BrowserError, type BrowserGrant, type BrowserSession, type CommandExecutor } from "../src/index.js"
+import { CommandLaunchError } from "../src/transport.js"
 
 const grant = (): BrowserGrant => ({ taskId: "task-a", runId: randomUUID(), requirementVersion: 1, purpose: "verification",
   allowedOrigins: ["https://example.com"], actions: ["navigate", "observe", "click", "fill", "press"], maxCommands: 60, timeoutMs: 10_000 })
@@ -115,6 +116,19 @@ test("启动响应丢失保留不确定事实，不枚举并关闭不属于自�
   fake.badStart = false
   await assert.rejects(host.run(grant(), async () => {}), code("cleanup_required"))
   assert.equal(calls.length, 1)
+}))
+
+test("浏览器命令进程未启动时关闭空 owner，后续任务不被假会话永久阻塞", async () => fixture(async ({ directory, execute }) => {
+  let launchFails = true
+  const launching = new BrowserHost(directory, async (args, signal) => {
+    if (launchFails && args[1] === "session" && args[2] === "start") { launchFails = false; throw new CommandLaunchError() }
+    return execute(args, signal)
+  })
+  try {
+    await assert.rejects(launching.run(grant(), async () => {}), code("command_failed"))
+    assert.equal(JSON.parse(await readFile(path.join(directory, "browser-owner.json"), "utf8")).state, "closed")
+    await launching.run(grant(), async () => {})
+  } finally { await launching.close() }
 }))
 
 test("回调忽略取消时 close 仍回收，回调保留的 session 不能继续发命令", async () => fixture(async ({ host, calls }) => {

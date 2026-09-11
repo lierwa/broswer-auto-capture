@@ -14,11 +14,10 @@ import { loadInterviewSkill } from "./interview/protocol.js"
 import { DomainError } from "./errors.js"
 import { BrowserService } from "./browser/service.js"
 import { BrowserError, bskExecutor, type CommandExecutor } from "@browser-capture/browser"
-import { ResearchService } from "./research/service.js"
 import { PlanService } from "./plan/service.js"
 import type { PlanExecutor } from "./plan/queue.js"
 import { ChainService } from "./chain/service.js"
-import { createAIModelProvider, type AIModelProvider } from "./ai/model.js"
+import { createAIModelProvider, requireAgentSessionSelection, type AIModelProvider } from "./ai/model.js"
 
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
 export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider; planExecutor?: PlanExecutor | null; browserExecutor?: CommandExecutor; serveUi?: boolean }
@@ -31,21 +30,21 @@ export async function createApplication(options: AppOptions) {
     onAccountRemoved: (subjectId, connectionId) => store.clearSharedModelSelection(subjectId, connectionId),
   }) }
   catch (error) { await store.close(); throw error }
-  const aiModel = options.aiModel ?? createAIModelProvider(ai, store, SHARED_AI_SUBJECT)
+  const aiModel = options.aiModel ?? createAIModelProvider(ai, store, SHARED_AI_SUBJECT, {
+    cwd: options.root,
+    stateDir: path.join(options.directory, "pi-agent-session"),
+  })
   const coordinator = new InterviewCoordinator(store, aiModel, loadInterviewSkill(options.root))
   let browser: BrowserService
   try { browser = new BrowserService(store, options.directory, options.browserExecutor ?? bskExecutor(options.root)) }
   catch (error) { ai.close(); await store.close(); throw error }
-  let research: ResearchService
-  try { research = new ResearchService(store, browser, coordinator, aiModel) }
-  catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   let plan: PlanService
   let chain: ChainService
   try {
     chain = new ChainService(store, aiModel)
-    plan = new PlanService(store, research, browser, options.planExecutor === null ? undefined : options.planExecutor ?? chain.executeBatch, aiModel)
+    plan = new PlanService(store, browser, coordinator, options.planExecutor === null ? undefined : options.planExecutor ?? chain.executeBatch, aiModel)
   }
-  catch (error) { await research.close(); await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
+  catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
   app.addHook("onRequest", async (request, reply) => {
     const host = request.headers.host ?? ""
@@ -64,10 +63,10 @@ export async function createApplication(options: AppOptions) {
     const status = publicStatus(error)
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
-  routes(app, coordinator, browser, research, plan, store)
+  routes(app, coordinator, browser, plan, store, ai)
   await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
   app.get("/api/chains", (request) => { const { taskId } = taskQuery.parse(request.query); return chain.snapshot(taskId, plan.snapshot(taskId)) })
-  app.addHook("preClose", async () => { await plan.close(); await research.close(); await browser.close(); await coordinator.close() })
+  app.addHook("preClose", async () => { await plan.close(); await browser.close(); await coordinator.close() })
   app.addHook("onClose", async () => { ai.close(); await store.close() })
   try {
     if (options.serveUi) {
@@ -76,7 +75,7 @@ export async function createApplication(options: AppOptions) {
         ? reply.sendFile("index.html") : reply.code(404).send({ error: "页面或接口不存在。", code: "not_found" }))
     }
     await app.ready()
-    return { app, coordinator, store, browser, research, plan, chain }
+    return { app, coordinator, store, browser, plan, chain }
   } catch (error) { await app.close(); throw error }
 }
 function publicStatus(error: unknown) {
@@ -87,28 +86,34 @@ function publicStatus(error: unknown) {
 }
 const taskQuery = z.object({ taskId: taskIdSchema })
 const eventsQuery = taskQuery.extend({ after: z.coerce.number().int().min(-1).default(-1) })
-function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, research: ResearchService, plan: PlanService, store: ProductStore) {
+function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, plan: PlanService, store: ProductStore, ai: AI) {
   app.get("/api/health", () => ({ service: "browser-capture-api", version: 1 }))
   app.get("/api/model-settings", () => ({ selection: store.sharedModelSelection(SHARED_AI_SUBJECT) ?? null }))
-  app.put("/api/model-settings", (request) => {
+  app.put("/api/model-settings", async (request) => {
     const body = modelSettingsBody.parse(request.body)
-    try { return { selection: store.saveSharedModelSelection(SHARED_AI_SUBJECT, parseModelSelection(body.selection)) } }
-    catch { throw new DomainError("invalid_model_selection", "模型选择无效，请重新选择账号和模型。", 400) }
+    try {
+      const selection = parseModelSelection(body.selection)
+      await requireAgentSessionSelection(ai, SHARED_AI_SUBJECT, selection)
+      return { selection: store.saveSharedModelSelection(SHARED_AI_SUBJECT, selection) }
+    } catch (error) {
+      if (error instanceof Error && error.message === "model_account_execution_surface_unsupported") {
+        throw new DomainError("model_account_execution_surface_unsupported", "这个账号连接不能用于 Agent 会话，请重新连接账号。", 409)
+      }
+      throw new DomainError("invalid_model_selection", "模型选择无效，请重新选择账号和模型。", 400)
+    }
   })
   app.get("/api/tasks", () => plan.projectTasks(coordinator.list()))
   app.post("/api/tasks", (request) => {
     const command = taskCommandSchema.parse(request.body)
-    if (command.type === "archive" && command.archived && (browser.isActive(command.id) || research.isActive(command.id) || plan.isActive(command.id))) throw new DomainError("browser_busy", "请先停止计划或授权运行，再归档任务。", 409)
+    if (command.type === "archive" && command.archived && (browser.isActive(command.id) || plan.isActive(command.id))) throw new DomainError("browser_busy", "请先停止计划或授权运行，再归档任务。", 409)
     const id = coordinator.taskAction(command)
     return { id, tasks: plan.projectTasks(coordinator.list()) }
   })
   app.get("/api/interview", (request) => coordinator.snapshot(taskQuery.parse(request.query).taskId))
   app.get("/api/browser", (request) => browser.snapshot(taskQuery.parse(request.query).taskId))
   app.post("/api/browser", (request) => browser.control(taskQuery.parse(request.query).taskId, request.body))
-  app.get("/api/research", (request) => research.snapshot(taskQuery.parse(request.query).taskId))
   app.get("/api/plan", (request) => plan.snapshot(taskQuery.parse(request.query).taskId))
-  app.post("/api/plan", (request, reply) => reply.code(202).send(plan.dispatch(taskQuery.parse(request.query).taskId, request.body)))
-  app.post("/api/research", async (request, reply) => reply.code(202).send(await research.dispatch(taskQuery.parse(request.query).taskId, request.body)))
+  app.post("/api/plan", async (request, reply) => reply.code(202).send(await plan.dispatch(taskQuery.parse(request.query).taskId, request.body)))
   app.post("/api/interview", (request, reply) => {
     const id = taskQuery.parse(request.query).taskId, command = interviewCommandSchema.parse(request.body)
     const state = coordinator.dispatch(id, command)

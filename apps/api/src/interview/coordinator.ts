@@ -11,10 +11,11 @@ import { taskCommandSchema, type TaskCommand } from "@browser-capture/contracts/
 import { ProductStore } from "../database/store.js"
 import { conflict, DomainError } from "../errors.js"
 import { beginRound, confirmDraft, finishRound } from "./transitions.js"
-import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
+import type { AIModelProvider, PreparedMainAIModel } from "../ai/model.js"
 import {
   cardFromAuthoringBlock,
-  createInterviewAuthoring,
+  createInterviewMainAuthoring,
+  interviewCanonicalMessages,
   parseInterviewAuthoringOutput,
   parseInterviewUIAuthoringCapabilities,
   questionFromAuthoringBlock,
@@ -32,6 +33,10 @@ function failureReason(error: unknown) {
   if (error instanceof DomainError) return error.message
   // WHY：只消费 AI Connect 的稳定错误码，避免把供应商原文或 cause 变成业务协议。
   if (error instanceof Error) {
+    if (["model_account_execution_surface_unsupported", "model_account_not_found", "model_account_unavailable",
+      "model_account_credential_unavailable", "ai_agent_session_binding_stale"].includes(error.message)) {
+      return "当前账号连接不能继续用于 Agent 会话，请在模型设置中重新连接并保存。"
+    }
     if (error.message === modelUnavailable) return "当前账号不支持所选模型，请选择其他可用模型。"
     if (error.message === "interview_question_projection_invalid") return "生成的问题格式无效，结果未提交。请重试。"
     if (error.message === "interview_authoring_invalid") return "生成内容格式无效，结果未提交。请重试。"
@@ -102,21 +107,36 @@ export class InterviewCoordinator {
   }
   private async run(job: Job) {
     let output: InterviewOutput | undefined, reason: string | undefined
+    let model: PreparedMainAIModel | undefined
+    let confirmAcceptedStep: (() => Promise<boolean>) | undefined
+    let committed = false
     try {
       // WHY：一次访谈冻结设置中已保存的模型；缺少选择时保留明确设置提示，不回退到第二套模型入口。
       const signal = AbortSignal.any([job.controller.signal, AbortSignal.timeout(190_000)])
       const selection = this.aiModel.selection()
-      output = await this.runShared(job, await this.aiModel.prepare(selection, signal), signal)
+      model = await this.aiModel.prepareMain(selection)
+      const result = await this.runShared(job, model, signal)
+      output = result.output
+      confirmAcceptedStep = result.confirmAcceptedStep
     } catch (error) { output = undefined; reason = failureReason(error) }
     finally {
-      this.store.mutate(job.taskId, (state) => finishRound(state, job.turnId,
-        job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason))
+      try {
+        this.store.mutate(job.taskId, (state) => {
+          finishRound(state, job.turnId,
+            job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason)
+          committed = state.turns.find((turn) => turn.id === job.turnId)?.status === "succeeded"
+        })
+        // WHY：Pi candidate 只有在领域校验与 ProductStore 事务都完成后才可续接；确认失败不反写已提交业务事实。
+        if (committed && confirmAcceptedStep) await confirmAcceptedStep().catch(() => false)
+      } finally {
+        await model?.close().catch(() => undefined)
+      }
     }
   }
-  private async runShared(job: Job, model: PreparedAIModel, signal: AbortSignal) {
+  private async runShared(job: Job, model: PreparedMainAIModel, signal: AbortSignal) {
     const state = this.store.snapshot(job.taskId)
     const assistantMessageId = state.turns.find((turn) => turn.id === job.turnId)!.assistantMessageId
-    const { session: authoring, prompt } = createInterviewAuthoring(state, this.interviewSkill, job.ui)
+    const { session: authoring, prompt } = createInterviewMainAuthoring(state, this.interviewSkill, job.ui)
     let streamedText = ""
     let pendingQuestion: InterviewOutput["question"] = null
     const parts: InterviewMessagePart[] = []
@@ -145,13 +165,18 @@ export class InterviewCoordinator {
       }
       return visibleText || question !== undefined ? { text: visibleText, question } : undefined
     }
-    const returnedText = await model.generateText({
-      prompt, signal,
+    const generated = await model.run({
+      runId: job.turnId,
+      sessionId: job.taskId,
+      messages: interviewCanonicalMessages(state),
+      activeTask: prompt,
+      signal,
       onEvent: (event) => {
         const projection = event.type === "text.delta" ? acceptText(event.text) : undefined
         this.appendAIEvent(job, event, projection)
       },
     })
+    const returnedText = generated.outputText
     // WHY：调用已完整返回就是可审计事实；本地 authoring/领域校验失败不能抹掉这次真实调用。
     this.store.mutate(job.taskId, (state) => state.audits.push({
       revision: state.turns.find((turn) => turn.id === job.turnId)!.revision,
@@ -168,7 +193,10 @@ export class InterviewCoordinator {
       this.appendProjection(job, result.textDelta)
     }
     const object = parseInterviewAuthoringOutput(result, this.store.snapshot(job.taskId), parts, job.turnId, assistantMessageId)
-    return object
+    return {
+      output: object,
+      ...(generated.confirmAcceptedStep ? { confirmAcceptedStep: generated.confirmAcceptedStep } : {}),
+    }
   }
   private appendProjection(job: Job, text: string, question?: InterviewOutput["question"]) {
     this.store.mutate(job.taskId, (state) => {

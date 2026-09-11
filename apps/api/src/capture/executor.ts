@@ -2,7 +2,7 @@ import { z } from "zod"
 import { BrowserError, pageSchema } from "@browser-capture/browser"
 import type { CaptureStep } from "@browser-capture/contracts/capture"
 import type { CaptureRow, ChainRecord } from "@browser-capture/contracts/chain"
-import type { PlanProposal } from "@browser-capture/contracts/plan"
+import { adoptedPlanSources, type PlanProposal } from "@browser-capture/contracts/plan"
 import { runActionGraph } from "@browser-capture/runtime/capture"
 import type { PlanExecutor } from "../plan/queue.js"
 import type { ChainRepository } from "../chain/repository.js"
@@ -130,7 +130,7 @@ function coverageGaps(input: Input, repository: ChainRepository) {
   for (const step of input.plan.proposal!.steps) {
     const progress = steps.find((item) => item.stepId === step.id)!, chain = repository.list(input.plan.taskId).find((item) => item.id === progress.chainId)
     if (step.kind === "enumerate") {
-      const beginsAtSource = step.sourceIds.length === 1 && input.plan.sources.some((source) => source.id === step.sourceIds[0] && source.url === chain?.sample?.url)
+      const beginsAtSource = step.sourceIds.length === 1 && adoptedPlanSources(input.plan.evidence).some((source) => source.id === step.sourceIds[0] && source.url === chain?.sample?.url)
         && ["", "1"].includes(chain?.sample?.value ?? "invalid")
       const passed = progress.events.filter((event) => event.status === "passed"), last = passed.at(-1), beforeLast = passed.at(-2)
       const terminalBranch = chain?.graph?.nodes.some((node) => {

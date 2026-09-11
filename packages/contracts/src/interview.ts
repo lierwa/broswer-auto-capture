@@ -2,8 +2,7 @@ import { z } from "zod"
 import {
   parseClientUIProtocolCapabilities,
   sanitizeCommonCardBlock,
-  commonChoiceQuestionDataSchema,
-  commonFreeFormQuestionDataSchema,
+  commonQuestionSchema,
   commonSurfaceReplyPayloadSchema,
   commonSurfaceSubmitPayloadSchema,
   type ClientUIProtocolCapabilitiesV1,
@@ -25,10 +24,6 @@ const legacyQuestionSchema = z.object({
   prompt: text,
   options: z.array(z.object({ label: text, description: text, recommended: z.boolean() })).max(3),
 }).refine((value) => value.options.length === 0 || (value.options.length >= 2 && value.options.filter((item) => item.recommended).length === 1), "开放问题无选项；选择题需要两到三个选项且仅一个推荐项")
-const commonQuestionSchema = z.discriminatedUnion("type", [
-  z.object({ id: text, type: z.literal("choice"), data: commonChoiceQuestionDataSchema }).strict(),
-  z.object({ id: text, type: z.literal("free_form"), data: commonFreeFormQuestionDataSchema }).strict(),
-])
 // WHY：公共 Question 是新记录的唯一事实源；旧压缩结构只为读取既有 SQLite 消息，不能再用于组装新题。
 export const questionSchema = z.union([commonQuestionSchema, legacyQuestionSchema])
 export const authoredQuestionSchema = commonQuestionSchema

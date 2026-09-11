@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto"
 import { confirmedRequirement } from "@browser-capture/contracts/interview"
-import { defaultPlanBudget, planCommandSchema, planStateSchema, type PlanRecord, type PlanCommand, type ExecutionRecord } from "@browser-capture/contracts/plan"
+import { adoptedPlanSources, emptyPlanEvidence, defaultPlanBudget, planCommandSchema, planStateSchema, type PlanRecord, type PlanCommand, type ExecutionRecord } from "@browser-capture/contracts/plan"
 import { taskIdSchema, type TaskSummary } from "@browser-capture/contracts/task"
-import type { ResearchService } from "../research/service.js"
+import { BrowserError, publicUrl } from "@browser-capture/browser"
 import type { BrowserService } from "../browser/service.js"
+import type { InterviewCoordinator } from "../interview/coordinator.js"
 import type { AIModelProvider } from "../ai/model.js"
-import { digest, type ProductStore } from "../database/store.js"
+import type { ProductStore } from "../database/store.js"
 import { conflict } from "../errors.js"
 import { PlanRepository } from "./repository.js"
 import { generatePlan } from "./model.js"
-import { planDigest } from "./validation.js"
+import { evidenceDigest, planDigest } from "./validation.js"
+import { runPlanEvidence } from "./evidence-runner.js"
 import { ExecutionQueue, pendingExecution, type PlanExecutor } from "./queue.js"
 import { chains } from "../database/schema.js"
 
@@ -18,7 +20,7 @@ export class PlanService {
   readonly queue: ExecutionQueue
   private jobs = new Map<string, { record: PlanRecord; controller: AbortController; done: Promise<void> }>()
   private closing = false
-  constructor(private store: ProductStore, private research: ResearchService, private browser: BrowserService,
+  constructor(private store: ProductStore, private browser: BrowserService, private interview: InterviewCoordinator,
     executor: PlanExecutor | undefined, private aiModel: AIModelProvider) {
     this.repository = new PlanRepository(store)
     this.queue = new ExecutionQueue(this.repository, browser, (plan) => this.valid(plan), executor)
@@ -36,26 +38,24 @@ export class PlanService {
     })
   }
   private valid(plan: PlanRecord) {
-    const requirement = confirmedRequirement(plan.taskId, this.store.snapshot(plan.taskId)), source = this.research.snapshot(plan.taskId).records[0]
-    return !this.store.task(plan.taskId).archived && Boolean(requirement && source && source.status !== "running"
+    const requirement = confirmedRequirement(plan.taskId, this.store.snapshot(plan.taskId))
+    return !this.store.task(plan.taskId).archived && Boolean(requirement
       && requirement.draftVersion === plan.requirementVersion && requirement.revision === plan.requirementRevision
-      && source.id === plan.sourceId && source.version === plan.sourceVersion && digest(source) === plan.sourceDigest)
+      && (!plan.evidenceDigest || plan.evidenceDigest === evidenceDigest(plan.evidence)))
   }
   snapshot(raw: string) {
     const taskId = taskIdSchema.parse(raw), task = this.store.task(taskId), state = this.store.snapshot(taskId)
-    const requirement = confirmedRequirement(taskId, state), source = this.research.snapshot(taskId).records[0]
+    const requirement = confirmedRequirement(taskId, state)
     const records = this.repository.plans().filter((item) => item.taskId === taskId), executions = this.repository.executions().filter((item) => item.taskId === taskId)
-    const blocked = task.archived ? "恢复任务后可以制定计划。" : !requirement ? "请先确认当前结构化需求。"
-      : !source || source.requirementVersion !== requirement.draftVersion || source.requirementRevision !== requirement.revision ? "请先完成当前需求的真实来源调研。"
-      : !["completed", "partial"].includes(source.status) ? "来源调研尚未形成可规划的终态，请查看来源状态。" : null
+    const blocked = task.archived ? "恢复任务后可以制定计划。" : !requirement ? "请先确认当前结构化需求。" : null
     const owner = this.browser.owner()
     return planStateSchema.parse({ taskId, taskSequence: state.sequence, sequence: records.reduce((n, item) => n + item.sequence, 0) + executions.reduce((n, item) => n + item.sequence, 0),
       records, executions, staleIds: records.filter((item) => !this.valid(item)).map((item) => item.id), eligible: !blocked && !this.isActive(taskId), blocked,
-      source: source ? { id: source.id, version: source.version, requirementVersion: source.requirementVersion } : null, generating: this.jobs.has(taskId),
+      generating: this.jobs.has(taskId),
       browserOwner: owner ? { taskId: owner.taskId, title: this.store.list().find((item) => item.id === owner.taskId)?.title ?? "浏览器任务" } : null,
       executorAvailable: this.queue.available() })
   }
-  dispatch(taskId: string, raw: unknown) {
+  async dispatch(taskId: string, raw: unknown) {
     const command = planCommandSchema.parse(raw), state = this.snapshot(taskId)
     if (this.closing) conflict("服务正在关闭，请稍后恢复。")
     if (command.type === "cancel_generation") {
@@ -67,43 +67,120 @@ export class PlanService {
       this.queue.cancel(record)
     } else {
       if (this.store.operation(`plan:${taskId}`, command.requestId, command)) return this.snapshot(taskId)
-      if (command.type === "generate") this.generate(taskId, command)
+      if (command.type === "generate") await this.generate(taskId, command)
+      else if (command.type === "return_to_interview") this.returnToInterview(taskId, command)
       else if (command.type === "start") this.start(taskId, command)
       else this.lifecycle(taskId, command)
     }
     return this.snapshot(taskId)
   }
-  private generate(taskId: string, command: Extract<PlanCommand, { type: "generate" }>) {
-    const state = this.snapshot(taskId), source = this.research.snapshot(taskId).records[0], requirement = confirmedRequirement(taskId, this.store.snapshot(taskId))
-    if (!state.eligible || !source || !requirement) conflict(state.blocked ?? "当前任务有待处理的计划或授权运行。")
-    if (source.id !== command.sourceId || source.version !== command.sourceVersion || requirement.draftVersion !== command.requirementVersion) conflict("需求或来源已更新，请刷新后重新生成。")
-    const at = new Date().toISOString(), selection = this.aiModel.selection()
+  private async generate(taskId: string, command: Extract<PlanCommand, { type: "generate" }>) {
+    const initial = this.snapshot(taskId)
+    if (!initial.eligible) conflict(initial.blocked ?? "当前任务有待处理的计划或授权运行。")
+    const browser = await this.browser.snapshot(taskId)
+    // WHY：读取 owner journal 后必须重验幂等和任务状态；并发请求不能各自创建计划或绕过待清理会话。
+    if (this.store.operation(`plan:${taskId}`, command.requestId, command)) return
+    const state = this.snapshot(taskId), requirement = confirmedRequirement(taskId, this.store.snapshot(taskId))
+    if (!state.eligible || !requirement) conflict(state.blocked ?? "当前任务有待处理的计划或授权运行。")
+    if (browser.busy || browser.cleanupRequired) conflict("浏览器正在使用或需要清理，请处理后再制定计划。")
+    if (requirement.draftVersion !== command.requirementVersion) conflict("需求已更新，请刷新后重新生成。")
+    const reusable = state.records.find((item) => reusableEvidence(item, requirement.draftVersion, requirement.revision))
+    const evidence = reusable ? structuredClone(reusable.evidence) : emptyPlanEvidence()
+    evidence.reusedFromPlanId = reusable?.id ?? null
+    const at = new Date().toISOString()
     const record: PlanRecord = { id: randomUUID(), taskId, version: (state.records[0]?.version ?? 0) + 1, requirementVersion: requirement.draftVersion, requirementRevision: requirement.revision,
-      sourceId: source.id, sourceVersion: source.version, sourceDigest: digest(source), requirement: requirement.brief,
-      sources: source.observations.filter((item) => !item.queryId && item.assessment?.adopted && item.assessment.access === "normal"), sourceGaps: source.gaps.map((item) => item.description),
-      status: "generating", sequence: 0, createdAt: at, updatedAt: at, proposal: null, digest: null, reason: null,
+      requirement: requirement.brief, evidence, evidenceDigest: reusable?.evidenceDigest ?? null,
+      stage: reusable ? "drafting" : "assessing", status: "generating", sequence: 0, createdAt: at, updatedAt: at,
+      current: reusable ? "正在复用当前需求已验证的来源证据。" : "正在判断计划所需来源证据。", proposal: null, digest: null, reason: null,
       budgetCeiling: command.budgetCeiling ?? defaultPlanBudget,
       stepBudgetLimits: command.stepBudgetLimits ?? null,
-      audit: { purpose: "plan_creation", model: selection.modelId, effort: selection.reasoningEffort,
-        invocations: null, status: "intended", reportedModel: null, reportedEffort: null, aiEvents: [] } }
+      audit: null }
+    if (!reusable) for (const rawUrl of requirement.brief.sourceStrategy.providedUrls) {
+      const url = publicUrl(rawUrl)
+      if (url) evidence.candidates.push({ id: randomUUID(), url, title: "需求提供的待核验入口", discoveredAt: at,
+        provenance: "provided", discoveredOn: null, status: "candidate", reason: "等待实际页面观察" })
+    }
     this.store.db.transaction(() => { this.repository.savePlan(record); this.store.recordOperation(`plan:${taskId}`, command.requestId, command, record.id) })
     const job = { record, controller: new AbortController(), done: Promise.resolve() }; this.jobs.set(taskId, job)
-    job.done = generatePlan(record, source, AbortSignal.any([job.controller.signal, AbortSignal.timeout(190000)]), () => this.repository.savePlan(record),
-      () => { if (!this.valid(record)) conflict("计划绑定已失效。") }, this.aiModel)
+    job.done = this.runGeneration(job, Boolean(reusable))
       .finally(() => { if (this.jobs.get(taskId) === job) this.jobs.delete(taskId) })
     void job.done.catch(() => { this.closing = true })
+  }
+  private async runGeneration(job: { record: PlanRecord; controller: AbortController }, reused: boolean) {
+    const { record } = job, validate = () => { if (!this.valid(record)) throw new BrowserError("permission_denied") }
+    if (!reused) {
+      record.stage = "source_evidence"; record.current = "正在核验计划所需的来源入口、字段与枚举依据。"; this.repository.savePlan(record)
+      let work: Promise<"completed" | "partial"> | undefined
+      try {
+        const outcome = await this.browser.run({ taskId: record.taskId, runId: record.id, requirementVersion: record.requirementVersion,
+          purpose: "plan_evidence", allowedOrigins: [...new Set(["https://www.bing.com", ...record.evidence.candidates.map((item) => new URL(item.url).origin)])],
+          actions: ["navigate", "page", "follow"], maxCommands: 180, timeoutMs: 300_000 }, (browser, signal) => {
+          work = runPlanEvidence({ record, brief: record.requirement, browser, signal, aiModel: this.aiModel,
+            selection: this.aiModel.selection(), save: () => this.repository.savePlan(record), validate })
+          return work
+        }, job.controller.signal)
+        validate(); record.evidence.outcome = outcome; record.evidenceDigest = evidenceDigest(record.evidence); this.repository.savePlan(record)
+      } catch (error) {
+        await work?.catch(() => {})
+        const evidenceErrors = ["invalid_evidence_reference", "unsupported_evidence", "search_is_not_source", "unavailable_is_not_source", "invalid_gap_reference", "invalid_coverage_reference", "invalid_candidate"]
+        const reason = error instanceof BrowserError ? error.code : error instanceof Error && evidenceErrors.includes(error.message) ? error.message : "invalid_model_output"
+        const status = reason === "manual_required" || reason === "cleanup_required" || reason === "cancelled" ? reason : "failed"
+        record.evidence.outcome = status
+        if (reason === "cancelled" || reason === "permission_denied") {
+          record.status = status; record.stage = "complete"; record.reason = reason
+          record.current = reason === "cancelled" ? "计划生成已停止，已取得的证据保留。" : "需求已更新，本次计划停止在原版本。"
+          this.repository.savePlan(record); return
+        }
+        const needsManual = reason === "manual_required" || reason === "cleanup_required"
+        record.reason = reason
+        record.current = needsManual ? "来源访问或浏览器会话需要先人工处理；计划仍会保留可审阅的步骤。"
+          : "来源核验未完成；正在把未验证范围纳入计划步骤。"
+        record.evidence.gaps.push({ description: record.current, observationIds: record.evidence.observations.map((item) => item.id), requiresUser: false })
+        record.evidenceDigest = evidenceDigest(record.evidence)
+        this.repository.savePlan(record)
+      }
+    }
+    if (!draftable(record) && !record.evidence.gaps.length) {
+      const hasSource = adoptedPlanSources(record.evidence).length > 0
+      record.evidence.gaps.push({ description: hasSource ? "来源的覆盖或枚举方式尚未核验，将在对应计划步骤执行时验证。"
+        : "尚无已核验的可授权来源；计划保留待核验步骤并阻止启动，请直接重新制定计划继续核验来源。",
+        observationIds: record.evidence.observations.map((item) => item.id), requiresUser: false })
+      record.evidenceDigest = evidenceDigest(record.evidence)
+    }
+    const hasSource = adoptedPlanSources(record.evidence).length > 0
+    record.stage = "drafting"; record.current = draftable(record) ? "正在依据已验证来源证据生成计划草稿。"
+      : hasSource ? "正在依据已确认需求编排计划，并明确标记待执行核验项。"
+      : "正在依据已确认需求编排可查看计划；未核验来源的步骤将阻止启动。"
+    this.repository.savePlan(record)
+    await generatePlan(record, AbortSignal.any([job.controller.signal, AbortSignal.timeout(190_000)]),
+      () => this.repository.savePlan(record), validate, this.aiModel)
+  }
+  private returnToInterview(taskId: string, command: Extract<PlanCommand, { type: "return_to_interview" }>) {
+    const record = this.repository.plans().find((item) => item.id === command.planId && item.taskId === taskId)
+    if (!record || record.status === "generating" || !record.evidence.gaps.length || this.jobs.has(taskId)) conflict("请等计划结束并读取证据缺口后再回到需求对话。")
+    const text = [`请结合计划 v${record.version}（需求 v${record.requirementVersion}）的来源证据讨论以下缺口，保留原目标，不自动缩减范围：`,
+      ...record.evidence.gaps.map((gap) => `- ${gap.description}`),
+      ...record.evidence.observations.map((item) => `来源 ${item.id}：${item.url}，观察时间 ${item.at}`),
+    ].join("\n").slice(0, 15000)
+    this.store.db.transaction(() => {
+      this.interview.dispatch(taskId, { type: "message", text, requestId: command.requestId, expectedRevision: command.expectedRevision })
+      this.store.recordOperation(`plan:${taskId}`, command.requestId, command, record.id)
+    })
   }
   private start(taskId: string, command: Extract<PlanCommand, { type: "start" }>) {
     this.store.db.transaction(() => {
       const state = this.snapshot(taskId), plan = state.records.find((item) => item.id === command.planId)
-      if (!plan || plan !== state.records[0] || state.generating || plan.status !== "ready" || !plan.proposal || !plan.digest || !this.valid(plan)) conflict("请复核最新有效计划后再启动。")
+      const evidenceValid = Boolean(plan?.evidenceDigest && plan.evidenceDigest === evidenceDigest(plan.evidence))
+      const blocked = plan?.proposal?.gaps.some((gap) => gap.disposition === "blocking") || plan?.evidence.gaps.some((gap) => gap.requiresUser)
+      const unavailable = plan && ["manual_required", "cleanup_required"].includes(plan.evidence.outcome)
+      if (!plan || plan !== state.records[0] || state.generating || plan.status !== "ready" || !plan.proposal || !plan.digest || !evidenceValid || blocked || unavailable || !this.valid(plan)) conflict("请复核最新有效计划后再启动。")
       if (plan.digest !== command.planDigest || planDigest(plan) !== command.planDigest) conflict("计划内容已变更，请重新审阅。")
       const previous = state.executions.find((item) => item.planId === plan.id)
       if (previous) { this.store.recordOperation(`plan:${taskId}`, command.requestId, command, previous.id); return }
       if (state.executions.some(pendingExecution)) conflict("当前任务已有授权运行，请先处理。")
       const budget = plan.proposal.steps.reduce((sum, step) => ({ maxCommands: sum.maxCommands + step.budget.maxCommands, timeoutMs: sum.timeoutMs + step.budget.timeoutMs, maxModelCalls: sum.maxModelCalls + step.budget.maxModelCalls }), { maxCommands: 0, timeoutMs: 0, maxModelCalls: 0 })
       const at = new Date().toISOString(), record: ExecutionRecord = { id: randomUUID(), taskId, planId: plan.id, planVersion: plan.version, planDigest: plan.digest,
-        requirementVersion: plan.requirementVersion, requirementRevision: plan.requirementRevision, sourceId: plan.sourceId, sourceVersion: plan.sourceVersion,
+        requirementVersion: plan.requirementVersion, requirementRevision: plan.requirementRevision,
         authorizedAt: at, requestId: command.requestId, budget: { ...budget, maxLlmCalls: plan.proposal.steps.reduce((sum, step) => sum + (step.budget.maxLlmCalls ?? 0), 0) }, status: "queued", sequence: 0, updatedAt: at,
         reason: this.queue.available() ? "已授权，等待单浏览器执行位置。" : "已授权并持久排队，等待探索执行器接入；尚未开始抓取。",
         mode: "initial", parentExecutionId: null, attempt: 0, resumeRequested: false, repairStepId: null, capture: null, browserRunId: null, resumeAuthorizations: [] }
@@ -149,4 +226,17 @@ export class PlanService {
     })
   }
   async close() { this.closing = true; for (const job of this.jobs.values()) job.controller.abort(); await Promise.allSettled([...this.jobs.values()].map((job) => job.done)); await this.queue.close() }
+}
+
+function draftable(record: PlanRecord) {
+  const adopted = adoptedPlanSources(record.evidence)
+  const objectives = [...record.requirement.discoveryTasks.map((item) => item.objective), ...record.requirement.deliverables.map((item) => item.entity)]
+  return ["completed", "partial"].includes(record.evidence.outcome) && adopted.some((item) => item.assessment?.enumeration)
+    && objectives.every((objective) => record.evidence.coverage.some((item) => item.objective === objective))
+    && !record.evidence.gaps.some((item) => item.requiresUser)
+}
+
+function reusableEvidence(record: PlanRecord, requirementVersion: number, requirementRevision: number) {
+  return record.status === "ready" && record.requirementVersion === requirementVersion && record.requirementRevision === requirementRevision
+    && Boolean(record.evidenceDigest && record.evidenceDigest === evidenceDigest(record.evidence)) && draftable(record)
 }

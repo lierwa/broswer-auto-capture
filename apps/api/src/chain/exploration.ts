@@ -1,6 +1,6 @@
 import { BrowserError, pageSchema, publicUrl, type BrowserPage } from "@browser-capture/browser"
 import { explorationDecisionSchema, type ChainRecord, type CaptureRow, type ExplorationDecision, type ActionGraph } from "@browser-capture/contracts/chain"
-import type { PlanProposal, PlanRecord } from "@browser-capture/contracts/plan"
+import { adoptedPlanSources, type PlanProposal, type PlanRecord } from "@browser-capture/contracts/plan"
 import { compileActionGraph } from "@browser-capture/runtime/capture"
 import { digest } from "../database/store.js"
 import type { AIModelResolver } from "../ai/model.js"
@@ -36,7 +36,7 @@ export function remember(context: StepContext, raw: unknown) {
   context.record.observations.push({ url: page.url, digest: digest(page), at: new Date().toISOString() }); context.current = page; context.save()
   return page
 }
-function allowedOrigins(context: StepContext) { return new Set(context.plan.sources.filter((source) => context.step.sourceIds.includes(source.id)).map((source) => new URL(source.url).origin)) }
+function allowedOrigins(context: StepContext) { return new Set(adoptedPlanSources(context.plan.evidence).filter((source) => context.step.sourceIds.includes(source.id)).map((source) => new URL(source.url).origin)) }
 export async function explore(context: StepContext) {
   while (true) {
     context.signal.throwIfAborted(); context.consumeModel("exploration")
@@ -112,13 +112,13 @@ function prompt(context: StepContext) {
     "branch 以当前页面是否包含 text 走 present/absent。所有环必须经过 loop；maxIterations/总maxTransitions是保护上限，耗尽失败，不代表业务终止。正常末页须通过实际终止观察走 finish。checkpoint 保留进度。finish.minRecords>=1。不得把有限样本覆盖描述成全量完成。",
     "branch_target 使用 target.role/name 检验当前read观察中存在且未disabled的可操作控件，分别走 available/unavailable。目录优先以实际下一页控件不可用作为末页依据，不能只用某件商品名称、固定页数或循环上限推断全量完成。只生成当前step字段映射，不添加属于后续步骤的派生节点。",
     "某些目录末页仍保留可点的下一页。对此可使用branch_page_changed：在click下一页后read，再比较。comparison=semantic比较完整语义；当前目录由稳定链接集合定义且已观察到独立推荐区（例如大家都在看）时必须用comparison=links，避免推荐区懒加载冒充目录翻页。repairEvidence.requiredComparison存在时必须照此修复候选图。变化走changed（继续循环），未变化走unchanged（finish）。提取及checkpoint应在点击前进行。verification选择实际观察到的末页输入并跑到finish；完整运行的末页指纹还要与本次独立末页验证相同。不能把任意一次点击无效果单独当全量完成。",
-    "priorCandidate 是相同需求与来源版本的旧验证候选，只作为操作线索，新计划仍需本轮观察、编译与换输入验证。可复用已观察定位和分页输入设计，补齐真实末页条件；没有当前末页证据时不能延用旧商品锚点宣布全量完成。不要为复核旧候选重新执行无关调研。",
+    "priorCandidate 是相同需求与计划证据的旧验证候选，只作为操作线索，新运行仍需本轮观察、编译与换输入验证。可复用已观察定位和分页输入设计，补齐真实末页条件；没有当前末页证据时不能延用旧商品锚点宣布全量完成。不要为复核旧候选重复无关证据核验。",
     "repairExamples 是上一正式执行中字段缺失或空值的真实来源。修复collect时优先逐一读取前两个不同URL，并用它们作为sample与verification；新图必须让两例的全部当前步骤映射字段都得到非空真实值，否则修复验证拒绝。不要把页面明示字段继续留空。",
     "sample 与 verification 必须是 known 里真实发现的不同输入；同URL时value必须是已观察的不同分页标签，且图实际使用 $input.value。换输入验证由普通代码运行，不由模型宣称成功。完整步骤目标保留，不能编译仅抓首屏且宣称完整目录的图。",
     "history 记录已执行动作及实际页面变化，不要重复已完成的探查。remaining 是本次判断后剩余探索调用/时间；modelCalls=0时必须 compile 或明确 blocked，不能再提出依赖下一轮判断的动作。已有足够定位/换输入/终止证据时立即编译。rejected 是上一版本未通过的编译候选，结合previousFailure修正该步骤，不必重新探查已观察事实。",
     "graph保留完整执行循环；每页/记录提取后放checkpoint。F5仅按固定最多2个checkpoint的代表验证窗口运行样本和不同输入，真实终止或窗口结束分别记录，F6才完成全量批量执行。优先选择起始页与实际末页作为不同输入，验证迭代及终止两类路径。loop.exhausted必须指向kind=stop节点（只有id/label/kind/reason），不能指向finish。",
     "derive 步骤使用依赖结果，支持 derive_missing 按已确认缺失规则给 outputField 生成缺失字段说明，ruleIndex 必须对应计划字段映射；其他派生规则当前不支持，必须 blocked。llm 仅在已授权 maxLlmCalls>0 且业务需要时显式使用，每次固定 Luna/medium，普通节点没有模型。",
-    JSON.stringify({ step: context.step, requirement: context.plan.requirement, mappings: context.plan.proposal!.fields, sources: context.plan.sources,
+    JSON.stringify({ step: context.step, requirement: context.plan.requirement, mappings: context.plan.proposal!.fields, sources: adoptedPlanSources(context.plan.evidence),
       known: promptKnown(context), values: [...context.values], current: context.current, upstream: context.rows.slice(0, 6),
       history: context.history, remaining: context.remaining(), rejected: context.rejected, previousFailure: context.lastFailure,
       repairEvidence: repairEvidence(context), repairExamples: context.repairRows, priorCandidate: context.priorCandidate ?? null }),
@@ -137,7 +137,7 @@ function repairEvidence(context: StepContext) {
 function promptKnown(context: StepContext) {
   // WHY：完整上游集合保留在宿主校验中；模型只需看到来源、当前页和代表输入，避免258条URL挤占修复判断。
   return [...new Set([
-    ...context.plan.sources.filter((source) => context.step.sourceIds.includes(source.id)).map((source) => source.url),
+    ...adoptedPlanSources(context.plan.evidence).filter((source) => context.step.sourceIds.includes(source.id)).map((source) => source.url),
     ...(context.current ? [context.current.url] : []),
     ...context.repairRows.map((row) => row.url),
     ...context.rows.slice(0, 6).map((row) => row.url),

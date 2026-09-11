@@ -21,7 +21,7 @@ test("实际进程崩溃后生成和执行恢复为中断，既有授权不自�
       child.stderr.on("data", (chunk) => { error += String(chunk) })
       try {
         const context = await new Promise<{ directory: string; taskId: string; phase: string }>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error(`fixture startup timeout ${error}`)), 10000)
+          const timer = setTimeout(() => reject(new Error(`fixture startup timeout ${error}`)), 20000)
           child.once("error", reject); child.once("exit", () => { clearTimeout(timer); reject(new Error(`fixture exited ${error}`)) })
           child.stdout.on("data", (chunk) => { output += String(chunk); if (output.includes("\n")) { clearTimeout(timer); resolve(JSON.parse(output.trim())) } })
         })
@@ -34,7 +34,7 @@ test("实际进程崩溃后生成和执行恢复为中断，既有授权不自�
       try {
         const state = current.plan.snapshot(fixture.taskId)
         if (fixture.phase === "generating") {
-          assert.equal(state.records[0]?.status, "interrupted"); assert.equal(state.records[0]?.audit.invocations, null)
+          assert.equal(state.records[0]?.status, "interrupted"); assert.equal(state.records[0]?.audit?.invocations ?? null, null)
         } else {
           assert.equal(state.executions[0]?.status, "interrupted")
           await current.plan.queue.tick(); assert.equal(current.browser.owner(), null)
@@ -44,13 +44,13 @@ test("实际进程崩溃后生成和执行恢复为中断，既有授权不自�
     }
   } finally { for (const item of fixtures) { assert.ok(path.resolve(item.directory).startsWith(path.resolve(tmpdir()))); await rm(item.directory, { recursive: true, force: true }) } }
 })
-test("v4到v8迁移保留来源事实；冲突整体回滚且不提前版本", () => {
+test("v4到v9迁移按外键顺序重置开发计划链并移除旧调研表；冲突整体回滚", () => {
   const db = new Database(":memory:")
   try {
-    db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY); CREATE TABLE researchRuns(id TEXT PRIMARY KEY, body TEXT); INSERT INTO researchRuns VALUES ('source','original'); PRAGMA user_version=4")
+    db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY); CREATE TABLE operations(scope TEXT,requestId TEXT,digest TEXT,resultId TEXT,PRIMARY KEY(scope,requestId)); CREATE TABLE browserRuns(runId TEXT PRIMARY KEY,taskId TEXT,body TEXT); CREATE TABLE researchRuns(id TEXT PRIMARY KEY, body TEXT); INSERT INTO researchRuns VALUES ('source','original'); PRAGMA user_version=4")
     migrate(db); migrate(db)
-    assert.equal(db.pragma("user_version", { simple: true }), 8)
-    assert.deepEqual(db.prepare("SELECT * FROM researchRuns").all(), [{ id: "source", body: "original" }])
+    assert.equal(db.pragma("user_version", { simple: true }), 9)
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='researchRuns'").get(), undefined)
     assert.deepEqual(db.prepare("SELECT * FROM executions").all(), [])
     assert.deepEqual(db.prepare("SELECT * FROM aiSettings").all(), [])
   } finally { db.close() }

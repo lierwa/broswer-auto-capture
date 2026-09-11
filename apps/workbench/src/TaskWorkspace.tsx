@@ -1,26 +1,24 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Tabs } from "@radix-ui/themes";
 import {
   Database,
   FileSearch,
   GitBranch,
   MessageSquare,
-  Search,
 } from "lucide-react";
 import { useInterview } from "./useInterview.js";
 import { ChatTimeline } from "./ChatTimeline.js";
 import { DraftDialog } from "./DraftDialog.js";
 import { ChainView } from "./ChainView.js";
-import { Sources } from "./ArtifactViews.js";
 import { Results } from "./Results.js";
 import { Plan } from "./Plan.js";
+import { PlanConnection } from "./planConnection.js";
 import type { StepId } from "./chainData.js";
 import type { TaskSummary } from "./taskContract.js";
 import type { useModelSettings } from "./useModelSettings.js";
 
 const views = [
   { id: "interview", name: "需求对话", icon: MessageSquare },
-  { id: "sources", name: "来源调研", icon: Search },
   { id: "plan", name: "抓取计划", icon: FileSearch },
   { id: "nodes", name: "抓取链路", icon: GitBranch },
   { id: "results", name: "运行结果", icon: Database },
@@ -51,6 +49,7 @@ export function TaskWorkspace({
   modelSettings: WorkspaceModelSettings;
 }) {
   const interview = useInterview(task.id);
+  const planConnection = useMemo(() => new PlanConnection(task.id), [task.id]);
   const [activeTab, setActiveTab] = useState("interview");
   const [version, setVersion] = useState<number | null>(null);
   const [step, setStep] = useState<StepId>("catalog");
@@ -68,6 +67,10 @@ export function TaskWorkspace({
       setActiveTab("interview");
     }
   }
+  function createPlan() {
+    setActiveTab("plan");
+    if (interview.state.confirmedVersion) void planConnection.ensure(interview.state.confirmedVersion);
+  }
   return (
     <section
       className="task-workspace"
@@ -83,7 +86,7 @@ export function TaskWorkspace({
       <div className="task-body">
         <section
           className="panel review-panel"
-          aria-label="需求、来源、计划、链路与结果"
+          aria-label="需求、计划、链路与结果"
         >
           <Tabs.Root
             value={activeTab}
@@ -110,7 +113,7 @@ export function TaskWorkspace({
               <ChatTimeline
                 taskId={task.id}
                 interview={interview}
-                onSources={() => setActiveTab("sources")}
+                onPlan={createPlan}
                 onDraft={openDraft}
                 blocked={Boolean(blocked)}
                 readOnly={task.archived}
@@ -118,28 +121,16 @@ export function TaskWorkspace({
                 modelSettings={modelSettings}
               />
             </Tabs.Content>
-            <Tabs.Content
-              value="sources"
-              forceMount
-              hidden={activeTab !== "sources"}
-            >
-              <Sources
-                revision={interview.state.revision}
-                readOnly={task.archived}
-                onPlan={() => setActiveTab("plan")}
-                taskId={task.id}
-                active={visible && activeTab === "sources"}
-                confirmedVersion={interview.state.confirmedVersion}
-                onInterview={() => setActiveTab("interview")}
-                onDraft={() => openDraft()}
-              />
-            </Tabs.Content>
             <Tabs.Content value="plan" forceMount hidden={activeTab !== "plan"}>
               <Plan
                 taskId={task.id}
+                connection={planConnection}
                 active={visible && activeTab === "plan"}
                 readOnly={task.archived}
-                onSources={() => setActiveTab("sources")}
+                confirmedVersion={interview.state.confirmedVersion}
+                interviewRevision={interview.state.revision}
+                onInterview={() => setActiveTab("interview")}
+                onDraft={() => openDraft()}
               />
             </Tabs.Content>
             <Tabs.Content

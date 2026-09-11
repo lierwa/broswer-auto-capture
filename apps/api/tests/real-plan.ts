@@ -16,9 +16,10 @@ async function post(payload: Record<string, unknown>) {
   assert.equal(response.statusCode, 202, response.body); return response.json()
 }
 try {
-  const before = current.coordinator.snapshot(taskId), source = current.research.snapshot(taskId).records[0]!
-  await post({ type: "generate", requestId: randomUUID(), requirementVersion: source.requirementVersion, sourceId: source.id, sourceVersion: source.version })
-  process.stdout.write(JSON.stringify({ phase: "plan_started", taskId, sourceVersion: source.version }) + "\n")
+  const before = current.coordinator.snapshot(taskId)
+  assert.ok(before.confirmedVersion)
+  await post({ type: "generate", requestId: randomUUID(), requirementVersion: before.confirmedVersion })
+  process.stdout.write(JSON.stringify({ phase: "plan_started", taskId, requirementVersion: before.confirmedVersion }) + "\n")
   while (current.plan.snapshot(taskId).generating) await delay(1000)
   const plan = current.plan.snapshot(taskId).records[0]!
   await writeFile(path.join(directory, `f4-plan-v${plan.version}.json`), JSON.stringify(plan, null, 2))
@@ -32,7 +33,7 @@ try {
   assert.equal(state.executions.filter((item) => item.planId === plan.id).length, 1)
   assert.equal(state.executions.at(-1)?.status, "queued")
   assert.deepEqual(current.coordinator.snapshot(taskId), before)
-  assert.equal((await current.browser.snapshot(taskId)).record?.purpose, "source_research")
+  assert.equal((await current.browser.snapshot(taskId)).record?.purpose, "plan_evidence")
   await writeFile(path.join(directory, "f4-acceptance.json"), JSON.stringify(state, null, 2))
   process.stdout.write(JSON.stringify({ taskId, planId: plan.id, status: plan.status, steps: plan.proposal!.steps.map((s) => s.title), fields: plan.proposal!.fields, gaps: plan.proposal!.gaps, audit: plan.audit, execution: state.executions.at(-1) }) + "\n")
 } finally { await current.app.close() }

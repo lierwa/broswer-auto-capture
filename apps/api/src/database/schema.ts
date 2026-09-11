@@ -2,7 +2,6 @@ import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import type { InterviewMessage, RequirementBrief } from "@browser-capture/contracts/interview"
 import type { ModelSelection } from "@agent-platform/ai-connect/client"
 import type { BrowserRecord } from "@browser-capture/contracts/browser"
-import type { ResearchRecord } from "@browser-capture/contracts/research"
 import type { PlanRecord, ExecutionRecord } from "@browser-capture/contracts/plan"
 import type { ChainRecord } from "@browser-capture/contracts/chain"
 
@@ -45,9 +44,6 @@ export const aiSettings = sqliteTable("aiSettings", {
 })
 export const browserRuns = sqliteTable("browserRuns", {
   runId: text().primaryKey(), taskId: taskId(), createdAt: text().notNull(), body: text({ mode: "json" }).$type<BrowserRecord>().notNull(),
-})
-export const researchRuns = sqliteTable("researchRuns", {
-  id: text().primaryKey(), taskId: taskId(), body: text({ mode: "json" }).$type<ResearchRecord>().notNull(),
 })
 export const plans = sqliteTable("plans", { id: text().primaryKey(), taskId: taskId(), body: text({ mode: "json" }).$type<PlanRecord>().notNull() })
 export const chains = sqliteTable("chains", { id: text().primaryKey(), taskId: taskId(), executionId: text().notNull().references(() => executions.id), body: text({ mode: "json" }).$type<ChainRecord>().notNull() })

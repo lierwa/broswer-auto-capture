@@ -1,6 +1,6 @@
 import { BrowserError, type BrowserGrant, type BrowserSession } from "@browser-capture/browser"
 import { randomUUID } from "node:crypto"
-import type { ExecutionRecord, PlanRecord } from "@browser-capture/contracts/plan"
+import { adoptedPlanSources, type ExecutionRecord, type PlanRecord } from "@browser-capture/contracts/plan"
 import type { BrowserService } from "../browser/service.js"
 import type { PlanRepository } from "./repository.js"
 
@@ -24,7 +24,7 @@ export class ExecutionQueue {
   }
   private authorize(grant: BrowserGrant) {
     const record = this.active?.record, plan = record && this.repository.plans().find((item) => item.id === record.planId)
-    const origins = plan?.sources.map((source) => new URL(source.url).origin) ?? []
+    const origins = plan ? adoptedPlanSources(plan.evidence).map((source) => new URL(source.url).origin) : []
     if (!record || !plan || record.status !== "running" || (record.browserRunId ?? record.id) !== grant.runId || record.taskId !== grant.taskId
       || record.requirementVersion !== grant.requirementVersion || !this.valid(plan) || record.planDigest !== plan.digest
       || grant.purpose !== (record.mode === "initial" ? "exploration" : record.mode) || grant.maxCommands > record.budget.maxCommands || grant.timeoutMs > record.budget.timeoutMs
@@ -53,7 +53,7 @@ export class ExecutionQueue {
     let work: ReturnType<PlanExecutor> | undefined
     try {
       const outcome = await this.browser.run({ taskId: record.taskId, runId: record.browserRunId!, requirementVersion: record.requirementVersion, purpose: record.mode === "initial" ? "exploration" : record.mode,
-        allowedOrigins: [...new Set(plan.sources.map((item) => new URL(item.url).origin))], actions: ["navigate", "observe", "click", "fill", "press", "page"],
+        allowedOrigins: [...new Set(adoptedPlanSources(plan.evidence).map((item) => new URL(item.url).origin))], actions: ["navigate", "observe", "click", "fill", "press", "page"],
         maxCommands: record.budget.maxCommands, timeoutMs: record.budget.timeoutMs }, (browser, lifetime) => {
         work = this.executor!({ plan: structuredClone(plan), execution: record, browser, signal: lifetime, save: () => this.repository.saveExecution(record) }); return work
       }, signal)

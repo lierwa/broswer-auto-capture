@@ -2,9 +2,10 @@ import { z } from "zod"
 
 const id = z.string().min(1).max(120)
 export const sessionIdSchema = z.string().regex(/^[a-z]{4}$/)
+const browserPurposeSchema = z.enum(["plan_evidence", "exploration", "verification", "replay", "repair"])
 export const grantSchema = z.object({
   taskId: id, runId: z.string().uuid(), requirementVersion: z.number().int().positive(),
-  purpose: z.enum(["source_research", "exploration", "verification", "replay", "repair"]),
+  purpose: browserPurposeSchema,
   allowedOrigins: z.array(z.string().url().refine((value) => {
     const url = new URL(value)
     return ["http:", "https:"].includes(url.protocol) && url.origin === value

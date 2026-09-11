@@ -7,8 +7,10 @@ export class PlanRepository {
   constructor(private store: ProductStore) {
     for (const record of this.plans()) {
       if (record.status !== "generating") continue
-      record.status = "interrupted"; record.reason = "服务已重启，计划生成中断，可重新生成。"
-      if (record.audit.status === "intended") record.audit.status = "interrupted"
+      record.status = "interrupted"; record.stage = "complete"; record.reason = "服务已重启，计划生成中断，可重新生成。"
+      if (record.audit?.status === "intended") record.audit.status = "interrupted"
+      for (const audit of record.evidence.audits) if (audit.status === "intended") audit.status = "interrupted"
+      if (record.evidence.outcome === "pending") record.evidence.outcome = "interrupted"
       this.savePlan(record)
     }
     for (const record of this.executions()) {

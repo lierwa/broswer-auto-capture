@@ -9,14 +9,13 @@ import { executeCapture } from "../src/capture/executor.js"
 import { modelDecision } from "../src/chain/model.js"
 import type { ChainRepository } from "../src/chain/repository.js"
 import { generatePlan } from "../src/plan/model.js"
-import { runResearch } from "../src/research/runner.js"
+import { runPlanEvidence } from "../src/plan/evidence-runner.js"
 import { graphFor } from "./chain-fixture.js"
 import { proposalFor } from "./plan-fixture.js"
-import { decisionFor, sourceBrief } from "./research-fixture.js"
+import { evidenceDecisionFor, sourceBrief } from "./plan-fixture.js"
 import type { PlanExecutor } from "../src/plan/queue.js"
 import type { ChainRecord } from "@browser-capture/contracts/chain"
-import type { PlanRecord } from "@browser-capture/contracts/plan"
-import type { ResearchRecord } from "@browser-capture/contracts/research"
+import { emptyPlanEvidence, type PlanRecord } from "@browser-capture/contracts/plan"
 import { DomainError } from "../src/errors.js"
 
 const selection: ModelSelection = { connectionId: randomUUID(), modelId: "gpt-5.6-sol", reasoningEffort: "high" }
@@ -30,7 +29,6 @@ function providerFor(decide: (prompt: string) => unknown) {
       assert.deepEqual(model, selection)
       const prepared: PreparedAIModel = {
         selection,
-        async generateText() { throw new Error("text generation not used by this fixture") },
         async generateObject<T>(input: Readonly<{ prompt: string; jsonSchema: Record<string, unknown>; parse(value: unknown): T; signal: AbortSignal; onEvent(event: AIEvent): void }>): Promise<T> {
           const invocationId = `fixture-${++state.generates}`
           input.onEvent(parseAIEvent({ type: "generation.started", invocationId, sequence: 0, createdAt: 1, output: "object", model: selection }))
@@ -42,19 +40,21 @@ function providerFor(decide: (prompt: string) => unknown) {
       }
       return prepared
     },
+    async prepareMain() { throw new Error("main session not used by this fixture") },
   }
   return { provider, state }
 }
 
-test("research 与 plan 分别冻结一次共享选择且不调用旧 Codex factory", async () => {
-  const researchAI = providerFor(decisionFor)
+test("plan evidence 与 plan drafting 分别冻结一次共享选择且不调用旧 Codex factory", async () => {
+  const evidenceAI = providerFor(evidenceDecisionFor)
   let currentUrl = "about:blank"
   const at = new Date().toISOString()
-  const research: ResearchRecord = { id: randomUUID(), taskId: randomUUID(), version: 1, requirementVersion: 1, requirementRevision: 1,
-    status: "running", createdAt: at, updatedAt: at, sequence: 0, current: "正在制定来源查询", reason: null,
-    queries: [], candidates: [], observations: [], gaps: [], coverage: [], audits: [] }
-  const status = await runResearch({ record: research, brief: sourceBrief, signal: new AbortController().signal,
-    aiModel: researchAI.provider, selection,
+  const plan: PlanRecord = { id: randomUUID(), taskId: randomUUID(), version: 1, requirementVersion: 1, requirementRevision: 1,
+    requirement: sourceBrief, evidence: emptyPlanEvidence(), evidenceDigest: null, stage: "source_evidence",
+    status: "generating", createdAt: at, updatedAt: at, sequence: 0, current: "正在核验来源证据", reason: null,
+    proposal: null, digest: null, budgetCeiling: { maxCommands: 500, timeoutMs: 300000, maxModelCalls: 12, maxLlmCalls: 12 }, stepBudgetLimits: null, audit: null }
+  const status = await runPlanEvidence({ record: plan, brief: sourceBrief, signal: new AbortController().signal,
+    aiModel: evidenceAI.provider, selection,
     save: () => {}, validate: () => {}, browser: { command: async (command: unknown) => {
       const value = command as { type: string; url?: string }
       if (value.type === "navigate" || value.type === "follow") { currentUrl = value.url!; return null }
@@ -63,20 +63,15 @@ test("research 与 plan 分别冻结一次共享选择且不调用旧 Codex fact
         text: search ? "搜索结果 样例机构目录" : "名称 样例目录 下一页",
         links: search ? [{ title: "样例机构目录", url: "https://example.com/catalog" }] : [] })
     } } })
-  assert.equal(status, "completed"); assert.equal(researchAI.state.prepares, 1)
-  assert.equal(research.audits.length, 3); assert.ok(research.audits.every((audit) => audit.aiEvents.length === 2 && audit.model === selection.modelId))
+  assert.equal(status, "completed"); assert.equal(evidenceAI.state.prepares, 1)
+  assert.equal(plan.evidence.audits.length, 3); assert.ok(plan.evidence.audits.every((audit) => audit.aiEvents.length === 2 && audit.model === selection.modelId))
 
   const planAI = providerFor(proposalFor)
-  const plan: PlanRecord = { id: randomUUID(), taskId: research.taskId, version: 1, requirementVersion: 1, requirementRevision: 1,
-    sourceId: research.id, sourceVersion: 1, sourceDigest: "a".repeat(64), requirement: sourceBrief,
-    sources: research.observations.filter((item) => item.assessment?.adopted), sourceGaps: research.gaps.map((item) => item.description),
-    status: "generating", sequence: 0, createdAt: at, updatedAt: at, reason: null, proposal: null, digest: null,
-    budgetCeiling: { maxCommands: 500, timeoutMs: 300000, maxModelCalls: 12, maxLlmCalls: 12 }, stepBudgetLimits: null,
-    audit: { purpose: "plan_creation", model: selection.modelId, effort: selection.reasoningEffort, invocations: null,
-      status: "intended", reportedModel: null, reportedEffort: null, aiEvents: [] } }
-  await generatePlan(plan, research, new AbortController().signal, () => {}, () => {}, planAI.provider)
+  plan.audit = { purpose: "plan_creation", model: selection.modelId, effort: selection.reasoningEffort, invocations: null,
+    status: "intended", reportedModel: null, reportedEffort: null, aiEvents: [] }
+  await generatePlan(plan, new AbortController().signal, () => {}, () => {}, planAI.provider)
   assert.equal(plan.status, "ready"); assert.equal(planAI.state.prepares, 1)
-  assert.deepEqual(plan.audit.aiEvents.map((event) => event.type), ["generation.started", "generation.completed"])
+  assert.deepEqual(plan.audit!.aiEvents.map((event) => event.type), ["generation.started", "generation.completed"])
 })
 
 test("execution 首次模型判断才 prepare 且多个判断复用同一 handle", async () => {
@@ -97,7 +92,8 @@ test("纯确定性 replay 不 prepare 模型", async () => {
   const taskId = randomUUID(), planId = randomUUID(), chainId = randomUUID(), sourceId = randomUUID()
   const step = { id: "enumerate", title: "枚举", goal: "枚举", kind: "enumerate" as const, sourceIds: [sourceId], dependsOn: [],
     input: "目录", output: "链接", termination: "完成", budget: { maxCommands: 20, timeoutMs: 10000, maxModelCalls: 0, maxLlmCalls: 0 }, risks: [] }
-  const plan = { id: planId, taskId, sources: [{ id: sourceId, url: "https://example.com/catalog" }], requirement: { deliverables: [] }, proposal: { steps: [step], fields: [] } }
+  const plan = { id: planId, taskId, evidence: { observations: [{ id: sourceId, url: "https://example.com/catalog", queryId: null,
+    assessment: { adopted: true, access: "normal" } }] }, requirement: { deliverables: [] }, proposal: { steps: [step], fields: [] } }
   const execution = { mode: "replay", repairStepId: null, resumeRequested: false, capture: null }
   const input = { plan, execution, signal: new AbortController().signal, save: () => {}, browser: {
     beginStep: () => {}, command: async (raw: unknown) => (raw as { type: string }).type === "page"
@@ -112,7 +108,11 @@ test("纯确定性 replay 不 prepare 模型", async () => {
 })
 
 test("未保存模型时给出设置提示且不调用模型", async () => {
-  const provider: AIModelProvider = { selection: () => { throw new DomainError("model_selection_required", "请先在模型设置中保存账号和模型。", 409) }, prepare: async () => { throw new Error("unreachable") } }
+  const provider: AIModelProvider = {
+    selection: () => { throw new DomainError("model_selection_required", "请先在模型设置中保存账号和模型。", 409) },
+    prepare: async () => { throw new Error("unreachable") },
+    prepareMain: async () => { throw new Error("unreachable") },
+  }
   await assert.rejects(modelDecision({ shared: lazyAIModel(provider, new AbortController().signal),
     schema: z.object({ value: z.string() }), prompt: "fixture",
     record: { audits: [], consumed: { commands: 0, modelCalls: 0, elapsedMs: 0 } }, purpose: "exploration", phase: "exploration", nodeId: null,

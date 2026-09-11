@@ -3,7 +3,7 @@ import { taskIdSchema } from "./task.js"
 
 export const browserRecordSchema = z.object({
   runId: z.string().uuid(), taskId: taskIdSchema, requirementVersion: z.number().int().positive(),
-  purpose: z.enum(["source_research", "exploration", "verification", "replay", "repair"]),
+  purpose: z.enum(["plan_evidence", "exploration", "verification", "replay", "repair"]),
   status: z.enum(["running", "succeeded", "failed", "cancelled", "manual_required", "cleanup_required", "interrupted"]),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(), reason: z.string().nullable(),
 }).strict()

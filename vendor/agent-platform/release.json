@@ -2,36 +2,40 @@
   "schemaVersion": 1,
   "producer": {
     "head": "97d9f90bc146b550cf13be2f932cfe91410f6ab1",
-    "dirty": false
+    "dirty": true
   },
   "build": [
     {
       "name": "@agent-platform/flat-xml",
-      "sourceHash": "24d6187ab48b1da1a5a218c509c43bb79d65b02e20aa808a4159f9bf4c4d5eff"
+      "sourceHash": "d433d4956077c1ebf57c9d1ad5c92ac2175688188fd8ae3bdb45c1b959d9baaa"
     },
     {
       "name": "@agent-platform/ai-connect",
-      "sourceHash": "ca8cb7ed40eb3d45e7a008f7fdc6145d68b60f47362fd8fb86bb74d33f1d46bf"
+      "sourceHash": "36f0726f18de2c06c07bf7f97486a8fb62f90e2b96da9db77a2df94a130fdd2e"
     },
     {
       "name": "@agent-platform/sdk",
-      "sourceHash": "93aa7492aec68e8066fae4f8bb7be009e552b61b546671082152ba8eefe8e3bf"
+      "sourceHash": "984e9d694ffced6353d77a3539e353003ca8840ae2a67f3ca4d650ab64aea728"
     },
     {
       "name": "@agent-platform/text-reveal",
-      "sourceHash": "4389a0dc0b20cd5df6a07ea01c343bdc3c3bc5c20c3db3185e780597c4953b8d"
+      "sourceHash": "596799a7e7aa03fa470331d599349d0613ab929677128a66d2356f6b2c0119e2"
     },
     {
       "name": "@agent-platform/ai-connect-react",
-      "sourceHash": "e1f93f32167ac280c3e3c5bb1f453e4ed7233a3c8adf9546fcf19db15701ab32"
+      "sourceHash": "e4a8eb4621d22bcfe914a16b2ee80b788720741f97730bd18356440239da2ff1"
+    },
+    {
+      "name": "@agent-platform/pi-agent-session",
+      "sourceHash": "dafcfb14cbbc6e01e29e7f4388471c5ea2c9057d2e1f6f72bc3c72f00fadffbc"
     }
   ],
   "packages": {
     "core": {
       "name": "@agent-platform/ai-connect",
       "version": "0.3.2",
-      "file": "agent-platform-ai-connect-0.3.2-9c78ea59.tgz",
-      "sha256": "9c78ea593f3d1d67a0796355c0a8a52e4acf80e8029923eaa4ffa48ea3290b6a",
+      "file": "agent-platform-ai-connect-0.3.2-4f54eb7c.tgz",
+      "sha256": "4f54eb7c6ce6da94c88b88d9360d945fa299b2acc2247529defabd1d57672f69",
       "exports": [
         "./browser",
         "./client",
@@ -90,8 +94,8 @@
     "react": {
       "name": "@agent-platform/ai-connect-react",
       "version": "0.3.2",
-      "file": "agent-platform-ai-connect-react-0.3.2-6cf6702e.tgz",
-      "sha256": "6cf6702e33f66f1c78f428c2692cd5fe07d315cd0e88abd7fc2482e27728cfa2",
+      "file": "agent-platform-ai-connect-react-0.3.2-cc7d94fe.tgz",
+      "sha256": "cc7d94fee2fd62b401811b8c2cdcd163f432c0998cf7357af8b45dc1568d53dc",
       "exports": [
         ".",
         "./chat",
@@ -116,8 +120,20 @@
       "styles": [
         "./styles.css"
       ]
+    },
+    "agentSession": {
+      "name": "@agent-platform/pi-agent-session",
+      "version": "0.1.0",
+      "file": "agent-platform-pi-agent-session-0.1.0-09653602.tgz",
+      "sha256": "0965360270af2e064db29d2efe9e194ad83a5f674112415c56242f392c65c9e9",
+      "exports": [
+        ".",
+        "./platform-internal"
+      ],
+      "styles": []
     }
   },
-  "core": "agent-platform-ai-connect-0.3.2-9c78ea59.tgz",
-  "react": "agent-platform-ai-connect-react-0.3.2-6cf6702e.tgz"
+  "core": "agent-platform-ai-connect-0.3.2-4f54eb7c.tgz",
+  "react": "agent-platform-ai-connect-react-0.3.2-cc7d94fe.tgz",
+  "agentSession": "agent-platform-pi-agent-session-0.1.0-09653602.tgz"
 }

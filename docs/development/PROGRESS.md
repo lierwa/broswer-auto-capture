@@ -1,5 +1,65 @@
 # 开发进度
 
+## 目标产品运行架构记录（2026-09-11）
+
+- 已确认后续产品由浏览器扩展主前端、Web 辅助管理和 Node 服务端组成；扩展承载需求对话、公共 Timeline/模型设置、计划确认、用户本机浏览器执行与结果，服务端承载 AI Connect、Pi AgentSession、凭据生命周期、数据库和共享任务事实。正式职责、模型形态与待验证项见 [产品运行架构方向](PRODUCT_ARCHITECTURE.md)。
+- 目标体验只要求用户安装本产品扩展，不另装 `bsk` CLI/daemon；这是迁移目标，当前实现仍通过本机 `bsk` 进程调用浏览器。
+- 用户自带订阅账号、套餐 Key 或 API Key 是已确认模型形态；“产品提供模型”仍是待确认可能性。认证、模型目录和 Timeline 复用 AI Connect/Pi，不新增第二认证系统。
+- 当前最基本的草稿到真实计划取证/执行闭环仍未通过。本轮只记录方向，不修改运行实现或清理失败证据；下文 plan v2 可查看与恢复的证据不能解释为真实抓取已经完成。
+
+## Plan 内按需来源证据（2026-09-11）
+
+Baseline Impact:
+- touched layers: BAT contracts、API/DB、Plan/chain/browser、Workbench、采访 Skill 与开发基准文档。
+- owning fact source: `PlanRecord.evidence` 拥有查询、候选、观察、coverage、gap 与审计；`PlanRecord.proposal` 拥有步骤计划；不再有独立 `ResearchState`。
+- public interface changed: yes，删除 `/api/research` 与 research exports；Plan generate 去掉 source id/version，新增 `return_to_interview`，PlanRecord 增加 evidence/stage/status。
+- new protocol/adapter/fallback: no，仅扩充既有 Plan command/progress；没有新增 parser、adapter 或 fallback。
+- compatibility or legacy path changed: yes，旧 research/plan/chain/execution 开发数据按迁移重置，不提供双事实源兼容；历史验收文字作为当时证据保留。
+- baseline update required: yes，来源核查从独立产品阶段并入一次 Planning Run。
+- architecture tests to run: Plan lifecycle/evidence/digest/direct reuse/blocked/referral/deleted endpoint，以及 Workbench 状态、失败恢复与详情投影。
+
+Patch Disposition:
+- delete: Research 公共合同、API、service/repository/table、Sources tab/connection 及其独立 fixture 入口。
+- keep: 单份 BrowserSkill 观察与证据验证、来源防伪、coverage/gap、Plan 确认与执行授权分离，以及既有 Pi/Question 能力。
+- rewrite: PlanRecord/PlanService/DB、chain evidence binding、Workbench Plan 投影和采访到计划的交接说明。
+- reason: 一次 Planning Run 拥有证据与计划草稿，删除强制独立阶段和第二事实源。
+
+- 当前合同与 API 已落盘并通过 API typecheck。Plan 先以 `assessing` 判断是否需取证，需要时进入 `source_evidence`，再进入 `drafting`；同版 evidence 只有 requirementVersion/revision 与 digest 校验一致才可复制复用。提供 URL 只是候选，取证不足、人工处理和 cleanup 都保留明确终态。
+- Workbench 已删除 Sources tab、`ResearchConnection` 与独立来源页面；Plan 页从唯一 PlanState 投影阶段、阻碍、取消/回访/重试、proposal、折叠证据与审计，并继续把确认计划与启动作为独立授权。Node 24 Workbench typecheck、30 项离线测试和生产 build 通过；隔离页面实测计划正文与折叠证据区同左边缘、同内容宽度，可见证据保存在 `work/plan-ui-evidence.jpg`。
+- 计划失败恢复闭环已在正式入口验证：来源取证 `command_failed` 时仍保存带真实 `evidenceDigest` 的可查看 proposal；零已采纳来源只形成 `blocked` 待核验步骤，不能启动，也不把普通来源缺口、登录或 cleanup 误作需求口径决定。需求 v2 显式制定并持久化 plan v2，刷新、回需求对话再进入及重复点击均继续选择同一 v2，未创建 v3；旧 failed plan v1 保持不变，plan v2 草拟模型调用审计完整保存。脱敏前后记录见 `work/plan-repair-2026-09-11-before.json`、`work/plan-repair-2026-09-11-after.json`，真实 UI 见 `work/plan-repair-2026-09-11-ui.jpg`。本机尚无 `bsk`，所以此次只证明失败可恢复及计划可查看，未证明真实来源抓取可运行。
+- 弱表达自然访谈的首次隔离运行证明公共协议会拒绝 `choice` 零选项；同时定位到 BAT active-stage guidance 仍残留“具体值改用零选项题”的旧规则。该宿主重复规则已删除，最终 assembled active-task 只由公共 Question 注册与访谈 Skill 决定题型；公共接口、parser、重试与 fallback 均未改变。
+- 使用当前已保存的 `gpt-5.6-luna` / `medium` 在隔离 ProductStore 和随机端口完成五个自然弱表达验收 run，共 25 次模型调用，浏览器执行器保持硬失败。最早 A 用 2 次调用暴露 `choice` 零选项冲突；删除宿主重复规则后的纯点击 A 用 8 次调用仍未成稿。最后一组共 15 次：harness 漏读推荐项说明的 A 用 2 次调用失败；修正后 A 在同面板补充唯一对象 `德龙 EC685`，用 5 次调用形成结构合格草稿，但独立语义审查发现硬范围增加未明确展示的价格层级排除与字段，并把证据权威当作低风险默认；B 用 8 次调用形成初稿，但补充的 `京东` 不是用户所说“一家店”的可识别身份，随后又连续多轮以“填写名称”方向索取店铺名，未按 Skill 改变支架。B 的 harness 还在发送预定纠正前错误执行最终范围断言，因此纠正未实际调用、未获验证。结论是迁移、公共协议和题板组合已实现，访谈语义验收未通过；不以结构校验或 harness 状态替代质量结论。全部运行均未确认草稿且正式用户状态摘要不变；五个 run 的原始可见对话、typed Question 与草稿依次保存在 `work/interview-acceptance-2026-09-11T10-10-41-229Z-0862254a`、`work/interview-acceptance-2026-09-11T10-15-58-836Z-bb51790e`、`work/interview-acceptance-2026-09-11T10-29-20-922Z-7af8e757`、`work/interview-acceptance-2026-09-11T10-32-58-025Z-6a4c997b` 和 `work/interview-acceptance-2026-09-11T10-34-51-890Z-54dbe339`。验收 harness 已改为在首个草稿后再发送纠正、只对纠正后的终稿检查旧值残留，并在失败产物中保留已生成草稿；下一次 B fixture 使用可识别店铺名称，不再把平台名当店铺身份。
+
+## 公共 Question mode 注册接入（2026-09-11）
+
+- 公共 `commonQuestionAuthoring` 由宿主必填 `modes`，并只注入、解析和验收已启用的 `choice` / `multi_choice` / `free_form` 协议。B-A-T 当前注册 `modes: ["choice", "multi_choice"]`；缺失 mode、`free_form` 或未注册模式的模型输出均在 authoring 终态进入业务状态前失败关闭。完整需求仍可首轮成稿；用户不点击当前选项时仍可通过普通 Composer 补充、纠正或拒绝方案。
+- B-A-T 的新公共 typed Question 直接消费共享 `commonQuestionSchema` 和 `panel.mode`，不根据 options 数量重算题型。互斥方向使用单选，同轴可并存条件使用复选，两者通过同一 compound submit、`option` decision、SQLite 消息 envelope 和 Workbench locked history 完整保存与回放。仅旧 `{prompt, options}` 压缩记录在读取适配边界恢复为旧单选或开放题。
+- 私有 Skill 不重复 XML 拼装和题型注册，只要求每题提供 2–3 个真实同轴方向及唯一推荐；单选项互斥，复选项可以并存，同面板自由补充具体值，不伪造未知事实或单个占位按钮。题型与 XML 语法以本轮宿主注入的公共协议为唯一事实源。
+- 本次迁移延用此前公共 Question 阶段已同步安装的 AI Connect core `0.3.2-4f54eb7c`、React `0.3.2-cc7d94fe` 和 Pi AgentSession `0.1.0-09653602`，没有新增 stage、sync 或 install。此前同步验证包括同步脚本 2/2、聚焦 contracts 10/10、Workbench 13/13、API 57/57、全 workspace 离线测试 190/190、所有 workspace typecheck 和生产 build，build 保留既有大 chunk 提示。Skill `quick_validate.py` 已执行，但因本机缺少 PyYAML 在导入阶段失败，未安装依赖；已读取该脚本并用 Ruby Psych 等价校验 frontmatter 通过。后续自然访谈结果按上一节单独记账，Windows 仍未实机验证。
+
+## 访谈 Main 统一 Pi AgentSession（2026-09-11）
+
+Baseline Impact:
+- touched layers: AI Connect 账号绑定、访谈 Main 模型入口、ProductStore 历史适配、Workbench 模型设置、vendor 同步与开发文档。
+- owning fact source: ProductStore 继续拥有任务、完整消息、决策、草稿与确认；`@agent-platform/pi-agent-session` 拥有 Pi 会话、checkpoint、continuation guard、资源隔离与运行事件；AI Connect 拥有账号、凭据、模型目录和受信 binding。
+- public interface changed: yes，BAT 私有 `AIModelProvider` 增加 Main session 入口，模型设置保存继续使用既有 HTTP endpoint 并增加 `agentSession` surface 服务端门禁；新增独立共享包依赖。
+- new protocol/adapter/fallback: yes，Main 使用共享 Pi AgentSession adapter 与 AIEvent bridge；未新增 provider、authoring、Question 或业务状态协议，也不提供第二运行 fallback。
+- compatibility or legacy path changed: yes，迁移前已接受且没有 AIEvent 的助手消息只从同一 ProductStore 安全事实生成首轮 canonical seed；已有账号和凭据保持原状，不支持 AgentSession 的选择在保存及运行前关闭。
+- baseline update required: yes，共享包、受信 binding、确认 accepted candidate 与资源空加载边界由相邻平台仓 ADR 0068 定义；BAT 文档只记录消费方式与本地事实源。
+- architecture tests to run: 公共包隔离导入、binding/surface、两轮 raw history 与 accepted-step、空工具和项目 Skill allowlist、保存/运行双门、authoring 失败原子性、既有访谈/HTTP/Workbench/sync 回归。
+
+Patch Disposition:
+- delete: 访谈 Main 的 stateless text 入口、无生产调用的旧 authoring 入口及其重复对话 prompt 投影。
+- keep: bounded 调研/计划/链路的 Pi structured generation、ProductStore/authoring/parser/Question/Browser 授权事实源、账号与凭据记录、历史 vendor 制品和其他消费者仍使用的 direct invocation 能力。
+- rewrite: Main 每轮从已保存选择建立受信 binding，以 task 作为 canonical session、以完整已接受消息和末尾 active-task 驱动共享 Pi adapter；本地领域事务成功后才确认 Pi candidate。
+- reason: 所有 provider 由同一 Pi 模型与 wire 实现驱动，同时让 Main 取得真实 AgentSession 生命周期，并维持 BAT 单一业务历史、显式资源白名单与现有授权边界。
+
+- Main 每次运行通过 AI Connect `bindAgentSession` 重查主体、账号、凭据、精确模型和 `agentSession` surface；模型或账号切换由 continuation guard 建立新会话，不跨任务复用状态。adapter 的 checkpoint 位于 BAT 数据目录，由 coordinator 在每轮结束时关闭内存生命周期。
+- 本轮完整项目 Skill 只作为末尾 active-task 注入；共享 ResourceLoader 的全局 AGENTS、Skills、extensions、prompts 和 tools 均为空，BAT 同时传入完整空工具白名单。ProductStore 已接受助手消息的 `text.delta` 是后续 canonical raw history；Workbench 仍只显示既有安全投影。事件缺失或终态不一致时停止续接，不用展示文本猜测模型历史。
+- Workbench 账号弹窗只展示支持 `agentSession` 的连接，并将目标 surface 带入 OAuth；保存接口和实际运行各自复核。旧 managed-profile 连接继续保留为账号事实，但不能成为 BAT 当前模型选择，也不会被转换或删除。
+- bounded 调研、计划和链路仍走 AI Connect 的 Pi stateless structured generation；它们复用同一账号选择和 surface 门禁，不冒充 Main 会话，也没有第二套 provider 路由。
+- 正式同步已安装 AI Connect 0.3.2、React 0.3.2 与 Pi AgentSession 0.1.0；最终 Pi tarball 为 `agent-platform-pi-agent-session-0.1.0-09653602.tgz`，SHA-256 `0965360270af2e064db29d2efe9e194ad83a5f674112415c56242f392c65c9e9`。同步后离线验证覆盖 API 全量 103 项、Workbench 31 项、Main/HTTP/protocol 聚焦 37 项、真实公共 Pi adapter 两轮 2 项、同步脚本 2 项、全 workspace typecheck 与生产 build；`git diff --check` 通过。真实 provider/OAuth 登录与 Windows 安装构建留待目标环境验收。
+
 ## 固定开发端口安全重启（2026-09-10）
 
 Baseline Impact:

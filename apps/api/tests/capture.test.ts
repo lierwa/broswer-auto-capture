@@ -82,10 +82,10 @@ test("从绑定目录起点执行并实际经过末页分支，字段完整时�
 test("较大预算只进入显式申请的新计划，默认计划仍受原500条总上限约束", async () => {
   const f = await chainFixture()
   try {
-    const taskId = await f.readyChain(), original = f.current.plan.snapshot(taskId).records[0]!, source = f.current.research.snapshot(taskId).records[0]!
+    const taskId = await f.readyChain(), original = f.current.plan.snapshot(taskId).records[0]!
     const decide = f.planFake.decide
     f.planFake.decide = async (prompt) => { const plan = await decide(prompt) as ReturnType<typeof import("./plan-fixture.js").proposalFor>; plan.steps[1]!.budget.maxCommands = 600; return plan }
-    await f.planPost(taskId, { type: "generate", requestId: randomUUID(), requirementVersion: source.requirementVersion, sourceId: source.id, sourceVersion: source.version,
+    await f.planPost(taskId, { type: "generate", requestId: randomUUID(), requirementVersion: original.requirementVersion,
       budgetCeiling: { maxCommands: 3850, timeoutMs: 1440000, maxModelCalls: 12, maxLlmCalls: 0 } })
     const larger = await f.waitPlan(taskId); assert.equal(larger.status, "ready"); assert.notEqual(larger.id, original.id)
     assert.deepEqual(f.current.plan.snapshot(taskId).records.find((record) => record.id === original.id), original)

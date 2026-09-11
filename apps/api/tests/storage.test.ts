@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "node:os"
 import Database from "better-sqlite3"
+import { buildCommonSurfaceReplyPayload, createCommonChoiceQuestion, createCommonQuestionSurface } from "@agent-platform/ai-connect/integration/authoring/question"
 import { emptyInterview } from "@browser-capture/contracts/interview"
 import { ProductStore } from "../src/database/store.js"
 import { importLegacy } from "../src/database/importLegacy.js"
@@ -66,7 +67,7 @@ test("任务创建幂等，失败事务不改变消息/草稿/确认/事件序�
   assert.deepEqual(store.snapshot(id), before)
   assert.equal(store.list().length, 1)
 }))
-test("v1 数据库原子迁移到 v8，旧草稿和确认历史保留且迁移幂等", async () => {
+test("v1 数据库原子迁移到 v9，旧访谈历史保留且旧调研表移除", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-v1-migration-"))
   const file = path.join(directory, "workbench.sqlite")
   try {
@@ -83,9 +84,9 @@ test("v1 数据库原子迁移到 v8，旧草稿和确认历史保留且迁移�
     await reopened.close()
     const inspection = new Database(file, { readonly: true })
     try {
-      assert.equal(inspection.pragma("user_version", { simple: true }), 8)
+      assert.equal(inspection.pragma("user_version", { simple: true }), 9)
       assert.deepEqual(inspection.prepare("SELECT * FROM browserRuns").all(), [])
-      assert.deepEqual(inspection.prepare("SELECT * FROM researchRuns").all(), [])
+      assert.equal(inspection.prepare("SELECT name FROM sqlite_master WHERE name='researchRuns'").get(), undefined)
       assert.deepEqual(inspection.prepare("SELECT * FROM aiSettings").all(), [])
       assert.equal(inspection.prepare("PRAGMA table_info(drafts)").all().filter((column: any) => column.name === "brief").length, 1)
     } finally { inspection.close() }
@@ -101,14 +102,14 @@ test("不兼容的 v1 迁移失败不提前版本号，也不改变已有行", (
   } finally { connection.close() }
 })
 
-test("F2 v3 升级来源表保持浏览器历史，并在迁移冲突时整体回滚", () => {
+test("v3 升级移除旧调研表并保留非调研浏览器历史，迁移冲突整体回滚", () => {
   const connection = new Database(":memory:")
   try {
-    connection.exec("CREATE TABLE tasks (id TEXT PRIMARY KEY); INSERT INTO tasks VALUES ('existing'); CREATE TABLE browserRuns (runId TEXT PRIMARY KEY, taskId TEXT, body TEXT); INSERT INTO browserRuns VALUES ('old','existing','{}'); PRAGMA user_version=3")
+    connection.exec("CREATE TABLE tasks (id TEXT PRIMARY KEY); INSERT INTO tasks VALUES ('existing'); CREATE TABLE operations (scope TEXT, requestId TEXT, digest TEXT, resultId TEXT, PRIMARY KEY(scope,requestId)); CREATE TABLE browserRuns (runId TEXT PRIMARY KEY, taskId TEXT, body TEXT); INSERT INTO browserRuns VALUES ('old','existing','{}'); PRAGMA user_version=3")
     migrate(connection); migrate(connection)
-    assert.equal(connection.pragma("user_version", { simple: true }), 8)
+    assert.equal(connection.pragma("user_version", { simple: true }), 9)
     assert.deepEqual(connection.prepare("SELECT * FROM browserRuns").all(), [{ runId: "old", taskId: "existing", body: "{}" }])
-    assert.deepEqual(connection.prepare("SELECT * FROM researchRuns").all(), [])
+    assert.equal(connection.prepare("SELECT name FROM sqlite_master WHERE name='researchRuns'").get(), undefined)
     connection.exec("PRAGMA user_version=3")
     assert.throws(() => migrate(connection), /already exists/)
     assert.equal(connection.pragma("user_version", { simple: true }), 3)
@@ -177,6 +178,36 @@ test("TEXT 决策列无需迁移即可在重启后读取旧选择与新自由文
       { kind: "free_text", text: "海尔" },
       { kind: "draft_confirmation", text: "确认需求草稿 v1" },
     ])
+  } finally { await restored.close() }
+}))
+test("公共 multi_choice 原题与 compound reply 重启后保持完整", async () => fixture(async (store, directory) => {
+  const id = store.taskAction({ type: "create", requestId: randomUUID() })
+  const questionId = "question-multi", answerId = "answer-multi"
+  const question = createCommonChoiceQuestion({ id: questionId, type: "multi_choice", stem: "选择字段", options: [
+    { id: "name", label: "名称" }, { id: "price", label: "价格" }, { id: "image", label: "图片" },
+  ] })
+  const surface = createCommonQuestionSurface({ id: questionId, questions: [question], submitLabel: "提交回答" })
+  const surfaceSubmit = { answers: [{ questionId, data: {
+    selectedOptionIds: ["name", "price"],
+  } }], displayText: "名称\n价格" }
+  store.mutate(id, (state) => {
+    state.revision = 2
+    state.messages.push(
+      { id: questionId, role: "assistant", text: "请选择。", status: "complete", question, draftVersion: null, aiEvents: [] },
+      { id: answerId, role: "user", text: surfaceSubmit.displayText, status: "complete", question: null,
+        draftVersion: null, aiEvents: [], interactionReply: buildCommonSurfaceReplyPayload({ surface, submit: surfaceSubmit }) },
+    )
+    state.unresolved.push({ id: questionId, revision: 1, question, status: "answered", answerMessageId: answerId })
+    state.decisions.push({ id: "decision-multi", revision: 2, kind: "option", text: surfaceSubmit.displayText,
+      messageId: answerId, questionId, draftVersion: null, createdAt: "2026-09-11T00:00:00.000Z" })
+  })
+  await store.close()
+  const restored = await ProductStore.open(directory)
+  try {
+    const state = restored.snapshot(id)
+    assert.deepEqual(state.unresolved[0]?.question, question)
+    assert.deepEqual(state.messages[1]?.interactionReply?.surfaceSubmit, surfaceSubmit)
+    assert.equal(state.decisions[0]?.kind, "option")
   } finally { await restored.close() }
 }))
 test("同一产品数据只能有一个协调服务，关闭后可重新打开", async () => fixture(async (store, directory) => {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
 import { CommonContentUIProtocol } from "@agent-platform/ai-connect/ui-contracts"
+import { createCommonChoiceQuestion, createCommonFreeFormQuestion } from "@agent-platform/ai-connect/integration/authoring/question"
 import { currentDraft } from "@browser-capture/contracts/interview"
 import { fixture, question, draft, authoredInterview, audit } from "./helpers.js"
 
@@ -21,12 +22,34 @@ test("每个请求先持久化再启动模型，重复请求不重复用户消�
   assert.throws(() => coordinator.dispatch(id, { ...command, text: "替换输入" }), /不同内容/)
   assert.equal(store.snapshot(id).turns[0]?.status, "succeeded")
 }))
-test("多任务输入/草稿/确认隔离，归档只读且可恢复", async () => fixture(async ({ coordinator, store, create, send, prompts }) => {
+test("Main 以任务为 canonical session，accepted history 使用同一消息的原始事件且提交后才确认 Pi candidate", async () => fixture(async ({ coordinator, store, client, create, send, mainRuns }) => {
+  const confirmed: Array<{ drafts: number; status: string | undefined }> = []
+  const id = create()
+  client.onConfirm = () => {
+    const state = store.snapshot(id)
+    confirmed.push({ drafts: state.drafts.length, status: state.turns.at(-1)?.status })
+  }
+
+  send(id, "第一轮目标"); await coordinator.waitForIdle()
+  send(id, "第二轮补充"); await coordinator.waitForIdle()
+
+  assert.deepEqual(mainRuns.map((run) => run.sessionId), [id, id])
+  const history = mainRuns[1]!.messages as Array<{ role: string; content: Array<{ type: string; text: string }> }>
+  assert.deepEqual(history.map((item) => item.role), ["user", "assistant", "user"])
+  assert.match(history[1]!.content[0]!.text, /<authoring><interview-result>/)
+  assert.doesNotMatch(store.snapshot(id).messages[1]!.text, /authoring|interview-result/)
+  assert.deepEqual(confirmed, [
+    { drafts: 1, status: "succeeded" },
+    { drafts: 2, status: "succeeded" },
+  ])
+}))
+test("多任务输入/草稿/确认隔离，归档只读且可恢复", async () => fixture(async ({ coordinator, store, create, send, mainRuns }) => {
   const a = create(), b = create()
   send(a, "只要冰箱"); await coordinator.waitForIdle()
   coordinator.dispatch(a, { type: "confirm", requestId: randomUUID(), version: 1, expectedRevision: 1 })
   send(b, "只要电视"); await coordinator.waitForIdle()
-  assert.doesNotMatch(prompts[1]!, /只要冰箱/); assert.match(prompts[1]!, /只要电视/)
+  const secondHistory = JSON.stringify(mainRuns[1]!.messages)
+  assert.doesNotMatch(secondHistory, /只要冰箱/); assert.match(secondHistory, /只要电视/)
   assert.equal(store.snapshot(a).confirmedVersion, 1); assert.equal(store.snapshot(b).confirmedVersion, null)
   coordinator.taskAction({ type: "archive", id: a, archived: true })
   assert.throws(() => send(a), /先恢复/)
@@ -43,12 +66,17 @@ test("新输入立即使旧确认失效，历史版本只读且历史确认保�
   assert.throws(() => coordinator.dispatch(id, { type: "confirm", requestId: randomUUID(), version: 1, expectedRevision: 2 }), /最新草稿/)
   assert.equal(store.snapshot(id).drafts.length, 2)
 }))
-test("自由追问保留原文与问题上下文，不擅自转成建议决策；明确点击才记选项", async () => fixture(async ({ coordinator, store, client, create, send, prompts }) => {
-  client.runTurn = async function* (prompt) { prompts.push(prompt); yield authoredInterview({ assistantText: "请确定范围", question, draft: null }) }
+test("自由追问保留原文与问题上下文，不擅自转成建议决策；明确点击才记选项", async () => fixture(async ({ coordinator, store, client, create, send, mainRuns }) => {
+  client.runTurn = async function* () { yield authoredInterview({ assistantText: "请确定范围", question, draft: null }) }
   const id = create(); send(id); await coordinator.waitForIdle()
+  const firstRound = store.snapshot(id)
+  assert.deepEqual(firstRound.messages.map((message) => [message.role, message.status]), [
+    ["user", "complete"], ["assistant", "complete"],
+  ], firstRound.turns[0]?.reason ?? undefined)
   send(id, "我不选这两个，为什么要限制？"); await coordinator.waitForIdle()
   assert.equal(store.snapshot(id).decisions.length, 0)
-  assert.match(prompts[1]!, /为什么要限制/); assert.match(prompts[1]!, /前 100 条/)
+  const secondHistory = JSON.stringify(mainRuns[1]!.messages)
+  assert.match(secondHistory, /为什么要限制/); assert.match(secondHistory, /前 100 条/)
   const state = store.snapshot(id), questionId = state.messages.at(-1)!.id
   coordinator.dispatch(id, { type: "message", requestId: randomUUID(), expectedRevision: state.revision, text: "前 20 条", answer: { type: "choice", questionId, label: "前 20 条" } })
   await coordinator.waitForIdle()
@@ -117,17 +145,42 @@ test("公共 compound choice 在一次原子提交中保留选项、补充、Sur
   assert.equal(accepted.unresolved[0]?.answerMessageId, accepted.messages.at(-2)?.id)
   await coordinator.waitForIdle()
 }))
-test("开放题 typed reply 绑定 identity/revision 并持久化不可变回答历史", async () => fixture(async ({ coordinator, store, client, create, send }) => {
-  let turn = 0
-  const openQuestion = { prompt: "你希望采集哪个品牌？", options: [] }
-  client.runTurn = async function* () {
-    turn += 1
-    yield authoredInterview(turn === 1
-      ? { assistantText: "请提供品牌。", question: openQuestion, draft: null }
-      : { assistantText: "已形成草稿。", question: null, draft })
-  }
-  const id = create(); send(id); await coordinator.waitForIdle()
-  const asked = store.snapshot(id), questionId = asked.unresolved[0]!.id
+test("公共 multi_choice 使用同一提交、决策和持久化边界", async () => fixture(async ({ coordinator, store, create }) => {
+  const id = create()
+  const questionId = "question-multi"
+  const multi = createCommonChoiceQuestion({ id: questionId, type: "multi_choice", stem: "选择字段", options: [
+    { id: "name", label: "名称" }, { id: "price", label: "价格" }, { id: "image", label: "图片" },
+  ] })
+  store.mutate(id, (state) => {
+    state.revision = 1
+    state.messages.push({ id: questionId, role: "assistant", text: "请选择。", status: "complete",
+      question: multi, draftVersion: null, aiEvents: [] })
+    state.unresolved.push({ id: questionId, revision: 1, question: multi, status: "open", answerMessageId: null })
+  })
+  const surfaceSubmit = { answers: [{ questionId, data: {
+    selectedOptionIds: ["name", "price"],
+  } }], displayText: "名称\n价格" }
+  const accepted = coordinator.dispatch(id, {
+    type: "message", requestId: randomUUID(), expectedRevision: 1, text: surfaceSubmit.displayText,
+    answer: { type: "common_question", questionId, surfaceSubmit },
+  })
+  assert.equal(accepted.decisions.at(-1)?.kind, "option")
+  assert.equal(accepted.decisions.at(-1)?.text, surfaceSubmit.displayText)
+  assert.deepEqual(accepted.messages.at(-2)?.interactionReply?.surfaceSubmit, surfaceSubmit)
+  assert.deepEqual(accepted.unresolved[0]?.question, multi)
+  await coordinator.waitForIdle()
+}))
+test("既有开放题 typed reply 绑定 identity/revision 并持久化不可变回答历史", async () => fixture(async ({ coordinator, store, client, create }) => {
+  const id = create(), questionId = "question-free"
+  const openQuestion = createCommonFreeFormQuestion({ id: questionId, stem: "你希望采集哪个品牌？" })
+  store.mutate(id, (state) => {
+    state.revision = 1
+    state.messages.push({ id: questionId, role: "assistant", text: "请提供品牌。", status: "complete",
+      question: openQuestion, draftVersion: null, aiEvents: [] })
+    state.unresolved.push({ id: questionId, revision: 1, question: openQuestion, status: "open", answerMessageId: null })
+  })
+  client.runTurn = async function* () { yield authoredInterview({ assistantText: "已形成草稿。", question: null, draft }) }
+  const asked = store.snapshot(id)
   assert.equal(asked.unresolved[0]?.status, "open")
   assert.throws(() => coordinator.dispatch(id, { type: "message", requestId: randomUUID(), expectedRevision: asked.revision,
     text: "海尔", answer: { type: "free_text", questionId: "stale-question", text: "海尔" } }), /当前轮次/)
@@ -147,34 +200,33 @@ test("开放题 typed reply 绑定 identity/revision 并持久化不可变回答
   assert.equal(completed.decisions[0]?.messageId, completed.messages.at(-2)?.id)
   assert.equal(completed.drafts.length, 1)
 }))
-test("仅含可靠开放题的 authoring 输出可提交为正式 waitpoint", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+test("未注册的开放题 authoring 输出不能提交为正式 waitpoint", async () => fixture(async ({ coordinator, store, client, create, send }) => {
   const openQuestion = { prompt: "请提供要采集的品牌名称。", options: [] }
   client.runTurn = async function* () {
     yield authoredInterview({ assistantText: "", question: openQuestion, draft: null })
   }
   const id = create(); send(id); await coordinator.waitForIdle()
   const state = store.snapshot(id)
-  assert.equal(state.turns[0]?.status, "succeeded")
-  assert.equal(state.messages.at(-1)?.text, "")
-  const projected = state.messages.at(-1)?.question
-  assert.equal(projected && "type" in projected ? projected.type : null, "free_form")
-  assert.equal(state.unresolved[0]?.id, state.messages.at(-1)?.id)
-  assert.equal(state.unresolved[0]?.status, "open")
+  assert.equal(state.turns[0]?.status, "failed")
+  assert.equal(state.unresolved.length, 0)
 }))
-test("开放题答复后的模型失败保留 canonical history，retry 不重复用户消息", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+test("既有开放题答复后的模型失败保留 canonical history，retry 不重复用户消息", async () => fixture(async ({ coordinator, store, client, create }) => {
   let turn = 0
-  const openQuestion = { prompt: "你希望采集哪个品牌？", options: [] }
+  const questionId = "question-free"
+  const openQuestion = createCommonFreeFormQuestion({ id: questionId, stem: "你希望采集哪个品牌？" })
   client.runTurn = async function* () {
     turn += 1
-    if (turn === 1) {
-      yield authoredInterview({ assistantText: "请提供品牌。", question: openQuestion, draft: null })
-      return
-    }
-    if (turn === 2) throw new Error("fixture_downstream_failure")
+    if (turn === 1) throw new Error("fixture_downstream_failure")
     yield authoredInterview({ assistantText: "已形成草稿。", question: null, draft })
   }
-  const id = create(); send(id); await coordinator.waitForIdle()
-  const asked = store.snapshot(id), questionId = asked.unresolved[0]!.id
+  const id = create()
+  store.mutate(id, (state) => {
+    state.revision = 1
+    state.messages.push({ id: questionId, role: "assistant", text: "请提供品牌。", status: "complete",
+      question: openQuestion, draftVersion: null, aiEvents: [] })
+    state.unresolved.push({ id: questionId, revision: 1, question: openQuestion, status: "open", answerMessageId: null })
+  })
+  const asked = store.snapshot(id)
   coordinator.dispatch(id, { type: "message", requestId: randomUUID(), expectedRevision: asked.revision,
     text: "海尔", answer: { type: "free_text", questionId, text: "海尔" } })
   await coordinator.waitForIdle()
@@ -182,12 +234,12 @@ test("开放题答复后的模型失败保留 canonical history，retry 不重�
   assert.equal(failed.messages.at(-1)?.status, "failed")
   assert.equal(failed.unresolved[0]?.status, "answered")
   assert.deepEqual(failed.decisions.map((item) => item.kind), ["free_text"])
-  assert.equal(failed.messages.filter((message) => message.role === "user").length, 2)
+  assert.equal(failed.messages.filter((message) => message.role === "user").length, 1)
 
   coordinator.dispatch(id, { type: "retry", requestId: randomUUID(), expectedRevision: failed.revision })
   await coordinator.waitForIdle()
   const retried = store.snapshot(id)
-  assert.equal(retried.messages.filter((message) => message.role === "user").length, 2)
+  assert.equal(retried.messages.filter((message) => message.role === "user").length, 1)
   assert.deepEqual(retried.decisions.map((item) => item.kind), ["free_text"])
   assert.equal(retried.drafts.length, 1)
 }))
@@ -273,8 +325,10 @@ test("取消期间保持执行互斥，不能误取消其他任务或归档活�
   release.resolve(); await coordinator.waitForIdle()
   send(b); await coordinator.waitForIdle()
 }))
-test("供应商协议块不进入消息；校验失败/成功后异常均不提交草稿", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+test("供应商协议块不进入消息；校验失败/成功后异常均不提交草稿和确认 candidate", async () => fixture(async ({ coordinator, store, client, create, send }) => {
   const id = create()
+  let confirmations = 0
+  client.onConfirm = () => { confirmations++ }
   client.runTurn = async function* () {
     const output = authoredInterview({ assistantText: "结果", question, draft })
     assert.equal(output.type, "turn_succeeded")
@@ -288,12 +342,14 @@ test("供应商协议块不进入消息；校验失败/成功后异常均不提�
   assert.equal(store.snapshot(id).drafts.length, 0)
   assert.equal(store.snapshot(id).audits.length, 1)
   assert.doesNotMatch(store.snapshot(id).messages.at(-1)!.text, /authoring|interview-result|question-panel/)
+  assert.equal(confirmations, 0)
   client.runTurn = async function* () { yield authoredInterview({ assistantText: "提前成功", question: null, draft }); throw new Error("private-provider-path") }
   coordinator.dispatch(id, { type: "retry", requestId: randomUUID(), expectedRevision: 1 }); await coordinator.waitForIdle()
   assert.equal(store.snapshot(id).drafts.length, 0)
   assert.equal(store.snapshot(id).audits.length, 1)
   assert.equal(store.snapshot(id).messages.filter((message) => message.role === "user").length, 1)
   assert.doesNotMatch(store.snapshot(id).messages.at(-1)!.text, /private-provider-path/)
+  assert.equal(confirmations, 0)
 }))
 
 test("未知 UI capability 在任何访谈副作用前拒绝", async () => fixture(async ({ coordinator, store, create }) => {

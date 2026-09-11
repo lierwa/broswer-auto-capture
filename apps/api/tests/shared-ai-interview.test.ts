@@ -10,12 +10,13 @@ import { ProviderConnectionStore } from "@agent-platform/ai-connect/integration/
 import { createPiBuiltinProvider } from "@agent-platform/ai-connect/integration/provider/pi-builtin-provider"
 import { listModelIntegrations } from "@agent-platform/ai-connect/integration/provider-connection/integrations"
 import { ProductStore } from "../src/database/store.js"
+import { createApplication } from "../src/app.js"
 import { InterviewCoordinator } from "../src/interview/coordinator.js"
-import { createAIModelProvider } from "../src/ai/model.js"
+import { createAIModelProvider, requireAgentSessionSelection } from "../src/ai/model.js"
 import { loadInterviewSkill } from "../src/interview/protocol.js"
 import { authoredInterview, draft, projectRoot } from "./helpers.js"
 
-test("保存共享选择后访谈走公共 authoring 调用与事件链，失败不回退 Codex", async () => {
+test("保存共享选择后访谈走 Pi Main 的 canonical history 与公共事件链，失败不回退", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "browser-shared-ai-"))
   const originalFetch = globalThis.fetch
   const subjectId = "browser-capture-local-user"
@@ -36,8 +37,11 @@ test("保存共享选择后访谈走公共 authoring 调用与事件链，失败
     }] })
     const ai = createAIWithStorage(storage)
     store = await ProductStore.open(directory)
-    store.saveSharedModelSelection(subjectId, { connectionId: account.id, modelId: model.id, reasoningEffort: "medium" })
+    const selection = { connectionId: account.id, modelId: model.id, reasoningEffort: "medium" as const }
+    await requireAgentSessionSelection(ai, subjectId, selection)
+    store.saveSharedModelSelection(subjectId, selection)
     let providerCalls = 0
+    const providerRequests: unknown[] = []
     const authored = authoredInterview({ assistantText: "范围已整理。", question: null, draft })
     assert.equal(authored.type, "turn_succeeded")
     if (authored.type !== "turn_succeeded") throw new Error("fixture authoring missing")
@@ -46,10 +50,15 @@ test("保存共享选择后访谈走公共 authoring 调用与事件链，失败
       providerCalls += 1
       const request = new Request(url, init)
       assert.equal(request.headers.get("authorization"), "Bearer fixture-secret")
-      assert.equal((await request.json()).model, "gpt-5.6-sol")
+      const body = await request.json() as { model?: unknown; tools?: unknown }
+      providerRequests.push(body)
+      assert.equal(body.model, "gpt-5.6-sol")
+      assert.ok(body.tools === undefined || Array.isArray(body.tools) && body.tools.length === 0)
       return responsesStream(responseText, model.id)
     }
-    coordinator = new InterviewCoordinator(store, createAIModelProvider(ai, store, subjectId), loadInterviewSkill(projectRoot))
+    coordinator = new InterviewCoordinator(store, createAIModelProvider(ai, store, subjectId, {
+      cwd: projectRoot, stateDir: path.join(directory, "pi-agent-session"),
+    }), loadInterviewSkill(projectRoot))
     const id = coordinator.taskAction({ type: "create", requestId: randomUUID() })
     const send = (text: string) => coordinator!.dispatch(id, { type: "message", requestId: randomUUID(),
       expectedRevision: store!.snapshot(id).revision, text,
@@ -57,20 +66,57 @@ test("保存共享选择后访谈走公共 authoring 调用与事件链，失败
     send("采集公开商品评价"); await coordinator.waitForIdle()
     const completed = store.snapshot(id)
     assert.equal(completed.drafts.length, 1, completed.turns.at(-1)?.reason ?? "")
-    assert.deepEqual(completed.messages.at(-1)?.aiEvents.map((event) => event.type),
+    assert.deepEqual(completed.messages.at(-1)?.aiEvents.filter((event) => event.type !== "extension").map((event) => event.type),
       ["generation.started", "text.delta", "generation.completed"])
+    assert.match(JSON.stringify(providerRequests[0]), /本轮只形成可确认的任务需求/)
+    assert.doesNotMatch(JSON.stringify(providerRequests[0]), /每次复跑创建独立运行/)
 
     responseText = "<authoring><interview-result>{bad</interview-result></authoring>"
     send("把范围改为公开在售商品"); await coordinator.waitForIdle()
     const failed = store.snapshot(id)
     assert.equal(failed.messages.at(-1)?.status, "failed")
-    assert.deepEqual(failed.messages.at(-1)?.aiEvents.map((event) => event.type),
+    assert.deepEqual(failed.messages.at(-1)?.aiEvents.filter((event) => event.type !== "extension").map((event) => event.type),
       ["generation.started", "text.delta", "generation.completed"])
+    assert.match(JSON.stringify(providerRequests[1]), /<authoring><interview-result>/)
     assert.equal(providerCalls, 2)
     ai.close()
   } finally {
     globalThis.fetch = originalFetch
     await coordinator?.close(); await store?.close(); await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("AgentSession 选择门拒绝 managed profile 且保留原连接", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "browser-managed-selection-"))
+  const subjectId = "browser-capture-local-user"
+  let application: Awaited<ReturnType<typeof createApplication>> | undefined
+  try {
+    const storage = await openLocalStore(localStore({ directory: path.join(directory, "ai") }))
+    const connections = new ProviderConnectionStore(storage)
+    const account = await connections.create({ subjectId, kind: "official", integrationId: "openai-codex:oauth",
+      vendorId: "openai", displayName: "Legacy fixture", providerId: "openai-codex", protocol: "codex-managed-profile",
+      credential: { type: "oauth", managedProfile: { driver: "codex-app-server", profileId: "fixture-profile", revision: 1 } },
+    })
+    await connections.replaceVerifiedModels({ subjectId, connectionId: account.id, models: [{ modelId: "gpt-5.6-sol",
+      name: "gpt-5.6-sol", api: "codex-app-server", baseURL: "", contextWindow: 200_000, maxTokens: 32_000,
+      reasoning: true,
+    }] })
+    const ai = createAIWithStorage(storage)
+    await assert.rejects(requireAgentSessionSelection(ai, subjectId, {
+      connectionId: account.id, modelId: "gpt-5.6-sol", reasoningEffort: "medium",
+    }), /model_account_execution_surface_unsupported/)
+    application = await createApplication({ root: projectRoot, directory: path.join(directory, "app"), ai })
+    const response = await application.app.inject({ method: "PUT", url: "/api/model-settings", headers: {
+      host: "127.0.0.1:4175", origin: "http://127.0.0.1:4175", "sec-fetch-site": "same-origin",
+    }, payload: { selection: { connectionId: account.id, modelId: "gpt-5.6-sol", reasoningEffort: "medium" } } })
+    assert.equal(response.statusCode, 409)
+    assert.equal(response.json().code, "model_account_execution_surface_unsupported")
+    assert.equal(application.store.sharedModelSelection(subjectId), undefined)
+    assert.equal((await connections.resolveModelAccount({ subjectId, connectionId: account.id })).connection.protocol,
+      "codex-managed-profile")
+  } finally {
+    await application?.app.close()
+    await rm(directory, { recursive: true, force: true })
   }
 })
 

@@ -203,6 +203,7 @@ function App() {
             : {})}
           appearance={theme}
           selectOnConnect
+          requiredSurface="agentSession"
         />
       </main>
     </Theme>

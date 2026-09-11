@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
 import { CommonContentUIProtocol } from "@agent-platform/ai-connect/ui-contracts"
-import { createCommonQuestionFromPanel, createCommonQuestionSurface } from "@agent-platform/ai-connect/integration/authoring/question"
+import { createCommonChoiceQuestion, createCommonQuestionFromPanel, createCommonQuestionSurface } from "@agent-platform/ai-connect/integration/authoring/question"
 import { authoredQuestionSchema, interviewCommandSchema, interviewOutputSchema, messageSchema, modelInterviewOutputSchema, questionSchema } from "../src/interview.js"
 import { taskCommandSchema } from "../src/task.js"
 
@@ -43,7 +43,7 @@ test("开放事实问题保留自由回答，负责人取舍题使用二到三�
 
 test("模型可只提交可靠问题或草稿，但完全空输出不能成为成功结果", () => {
   const openQuestion = createCommonQuestionFromPanel({ id: "question-1", panel: {
-    prompt: "请提供要采集的品牌名称。", options: [],
+    mode: "free_form", prompt: "请提供要采集的品牌名称。", options: [],
   } })
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: openQuestion, draft: null }).success, true)
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: null, draft: { title: "采集范围", brief } }).success, true)
@@ -89,7 +89,7 @@ test("开放题答复使用 typed free-text，旧选择题命令仍解析为 typ
 
 test("公共 Question、compound submit 与原 Surface reply 可按既有消息 envelope 往返", () => {
   const canonical = createCommonQuestionFromPanel({ id: "question-1", panel: {
-    prompt: "选择范围",
+    mode: "choice", prompt: "选择范围",
     options: [
       { id: "small", label: "小范围", description: "较快交付", recommended: true },
       { id: "all", label: "全范围", description: "覆盖完整", recommended: false },
@@ -112,6 +112,25 @@ test("公共 Question、compound submit 与原 Surface reply 可按既有消息 
     interactionReply: { kind: "common_surface.submit", surfaceId: surface.id, surface, surfaceSubmit },
   })
   assert.deepEqual(persisted.interactionReply?.surface, surface)
+  assert.deepEqual(persisted.interactionReply?.surfaceSubmit, surfaceSubmit)
+})
+
+test("公共 multi_choice Question 与多选答案可按既有 envelope 往返", () => {
+  const question = createCommonChoiceQuestion({ id: "question-multi", type: "multi_choice", stem: "选择字段", options: [
+    { id: "name", label: "名称" }, { id: "price", label: "价格" }, { id: "image", label: "图片" },
+  ] })
+  assert.deepEqual(authoredQuestionSchema.parse(question), question)
+  const surface = createCommonQuestionSurface({ id: question.id, questions: [question], submitLabel: "提交回答" })
+  const surfaceSubmit = { answers: [{ questionId: question.id, data: {
+    selectedOptionIds: ["name", "price"],
+  } }], displayText: "名称\n价格" }
+  const persisted = messageSchema.parse({
+    id: "answer-multi", role: "user", text: surfaceSubmit.displayText, status: "complete",
+    question: null, draftVersion: null, aiEvents: [], interactionReply: {
+      kind: "common_surface.submit", surfaceId: surface.id, surface, surfaceSubmit,
+    },
+  })
+  assert.deepEqual(persisted.interactionReply?.surface.questions[0], question)
   assert.deepEqual(persisted.interactionReply?.surfaceSubmit, surfaceSubmit)
 })
 

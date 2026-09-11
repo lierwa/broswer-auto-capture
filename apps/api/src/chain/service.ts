@@ -3,7 +3,7 @@ import { z } from "zod"
 import { BrowserError, pageSchema } from "@browser-capture/browser"
 import { chainStateSchema, type ChainRecord, type CaptureRow } from "@browser-capture/contracts/chain"
 import { runActionGraph } from "@browser-capture/runtime/capture"
-import type { PlanProposal, PlanState } from "@browser-capture/contracts/plan"
+import { adoptedPlanSources, type PlanProposal, type PlanState } from "@browser-capture/contracts/plan"
 import type { ProductStore } from "../database/store.js"
 import { lazyAIModel, type AIModelProvider, type AIModelResolver } from "../ai/model.js"
 import type { PlanExecutor } from "../plan/queue.js"
@@ -73,7 +73,7 @@ export class ChainService {
         if (purpose === "exploration") calls++; else llmCalls++
         if (progress) { progress.explorationCalls = calls; progress.llmCalls = llmCalls; input.save() }
       } }
-    const sources = input.plan.sources.filter((source) => step.sourceIds.includes(source.id))
+    const sources = adoptedPlanSources(input.plan.evidence).filter((source) => step.sourceIds.includes(source.id))
     for (const source of sources) context.known.add(source.url)
     for (const row of rows) context.known.add(row.url)
     let lastError: unknown

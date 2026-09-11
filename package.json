@@ -41,6 +41,9 @@
       ],
       "@agent-platform/ai-connect-react": [
         "apps/workbench/package.json"
+      ],
+      "@agent-platform/pi-agent-session": [
+        "apps/api/package.json"
       ]
     }
   },

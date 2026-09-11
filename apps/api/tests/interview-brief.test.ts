@@ -15,17 +15,21 @@ test("领域候选 Schema 保留本地必填交接约束且不扩散 provider fo
   assert.equal(capture.properties.markdown, undefined)
 })
 
-test("负责人取舍输出保留三项比较与唯一推荐，并保留用户原文", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+test("负责人取舍输出保留三项比较与唯一推荐，并保留用户原文", async () => fixture(async ({ coordinator, store, client, create, send, mainRuns }) => {
   client.runTurn = async function* (prompt) {
-    assert.match(prompt, /以最终结果和可观察完成状态为中心/)
-    assert.equal(prompt.match(/以最终结果和可观察完成状态为中心/g)?.length, 1)
-    assert.match(prompt, /question-panel/)
+    assert.match(prompt, /对候选疑问作反事实比较/)
+    assert.equal(prompt.match(/对候选疑问作反事实比较/g)?.length, 1)
+    assert.match(prompt, /question-panel mode="choice"/)
     assert.match(prompt, /interview-result JSON Schema/)
     assert.match(prompt, /每个 question 或 draft 前都先输出一条简短、自然的普通 assistantText/)
-    assert.match(prompt, /自由输入题只使用没有任何 `question-option` 子元素的 `question-panel`/)
+    assert.match(prompt, /mode="multi_choice"/)
+    assert.doesNotMatch(prompt, /mode="free_form"/)
+    assert.match(prompt, /无法枚举用户的具体答案时，仍围绕处理方向或结果影响构造真实选项/)
+    assert.match(prompt, /同一必要输入持续未取得时，调整支架、降低表达粒度/)
+    assert.match(prompt, /推荐前先核对可行前提/)
+    assert.doesNotMatch(prompt, /需要用户填写具体名称或自由描述时，使用不含任何 `?question-option/)
     assert.match(prompt, /其他类别或混合任务使用 `interview-markdown`/)
     assert.match(prompt, /生成问题或草稿时，先用一条简短自然的普通文本承接已知意图或说明本轮产物的意义/)
-    assert.match(prompt, /我想抓微波炉的数据/)
     yield authoredInterview({
       assistantText: "先明确这批数据的主要用途，才能确定字段与覆盖要求。",
       question: { prompt: "这批微波炉数据优先支持哪类交付？", options: [
@@ -37,6 +41,7 @@ test("负责人取舍输出保留三项比较与唯一推荐，并保留用户�
     })
   }
   const id = create(); send(id, "我想抓微波炉的数据"); await coordinator.waitForIdle()
+  assert.match(JSON.stringify(mainRuns[0]?.messages), /我想抓微波炉的数据/)
   const state = store.snapshot(id)
   assert.equal(state.turns[0]?.status, "succeeded")
   assert.equal(state.drafts.length, 0)
@@ -48,7 +53,7 @@ test("负责人取舍输出保留三项比较与唯一推荐，并保留用户�
   assert.equal(projected.data.options.filter((option) => option.recommended).length, 1)
 }))
 
-test("正式选择题由公共 authoring policy 拒绝缺失推荐项，开放题仍合法", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+test("正式访谈只接受已注册的推荐单选题", async () => fixture(async ({ coordinator, store, client, create, send }) => {
   client.runTurn = async function* () {
     yield authoredInterview({ assistantText: "请确认范围。", question: { prompt: "选择范围", options: [
       { label: "小范围", description: "较快交付", recommended: false },
@@ -65,9 +70,8 @@ test("正式选择题由公共 authoring policy 拒绝缺失推荐项，开放�
     yield authoredInterview({ assistantText: "", question: { prompt: "请提供品牌", options: [] }, draft: null })
   }
   const open = create(); send(open); await coordinator.waitForIdle()
-  assert.equal(store.snapshot(open).messages.at(-1)?.status, "complete")
-  const projectedOpen = store.snapshot(open).unresolved[0]?.question
-  assert.equal(projectedOpen && "type" in projectedOpen ? projectedOpen.type : null, "free_form")
+  assert.equal(store.snapshot(open).messages.at(-1)?.status, "failed")
+  assert.equal(store.snapshot(open).unresolved.length, 0)
 }))
 
 test("通用任务草稿可确认保存但不进入数据采集交接", async () => fixture(async ({ coordinator, store, client, create, send }) => {
@@ -114,15 +118,18 @@ test("当前账号不可用所选模型时保留明确行动提示且不提交�
   assert.equal(state.drafts.length, 0)
 }))
 
-test("开放问题可自然回复，最新已确认需求按 task/version/revision 交给后续阶段", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+test("用户可不点击当前选项而自然补充，最新已确认需求按 task/version/revision 交给后续阶段", async () => fixture(async ({ coordinator, store, client, create, send }) => {
   let count = 0
   client.runTurn = async function* () {
-    yield authoredInterview(++count === 1 ? { assistantText: "我会根据品牌查找官方来源。", question: { prompt: "你希望采集哪个品牌？", options: [] }, draft: null }
+    yield authoredInterview(++count === 1 ? { assistantText: "先确认来源范围。", question: { prompt: "采用哪种来源范围？", options: [
+      { label: "官方来源", description: "优先查找官方公开入口", recommended: true },
+      { label: "指定来源", description: "只使用用户明确提供的入口", recommended: false },
+    ] }, draft: null }
       : { assistantText: "范围已明确。", question: null, draft })
   }
   const id = create(); send(id); await coordinator.waitForIdle()
-  const projectedOpen = store.snapshot(id).messages.at(-1)?.question
-  assert.equal(projectedOpen && "type" in projectedOpen ? projectedOpen.type : null, "free_form")
+  const projected = store.snapshot(id).messages.at(-1)?.question
+  assert.equal(projected && "type" in projected ? projected.type : null, "choice")
   send(id, "海尔，入口请系统查找"); await coordinator.waitForIdle()
   let state = store.snapshot(id)
   assert.equal(state.decisions.length, 0)

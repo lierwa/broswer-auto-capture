@@ -29,7 +29,7 @@ async function context() {
   const open = () => createApplication({ root: projectRoot, directory: original.directory, browserExecutor: executor,
     aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
   const current = await open()
-  const grant = (): BrowserGrant => ({ taskId, runId: randomUUID(), requirementVersion: 1, purpose: "source_research",
+  const grant = (): BrowserGrant => ({ taskId, runId: randomUUID(), requirementVersion: 1, purpose: "plan_evidence",
     allowedOrigins: ["https://example.com"], actions: ["observe"], maxCommands: 20, timeoutMs: 10_000 })
   return { current, open, grant, fake, taskId, otherId, directory: original.directory }
 }

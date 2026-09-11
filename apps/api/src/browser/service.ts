@@ -55,7 +55,7 @@ export class BrowserService {
     const validate = () => {
       const task = this.store.task(grant.taskId), state = this.store.snapshot(grant.taskId)
       if (task.archived || state.active || state.confirmedVersion !== grant.requirementVersion) throw new BrowserError("permission_denied")
-      if (grant.purpose !== "source_research") this.authorize(grant)
+      if (grant.purpose !== "plan_evidence") this.authorize(grant)
     }
     validate()
     if (this.active) throw new BrowserError("busy")

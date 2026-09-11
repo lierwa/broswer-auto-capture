@@ -9,6 +9,11 @@ export type ChoiceRule = Readonly<{
   followUp?: string
 }>
 
+export type RecommendedFollowUpRule = Readonly<{
+  promptIncludes: readonly string[]
+  value: string
+}>
+
 export type InterviewAcceptanceCase = Readonly<{
   id: string
   title: string
@@ -21,6 +26,10 @@ export type InterviewAcceptanceCase = Readonly<{
   hardScopeMustNotContain?: readonly string[]
   correctionAfterFirstDraft?: string
   finalDraftMustContain?: readonly string[]
+  answerStrategy?: "semantic_match" | "recommended"
+  maxRounds?: number
+  confirmDraft?: boolean
+  recommendedFollowUpRules?: readonly RecommendedFollowUpRule[]
 }>
 
 export const interviewAcceptanceCases: readonly InterviewAcceptanceCase[] = [

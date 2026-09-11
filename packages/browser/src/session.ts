@@ -82,8 +82,8 @@ export class BrowserSession {
   private async execute(command: BrowserCommand) {
     if (command.type === "page") return this.page()
     if (command.type === "follow") {
-      // WHY：首次调研可跨来源发现，但目标必须来自本会话真实页面；复跑不能动态扩权。
-      if (this.grant.purpose !== "source_research" || !this.discovered.has(command.url)) throw new BrowserError("permission_denied")
+      // WHY：计划证据核查可跨来源发现，但目标必须来自本会话真实页面；复跑不能动态扩权。
+      if (this.grant.purpose !== "plan_evidence" || !this.discovered.has(command.url)) throw new BrowserError("permission_denied")
       this.discoveryOrigins.add(new URL(command.url).origin)
       command = { type: "navigate", url: command.url }
     }

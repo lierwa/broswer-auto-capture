@@ -2,6 +2,14 @@
 
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
+## R-016 Plan 内按需来源取证（2026-09-11）
+
+来源证据与计划草稿由一次 Planning Run 共同产生，唯一事实源是版本化 `PlanRecord`：`evidence` 保存查询、候选、观察、coverage、gap 与审计，`proposal` 保存步骤、依赖、预算和完成条件，`stage` 明确 `assessing`、`source_evidence`、`drafting`、`complete`。是否需要浏览器调查由 Plan 根据已确认结构化需求判断；无需调查可直接成稿，用户提供 URL 仍只是待核验候选。
+
+独立 ResearchState、SQLite research 表、`/api/research`、Sources 页与客户端连接已退出当前合同。证据不足时，Plan 保存已取得事实、证据摘要和诚实的待核验步骤；零已采纳来源时 proposal 可查看但保持 `blocked`，由计划页重试取证，不能伪造成可执行。只有业务口径仍需用户决定的 gap 才回需求对话；登录、验证码和 cleanup 继续由浏览器状态提示人工处理。相同 requirementVersion 与 revision 的既有证据只有摘要校验一致且满足计划门时才可复制进新 PlanRecord，并以 `reusedFromPlanId` 明示来源。
+
+迁移不改变 BrowserSkill 的单会话、来源防伪、访问限制、cleanup、预算及显式执行授权边界，也不扩展 `brief=null` 的下游能力。R-010/R-011 与 F3/F4 记录作为迁移前真实验收保留；其中独立 API、表、页面和 ResearchRecord→Plan 绑定不再描述现行入口。
+
 ## R-015 公共 Agent surface 生产接入（2026-09-10）
 
 BCT 生产组合从 `@agent-platform/ai-connect-react/chat` 消费公共 Timeline 投影、answered Interaction entry 和 choice/multi-choice/free-form Question registry。BCT 的适配止于把 ProductStore 快照变成 canonical message/content entries、当前 waitpoint、Run 和合法命令；共享实现负责 turn/currentRun/Surface/history 的唯一投影。业务事实、幂等 command、revision 和任务隔离仍由 BCT ProductStore/SQLite 负责，没有新增 event、reducer、store 或公共 SDK envelope。
@@ -63,6 +71,8 @@ F5 每组输入最多验证两个 checkpoint，记录 termination=validation_win
 
 ## R-011 F4 正式计划与授权（2026-09-06）
 
+> 历史实现证据。现行事实归属与入口由 R-016 取代。
+
 复用现有 Codex App Server Terra/medium、Zod、SQLite/Drizzle、BrowserService 和 Radix；未新增运行依赖。计划制定是独立的 `plan_creation` 用途，一次显式模型判断，在服务端校验后持久化；规划不打开浏览器。输入为已确认 RequirementBrief 与真实 ResearchRecord；模型不接收宿主工具、原始页面、任意 URL 执行能力或数据库写能力。
 
 计划保存需求版本/revision、来源 id/version/内容摘要、完整需求、采纳来源、步骤图及字段/目标/缺口处理。每项需求字段和调研目标必须完整唯一映射；页面字段必须有同名实际来源依据。派生或允许缺失字段须引用已确认 constraints/proposedDefaults 的索引，页面字段与说明输出分别展示。每个来源 gap 都需解释并分配执行、派生或阻塞；requiresUser 的缺口必须阻塞。该机制结合模型语义判断、结构校验和用户审阅，不声称自由文本的所有语义均由静态规则证明。
@@ -74,6 +84,8 @@ SQLite v5 原子增加 plans/executions；授权、队列与请求幂等在同�
 F4 默认没有 PlanExecutor，授权记录持久停留 queued 并显示“等待探索执行器接入；尚未开始抓取”；`PlanExecutor` 是 F5 注入的内部依赖。测试处理器只验证串行调度、取消与回收，不是站点探索证明。进程重启时 generating/running 分别转 interrupted，queued 保留；需求/新来源使旧计划待复核，尚未开始的旧授权由队列转 stale。恢复不自动重放。真实范围、预算与队列证据见 PROGRESS。
 
 ## R-010 F3 真实来源调研（2026-09-06）
+
+> 历史实现证据。现行事实归属与入口由 R-016 取代。
 
 复用 BrowserService、BrowserSkill 0.2.0、SQLite/Drizzle、现有 Codex App Server 和 Radix；未新增运行依赖。正式入口为 GET/POST `/api/research?taskId=...`。模型仍通过 [App Server 的结构化输出](https://learn.chatgpt.com/docs/app-server) 返回判断，沿用 Terra/medium；首次操作探索 Sol/high 与显式节点 Luna/medium 仍由后续阶段实现。宿主 shell、插件和网页搜索工具保持禁用，浏览器动作全部经过受控服务。
 
@@ -119,7 +131,7 @@ F4 默认没有 PlanExecutor，授权记录持久停留 queued 并显示“等�
 
 ## R-005 需求访谈、来源调研与工作台设计修订
 
-日期：2026-09-06。基线见 PRODUCT_FLOW.md；本项复用现有组件，不新增运行依赖。
+日期：2026-09-06。迁移前设计记录；现行来源证据归属由 R-016 取代。本项复用现有组件，不新增运行依赖。
 
 - 已核对 `domain-analysis` 的 `categoryInterviewModule.ts`：每轮保存消息、建议/确认决策、待决事项与草稿版本；新输入退出可确认阶段；确认最新草稿后单独 materialize 正式任务。`crawlPlanningModule.ts` 独立管理规划与计划确认，`InterviewThread.tsx` 使用持续对话。相邻项目只读，不修改其源码或数据库。
 - `grill-with-docs` 的逐问、推荐答案与随答沉淀落实到访谈设计；CONTEXT 只保存术语，PRODUCT_FLOW 保存十阶段、输入产物、确认门和失败回路，不为每句用户回答创建工程 ADR。
@@ -282,8 +294,8 @@ Token 覆盖颜色、字体、间距、圆角、阴影、交互状态和必要�
 职责边界：frontend-design 是设计指导，Tailwind 是样式工具，Radix Primitives 是基础交互原语，三者均不能单独代表完整成品组件库选型完成；assistant-ui ExternalStoreRuntime 与 React Flow 只对应专业界面，仍受各自原型验证门约束。仅复用已核对许可的视觉资产与组件模式，不整体引入 opencode 会话或运行时。官方参考：[Radix Primitives](https://www.radix-ui.com/primitives/docs/overview/introduction)、[Tailwind theme](https://tailwindcss.com/docs/theme)、[React Flow](https://reactflow.dev/learn)、[assistant-ui ExternalStoreRuntime](https://www.assistant-ui.com/docs/runtimes/custom/external-store)。
 ## R-005 公共 Question 消费边界（2026-09-10）
 
-采用 AI Connect core 的公共 Question 作为通用事实源，不在 B-A-T 新增 parser、Surface 协议或答案反解器。`commonQuestionAuthoring({ recommendation: "required", minimumChoiceOptions: 2 })` 同源约束 authoring 注册与终态投影；`createCommonQuestionFromPanel`、`createCommonQuestionSurface`、`commonQuestionAnswerFromSubmit` 和 `buildCommonSurfaceReplyPayload` 分别承担 Question、Surface、answer normalization 与 history reply。options 为空时仍为合法 free_form；required recommendation 只约束有 options 的 choice。
+采用 AI Connect core 的公共 Question 作为通用事实源，不在 B-A-T 新增 parser、Surface 协议或答案反解器。公共注册的 `modes` 唯一决定实际注入的 `choice` / `multi_choice` / `free_form` 协议和终态校验，mode 不从选项数量推断。B-A-T 当前使用 `commonQuestionAuthoring({ modes: ["choice", "multi_choice"], recommendation: "required", minimumChoiceOptions: 2 })`；生产新题因此只能是至少两个选项且恰有一个推荐项的单选或复选，并可携带公共 follow-up 自由补充。`commonQuestionSchema`、`createCommonQuestionFromPanel`、`createCommonQuestionSurface`、`commonQuestionAnswerFromSubmit` 和 `buildCommonSurfaceReplyPayload` 分别承担内建题型存储校验、Question/Surface 组装、answer normalization 与 history reply。
 
-B-A-T 的领域职责是把公共 normalized answer 记为 interview decision，并维护 unresolved、brief、revision、requestId、cancel、事务与任务互斥。历史消息使用既有 JSON body 承载公共 reply，因此无需数据库迁移；旧 `{prompt, options}` 结构仅用于既有记录兼容。Workbench 从 `@agent-platform/ai-connect/ui-contracts` 消费 browser-safe helper，避免 server authoring 聚合出口进入浏览器构建图。
+B-A-T 的领域职责是把公共 normalized answer 记为 interview decision，并维护 unresolved、brief、revision、requestId、cancel、事务与任务互斥。历史消息使用既有 JSON body 承载公共 reply，因此无需数据库迁移；旧 `{prompt, options}` 结构仅用于既有记录兼容，也只在这个读取适配边界根据有无 options 恢复旧单选或开放题。新的公共 typed Question 不重算 mode；生产新题启用 `choice` 与 `multi_choice`，既有 `free_form` 只按原消息 envelope 回复和回放。Workbench 从 `@agent-platform/ai-connect/ui-contracts` 消费 browser-safe helper，避免 server authoring 聚合出口进入浏览器构建图。
 
-core/react 将 Zod 声明为 required peer `>=4.1.8 <5`。本 monorepo 根声明既有 4.1.8 作为 peer host，使 contracts 的本地 Zod schema 组合与 declaration emit 使用同一实例；不使用 overrides，也不新增第三个 vendor artifact。
+core/react 将 Zod 声明为 required peer `>=4.1.8 <5`。本 monorepo 根声明既有 4.1.8 作为 peer host，使 contracts 的本地 Zod schema 组合与 declaration emit 使用同一实例；不使用 overrides，该 Zod peer 组合也不新增额外 vendor artifact。

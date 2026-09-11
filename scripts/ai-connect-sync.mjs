@@ -10,9 +10,11 @@ const releasePath = join("packages", "ai-connect", "artifacts", "release.json")
 const packageNames = {
   core: "@agent-platform/ai-connect",
   react: "@agent-platform/ai-connect-react",
+  agentSession: "@agent-platform/pi-agent-session",
 }
 const requiredReactExports = [".", "./chat", "./styles.css"]
 const requiredCoreExports = ["./integration/authoring/question"]
+const requiredAgentSessionExports = ["."]
 
 async function main() {
   const allowed = new Set(["--allow-dirty-declared-files"])
@@ -31,6 +33,7 @@ async function main() {
   console.log(`producer ${release.producer.head}${release.producer.dirty ? " (dirty source snapshot)" : ""}`)
   console.log(`core ${release.packages.core.sha256}`)
   console.log(`react ${release.packages.react.sha256}`)
+  console.log(`agent-session ${release.packages.agentSession.sha256}`)
 }
 
 export async function resolveProducerRoot({ consumerRoot, env = process.env }) {
@@ -107,6 +110,9 @@ export function validateReleaseManifest(release) {
   if (!requiredReactExports.every((entry) => release.packages.react.exports.includes(entry))
     || !release.packages.react.styles.includes("./styles.css")) {
     throw new Error("ai_connect_sync_release_invalid:react_surface")
+  }
+  if (!requiredAgentSessionExports.every((entry) => release.packages.agentSession.exports.includes(entry))) {
+    throw new Error("ai_connect_sync_release_invalid:agent_session_surface")
   }
 }
 

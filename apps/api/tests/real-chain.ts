@@ -17,8 +17,9 @@ async function post(payload: Record<string, unknown>) {
 try {
   const before = current.coordinator.snapshot(taskId)
   if (process.argv.includes("--new-plan")) {
-    const source = current.research.snapshot(taskId).records[0]!
-    await post({ type: "generate", requestId: randomUUID(), requirementVersion: source.requirementVersion, sourceId: source.id, sourceVersion: source.version })
+    const requirementVersion = before.confirmedVersion
+    assert.ok(requirementVersion)
+    await post({ type: "generate", requestId: randomUUID(), requirementVersion })
     while (current.plan.snapshot(taskId).generating) await delay(1000)
     const plan = current.plan.snapshot(taskId).records[0]!
     await writeFile(path.join(directory, `f5-plan-v${plan.version}.json`), JSON.stringify(plan, null, 2))

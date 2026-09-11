@@ -4,9 +4,6 @@ import { ArrowRight, Database } from "lucide-react"
 import { DetailPane } from "./DetailPane.js"
 import type { InterviewState } from "./interviewContract.js"
 
-
-export { Sources } from "./Sources.js"
-
 export function Results({ state, active, onPlan }: { state: InterviewState; active: boolean; onPlan: () => void }) {
   const [sample, setSample] = useState(false)
   const [details, setDetails] = useState<"audit" | "sample" | null>(null)

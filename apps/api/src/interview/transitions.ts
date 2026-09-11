@@ -79,7 +79,7 @@ function acceptCommonQuestionAnswer(
   if (commandText !== answerText) conflict("提交内容与当前回答不匹配。")
   item.status = "answered"; item.answerMessageId = messageId
   state.decisions.push({ id: randomUUID(), revision: state.revision + 1,
-    kind: surface.questions[0]!.type === "choice" ? "option" : "free_text", text: answerText, messageId,
+    kind: surface.questions[0]!.type === "free_form" ? "free_text" : "option", text: answerText, messageId,
     questionId: item.id, draftVersion: null, createdAt: new Date().toISOString(),
   })
   return { interactionReply: buildCommonSurfaceReplyPayload({ surface, submit: surfaceSubmit }) }
@@ -92,6 +92,7 @@ function surfaceForQuestion(id: string, question: InterviewState["unresolved"][n
       conflict("旧问题缺少稳定的选项标识，不能提交。")
     }
     canonical = createCommonQuestionFromPanel({ id, panel: {
+      mode: question.options.length ? "choice" : "free_form",
       prompt: question.prompt,
       options: question.options.map((option, index) => ({ id: `option:${index + 1}`, ...option })),
       ...(question.options.length ? { inputs: [{ id: "other", label: "其他补充", kind: "textarea", role: "follow_up",

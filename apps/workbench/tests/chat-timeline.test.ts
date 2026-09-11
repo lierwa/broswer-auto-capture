@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
 import { renderToStaticMarkup } from "react-dom/server"
-import { createCommonQuestionFromPanel } from "@agent-platform/ai-connect/ui-contracts"
+import { buildCommonSurfaceReplyPayload, createCommonChoiceQuestion, createCommonQuestionFromPanel, createCommonQuestionSurface } from "@agent-platform/ai-connect/ui-contracts"
 import { interviewCommandSchema, interviewStateSchema, type InterviewState } from "../src/interviewContract.js"
 import { InterviewConnection } from "../src/interviewConnection.js"
 import {
@@ -16,7 +16,7 @@ import { interviewAgentUI } from "../src/interviewAgentUI.js"
 const noop = () => undefined
 const noopAnswer = async () => undefined
 const projection = (state: InterviewState) => ({
-  state, blocked: false, onDraft: noop, onSources: noop, onRetry: noopAnswer,
+  state, blocked: false, onDraft: noop, onPlan: noop, onRetry: noopAnswer,
 })
 const state = (input: Partial<InterviewState>) => interviewStateSchema.parse({
   revision: 0, sequence: 0, activeTurnId: null, cancellationRequested: false,
@@ -78,7 +78,7 @@ test("只有最新 open waitpoint 成为选择题 Interaction，提交保留 ide
 
 test("正式采访决策题保留推荐单选、follow_up 补充和一次 compound 提交", () => {
   const question = createCommonQuestionFromPanel({ id: "current", panel: {
-    prompt: "选择范围",
+    mode: "choice", prompt: "选择范围",
     options: [
       { id: "small", label: "小范围", description: "较快交付", recommended: true },
       { id: "all", label: "全范围", description: "覆盖完整", recommended: false },
@@ -172,9 +172,45 @@ test("options=[] 映成公共 free_form Module 并提交 typed free-text reply",
   })
 })
 
+test("公共 multi_choice 展示、多选提交与锁定历史共用同一 Surface", () => {
+  const questionId = "multi-q", answerId = "multi-a"
+  const question = createCommonChoiceQuestion({ id: questionId, type: "multi_choice", stem: "选择字段", options: [
+    { id: "name", label: "名称" }, { id: "price", label: "价格" }, { id: "image", label: "图片" },
+  ] })
+  const active = state({ revision: 1, sequence: 2,
+    unresolved: [{ id: questionId, revision: 1, question, status: "open", answerMessageId: null }],
+    messages: [assistant(questionId, question)],
+  })
+  const timeline = projectInterviewTimeline(projection(active))
+  assert.equal(timeline.presentedSurface?.questions[0]?.type, "multi_choice")
+  assert.equal(timeline.activeInteraction?.questions[0]?.options.length, 3)
+  const surfaceSubmit = { answers: [{ questionId, data: {
+    selectedOptionIds: ["name", "price"],
+  } }], displayText: "名称\n价格" }
+  assert.deepEqual(submittedInterviewAnswer(active, surfaceSubmit), {
+    text: surfaceSubmit.displayText,
+    answer: { type: "common_question", questionId, surfaceSubmit },
+  })
+
+  const surface = createCommonQuestionSurface({ id: questionId, questions: [question], submitLabel: "提交回答" })
+  const answered = state({ revision: 2, sequence: 4,
+    unresolved: [{ id: questionId, revision: 1, question, status: "answered", answerMessageId: answerId }],
+    decisions: [{ id: "decision-multi", revision: 2, kind: "option", text: surfaceSubmit.displayText,
+      messageId: answerId, questionId, draftVersion: null, createdAt: "2026-09-11T00:00:00.000Z" }],
+    messages: [assistant(questionId, question), {
+      id: answerId, role: "user", text: surfaceSubmit.displayText, status: "complete", question: null,
+      draftVersion: null, aiEvents: [], interactionReply: buildCommonSurfaceReplyPayload({ surface, submit: surfaceSubmit }),
+    }],
+  })
+  const entry = projectInterviewTimeline(projection(answered)).turns.flatMap((turn) => turn.entries)
+    .find((item) => item.value.kind === "answered-interaction")
+  assert.deepEqual(entry?.value.kind === "answered-interaction"
+    ? entry.value.interaction.surfaceSubmit : null, surfaceSubmit)
+})
+
 test("公共 Question builder 只把严格 answer 发送到采访命令", async () => {
   const question = createCommonQuestionFromPanel({ id: "current", panel: {
-    prompt: "选择范围",
+    mode: "choice", prompt: "选择范围",
     options: [
       { id: "1", label: "主流平台", description: "系统发现公开入口", recommended: true },
       { id: "2", label: "指定平台", description: "仅处理指定来源", recommended: false },

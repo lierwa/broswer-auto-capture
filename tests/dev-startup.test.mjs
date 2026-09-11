@@ -267,7 +267,10 @@ function blockingAIModel() {
   return {
     selection: () => selection,
     async prepare() {
-      return { selection, generateText: ({ signal }) => waitForAbort(signal), generateObject: ({ signal }) => waitForAbort(signal) }
+      return { selection, generateObject: ({ signal }) => waitForAbort(signal) }
+    },
+    async prepareMain() {
+      return { selection, run: ({ signal }) => waitForAbort(signal), close: async () => {} }
     },
   }
 }

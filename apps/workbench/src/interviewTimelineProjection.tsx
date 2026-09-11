@@ -27,7 +27,7 @@ type ProjectionInput = {
   state: InterviewState;
   blocked: boolean;
   onDraft(version: number): void;
-  onSources(): void;
+  onPlan(): void;
   onRetry(): Promise<void>;
 };
 
@@ -162,7 +162,7 @@ function assistantContentEntries(
   ) });
   if (index === input.state.messages.length - 1 && input.state.confirmedVersion) {
     content.push({ id: "confirmed", node: (
-      <ConfirmedNext version={input.state.confirmedVersion} onSources={input.onSources} />
+      <ConfirmedNext version={input.state.confirmedVersion} onPlan={input.onPlan} />
     ) });
   }
   if (index === input.state.messages.length - 1 && input.state.cancellationRequested) {
@@ -250,6 +250,7 @@ function interviewQuestionSurface(message: InterviewMessage): QuestionSurface | 
     if (question.options.length > 0
       && new Set(question.options.map((option) => option.label)).size !== question.options.length) return null;
     canonical = createCommonQuestionFromPanel({ id: message.id, panel: {
+      mode: question.options.length ? "choice" : "free_form",
       prompt: question.prompt,
       options: question.options.map((option, index) => ({ id: optionId(index), ...option })),
       ...(question.options.length ? { inputs: [{ id: "other", label: "其他补充", kind: "textarea", role: "follow_up",
@@ -285,7 +286,7 @@ function questionStem(question: CommonSurfaceQuestion) {
 }
 
 function questionOptions(question: CommonSurfaceQuestion) {
-  if (question.type !== "choice") return [];
+  if (question.type !== "choice" && question.type !== "multi_choice") return [];
   return (question.data as { options: Array<{ label: string; subtitle?: string }> }).options
     .map(({ label, subtitle }) => ({ label, description: subtitle ?? "" }));
 }
@@ -337,10 +338,10 @@ export function interviewErrorMessage(message: InterviewMessage | undefined) {
   return message?.role === "assistant" && message.status === "failed" ? "本轮结果未提交，可以重试。" : undefined;
 }
 
-function ConfirmedNext({ version, onSources }: { version: number; onSources(): void }) {
+function ConfirmedNext({ version, onPlan }: { version: number; onPlan(): void }) {
   return <div className="confirmed-next"><Check size={16} /><div><strong>需求 v{version} 已确认</strong>
-    <p>接下来依据这份范围调研真实来源，再制定抓取计划。</p></div>
-    <Button variant="soft" onClick={onSources}>查看来源调研<ArrowRight size={14} /></Button></div>;
+    <p>接下来依据这份范围制定计划，并按需核验真实来源。</p></div>
+    <Button variant="soft" onClick={onPlan}>制定抓取计划<ArrowRight size={14} /></Button></div>;
 }
 
 function TurnArtifacts({ item, state, onDraft }: { item: InterviewMessage; state: InterviewState; onDraft: (v: number) => void }) {

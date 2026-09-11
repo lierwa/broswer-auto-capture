@@ -3,6 +3,7 @@ import { z } from "zod"
 import { BrowserError, grantSchema, sessionIdSchema, type BrowserGrant, type CommandExecutor, type Ownership } from "./contracts.js"
 import { BrowserJournal } from "./journal.js"
 import { BrowserSession } from "./session.js"
+import { CommandLaunchError } from "./transport.js"
 export { BrowserError, grantSchema, commandSchema, type BrowserGrant, type BrowserAudit, type CommandExecutor } from "./contracts.js"
 export { bskExecutor } from "./transport.js"
 export { BrowserSession } from "./session.js"
@@ -90,6 +91,10 @@ export class BrowserHost {
         return value
       } catch (error) {
         await this.journal.audit({ ...event, phase: "failed" }).catch(() => {})
+        // WHY：进程创建失败能证明 session_start 从未运行；只有这个确定场景可关闭空 owner，响应丢失仍保持待清理。
+        if (command === "session_start" && error instanceof CommandLaunchError && owner) {
+          owner.state = "closed"; await this.journal.save(owner)
+        }
         throw error instanceof BrowserError ? error : new BrowserError("invalid_response")
       }
     }
@@ -114,7 +119,7 @@ export class BrowserHost {
           const stopped = stopSchema.parse(await invoke("session_stop", ["session", "stop", owner.sessionId], true))
           if (!stopped.stopped.includes(owner.sessionId) || stopped.failed.length || stopped.return_failures.length) throw new BrowserError("cleanup_required")
           owner.state = "closed"; await this.journal.save(owner)
-        } else if (owner) { owner.state = "cleanup_required"; await this.journal.save(owner) }
+        } else if (owner && owner.state !== "closed") { owner.state = "cleanup_required"; await this.journal.save(owner) }
       } catch { if (owner) { owner.state = "cleanup_required"; await this.journal.save(owner) }; throw new BrowserError("cleanup_required") }
       finally { await release() }
     }

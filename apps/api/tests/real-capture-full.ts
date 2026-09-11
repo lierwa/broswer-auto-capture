@@ -22,8 +22,9 @@ async function post(payload: Record<string, unknown>) {
 try {
   const before = app.coordinator.snapshot(taskId)
   if (prepare) {
-    const source = app.research.snapshot(taskId).records[0]!
-    await post({ type: "generate", requestId: randomUUID(), requirementVersion: source.requirementVersion, sourceId: source.id, sourceVersion: source.version,
+    const requirementVersion = before.confirmedVersion
+    assert.ok(requirementVersion)
+    await post({ type: "generate", requestId: randomUUID(), requirementVersion,
       budgetCeiling: ceiling, stepBudgetLimits: {
         enumerate: { maxCommands: 300, timeoutMs: 180000, maxModelCalls: 8, maxLlmCalls: 0 },
         collect: { maxCommands: 3500, timeoutMs: 1200000, maxModelCalls: 3, maxLlmCalls: 0 },

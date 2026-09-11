@@ -7,30 +7,45 @@ import { createAI, localStore, parseModelSelection, type AI } from "@agent-platf
 import { CommonContentUIProtocol } from "@agent-platform/ai-connect/ui-contracts"
 import { emptyInterview, type InterviewState } from "@browser-capture/contracts/interview"
 import { createApplication, SHARED_AI_SUBJECT } from "../src/app.js"
-import { createInterviewAuthoring, loadInterviewSkill } from "../src/interview/protocol.js"
+import { assertAcceptanceDraftQuality } from "./interview-acceptance-quality.js"
+import { createInterviewMainAuthoring, loadInterviewSkill } from "../src/interview/protocol.js"
 import { interviewAcceptanceCases, type InterviewAcceptanceCase } from "./interview-acceptance-cases.js"
+import { interviewWeakEvaluationCases } from "./interview-weak-evaluation-cases.js"
 
 const root = fileURLToPath(new URL("../../../", import.meta.url))
 if (Number(process.versions.node.split(".")[0]) !== 24) throw new Error(`验收固定使用 Node 24，实际为 ${process.versions.node}`)
 const argumentsMap = parseArguments(process.argv.slice(2))
-if (argumentsMap.preflight && (argumentsMap.real || argumentsMap.all || argumentsMap.caseId)) {
+const maximumCalls = argumentsMap.maxCalls === undefined ? undefined : Number(argumentsMap.maxCalls)
+if (maximumCalls !== undefined && (!Number.isInteger(maximumCalls) || maximumCalls < 1)) {
+  throw new Error("--max-calls 必须是正整数")
+}
+if (argumentsMap.preflight && (argumentsMap.real || argumentsMap.all || argumentsMap.caseId || argumentsMap.weakId)) {
   throw new Error("--preflight 不得与 --real、--case 或 --all 同时使用")
 }
 if (argumentsMap.skipIds.length && !argumentsMap.all) throw new Error("--skip 只能与 --all 配合使用")
-if (argumentsMap.resume && (!argumentsMap.real || argumentsMap.preflight || argumentsMap.all || !argumentsMap.caseId)) {
+if (argumentsMap.resume && (!argumentsMap.real || argumentsMap.preflight || argumentsMap.all || !(argumentsMap.caseId || argumentsMap.weakId))) {
   throw new Error("--resume 必须与 --real、单个 --case 配合使用")
 }
 if (!argumentsMap.preflight && !argumentsMap.real) throw new Error("真实模型验收需要显式 --real")
-if (!argumentsMap.preflight && argumentsMap.all === Boolean(argumentsMap.caseId)) throw new Error("必须且只能指定 --case=<id> 或 --all")
-if (!argumentsMap.expectedConnection) throw new Error("必须提供 --expected-connection=<connectionId>")
+const targetCount = Number(argumentsMap.all) + Number(Boolean(argumentsMap.caseId)) + Number(Boolean(argumentsMap.weakId))
+if (!argumentsMap.preflight && targetCount !== 1) throw new Error("必须且只能指定 --case=<id>、--weak=<A|B> 或 --all")
+if (!argumentsMap.useLiveSelection && !argumentsMap.expectedConnection) {
+  throw new Error("必须提供 --expected-connection=<connectionId>，或显式使用 --use-live-selection")
+}
 
 const liveBase = argumentsMap.userApi ?? "http://127.0.0.1:4175"
-const expectedSelection = parseModelSelection({
-  connectionId: argumentsMap.expectedConnection,
-  modelId: argumentsMap.expectedModel ?? "gpt-5.6-terra",
-  reasoningEffort: argumentsMap.expectedEffort ?? "medium",
-})
-const selectedCases = argumentsMap.preflight ? [] : argumentsMap.all
+const expectedSelection = argumentsMap.useLiveSelection
+  ? await readLiveSelection(liveBase)
+  : parseModelSelection({
+    connectionId: argumentsMap.expectedConnection,
+    modelId: argumentsMap.expectedModel ?? "gpt-5.6-terra",
+    reasoningEffort: argumentsMap.expectedEffort ?? "medium",
+  })
+const weakCase = argumentsMap.weakId
+  ? interviewWeakEvaluationCases[argumentsMap.weakId.toUpperCase() === "A" ? 0 : argumentsMap.weakId.toUpperCase() === "B" ? 1 : -1]
+  : undefined
+if (argumentsMap.weakId && !weakCase) throw new Error(`未知弱表达轨迹：${argumentsMap.weakId}`)
+const selectedCases = argumentsMap.preflight ? [] : weakCase ? [weakCase] : argumentsMap.all
   ? interviewAcceptanceCases.filter((scenario) => !argumentsMap.skipIds.includes(scenario.id))
   : interviewAcceptanceCases.filter((scenario) => scenario.id === argumentsMap.caseId)
 if (!argumentsMap.preflight && !selectedCases.length) throw new Error(`未知验收场景：${argumentsMap.caseId}`)
@@ -84,7 +99,7 @@ try {
   process.stdout.write(`RUN ${artifact.runId} ${selectedCases.length} cases${argumentsMap.resume ? " resume" : ""}\n`)
   for (const scenario of selectedCases) {
     const previous = artifact.cases.find((item) => item.id === scenario.id)
-    const result = await runScenario(service, isolatedBase, scenario, previous)
+    const result = await runScenario(service, isolatedBase, scenario, previous, maximumCalls)
     const index = artifact.cases.findIndex((item) => item.id === scenario.id)
     if (index >= 0) artifact.cases[index] = result
     else artifact.cases.push(result)
@@ -110,6 +125,7 @@ async function runScenario(
   base: string,
   scenario: InterviewAcceptanceCase,
   previous?: CaseArtifact,
+  maximumCalls?: number,
 ): Promise<CaseArtifact> {
   let taskId: string
   let result: CaseArtifact
@@ -133,7 +149,7 @@ async function runScenario(
           const expected = scenario.finalDraftMustContain ?? scenario.draftMustContain
           assertExpectedTermsWereSent(state, expected)
           assertContains(draft, expected)
-          assertDraftQuality(scenario, draft)
+          assertAcceptanceDraftQuality(scenario, draft, "final")
           await confirmDraft(base, taskId, state, draft.version)
           if (app.store.snapshot(taskId).confirmedVersion !== draft.version) throw new Error("草稿确认版本未持久化")
           await assertLaterStagesEmpty(base, taskId)
@@ -154,46 +170,65 @@ async function runScenario(
     if (created.statusCode !== 200) throw new Error(`创建隔离任务失败：${created.statusCode}`)
     taskId = (created.body as { id: string }).id
     result = { id: scenario.id, taskId, status: "running", intentProfile: scenario.intentProfile,
-      rounds: [], questionKinds: [], confirmedVersion: null, finalDraft: null, failure: null, failureKind: null }
+      rounds: [], questionKinds: [], visibleConversation: [], confirmedVersion: null, finalDraft: null, failure: null, failureKind: null }
     input = scenario.initialInput
   }
   try {
     let corrected = resumedCorrection
-    for (let generation = result.rounds.length + 1; generation <= 6; generation++) {
+    let exactRepeatCount = 0
+    let previousQuestion = result.rounds.at(-1)?.question ? digest(result.rounds.at(-1)!.question) : null
+    const usedFollowUps = new Set(result.rounds.flatMap((item) => {
+      const previousAnswer = item.answer
+      return previousAnswer?.kind === "selection" && previousAnswer.followUp ? [previousAnswer.followUp] : []
+    }))
+    const generationLimit = Math.min(scenario.maxRounds ?? 6, maximumCalls ?? Number.POSITIVE_INFINITY)
+    for (let generation = result.rounds.length + 1; generation <= generationLimit; generation++) {
       const state = await submitMessage(app, base, taskId, input, answer)
       const round = roundArtifact(state, input, answer)
       result.rounds.push(round)
+      result.visibleConversation = visibleConversation(state)
       assertSingleInvocation(round)
       const draft = currentDraft(state)
       if (draft) {
         const expected = corrected ? scenario.finalDraftMustContain ?? scenario.draftMustContain : scenario.draftMustContain
         assertExpectedTermsWereSent(state, expected)
         assertContains(draft, expected)
-        assertDraftQuality(scenario, draft)
+        assertAcceptanceDraftQuality(scenario, draft,
+          corrected || !scenario.correctionAfterFirstDraft ? "final" : "initial")
         if (scenario.correctionAfterFirstDraft && !corrected) {
           corrected = true; input = scenario.correctionAfterFirstDraft; answer = undefined; continue
         }
-        await confirmDraft(base, taskId, state, draft.version)
-        const confirmed = app.store.snapshot(taskId)
-        if (confirmed.confirmedVersion !== draft.version) throw new Error("草稿确认版本未持久化")
-        await assertLaterStagesEmpty(base, taskId)
-        result.confirmedVersion = draft.version; result.finalDraft = draft; result.status = "passed"
+        if (scenario.confirmDraft !== false) {
+          await confirmDraft(base, taskId, state, draft.version)
+          const confirmed = app.store.snapshot(taskId)
+          if (confirmed.confirmedVersion !== draft.version) throw new Error("草稿确认版本未持久化")
+          await assertLaterStagesEmpty(base, taskId)
+          result.confirmedVersion = draft.version
+        }
+        result.finalDraft = draft; result.status = "passed"
         return result
       }
       const open = state.unresolved.find((item) => item.status === "open")
       if (!open) throw new Error("真实轮次既没有可确认草稿，也没有可回答 Question")
       const kind = normalizeQuestion(open.question).kind
       result.questionKinds.push(kind)
-      const resolved = resolveAnswer(scenario, open)
+      const questionFingerprint = digest(open.question)
+      exactRepeatCount = questionFingerprint === previousQuestion ? exactRepeatCount + 1 : 0
+      previousQuestion = questionFingerprint
+      if (exactRepeatCount >= 2) throw new Error("quality:连续两轮产生完全相同的问题")
+      const resolved = resolveAnswer(scenario, open, usedFollowUps)
+      if (resolved.kind === "selection" && resolved.followUp) usedFollowUps.add(resolved.followUp)
       input = resolved.text; answer = resolved
     }
-    throw new Error("超过每案6个真实生成轮次仍未形成可确认草稿")
+    throw new Error(`超过本次${generationLimit}个真实生成轮次仍未形成可确认草稿`)
   } catch (error) {
     const state = app.store.snapshot(taskId)
+    result.finalDraft = currentDraft(state) ?? result.finalDraft
     const turn = state.turns.at(-1)
     if (turn && !result.rounds.some((round) => round.revision === turn.revision)) {
       result.rounds.push(roundArtifact(state, input, answer))
     }
+    result.visibleConversation = visibleConversation(state)
     result.status = "failed"; result.failure = publicError(error); result.failureKind = classifyFailure(error)
     return result
   }
@@ -203,11 +238,10 @@ async function submitMessage(app: NonNullable<typeof service>, base: string, tas
   const before = app.store.snapshot(taskId)
   const response = await isolatedRequest(base, "POST", `/api/interview?taskId=${encodeURIComponent(taskId)}`,
     { type: "message", requestId: randomUUID(), expectedRevision: before.revision, text,
-      ...(answer ? { answer: answer.kind === "choice"
-        ? answer.followUp
-          ? { type: "common_question", questionId: answer.questionId, surfaceSubmit: { displayText: answer.text,
-              answers: [{ questionId: answer.questionId, data: { selectedOptionIds: [answer.optionId], inputValues: { other: answer.followUp } } }] } }
-          : { type: "choice", questionId: answer.questionId, label: answer.label }
+      ...(answer ? { answer: answer.kind === "selection"
+        ? { type: "common_question", questionId: answer.questionId, surfaceSubmit: { displayText: answer.text,
+            answers: [{ questionId: answer.questionId, data: { selectedOptionIds: answer.optionIds,
+              ...(answer.followUp ? { inputValues: { other: answer.followUp } } : {}) } }] } }
         : { type: "free_text", questionId: answer.questionId, text: answer.text } } : {}) })
   if (response.statusCode !== 202) throw new Error(`采访命令失败：${response.statusCode}`)
   const active = app.store.snapshot(taskId).activeTurnId
@@ -223,13 +257,24 @@ async function submitMessage(app: NonNullable<typeof service>, base: string, tas
   return state
 }
 
-function resolveAnswer(scenario: InterviewAcceptanceCase, item: InterviewState["unresolved"][number]): Answer {
+function resolveAnswer(scenario: InterviewAcceptanceCase, item: InterviewState["unresolved"][number], usedFollowUps = new Set<string>()): Answer {
   const question = normalizeQuestion(item.question)
   if (question.kind === "free_form") {
     const rule = scenario.freeTextRules.find((candidate) => includesAny(question.prompt, candidate.promptIncludes))
     if (!rule) throw new Error(`冻结 persona 未定义自由输入事实：${question.prompt}`)
     return { kind: "free_form", questionId: item.id, text: rule.answer,
       source: `prompt_rule:${rule.promptIncludes.join("|")}` }
+  }
+  if (scenario.answerStrategy === "recommended") {
+    const recommended = question.options.filter((option) => option.recommended)
+    if (recommended.length !== 1) throw new Error(`真实问题没有唯一推荐方向：${question.prompt}`)
+    const recommendedSurfaceText = [question.prompt, recommended[0]!.label, recommended[0]!.description].join(" ")
+    const followUp = scenario.recommendedFollowUpRules?.find((rule) => !usedFollowUps.has(rule.value)
+      && includesAny(recommendedSurfaceText, rule.promptIncludes))?.value
+    return { kind: "selection", mode: question.kind, questionId: item.id,
+      labels: [recommended[0]!.label], optionIds: [recommended[0]!.id], ...(followUp ? { followUp } : {}),
+      text: followUp ? `${recommended[0]!.label}\n其他补充：${followUp}` : recommended[0]!.label,
+      source: "question_recommendation" }
   }
   const matchingRules = scenario.choiceRules.filter((candidate) => includesAny(question.prompt, candidate.promptIncludes))
   const preferred = matchingRules.flatMap((rule) => rule.preferredOptionIncludes)
@@ -241,7 +286,7 @@ function resolveAnswer(scenario: InterviewAcceptanceCase, item: InterviewState["
   const rule = matchingRules.find((candidate) => candidate.preferredOptionIncludes.some((term) =>
     includes(scored[0]!.option.label + " " + scored[0]!.option.description, term)))
   const followUp = rule?.followUp
-  return { kind: "choice", questionId: item.id, label: scored[0].option.label, optionId: scored[0].option.id,
+  return { kind: "selection", mode: question.kind, questionId: item.id, labels: [scored[0].option.label], optionIds: [scored[0].option.id],
     ...(followUp ? { followUp } : {}), text: followUp ? `${scored[0].option.label}\n其他补充：${followUp}` : scored[0].option.label,
     source: `unique_semantic_match:${preferred.join("|")}` }
 }
@@ -249,8 +294,9 @@ function resolveAnswer(scenario: InterviewAcceptanceCase, item: InterviewState["
 function normalizeQuestion(question: InterviewState["unresolved"][number]["question"]) {
   if ("prompt" in question) return { kind: question.options.length ? "choice" as const : "free_form" as const,
     prompt: question.prompt, options: question.options.map((option, index) => ({ id: `option:${index + 1}`, ...option })) }
-  if (question.type === "choice") return { kind: "choice" as const, prompt: question.data.stem,
-    options: question.data.options.map((option) => ({ id: option.id, label: option.label, description: option.subtitle ?? "" })) }
+  if (question.type === "choice" || question.type === "multi_choice") return { kind: question.type, prompt: question.data.stem,
+    options: question.data.options.map((option) => ({ id: option.id, label: option.label,
+      description: option.subtitle ?? "", recommended: option.recommended ?? false })) }
   return { kind: "free_form" as const, prompt: question.data.stem, options: [] }
 }
 
@@ -261,12 +307,12 @@ async function confirmDraft(base: string, taskId: string, state: InterviewState,
 }
 
 async function assertLaterStagesEmpty(base: string, taskId: string) {
-  const states = await Promise.all(["browser", "research", "plan", "chains"].map(async (surface) =>
+  const states = await Promise.all(["browser", "plan", "chains"].map(async (surface) =>
     (await isolatedRequest(base, "GET", `/api/${surface}?taskId=${encodeURIComponent(taskId)}`)).body))
-  const [browser, research, plan, chains] = states as Array<Record<string, unknown>>
-  if (browser?.record || (research?.records as unknown[])?.length || (plan?.records as unknown[])?.length
+  const [browser, plan, chains] = states as Array<Record<string, unknown>>
+  if (browser?.record || (plan?.records as unknown[])?.length
     || (plan?.executions as unknown[])?.length || (chains?.records as unknown[])?.length) {
-    throw new Error("采访验收意外产生了浏览器、调研、计划或链路记录")
+    throw new Error("采访验收意外产生了浏览器、计划或链路记录")
   }
 }
 
@@ -279,6 +325,11 @@ function roundArtifact(state: InterviewState, input: string, answer?: Answer): R
     durationMs: turn.completedAt ? Date.parse(turn.completedAt) - Date.parse(turn.createdAt) : null,
     invocationIds: [...new Set(events.flatMap((event) => "invocationId" in event ? [String(event.invocationId)] : []))],
     modelEvents: events.filter((event) => event.type === "generation.started" || event.type === "generation.completed") }
+}
+
+function visibleConversation(state: InterviewState) {
+  return state.messages.map((message) => ({ role: message.role, text: message.text, status: message.status,
+    question: message.question, draftVersion: message.draftVersion }))
 }
 
 function assertSingleInvocation(round: RoundArtifact) {
@@ -318,16 +369,6 @@ function containsSemanticEquivalent(normalizedText: string, term: string) {
   return term === "180" && ["3分钟", "03:00", "3 分钟"].some((value) => normalizedText.includes(value))
 }
 
-function assertDraftQuality(scenario: InterviewAcceptanceCase, value: NonNullable<ReturnType<typeof currentDraft>>) {
-  if (value.markdown.includes("本需求仅授权") && value.markdown.includes("不构成任何浏览器操作授权")) {
-    throw new Error("quality:草稿同时声称已授权后续浏览器工作与不构成浏览器操作授权")
-  }
-  if (!value.brief || !scenario.hardScopeMustNotContain?.length) return
-  const hardScope = JSON.stringify({ scope: value.brief.scope, constraints: value.brief.constraints })
-  const invented = scenario.hardScopeMustNotContain.filter((term) => hardScope.includes(term))
-  if (invented.length) throw new Error(`quality:草稿把未确认默认写入硬范围：${invented.join("、")}`)
-}
-
 function classifyFailure(error: unknown): CaseArtifact["failureKind"] {
   const message = publicError(error)
   if (message.startsWith("冻结 persona")) return "fixture_needs_input"
@@ -346,7 +387,7 @@ async function readLiveSelection(base: string) {
 async function digestLiveUserState(base: string) {
   const tasks = await liveJson(`${base}/api/tasks`) as { tasks?: Array<{ id: string }> } | Array<{ id: string }>
   const list = Array.isArray(tasks) ? tasks : tasks.tasks ?? []
-  const surfaces = ["interview", "browser", "research", "plan", "chains"]
+  const surfaces = ["interview", "browser", "plan", "chains"]
   const values: string[] = []
   for (const task of [...list].sort((left, right) => left.id.localeCompare(right.id))) {
     for (const surface of surfaces) values.push(`${task.id}:${surface}:${digest(await liveJson(`${base}/api/${surface}?taskId=${task.id}`))}`)
@@ -375,11 +416,11 @@ async function capturePromptProvenance(repositoryRoot: string): Promise<PromptPr
   const skillPath = path.join(repositoryRoot, ".agents", "skills", "interview-browser-task", "SKILL.md")
   const protocolPath = path.join(repositoryRoot, "apps", "api", "src", "interview", "protocol.ts")
   const skill = loadInterviewSkill(repositoryRoot)
-  const prompt = createInterviewAuthoring(structuredClone(emptyInterview), skill, {
+  const prompt = createInterviewMainAuthoring(structuredClone(emptyInterview), skill, {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   }).prompt
-  const requiredHostInstructions = ["zero question-option children", "Only when the panel offers choices"]
+  const requiredHostInstructions = ["Enabled Question modes: choice, multi_choice.", "For choice and multi_choice, emit at least 2 meaningful question-option children."]
   const missing = requiredHostInstructions.filter((item) => !prompt.includes(item))
   if (missing.length) throw new Error(`host authoring prompt 缺少冻结协议：${missing.join("、")}`)
   const captureExamples = prompt.match(/<interview-result>[\s\S]*?<\/interview-result>/g) ?? []
@@ -408,7 +449,9 @@ async function capturePromptProvenance(repositoryRoot: string): Promise<PromptPr
 
 function parseArguments(values: string[]) {
   const named = (name: string) => values.find((value) => value.startsWith(`${name}=`))?.slice(name.length + 1)
-  return { preflight: values.includes("--preflight"), real: values.includes("--real"), all: values.includes("--all"), caseId: named("--case"),
+  return { preflight: values.includes("--preflight"), real: values.includes("--real"), all: values.includes("--all"), caseId: named("--case"), weakId: named("--weak"),
+    useLiveSelection: values.includes("--use-live-selection"),
+    maxCalls: named("--max-calls"),
     skipIds: (named("--skip") ?? "").split(",").filter(Boolean),
     expectedConnection: named("--expected-connection"), expectedModel: named("--expected-model"),
     expectedEffort: named("--expected-effort"), userApi: named("--user-api"), resume: named("--resume") }
@@ -435,11 +478,11 @@ async function persistArtifact(target: string, value: AcceptanceArtifact) {
   await writeFile(target, JSON.stringify(value, null, 2))
 }
 
-type Answer = { kind: "choice"; questionId: string; text: string; label: string; optionId: string; followUp?: string; source: string }
+type Answer = { kind: "selection"; mode: "choice" | "multi_choice"; questionId: string; text: string; labels: string[]; optionIds: string[]; followUp?: string; source: string }
   | { kind: "free_form"; questionId: string; text: string; source: string }
 type RoundArtifact = { revision: number; input: string; answer: Answer | null; question: unknown; draftVersion: number | null; status: string;
   startedAt: string; completedAt: string | null; durationMs: number | null; invocationIds: string[]; modelEvents: unknown[] }
-type CaseArtifact = { id: string; taskId: string; status: "running" | "passed" | "failed"; intentProfile: string; rounds: RoundArtifact[];
+type CaseArtifact = { id: string; taskId: string; status: "running" | "passed" | "failed"; intentProfile: string; rounds: RoundArtifact[]; visibleConversation: Array<{ role: string; text: string; status: string; question: unknown; draftVersion: number | null }>;
   questionKinds: string[]; confirmedVersion: number | null; finalDraft: unknown; failure: string | null;
   failureKind: "fixture_needs_input" | "model_or_product" | "quality" | "automatic_assertion" | "harness" | null }
 type PromptProvenance = { vendorTar: string; vendorTarSha256: string; skillSha256: string; protocolSourceSha256: string;

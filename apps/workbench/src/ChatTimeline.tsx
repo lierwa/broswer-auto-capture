@@ -31,7 +31,7 @@ type TimelineModelSettings = Pick<
 type TimelineProps = {
   taskId: string;
   interview: Interview;
-  onSources(): void;
+  onPlan(): void;
   onDraft(version: number): void;
   blocked: boolean;
   readOnly: boolean;
@@ -42,7 +42,7 @@ type TimelineProps = {
 export function ChatTimeline({
   taskId,
   interview,
-  onSources,
+  onPlan,
   onDraft,
   blocked,
   readOnly,
@@ -62,7 +62,7 @@ export function ChatTimeline({
         state,
         blocked: controlsBlocked || readOnly || !modelReady,
         onDraft,
-        onSources,
+        onPlan,
         onRetry: interview.retry,
       }),
     [
@@ -73,7 +73,7 @@ export function ChatTimeline({
       modelReady,
       onDraft,
       interview.retry,
-      onSources,
+      onPlan,
     ],
   );
   const errorMessage = interviewErrorMessage(latest);
@@ -205,7 +205,7 @@ export function ChatTimeline({
             : {}),
           emptyStateFooter: (
             <p className="composer-caption">
-              先确认需求，再调研来源与制定计划。发送消息不会启动浏览器操作。
+              先确认需求，再制定计划；计划会按需核验来源。发送消息不会启动浏览器操作。
             </p>
           ),
         }}
@@ -233,7 +233,7 @@ function Welcome() {
   return (
     <div className="thread-welcome">
       <h2>描述这次要采集的内容</h2>
-      <p>说明对象、范围和期望字段；需求确认后将继续调研来源并制定计划。</p>
+      <p>说明对象、范围和期望字段；需求确认后可制定计划，计划会按需核验来源。</p>
     </div>
   );
 }

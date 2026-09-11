@@ -1,32 +1,33 @@
 import { randomUUID, createHash } from "node:crypto"
 import { BrowserError, type BrowserPage } from "@browser-capture/browser"
 import type { RequirementBrief } from "@browser-capture/contracts/interview"
-import type { ResearchDecision, ResearchRecord, SourceCandidate } from "@browser-capture/contracts/research"
+import type { PlanEvidenceDecision, PlanRecord, SourceCandidate } from "@browser-capture/contracts/plan"
 
-export function recordPage(record: ResearchRecord, page: BrowserPage, candidate: SourceCandidate | null, queryId: string | null) {
-  const id = randomUUID(), at = new Date().toISOString()
+export function recordEvidencePage(record: PlanRecord, page: BrowserPage, candidate: SourceCandidate | null, queryId: string | null) {
+  const id = randomUUID(), at = new Date().toISOString(), evidence = record.evidence
   const corpus = [page.text, `当前实际地址：${page.url}`, ...page.links.map((item) => `${item.title} ${item.url}`)].join("\n")
-  record.observations.push({ id, at, url: page.url, title: page.title, candidateId: candidate?.id ?? null, queryId,
+  evidence.observations.push({ id, at, url: page.url, title: page.title, candidateId: candidate?.id ?? null, queryId,
     digest: createHash("sha256").update(corpus).digest("hex"), truncated: page.truncated, assessment: null })
   if (candidate) candidate.status = "observed"
-  const query = record.queries.find((item) => item.id === queryId)
+  const query = evidence.queries.find((item) => item.id === queryId)
   if (query) query.observationId = id
-  const known = new Set(record.candidates.map((item) => item.url))
+  const known = new Set(evidence.candidates.map((item) => item.url))
   for (const link of page.links) {
-    if (known.has(link.url) || record.candidates.length >= 800) continue
+    if (known.has(link.url) || evidence.candidates.length >= 800) continue
     known.add(link.url)
-    record.candidates.push({ id: randomUUID(), ...link, discoveredAt: at, provenance: "page_link", discoveredOn: id, status: "candidate", reason: "实际页面链接，目标尚待核验" })
+    evidence.candidates.push({ id: randomUUID(), ...link, discoveredAt: at, provenance: "page_link", discoveredOn: id, status: "candidate", reason: "实际页面链接，目标尚待核验" })
   }
   // WHY：模型选择证据编号，服务取回原文；避免模型重写标点/空格导致真实观察被整轮丢弃。
   const text = corpus.split("\n").map((line) => line.trim()).filter(Boolean).map((line, index) => `[E${index}] ${line.slice(0, 200)}`).join("\n")
   return { id, text }
 }
-export function assess(record: ResearchRecord, decision: ResearchDecision, current: { id: string; text: string } | null) {
+
+export function assessEvidence(record: PlanRecord, decision: PlanEvidenceDecision, current: { id: string; text: string } | null) {
   const value = decision.assessment
   if (!value) return
   if (!current || value.observationId !== current.id) throw new Error("invalid_evidence_reference")
-  const observation = record.observations.find((item) => item.id === current.id)!
-  const candidate = record.candidates.find((item) => item.id === observation.candidateId)
+  const observation = record.evidence.observations.find((item) => item.id === current.id)!
+  const candidate = record.evidence.candidates.find((item) => item.id === observation.candidateId)
   if (value.access === "manual_required") {
     observation.assessment = { ...value, adopted: false, fields: [], enumeration: null }
     if (candidate) { candidate.status = "restricted"; candidate.reason = value.reason }
@@ -45,21 +46,22 @@ export function assess(record: ResearchRecord, decision: ResearchDecision, curre
   observation.assessment = { ...value, fields, enumeration }
   if (candidate) candidate.reason = value.reason
 }
-export function conclude(record: ResearchRecord, decision: ResearchDecision, brief: RequirementBrief) {
-  const known = new Set(record.observations.map((item) => item.id))
-  const adopted = record.observations.filter((item) => item.assessment?.adopted)
+
+export function concludeEvidence(record: PlanRecord, decision: PlanEvidenceDecision, brief: RequirementBrief) {
+  const evidence = record.evidence, known = new Set(evidence.observations.map((item) => item.id))
+  const adopted = evidence.observations.filter((item) => item.assessment?.adopted)
   const supported = new Set(adopted.map((item) => item.id))
   if (decision.gaps.some((gap) => gap.observationIds.some((id) => !known.has(id)))) throw new Error("invalid_gap_reference")
   if (decision.coverage.some((item) => item.observationIds.some((id) => !supported.has(id)))) throw new Error("invalid_coverage_reference")
-  record.coverage = decision.coverage; record.gaps = decision.gaps
-  const add = (description: string) => record.gaps.push({ description, observationIds: adopted.map((item) => item.id), requiresUser: false })
+  evidence.coverage = decision.coverage; evidence.gaps = decision.gaps
+  const add = (description: string) => evidence.gaps.push({ description, observationIds: adopted.map((item) => item.id), requiresUser: false })
   const fields = new Set(adopted.flatMap((item) => item.assessment!.fields.map((field) => field.name)))
   for (const field of new Set(brief.deliverables.flatMap((item) => item.fields))) if (!fields.has(field)) add(`尚无字段可得性证据：${field}`)
   for (const objective of [...brief.discoveryTasks.map((item) => item.objective), ...brief.deliverables.map((item) => item.entity)]) {
-    if (!record.coverage.some((item) => item.objective === objective)) add(`尚无覆盖依据：${objective}`)
+    if (!evidence.coverage.some((item) => item.objective === objective)) add(`尚无覆盖依据：${objective}`)
   }
   if (!adopted.some((item) => item.assessment!.enumeration)) add("尚无完整范围的枚举或入口衔接依据")
   if (!adopted.length) add("尚无已采纳的真实来源页面")
   record.current = decision.reason
-  return record.gaps.length ? "partial" as const : "completed" as const
+  return evidence.gaps.length ? "partial" as const : "completed" as const
 }

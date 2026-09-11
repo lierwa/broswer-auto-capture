@@ -20,7 +20,7 @@ export class ChainRepository {
   }
   candidate(plan: PlanRecord, step: PlanProposal["steps"][number]) {
     const compatible = this.store.db.select().from(plans).all().map((row) => row.body).filter((item) => item.taskId === plan.taskId
-      && item.requirementVersion === plan.requirementVersion && item.requirementRevision === plan.requirementRevision && item.sourceDigest === plan.sourceDigest)
+      && item.requirementVersion === plan.requirementVersion && item.requirementRevision === plan.requirementRevision && item.evidenceDigest === plan.evidenceDigest)
     const candidate = this.list(plan.taskId).find((chain) => chain.status === "verified" && compatible.some((previous) => previous.id === chain.planId
       && previous.proposal?.steps.some((oldStep) => oldStep.id === chain.stepId && oldStep.kind === step.kind
         && JSON.stringify([...oldStep.sourceIds].sort()) === JSON.stringify([...step.sourceIds].sort()))))

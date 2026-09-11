@@ -25,7 +25,7 @@ export const authoredInterview = (output: {
   draft: unknown
 }): TestRunEvent => ({ type: "turn_succeeded", outputText: [
   output.assistantText,
-  output.question ? `<authoring><question-panel prompt="${attribute(output.question.prompt)}">${output.question.options.map((option, index) =>
+  output.question ? `<authoring><question-panel mode="${output.question.options.length ? "choice" : "free_form"}" prompt="${attribute(output.question.prompt)}">${output.question.options.map((option, index) =>
     `<question-option slot="${index + 1}" label="${attribute(option.label)}"${option.recommended ? ' recommended="true"' : ""}>${text(option.description)}</question-option>`).join("")}</question-panel></authoring>` : "",
   output.draft ? authoredDraft(output.draft) : "",
 ].filter(Boolean).join("\n\n") })
@@ -42,7 +42,12 @@ function isGenericDraft(value: unknown): value is { title: string; markdown: str
 function attribute(value: string) { return text(value).replaceAll('"', "&quot;") }
 function text(value: string) { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") }
 export const projectRoot = fileURLToPath(new URL("../../../", import.meta.url))
-type TestClient = { readAccount(): Promise<{ loggedIn: true; type: "chatgpt" }>; close(): Promise<void>; runTurn: TestRunTurn }
+type TestClient = {
+  readAccount(): Promise<{ loggedIn: true; type: "chatgpt" }>
+  close(): Promise<void>
+  runTurn: TestRunTurn
+  onConfirm?(): void
+}
 export function deferred() { let resolve!: () => void; const promise = new Promise<void>((done) => { resolve = done }); return { promise, resolve } }
 export async function fixture(run: (value: Awaited<ReturnType<typeof openFixture>>) => Promise<void>) {
   const value = await openFixture()
@@ -52,14 +57,17 @@ export async function fixture(run: (value: Awaited<ReturnType<typeof openFixture
 export async function openFixture() {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-api-test-"))
   const store = await ProductStore.open(directory)
-  const prompts: string[] = [], gates: Array<ReturnType<typeof deferred>> = []
+  const prompts: string[] = [], mainRuns: Array<{ sessionId: string; messages: unknown }> = []
+  const gates: Array<ReturnType<typeof deferred>> = []
   const unblock = () => { for (const gate of gates) gate.resolve() }
   const client: TestClient = { readAccount: async () => ({ loggedIn: true, type: "chatgpt" }), close: async () => { unblock() },
     async *runTurn(prompt) { prompts.push(prompt); yield authoredInterview({ assistantText: "范围已整理。", question: null, draft }) },
   }
   const coordinator = new InterviewCoordinator(store, testAIModel((prompt, schema, signal) => client.runTurn(prompt, schema, signal), undefined,
-    () => { void client.close() }), loadInterviewSkill(projectRoot))
+    () => { void client.close() }, () => client.onConfirm?.(),
+    (input) => mainRuns.push({ sessionId: input.sessionId, messages: structuredClone(input.messages) })), loadInterviewSkill(projectRoot))
   const create = () => coordinator.taskAction({ type: "create", requestId: randomUUID() })
   const send = (id: string, text = "收集商品和评价") => coordinator.dispatch(id, { type: "message", requestId: randomUUID(), text, expectedRevision: store.snapshot(id).revision })
-  return { store, coordinator, directory, client, prompts, create, send, unblock, gate: () => { const value = deferred(); gates.push(value); return value } }
+  return { store, coordinator, directory, client, prompts, mainRuns, create, send, unblock,
+    gate: () => { const value = deferred(); gates.push(value); return value } }
 }
