@@ -9,14 +9,7 @@ import { loadInterviewSkill } from "../src/interview/protocol.js"
 import { testAIModel, type TestRunEvent, type TestRunTurn } from "./fixtures/ai-model.js"
 
 export const question = { prompt: "希望收集多少评价？", options: [{ label: "前 20 条", description: "范围较小", recommended: true }, { label: "前 100 条", description: "覆盖更多", recommended: false }] }
-export const brief = {
-  goal: "收集商品与评价", scope: "任务指定的商品范围",
-  sourceStrategy: { mode: "discover" as const, scope: "系统查找并核验正式来源", providedUrls: [] },
-  deliverables: [{ entity: "商品", fields: ["商品链接", "参数", "评价"], coverage: "目标范围全部商品", limit: "每商品前20条评价，不足记录实际数量" }],
-  discoveryTasks: [{ objective: "查找目标入口及商品枚举依据", expectedOutput: "候选入口与商品链接集合", acceptance: "核验来源归属、分类与枚举覆盖" }],
-  completionCriteria: ["每条结果保留来源链接，报告覆盖和缺口"], constraints: ["登录、验证码转人工"], proposedDefaults: [],
-}
-export const draft = { title: "商品与评价", brief }
+export const draft = { title: "通用浏览器任务", markdown: "# 任务目标\n\n按用户确认的输入完成浏览器操作，并保存可观察结果与缺口。", brief: null }
 export const audit = { invocationCount: 1, requestedModel: "gpt-5.6-terra", requestedEffort: "medium", reportedModel: "gpt-5.6-terra", reportedEffort: "medium" } as const
 export const succeeded = (output: unknown): TestRunEvent => ({ type: "turn_succeeded", outputText: JSON.stringify(output) })
 export const authoredInterview = (output: {
@@ -30,10 +23,8 @@ export const authoredInterview = (output: {
   output.draft ? authoredDraft(output.draft) : "",
 ].filter(Boolean).join("\n\n") })
 function authoredDraft(value: unknown) {
-  if (isGenericDraft(value)) {
-    return `<authoring><interview-markdown title="${attribute(value.title)}">${value.markdown}</interview-markdown></authoring>`
-  }
-  return `<authoring><interview-result>${JSON.stringify({ draft: value })}</interview-result></authoring>`
+  if (!isGenericDraft(value)) throw new Error("fixture_generic_draft_required")
+  return `<authoring><interview-markdown title="${attribute(value.title)}">${value.markdown}</interview-markdown></authoring>`
 }
 function isGenericDraft(value: unknown): value is { title: string; markdown: string; brief: null } {
   return typeof value === "object" && value !== null && "title" in value && typeof value.title === "string"

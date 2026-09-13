@@ -15,6 +15,7 @@ import { migrate } from "../src/database/migrate.js"
 const brief = (goal: string) => ({
   goal, scope: "一个站点的公开商品",
   sourceStrategy: { mode: "discover" as const, scope: "由系统调查公开入口", providedUrls: [] },
+  accessRequirements: [],
   deliverables: [{ entity: "商品", fields: ["名称", "价格"], coverage: "全部可见商品", limit: "完成公开目录后停止" }],
   discoveryTasks: [{ objective: "定位目录", expectedOutput: "候选入口", acceptance: "页面可公开访问" }],
   completionCriteria: ["商品均保留来源"], constraints: ["仅公开页面"], proposedDefaults: ["先调查入口"],

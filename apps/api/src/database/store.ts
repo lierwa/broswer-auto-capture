@@ -78,6 +78,13 @@ export class ProductStore {
   recordOperation(scope: string, requestId: string, input: unknown, resultId: string) {
     this.db.insert(schema.operations).values({ scope, requestId, digest: digest(input), resultId }).run()
   }
+  legacyContractRows(taskId: string) {
+    this.task(taskId)
+    const read = (source: "plans" | "chains" | "executions") => this.connection
+      .prepare(`SELECT id, body FROM ${source} WHERE taskId = ? ORDER BY rowid`).all(taskId)
+      .map((row) => ({ source, ...(row as { id: string; body: string }) }))
+    return [...read("plans"), ...read("chains"), ...read("executions")]
+  }
   sharedModelSelection(subjectId: string): ModelSelection | undefined {
     this.assertAvailable()
     const row = this.db.select().from(schema.aiSettings).where(eq(schema.aiSettings.subjectId, subjectId)).get()

@@ -9,9 +9,7 @@ import {
   type CommonCardBlock,
 } from "@agent-platform/ai-connect/ui-contracts"
 import { aiEventSchema } from "./ai.js"
-import { requirementBriefSchema } from "./requirementBrief.js"
-import { taskIdSchema } from "./task.js"
-export { requirementBriefSchema, renderRequirementBrief, type RequirementBrief } from "./requirementBrief.js"
+import { jsonValueSchema } from "./task-chain/value.js"
 
 const text = z.string().trim().min(1).max(30_000)
 // WHY：可靠 Question/Draft 自身就是可提交结果；模型无需为了满足正文非空而重复或编造展示文本。
@@ -32,20 +30,19 @@ export const interviewMessagePartSchema = z.discriminatedUnion("type", [
   z.object({ id: text, type: z.literal("card"), card: commonCardSchema }).strict(),
 ])
 export const interviewOutputSchema = z.object({
-  assistantText: text, question: questionSchema.nullable(), draft: z.object({ title: text, markdown: text, brief: requirementBriefSchema.nullable().default(null) }).nullable(),
+  assistantText: text, question: questionSchema.nullable(), draft: z.object({ title: text, markdown: text, brief: jsonValueSchema.nullable().default(null) }).nullable(),
   parts: z.array(interviewMessagePartSchema).default([]),
 }).refine((value) => !(value.question && value.draft), "有负责人问题时不得生成可确认草稿")
-const captureModelDraftSchema = z.object({ title: text, brief: requirementBriefSchema }).strict()
 const genericModelDraftSchema = z.object({ title: text, markdown: text, brief: z.null() }).strict()
 export const modelInterviewOutputSchema = z.object({
   assistantText: optionalAssistantText, question: authoredQuestionSchema.nullable(),
-  // WHY：持久化契约已支持 Markdown + nullable brief；只有采集 brief 能进入现有执行链，其他类别保留可审阅需求而不伪造采集结构。
-  draft: z.union([captureModelDraftSchema, genericModelDraftSchema]).nullable(),
+  draft: genericModelDraftSchema.nullable(),
 }).strict()
   .refine((value) => !(value.question && value.draft), "有负责人问题时不得生成可确认草稿")
   .refine((value) => Boolean(value.assistantText || value.question || value.draft), "采访输出必须包含安全正文、问题或草稿")
 export const draftSchema = z.object({ version: z.number().int().positive(), revision, title: text, markdown: text,
-  brief: requirementBriefSchema.nullable().default(null),
+  // 旧 brief 原样保留在历史草稿；新 authoring 只写完整 Markdown，不能再进入执行合同。
+  brief: jsonValueSchema.nullable().default(null),
 })
 export const messageSchema = z.object({
   id: text, role: z.enum(["user", "assistant"]), text: z.string(),
@@ -120,14 +117,6 @@ export function currentDraft(state: Pick<InterviewState, "drafts" | "revision">)
   const last = state.drafts.at(-1)
   return last?.revision === state.revision ? last : undefined
 }
-export const requirementHandoffSchema = z.object({ taskId: taskIdSchema, draftVersion: z.number().int().positive(), revision, brief: requirementBriefSchema }).strict()
-export function confirmedRequirement(taskId: string, state: InterviewState) {
-  const draft = currentDraft(state)
-  // WHY：后续阶段只能使用当前明确确认的结构需求；旧 Markdown 保留可读，不猜造交接数据。
-  if (state.active || !draft?.brief || state.confirmedVersion !== draft.version) return null
-  return requirementHandoffSchema.parse({ taskId, draftVersion: draft.version, revision: draft.revision, brief: draft.brief })
-}
-
 function publicContract<T extends ClientUIProtocolCapabilitiesV1 | CommonCardBlock>(parse: (input: unknown) => T) {
   return z.unknown().transform((input, context): T => {
     try { return parse(input) }

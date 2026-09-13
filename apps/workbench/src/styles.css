@@ -181,10 +181,10 @@ select { max-width: 100%; width: 100%; background: var(--color-panel); color: va
 .flow-node { width: 175px; padding: 16px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-panel-raised); color: var(--color-text); font-size: 12px; line-height: 1.9; white-space: pre-line; }
 .flow-node.selected { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
 .checkpoint-node { border-top: 3px solid var(--color-success); }
-.capture-node { white-space: pre-line; border-radius: 8px; min-height: 64px; }
-.capture-node-passed { border-top: 3px solid var(--color-success); }
-.capture-node-failed { border-top: 3px solid var(--red-9); }
-.capture-node-running { border-top: 3px solid var(--amber-9); }
+.chain-node { white-space: pre-line; border-radius: 8px; min-height: 64px; }
+.chain-node-passed { border-top: 3px solid var(--color-success); }
+.chain-node-failed { border-top: 3px solid var(--red-9); }
+.chain-node-running { border-top: 3px solid var(--amber-9); }
 .chain-json { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 400px; overflow: auto; }
 .react-flow__attribution a { color: var(--color-text-muted); }
 .node-details { padding: 20px 18px; border-left: 1px solid var(--color-border); background: var(--color-panel-raised); }
@@ -323,5 +323,5 @@ summary:hover { color: var(--color-text); }
 .source-row h3 { margin: 0; font-size: var(--font-size-2); }
 .source-row p { margin-bottom: 0; }
 .source-row button { flex-shrink: 0; }
-.source-gaps { margin-block: var(--space-4); }
-.source-gaps li, .source-detail { overflow-wrap: anywhere; }
+.completion-budget { margin-block: var(--space-4); }
+.completion-budget li, .source-detail { overflow-wrap: anywhere; }

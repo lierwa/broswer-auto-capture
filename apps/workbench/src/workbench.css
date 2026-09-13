@@ -63,7 +63,7 @@
 .stage-empty p { font-size: 13px; color: var(--color-text-muted); margin: 14px 0 22px; }
 .supporting-detail { max-width: 680px; margin: 24px auto 0; padding-top: 18px; border-top: 1px solid var(--color-border); }
 /* WHY：计划正文已经使用整列宽度；其折叠证据和范围沿同一左边缘展开，避免被通用阅读栏居中成第二条视觉轴。 */
-.artifact-view[aria-label="抓取计划"] > .supporting-detail { width: 100%; max-width: none; margin: 24px 0 0; }
+.artifact-view[aria-label="任务计划"] > .supporting-detail { width: 100%; max-width: none; margin: 24px 0 0; }
 .compact-checklist p { font-size: 12px; color: var(--color-text-muted); margin: 16px 0; }
 .compact-checklist strong { display: block; color: var(--color-text); font-weight: 500; margin-bottom: 3px; }
 .sample-notice { font-size: 11px; color: var(--color-text-muted); margin: 18px 0 24px; }

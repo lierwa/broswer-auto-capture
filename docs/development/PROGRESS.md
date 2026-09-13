@@ -1,5 +1,449 @@
 # 开发进度
 
+## P1–P6 实施中（2026-09-13）
+
+### 海尔洗碗机真实任务结论（2026-09-14）
+
+- 已确认任务 `286cc4db-d02e-4c11-bcf2-d97421368baf`，需求 `d0ecd3b4-dc3c-4005-80dc-076af071eb4c` v1。最终采用计划 `f228a8c7-b2a6-4852-899b-e4a7c687486a` v5：一次发现 + 对当次发现集合逐项复用详情链；没有 URL resolver 中间步骤，`each.onItemFailure=continue`，外部访问中断仍由宿主熔断。
+- BrowserSkill 0.2.1 doctor 全部通过。三个真实探索分别只创建一个控制会话，BrowserRun 为 `60ab4f03-08b4-4b5c-86a5-473d66d7a2af`、`a04f0fbf-a658-436e-806a-94f86dacb3c4`、`b414f16a-5c6d-472f-8db5-f382ddc61ac3`；三者均已 finally 关闭，最终官方 session list 为空。
+- 真实页面没有出现登录失效、验证码、频控、拒绝访问或机器人验证。受控 `click dispatch=dom` 在 v4/v5 中真实把已填搜索框提交到 `search.jd.com`；没有通过脚本构造 URL，也没有绕过站点限制。
+- v4 同一次搜索页观察得到 10 个不同可见型号，但没有详情 href；代表商品普通点击仍停留搜索页。v4 计划把 role/name 合并为 opaque locator，编译器以 `annotation_sample_binding_mismatch` 拒绝。v5 已把 `detailUrl` 与 role/name/occurrence 设计成独立可选字段，但 Pi 在 page 后 generation 结束而未调用 `complete_step`，宿主以 `exploration_business_result_missing` 拒绝。
+- 本次没有形成可验收链路，没有 E3/E4 或正式 10 项复跑；未取得详情 URL、价格、完整规格或评论，不能输出购买建议。真实候选、不足边界和三次作业审计见 [任务结果](../results/2026-09-14-haier-dishwasher.md)。
+- 本轮聚焦验证：Browser/API/Runtime typecheck 通过；同次运行标签复用 1/1、恢复入口编译 1/1、受控 DOM 激活 1/1、Runtime TaskChain 15/15；`git diff --check` 无格式错误，仅有现有 CRLF 提示。未运行根级或全量测试。
+
+P1 Product Alignment:
+- natural-language task: 用代表输入完成一次读页面或交互任务
+- reusable chain boundary: Pi 工具会话提供首次探索，后续阶段从证据编译单一 TaskChain
+- runtime inputs: 已确认步骤的动态输入
+- dynamic task outputs: 步骤输出合同要求的业务结果
+- generic platform capability used: AI Connect 已选账号、Pi AgentSession、BrowserSkill 和现有仓储
+- replay model calls: 普通节点为 0；本阶段只改变探索
+- site/task-specific code added: no
+
+P1 验证：API typecheck 通过；exploration-agent 3/3，活动预算定向测试 1/1。替身验证多次工具、业务回答、非法参数/未授权动作拒绝、取消、事件转发、无重试和 finally 关闭。共享 Pi 发布制品公共类型支持 MainModelTool.execute/tools，无需修改相邻项目；尚无真实模型证据。
+
+P1 Cleanup Evidence:
+- replaced capability: 宿主手写模型命令循环已替换为现有 provider 的 Pi exploration 用途
+- deleted symbols/files/tests/docs: explorationDecisionSchema、explorationDecision、固定 12 轮循环及其 prompt；预算 fixture 改为 Pi surface
+- kept mature components: AI Connect/Pi、BrowserSkill、TaskChain、LangGraph、SQLite/Drizzle、Workbench
+- legacy data treatment: 未读写用户 SQLite，保留全部历史
+- dead references checked with: CodeGraph callers（旧符号不存在）；完整 IR 生成仍待 P3/P4 替代
+- dependency/lockfile result: 无变化
+- services and browser sessions closed: 本轮尚未启动
+- validation passed: API 类型检查及上述 4 条测试；diff check 无格式错误
+- baseline failures: 未扩大验证，无新基线结论
+- environment blockers: 无
+- untested: 真实模型、浏览器、P2–P6；新业务结果/provenance 协议待 P2
+
+P2 Product Alignment:
+- natural-language task: 读取结构化页面字段，或操作控件后验证状态
+- reusable chain boundary: 同一受控工具桥记录可复现的动作、观察和结果来源
+- runtime inputs: 动态 URL、语义目标与输入值
+- dynamic task outputs: 按步骤合同声明的任意业务字段和 provenance
+- generic platform capability used: BrowserSkill 官方读取/定位、Zod、类型化工具轨迹
+- replay model calls: 普通读取和动作 0；推断必须显式声明
+- site/task-specific code added: no
+
+P2 验证与清理：Browser/API 类型检查通过；结构读取 2/2、来源协议 2/2，adapter 8 条原有行为通过，改写后的 target 定向测试 1/1。开发时发现的 ESM 循环依赖已修复。删除 RuntimeExplorationTrace 和旧 target 恒拒绝错误码；新增内部 trace/provenance 及 complete 工具，旧 SQLite 未改。唯一新增依赖 cheerio@1.2.0；成熟框架继续保留。get-html 的实际响应与站点数据 P6 尚未验收。工具失败轨迹的持久化及作业阶段 P5 接入。
+
+P3 Product Alignment:
+- natural-language task: 从简短目标拆分可组合读页面或交互步骤
+- reusable chain boundary: 语义计划声明单步骤合同，编译注解只引用已发生轨迹
+- runtime inputs: 用户输入或前置步骤输出
+- dynamic task outputs: 需求动态合同与逐字段 provenance
+- generic platform capability used: Zod、现有 TaskPlan、AI Connect 与 Pi
+- replay model calls: 普通节点 0；推断来源需显式 llm
+- site/task-specific code added: no
+
+P3 验证与清理：API 类型检查、编译注解测试 2/2 通过。语义计划已删除模型 budget 入口及 plan repair；注解只接受真实事件/输入/来源/有界重复/完成事实，不允许 nodes、script、budget。完整 chain 候选路径在紧接的 P4 编译器通过后删除；P3 没有启动产品模型。计划持久合同仍有技术字段，暂存宿主能力上界，实际链路预算由 P4 图推导。
+
+P4 Product Alignment:
+- natural-language task: 将成功的读页面或交互轨迹变为可复跑步骤
+- reusable chain boundary: 相同证据确定性生成唯一 TaskChain
+- runtime inputs: 轨迹注解绑定的动态输入与有界循环元素
+- dynamic task outputs: 逐字段来源组装，推断字段显式 llm
+- generic platform capability used: 现有 TaskChain、compileTaskChain、data、loop、checkpoint、emit、LangGraph
+- replay model calls: 普通节点 0；仅显式 llm
+- site/task-specific code added: no
+
+P4 验证与清理：API/runtime 类型检查通过；trace-compiler 4/4，覆盖稳定等价图、换输入、嵌套字段组装、普通零模型、推断显式 llm、失败轨迹拒绝及有界交互循环。删除 chainCandidateSchema、chainPrompt、chainRepairPrompt、materializeChain 和候选修补；新增通用 data transform/assemble，仍由现有 runtime 执行。循环内输出暂不具备集合 provenance 的情况明确拒绝，不伪装成已支持。原 API 服务旧 candidate/repair fixture 将在 P5 接口验证中迁移，尚未称其通过。
+
+P5 Product Alignment:
+- natural-language task: 用户查看探索结果、候选验证和换输入复跑结果
+- reusable chain boundary: 同一 chain lineage，样本/换输入独立运行，恢复保持原运行身份
+- runtime inputs: 版本绑定及动态任务输入
+- dynamic task outputs: 业务结果、来源、失败层级、技术消费
+- generic platform capability used: 现有 repository、service、SQLite/Drizzle、Workbench、公共合同
+- replay model calls: 显式 llm 独立审计，探索与编译会话另记
+- site/task-specific code added: no
+
+P5 验证与清理：API 闭环 3/3（新 authoring、独立双输入验证、正式队列、人工同运行恢复、旧字节只读、重启收敛）；Workbench 投影/连接 5/5；contracts/API/Workbench 类型检查通过。job 保存探索/注解/E1/E2/错误层与分离消费，UI 从真实验证证据推导 E3/E4。新增生成取消、验证同运行恢复入口。Pi 会话数与 Provider 请求数分开，Provider 内部调用总数未知保留 null。each 总/步骤预算从编译图乘以业务调用上限，不再复用单次上限。旧完整图/repair API fixture 已移除并改用 Pi browser/complete 与紧凑注解。没有更改历史 SQLite；真实 Provider、BrowserSkill 响应和站点验收进入 P6。
+
+P6 Product Alignment:
+- natural-language task: 简短京东详情需求、不同 URL 同链复跑、品牌 10 型号及非采集任务
+- reusable chain boundary: 一次探索产生一条详情链；发现链输出集合，逐项调用同一详情版本
+- runtime inputs: 真实代表 URL、未探索 URL、发现得到的输入集合
+- dynamic task outputs: 已确认需求动态字段、逐字段来源和运行事实
+- generic platform capability used: 产品 AI Connect/Pi、BrowserSkill、正式编译器/运行器/仓储/Workbench
+- replay model calls: 按正式运行审计核验；推断仅显式 llm
+- site/task-specific code added: no
+
+P6 动态入口参数 Product Alignment:
+- natural-language task: 从用户指定的网站入口开始执行任意浏览器任务，但需求正文只写了站点或入口名称而没有字面 URL
+- reusable chain boundary: 首个浏览器步骤需要导航且需求没有可绑定公开 URL 时，计划声明必填 `startUrl`，由授权运行输入提供并绑定到首步骤；计划模型不得猜测或硬编码站点地址
+- runtime inputs: 任意经用户授权的公开起始 URL 和该任务的其他动态参数
+- dynamic task outputs: 从实际授权入口产生的步骤结果，或既有类型化授权/访问失败
+- generic platform capability used: TaskPlan inputContract、ValueBinding、BrowserGrant 和既有 URL 来源校验
+- replay model calls: 0；入口由运行输入绑定，普通导航节点不调用模型
+- site/task-specific code added: no
+
+P6 受控 DOM 激活回退 Product Alignment:
+- natural-language task: 搜索、筛选或提交普通页面表单时，已定位控件的指针/键盘动作被页面吞掉但没有访问限制
+- reusable chain boundary: 一次普通 click/press 后 fresh observation 仍无效果，且 fresh observe 已唯一确认语义目标或结构读取已确认标准 CSS 目标时，允许同一 typed click 使用一次 `dispatch=dom`；底层只执行固定 DOM 激活/表单提交表达式，不接受模型脚本
+- runtime inputs: 任意已授权页面上的语义或标准 CSS 控件目标和既有动态表单值
+- dynamic task outputs: 动作后的真实页面观察、真实落点，或既有类型化 missing/unsupported/访问失败
+- generic platform capability used: BrowserCommand click、BrowserSkill evaluate、typed trace、Trace-to-Graph 与 BrowserGrant
+- replay model calls: 0；固定表达式属于受控浏览器动作
+- site/task-specific code added: no
+
+P6 断电恢复 Product Alignment:
+- natural-language task: 浏览器任务运行中断电后恢复，并继续执行同一类已授权任务
+- reusable chain boundary: 浏览器所有权日志只在官方会话枚举证明没有活动会话时解除损坏占用
+- runtime inputs: 任意任务的 BrowserGrant 与 BrowserSkill 活动会话集合
+- dynamic task outputs: 新运行的正常结果，或保留 `cleanup_required` 的受控失败
+- generic platform capability used: BrowserHost、BrowserJournal、BrowserSkill 官方 session list 与原有审计
+- replay model calls: 0
+- site/task-specific code added: no
+
+P6 访问压力保护 Product Alignment:
+- natural-language task: 对一组动态页面输入稳定复跑，遇到认证失效、验证、限流、拒绝访问或瞬时传输故障时保留进度并停止继续施压来源
+- reusable chain boundary: 每个稳定输入只调度一次；首次探索在首个外部访问中断后拒绝后续浏览器命令；浏览器节点把中断作为类型化事实写入运行，同一计划执行立即熔断剩余输入
+- runtime inputs: 任意页面 URL、稳定来源键和授权时固定的链路输入
+- dynamic task outputs: 已完成输入结果、外部中断类别、公开 origin/HTTP 状态及检查点
+- generic platform capability used: TaskPlan each、TaskChain invoke、BrowserSession 网络事实、LangGraph 检查点和现有 SQLite 运行事实
+- replay model calls: 0；访问中断分类和熔断不调用模型
+- site/task-specific code added: no
+
+P6 大页面探索编译 Product Alignment:
+- natural-language task: 从大型动态页面读取可用字段，在探索包含无效探针时仍从明确选择的成功事件编译可复跑链路
+- reusable chain boundary: HTML 快照截断作为显式不完整事实返回；编译注解按原顺序声明正式复跑采用的成功事件，失败探针继续留在探索审计中
+- runtime inputs: 任意授权页面输入、结构化读取选择器和持久探索轨迹
+- dynamic task outputs: 部分或完整结构化读取、逐字段来源、显式复跑事件集合及候选链路
+- generic platform capability used: BrowserSkill get-html、Cheerio、Pi 紧凑注解、Trace-to-Graph 编译器
+- replay model calls: 普通读取与浏览器动作 0；业务推断仅保留为显式 llm 节点
+- site/task-specific code added: no
+
+P6 可选交互与免重访重编译 Product Alignment:
+- natural-language task: 同一页面任务在部分输入出现临时遮罩、部分输入没有遮罩时，均继续采集并验证最终结果
+- reusable chain boundary: 编译注解只允许把无业务来源依赖的已成功目标交互标为“目标缺失可继续”；验证失败后复用同一份已关闭 E1 重新编译新版本，不再次访问来源页面
+- runtime inputs: 任意已确认步骤输入、持久探索轨迹及换输入验证事实
+- dynamic task outputs: 新链路版本、独立样本与换输入运行结果、原失败验证审计
+- generic platform capability used: 类型化 node outcome、TaskChain edge、E1/E2 authoring、不可变版本仓储
+- replay model calls: 普通节点 0；重编译只调用一次编译注解模型，业务推断仍只来自显式 llm 节点
+- site/task-specific code added: no
+
+P6 集合计划编写 Product Alignment:
+- natural-language task: 先发现一组动态输入，再对每项复用同一浏览器流程并直接交付聚合结果
+- reusable chain boundary: TaskPlan 只拆分有独立浏览器流程和数据依赖的步骤；`each` 步骤的计划级输出是单次合同的数组，完成条件在聚合作用域核验
+- runtime inputs: 任意查询条件、业务数量和前置步骤产生的输入集合
+- dynamic task outputs: 发现集合及逐项链路输出数组
+- generic platform capability used: TaskPlan binding、`invocation.mode=each`、运行时集合聚合和完成谓词
+- replay model calls: 普通浏览器节点 0；仅链路中显式 llm 节点可调用模型
+- site/task-specific code added: no
+
+P6 页面动作导航 Product Alignment:
+- natural-language task: 点击或按键提交当前页面表单后，继续处理该页面声明的下一地址
+- reusable chain boundary: 动作前核验当前页仍在授权范围；成功点击或按键改变地址或打开新活动标签后先检查网络中断，再只把浏览器实际落到的公开 origin 加入本会话，直接构造跨域 URL 仍拒绝
+- runtime inputs: 任意已授权起始页、语义目标或标准 CSS 目标及动作输入
+- dynamic task outputs: 动作后的真实页面状态、后续读取结果或类型化访问边界
+- generic platform capability used: BrowserSession 语义动作、网络事实、会话 origin 证据、现有 BrowserGrant 与命令预算
+- replay model calls: 0
+- site/task-specific code added: no
+
+P6 外部中断轨迹复用 Product Alignment:
+- natural-language task: 来源访问中断修复后重新发起链路生成，并真正重新探索而不是反复编译旧失败现场
+- reusable chain boundary: 已关闭且结果可核验的 E1 仍可免重访重编译；包含访问熔断错误的 E1 不进入复用候选
+- runtime inputs: 任意持久探索轨迹、相同计划步骤与代表输入
+- dynamic task outputs: 新 BrowserRun 或复用 E1 生成的新链路版本，以及准确失败层级
+- generic platform capability used: 类型化 BrowserFailure、authoring job 仓储和既有访问熔断规则
+- replay model calls: 0；重新探索属于新的显式 authoring 请求
+- site/task-specific code added: no
+
+P6 探索人工等待 Product Alignment:
+- natural-language task: 任意首次浏览器探索在登录、验证码或访问限制现场暂停，用户完成正常人工处理后继续同一任务
+- reusable chain boundary: Pi authoring job、BrowserRun、BrowserSkill 控制会话和 waitpoint 保持同一身份；Done 后 fresh observe 决定继续或保持阻断
+- runtime inputs: 已确认步骤输入、当前真实标签页和类型化人工原因
+- dynamic task outputs: 持久 waitpoint、恢复后的新观察、原探索业务结果与 provenance
+- generic platform capability used: Pi AgentSession 工具 continuation、BrowserSkill request_help、TaskAuthoringJob、BrowserRecord 和现有授权边界
+- replay model calls: 只发生在首次探索；冻结链普通复跑仍为 0，显式 llm 节点除外
+- site/task-specific code added: no
+
+P6 批量发现与代表输入收敛 Product Alignment:
+- natural-language task: 从一个结果页发现一组动态链接，再对代表项完成可复用流程
+- reusable chain boundary: 发现优先一次结构化读取当前页；点击开新页时浏览器只保留来源页和当前落点；each 代表输入以计划绑定的稳定键为权威
+- runtime inputs: 任意来源页、动态候选集合、计划 stableKeyPath 及代表项
+- dynamic task outputs: 有序候选集合、单项业务结果、聚合结果与 provenance
+- generic platform capability used: Pi AgentSession、BrowserSkill page/read、受控标签页生命周期、TaskPlan binding
+- replay model calls: 普通节点为 0；仅显式 llm 节点允许调用
+- site/task-specific code added: no
+
+P6 无链接语义目标解析 Product Alignment:
+- natural-language task: 页面列出一组可点击资源但不公开落点链接，仍需取得每个动作的真实落点后继续处理
+- reusable chain boundary: 先从一次页面观察产出有序语义目标集合，再逐项复用同一条“来源页 + 语义目标 → 实际落点”链，后续链只消费已观察到的落点
+- runtime inputs: 任意来源页 URL、语义角色、可见名称和稳定业务键
+- dynamic task outputs: 每个目标动作实际到达的公开 URL 及原输入身份
+- generic platform capability used: TaskPlan each、Pi AgentSession、BrowserSkill 语义定位、动作后 fresh observation 和计划聚合
+- replay model calls: 普通导航与点击为 0；从页面语义抽取动态目标时只允许显式 llm
+- site/task-specific code added: no
+
+P6 跨步骤浏览器事实授权 Product Alignment:
+- natural-language task: 前一步点击得到真实页面 URL，后一步继续从该来源页或落点执行同类动作
+- reusable chain boundary: 只把同一 BrowserSkill 会话已观察到的精确 URL 加入后续 navigate 集合；each authoring 只接受计划绑定的首个稳定键作为代表输入
+- runtime inputs: 计划绑定的步骤输入、已观察 URL 和有界 each 集合
+- dynamic task outputs: 动作后的 fresh observation、完整聚合或类型化外部阻断
+- generic platform capability used: typed trace/provenance、BrowserGrant、TaskPlan binding、stableKeyPath 和完整任务探索
+- replay model calls: 普通导航、动作、观察和聚合校验为 0
+- site/task-specific code added: no
+
+P6 人工升级证据 Product Alignment:
+- natural-language task: 自动化流程自行修正局部参数或定位错误，只在当前页面真实要求登录、验证或人工确认时暂停
+- reusable chain boundary: 局部失败后的直接 `request_help` 被拒绝；模型必须先取得新的成功页面观察，或由类型化外部访问熔断提供人工等待依据
+- runtime inputs: 任意浏览器命令、最新 typed trace 事件和类型化访问中断
+- dynamic task outputs: 自动修正后的业务结果，或带真实页面事实的人工 waitpoint
+- generic platform capability used: Pi AgentSession、BrowserSkill fresh observation、typed BrowserFailure 和持久 waitpoint
+- replay model calls: 0；该门禁只校验现有事件状态
+- site/task-specific code added: no
+
+P6 重名语义目标 Product Alignment:
+- natural-language task: 页面存在多个同角色同名称控件时，按当前可观察顺序稳定选择其中一个并在换输入复跑
+- reusable chain boundary: 默认仍拒绝平级重名目标；只有链路或探索命令显式提供零基 occurrence 时才按同名浅层匹配顺序选择
+- runtime inputs: 任意语义 role、动态 name 和显式 occurrence
+- dynamic task outputs: 被选目标动作后的真实页面状态，或越界时的类型化 missing
+- generic platform capability used: stable target、BrowserCommand、BrowserSkill 临时引用消歧和 Trace-to-Graph 编译
+- replay model calls: 0
+- site/task-specific code added: no
+
+P6 工具来源投影 Product Alignment:
+- natural-language task: 从页面或浏览器动作精确返回长 URL、动态文本或结构值，避免模型手抄造成截断和漂移
+- reusable chain boundary: `tool` provenance 的 eventId/resultPath 是权威值来源；`inference` 中的 URL 只有在所引事件存在唯一同 origin/path 且查询条件相容的真实 URL 时才规范化，否则仍拒绝
+- runtime inputs: typed trace 事件、输出合同和 provenance 路径
+- dynamic task outputs: 由真实工具值规范化后的步骤结果与最终业务结果
+- generic platform capability used: typed trace、value binding、Zod 合同校验和 Trace-to-Graph 输出映射
+- replay model calls: 0
+- site/task-specific code added: no
+
+P6 Agent Window 回收 Product Alignment:
+- natural-language task: 页面动作打开新标签后继续自动化，并在任务结束时只回收本任务产生的浏览器页面
+- reusable chain boundary: 记录紧邻 click/press 产生的新活动标签；切换代表输入时关闭旧动作落点，finally 中在 session stop 前关闭仍存活的动作落点
+- runtime inputs: 动作前来源 tab、动作后活动 tab 和当前 Agent Window tab 集合
+- dynamic task outputs: 有界的任务页面集合、可审计的 tab_close，以及不残留自动化窗口的终态
+- generic platform capability used: BrowserSession 动作转场、BrowserSkill tab list/close 与 BrowserHost finally
+- replay model calls: 0
+- site/task-specific code added: no
+
+P6 全任务代表探索边界 Product Alignment:
+- natural-language task: 计划先发现 N 个动态输入，再以同一条参数化链路逐项处理并汇总
+- reusable chain boundary: `once` 代表探索完成该步骤自身结果；`each` authoring 只探索计划绑定的一个代表输入并提交单项 aggregate；计划输出与末步骤 aggregate 完全一致时由宿主确定派生任务结果，不要求 Pi 重复抄写；完整 E1 可由后续编译 job 复用，N 次调用只在链路 E3/E4 后由普通计划执行器运行
+- runtime inputs: 计划级输入、上游步骤输出集合、首个稳定代表项和 each maxItems
+- dynamic task outputs: 每步真实代表结果、编译链路，以及后续普通执行器产生的完整聚合
+- generic platform capability used: TaskPlan binding、Pi AgentSession、typed trace、TaskChain invoke 和计划运行器
+- replay model calls: 普通 each 复跑为 0；只有冻结链显式 llm 节点允许调用
+- site/task-specific code added: no
+
+P6 编译动态值同值消歧 Product Alignment:
+- natural-language task: 从一次成功探索编译可换输入复跑的参数化浏览器链路
+- reusable chain boundary: 轨迹中动态业务目标与固定控件共享相同字符串时，只参数化已有输入锚点所属的目标对象
+- runtime inputs: 版本化步骤合同中的 locator 字段及其他动态值
+- dynamic task outputs: 由成功工具事件及 provenance 映射的步骤结果
+- generic platform capability used: 输入 binding 校验、同对象 locator 补全、固定命令常量消歧，以及向后兼容的语义 role 运行时 binding
+- replay model calls: 0；普通节点不调用模型
+- site/task-specific code added: no
+
+P6 动作后导航就绪 Product Alignment:
+- natural-language task: 点击或按键后读取实际到达的页面并继续自动化
+- reusable chain boundary: 动作命令返回而当前 URL 尚未变化时先等待一次 commit；确认 URL/标签改变后等待主文档 load 与动态内容 networkidle；没有导航或长期连接均在有界超时后继续
+- runtime inputs: 任意语义目标、当前 tab/URL 和步骤活动时间预算
+- dynamic task outputs: 动作后实际页面观察，或现有类型化超时与访问中断
+- generic platform capability used: BrowserSession pending action、BrowserSkill wait-for-navigation 和编译预算推导
+- replay model calls: 0
+- site/task-specific code added: no
+
+P6 编译注解复用 Product Alignment:
+- natural-language task: 同一成功探索在通用编译器或预算规则修复后生成新链版本
+- reusable chain boundary: E1 轨迹摘要完全相同且上次 E2 已完成时复用已校验的逐步骤语义注解；当前校验器重新验证后确定性编译
+- runtime inputs: 同一计划版本、步骤顺序、代表输入、E1 轨迹和持久注解
+- dynamic task outputs: 新的不可变链版本与当前可执行摘要
+- generic platform capability used: authoring job 仓储、validateAnnotations、Trace-to-Graph 编译器和版本仓储
+- replay model calls: 0；缺少可复用注解时才发起显式编译模型调用
+- site/task-specific code added: no
+
+P6 语义目标就绪 Product Alignment:
+- natural-language task: 动态页面控件稍后出现时仍按已编译链路执行一次填写、点击或按键动作
+- reusable chain boundary: 动作前在同一页面有界重新观察精确 role/name/occurrence；唯一目标出现后只执行一次动作，重名、截断和超时保持类型化失败
+- runtime inputs: 任意语义 locator、当前页面观察和步骤命令/活动时间预算
+- dynamic task outputs: 一次真实动作结果，或 target_missing/target_ambiguous/invalid_response
+- generic platform capability used: BrowserSession 语义定位、活动预算和编译器最坏命令预算
+- replay model calls: 0
+- site/task-specific code added: no
+
+P6 动态语义角色闭集 Product Alignment:
+- natural-language task: 从页面发现动态目标后，以同一条参数化链路逐项打开当前目标
+- reusable chain boundary: 只有输入合同把语义角色声明为 BrowserSkill 支持角色的闭集枚举时才参数化 role；任意字符串合同保留首次成功轨迹中的真实角色，目标名称仍由运行输入绑定
+- runtime inputs: 任意语义目标名称，以及可选的 link/button/textbox/combobox 闭集角色
+- dynamic task outputs: 真实动作落点或既有类型化 missing/blocked/failed 出口
+- generic platform capability used: TaskDataContract、trace binding、语义 locator 与 BrowserSkill 角色白名单
+- replay model calls: 0；普通节点不调用模型
+- site/task-specific code added: no
+
+P6 页面观察时间投影 Product Alignment:
+- natural-language task: 读取动态页面内容并在结果中记录该次实际采集时间
+- reusable chain boundary: TaskChain 的 page observe 将 BrowserSkill 页面结构与同次 BrowserInspection 的 observedAt 合并，显式 LLM 只能使用这项工具事实
+- runtime inputs: 任意已授权页面和页面观察节点
+- dynamic task outputs: 页面可见内容及对应的 ISO 观察时间
+- generic platform capability used: BrowserSession 状态、TaskChainBrowserAdapter 与观察输出合同
+- replay model calls: 0；时间投影本身不调用模型
+- site/task-specific code added: no
+
+P6 已观察步骤入口恢复 Product Alignment:
+- natural-language task: 上游发现动态页面目标后，用同一条参数化链逐项处理且不重复执行上游搜索
+- reusable chain boundary: 输出/provenance 所需事件之前，若某次真实导航落点与运行输入中的唯一公共 URL 精确一致，编译器以该输入 URL 作为步骤恢复入口并保留之后全部业务事件；不能唯一证明时保留原轨迹
+- runtime inputs: 任意已观察公共 URL、动态目标和稳定业务键
+- dynamic task outputs: 从该恢复入口产生的真实步骤结果或类型化失败
+- generic platform capability used: typed trace、provenance、ValueBinding、TaskDataContract 与浏览器 navigate 节点
+- replay model calls: 0；入口折叠由已验证 trace 确定性完成
+- site/task-specific code added: no
+
+P6 懒加载语义目标揭示 Product Alignment:
+- natural-language task: 打开动态列表页后，定位当前首屏之外、随滚动进入可观察树的已知语义目标并执行一次动作
+- reusable chain boundary: 语义目标初始缺失时先短暂重新观察，再在同一标签和 URL 内至多向下翻八屏并重新定位；精确 role/name/occurrence 出现后只执行一次业务动作，到观察、命令或时间预算仍未出现则保持 target_missing
+- runtime inputs: 任意语义 locator、当前页面与 BrowserSession 命令/活动时间预算
+- dynamic task outputs: 一次真实动作结果，或既有 target_missing/target_ambiguous/invalid_response 类型化失败
+- generic platform capability used: BrowserSession 语义定位、受控 PageDown、标签/URL 一致性核验和编译器最坏命令预算
+- replay model calls: 0；揭示和定位不调用模型
+- site/task-specific code added: no
+
+P6 语义目标稳定键回退 Product Alignment:
+- natural-language task: 动态列表卡片的促销或展示文案变化后，仍以首次探索证明过的稳定输入片段定位同一目标
+- reusable chain boundary: 编译器仅在一个公开字符串输入是首次成功完整名称的严格子串时生成 fallbackName；运行时先精确匹配完整名称，失败后才按相同角色做唯一包含匹配，重名继续返回 target_ambiguous
+- runtime inputs: 任意完整语义名称、唯一被其包含的稳定字符串和可选 occurrence
+- dynamic task outputs: 一次真实动作结果，或既有 target_missing/target_ambiguous 类型化失败
+- generic platform capability used: typed trace、TaskDataContract、ValueBinding、BrowserSession 语义定位
+- replay model calls: 0；回退绑定和定位不调用模型
+- site/task-specific code added: no
+
+P6 同次运行来源页复用 Product Alignment:
+- natural-language task: 从动态列表发现当次目标后，逐项进入目标并完成后续浏览器任务，避免重新加载列表而丢失当次候选
+- reusable chain boundary: 编译链恢复已观察入口 URL 时优先激活同一受控会话内完全匹配的现有标签；没有匹配标签才执行真实导航；只可点击获得落点时，同一次逐项访问完成该目标要求的全部业务动作
+- runtime inputs: 任意已观察公开来源 URL、稳定语义目标及该目标要求的动态字段
+- dynamic task outputs: 本次列表产生的逐项目标结果、真实落点 URL、部分失败及外部访问阻断事实
+- generic platform capability used: typed trace、ValueBinding、BrowserSession 标签生命周期、计划 each 编排和访问熔断
+- replay model calls: 仅保留链路中显式 llm 节点；标签复用和逐项编排为 0 次隐式模型调用
+- site/task-specific code added: no
+
+P6 当前证据（2026-09-13）：
+- **本轮真实任务（2026-09-14 收敛）**：任务 `d6f7cca1-9333-4a51-ba9a-f865c7ecf163` / 计划 v2 `0eca3940-649a-4d9d-8e86-8bfa4c54f71a` 复用唯一 Pi/BrowserSkill 探索 BrowserRun `b4097be8-d71f-4689-856d-c03fd6c71469`。离线重编译 job `562122c2-542f-4f90-8312-915e45380165` 没有新增 authoring 事件或浏览器会话；解析链 v12 明确保留 `visibleName` 精确绑定及首次轨迹证明的 `stableKey` 唯一子串回退。
+- URL 解析链 v10 已用两个不同型号完成 E3/E4；详情链 v10 已用 `BCD-460WGHFDEDH9U1` 与 `BCD-560WGHFD1BYGU1` 完成 E3/E4，两次均得到非空 `collectedAt`、店铺、可见价格、规格、评论摘要和 3 条当前可见评论。修复长语义树定位后，原正式第 7 项 `BCD-490WGHFDEDSD` 的独立样本运行 `ff8a5e67-b08c-4723-8dc0-3a91c4164ada` 也解析成功。
+- 正式执行 `20fe36ac-5b00-4f32-8d42-84a57c73c9b8` 使用发现 v6、解析 v10、详情 v10：发现链一次得到 10 个型号互异候选，前 6 个依次解析出真实 item.jd.com URL；第 7 个在旧定位预算下 `target_missing`，计划按 `onItemFailure=stop` 停止，详情步骤未启动，已完成子运行继续留在执行记录中。
+- 重新加载同一个带 `pvid` 的搜索 URL 后，第 10 项 `BCD-502WGHFDGCFSU1` 在 50k 定位树、最多八次 PageDown、完整名称及稳定键唯一包含匹配下仍为 `target_missing`（v12 run `b84014eb-fd19-478b-83a1-858bf2d2cb71`，33 条浏览器命令、0 模型调用）。首次 Pi provenance 同时明确记录该搜索页没有把商品详情链接暴露为可复用公开链接。因此本次真实任务停在“动态搜索结果无法按原 URL 重现全部 10 项”的来源限制，不再重载或加压站点；这不是登录、验证码、限流或人工验证。
+- 每个产品/验证运行均只占用一个 BrowserSkill 会话并在 finally 后枚举为空；全程没有新的 human waitpoint。当前不声称完成 10 个详情报告：真实产物是 10 候选、正式前 6 个详情 URL、额外验证得到的第 7 个 URL，以及两个型号的完整详情采集验证结果。
+- 产品正式 API 创建任务 `9cba22cc-c8e1-4fd4-9fb9-336be6533e09`，真实需求访谈和语义计划生成已完成；计划只有一个参数化详情步骤。模型选择为已有 AI Connect 连接的 Terra medium。
+- Pi 探索 job `036363f4-c184-4b18-8405-b27f0a7a7805`、BrowserRun `13ac4315-48ca-4951-85d1-129ef4485bef` 记录真实工具调用。代表详情页导航超时后落到京东登录页，后续读取被 origin 授权边界拒绝；没有 E1 业务结果、没有编译链路，不计为通过。后续网络复核证明直接原因不能写成普通登录缺失：`item.jd.com` 文档先返回 200，随后进入 `cfe.m.jd.com/privatedomain/risk_handler/03101900/`，再进入 `passport.jd.com`。
+- 登录与频控已按同一判定口径分开：2026-09-12 11:46–11:47 的认证/SSO 返回链以及 2026-09-13 02:47 的原始 BrowserSkill 回包证明该窗口登录有效；16:29:16–16:30:16 一分钟内连续直达 11 个商品，最后一条立即进入 `risk_handler`，16:44 同一 URL 三次受限后又于 16:45:51 恢复，证明当时存在短时频控，而非永久 SKU 封禁或直接 URL 必封。历史正式浏览器审计还记录 15:53–15:59 的 288 次命令尝试和 16:25–16:30 的 132 次命令尝试，访问密度足以解释风险升高。
+- 断电后当前首页明确显示“你好，请登录”，因此当前搜索、首页商品卡点击及三个不同详情 URL 的认证跳转均按登录过期处理，不能用来证明当前仍处于频控。同公网出口的无 Cookie HTTP 对照对首页、搜索和两条详情 URL 均返回 200，排除整站式纯 IP 封禁；IP、账号、Cookie 与浏览器指纹各自权重无法从客户端继续拆分。未读取凭据或 Cookie，未绕过限制；到达结论后不再继续施压站点。
+- 错误归因已收紧：若 Pi 会话结束时没有业务结果，但类型化轨迹中已有浏览器工具失败，authoring 保留最后一个受控 BrowserSkill 错误码并归入工具桥层，不再统一覆盖成 `exploration_business_result_missing`；持久轨迹不保存底层 stderr。导航命令即使超时也会按预算复核当前标签页，若页面实际已越出授权域则保留 `origin_denied`。API 聚焦用例进一步证明同一受控码会作为 `BrowserError` 进入 BrowserRun，同时保留 `exploration_browser_failed:*` 的 authoring 前缀；API/browser typecheck 通过。
+- 断电现场把 `browser-owner.json` 撕裂为 NUL 字节，首个恢复 job `46b62202-b817-460f-8ac4-327bd970b1aa` 在 0 次工具调用时正确停在 `cleanup_required`。BrowserHost 现仅在 BrowserSkill 官方会话枚举为空时丢弃损坏 owner，并在 owner 原子替换前执行文件同步；有活动会话则继续阻断。断电恢复聚焦用例 1/1 与 browser typecheck 通过。
+- 修复加载后的唯一一次实际正式复跑 job `d9303e19-d2f1-45f5-8e2e-c46910fef31d` / BrowserRun `99c1a2cb-4e02-4e8d-8cdd-215eeca1bb74` 完成 1 个 Pi 探索会话和 3 次探索工具调用，authoring 以 `exploration_browser_failed:origin_denied`、E0、BrowserSkill/工具桥结束；没有结果或链路。BrowserRun 当时仍保存旧的泛化 `command_failed`，随后传播修复由聚焦用例验证；为避免继续访问，未再用京东做第二次现场复核，该历史记录保持原样。
+- `get-html` 实际响应键为 html/truncated/byte_size/tab_id；原始 HTML 仅在内存解析，没有输出或落盘。
+- 换输入风险修复：工具输出使用协议定义的集合元素类型，推断与字段组装遵循任务输出合同，避免空样本列表冻结错误类型；生成任务固定 compiledChain 版本，避免展示另一版本的 E4。
+- 新增/更新聚焦验证 7/7（编译器 4、集合合同 1、投影 2）；API/contracts/Workbench 类型检查通过。此前阶段测试不重复计数。
+- 访问压力保护已落入通用执行路径：导航失败先核验实际落地页且不重发；401/403/429/5xx、认证、验证、拒绝和瞬时故障以脱敏事实贯穿节点、检查点、子链和计划；plan each 与嵌套 invoke 按稳定键去重，首个外部中断立即停止剩余输入；首次探索在首个外部中断后也不再把后续工具调用送入 BrowserSession。没有全局 20/30 秒间隔、猜测冷却或隐藏重试。contracts/browser/runtime/API 类型检查通过；本次相关聚焦测试为 contracts 6/6、browser 24/24、runtime 15/15、API 13/13，diff 格式检查通过。
+- 非采集提交任务 `cb2701b6-7212-4d82-9853-c37998fe27ba` 首轮暴露 Pi 工具续轮 JSON 边界缺陷：共享事件序列化读取 details，宿主成功工具结果未提供该字段，被包装成 upstream。已用现有工具 surface 显式返回空 details，未修改相邻包；来源为当前 vendor 制品和该轮 Pi 持久错误，不能归因于账号或供应商额度。修改后真实连续导航/填写/点击/读取已成立，最终结果报告没有成功回执，保留 E1 失败业务结果。
+- 后续通用修复：press 语义目标按官方 CLI 使用 --ref；编译注解不再让模型抄写 outputMappings，宿主直接复用已校验 provenance；tabs 输出合同遵循 BrowserSession 的数组协议。Pi 聚焦 3/3、CLI 映射/API 协议 4/4、集合合同 1/1 及 API/browser 类型检查通过。
+- 交互环境问题尚未定位：直接 bsk 对演示表单点击 Submit 返回成功但没有回执；DOM 只读诊断无无效字段。对本地 Workbench 展开侧栏按钮同样返回点击成功但 DOM 和截图仍显示关闭。bsk doctor 全部通过；这不构成真实提交或 UI 交互验收。没有用脚本触发点击/提交来替代工具行为。
+- 非采集编辑任务 `03d7bb0a-2106-4c26-9f35-c96ea22531b8` 已得到 E1，并确定性编译链路 `11b1f643-e066-46af-81d2-588e10194e15` v1。首个样本运行暴露标量结构化输出边界与动作前缓存问题；已增加供应商对象根封装、在动作结束后失效定位缓存，对应 2 条测试与 API/browser 类型检查通过。
+- 修复后 v1 样本 `073ed9ee-daba-43a4-8f76-806e073e344a` 实际输出 BAT editing one，15 次图迁移/12 条浏览器命令/3 次显式模型调用。换输入运行 `2f0d2142-51c0-4a46-8a08-0a395a5fcae8` 实际文本为 BAT editing two，但推断状态按旧样本返回 not_completed；虽然旧判断写入 completed/verified，该证据不计为业务验收通过，保留原记录供审计。
+- 已修复上述假通过风险：显式推断接收本次 runtimeInput，探索样本说明不作为固定答案；可以映射到单次输入/输出的计划业务完成条件进入 Chain completion，跨步骤/each 聚合条件仍由计划运行器验证。新增测试证明输出值错误时不以页面存在宣告完成；API 类型检查通过。
+- 编辑链路 v2 由正式探索 job `ae3e412d-155d-4c3b-898e-e4a6c4b646b2` 生成，样本 `676d5aa7-bfb3-43d2-82b9-c33e8c794fa9` 和两个不同输入 `ad8a3dc9-1ef0-49eb-805a-7eb1f502cc9f`、`e669500f-a99c-4fe6-8773-5e8a72aa0eba` 全部通过：分别实际返回 BAT editing one、BAT editing two、BAT editing three 复跑；三次均通过工具事实与业务相等条件，15 次图迁移/12 条真实浏览器命令/3 次显式模型调用。独立运行、不同输入和同一版本已核验；普通浏览器节点没有调用模型。该非采集任务达到 E4，不代表京东验收完成。
+- v2 授权后正式执行 `0d35a971-e172-4ef1-88ce-ea21b64330c9` / TaskRun `89935a21-7e4a-4adb-8a87-e33b6137aa8e` 已完成，实际输出第四个输入 BAT formal replay four；计划总账为 15 次迁移、12 条浏览器命令、3 次显式模型调用、1 次链路调用。完整输入/输出/消费摘录保存在本机忽略目录 `data/authoring-editing-acceptance-20260913.json`。
+- 京东样本复跑、两个新 URL、品牌 10 型号均未运行；当前登录已过期且历史频控已确认，P6 尚未通过，不把外部阻断伪装成验收通过。
+- 本轮收尾：正式 BrowserRecord 为 succeeded、cleanupRequired=false，bsk 枚举无活动控制会话；本轮 API/Workbench 服务已停止。临时验收驱动与诊断图片已删除，历史数据库和失败记录保留；未提交、未推送、未建 worktree。改动范围内 typecheck、聚焦测试和 diff 格式检查通过，未运行根级/全量测试。点击交互问题尚未定位，UI 交互验收未通过，最终零垃圾/全任务门仍未关闭。
+
+## 首次探索与链路编译方向修正（2026-09-13，P0 历史记录）
+
+本节记录实现前的方向修正与当时的机器观察；当前代码、浏览器状态和下一动作以首节为准。
+
+- **已确认新架构**：产品继续使用 AI Connect 选择的用户账号和模型，由 Pi AgentSession 使用 BrowserSkill 完成首次代表任务；B-A-T 记录真实工具轨迹、业务结果和字段来源，模型只补充紧凑编译语义，宿主确定性生成唯一现有 `TaskChain`。Codex 不是产品运行时。
+- **已否决旧 authoring 路径**：`TaskRuntimeHost.explore` 的固定轮数无状态 `command|finish` 循环，以及 `TaskChainAuthoring` 让模型直接生成近乎完整计划/Chain IR 再碰一次 repair 的方案，不再是目标架构。它们在 P1–P4 替代路径通过对应最小验证后按清理门删除。
+- **成熟底座继续保留**：通用 task-chain contracts、LangGraph `StateGraph`/`TaskChainRuntime`、BrowserSkill、AI Connect/Pi、Zod、SQLite/Drizzle、React Flow、共享 Agent surface 和 Workbench 不删除、不自行重写。旧 SQLite 记录保持原字节只读。
+- **结构化读取缺口已明确**：当前合同存在 `observe scope=target`，适配器却返回 `observe_target_unsupported`。P2 必须先核验并复用 BrowserSkill 已有 page/target/HTML/语义快照能力及成熟解析组件；不得加京东平台 special case、任意页面脚本或自研解析器替代成熟组件。
+- **预算含义已修正**：商品数、评论数是业务限制；图迁移、底层浏览器命令、活动时间、调用深度和显式 LLM 次数由编译器从图和节点能力推导。账号/供应商用量、authoring 调用和 replay 消费分别审计，UI 不再用含混的“额度耗尽”概括所有失败。
+- **登录边界已确认**：2026-09-13 02:47 的原始只读回包显示，同一 Chrome Profile 的京东首页和详情页当时均有账户入口、“我的京东”和购物车，检查会话随后已关闭。该浏览器进程后来退出；登录状态不能据此永久保证。P6 的后续失败已由网络记录定位到京东 `risk_handler` 后转认证，不能只凭最终 `passport` 页面要求用户重新登录。Cookie、密码、token 和验证码不写入 Git、日志或普通记录。
+- **本轮只完成文档**：[实施说明](TASK_CHAIN_AUTHORING_REDESIGN.md)、[清理清单](TASK_CHAIN_AUTHORING_CLEANUP.md) 和 [ADR 0002](../adr/0002-pi-agent-exploration-trace-compilation.md) 已建立，并同步修正架构基准、ROADMAP、README 与产品架构当前陈述。本轮没有改产品代码、没有调用产品模型、没有启动浏览器任务、没有跑测试、没有提交或推送。
+- **下一动作**：从 P1 的现有 Pi adapter 工具会话入口开始。P1–P5 未完成前不继续京东批量抓取；P6 按“一个代表 URL → 编译后样本复跑 → 两个不同 URL → 10 型号同链复跑 → 第二类任务”取得真实证据，每阶段同时完成清理。
+- **工作区边界**：当前 `master` checkout 含大量上一轮未提交修改；新会话必须先核对实际状态并保护这些改动，禁止 reset、clean、覆盖、创建 worktree 或未经授权 push。
+
+## M2–M7 通用任务链路收敛与首个真实闭环（2026-09-13，历史基线）
+
+> 本节记录上一版实现和运行证据。涉及手写探索循环、完整候选生成或“当前已接通”的陈述已经被本页首节和 ADR 0002 取代，不得作为接续实现方向。
+
+- **已完成 M2–M6**：正式代码只保留 `src/task-chain/` 一套 requirement/plan/chain/run 合同、一套 compiler/runtime 和 `apps/api/src/task-chain/` 一条编排/持久化路径。Workbench 的 Plan/LiveChain/Results 全部读取这一事实源；旧 capture/workflow/ordinary-run 包装、XState 对照、结构样例、legacy exports、旧 fixtures/tests/browser scripts 与原型专用依赖已删除。LangGraph `StateGraph` 保留为唯一图执行底座。
+- **首次探索已接通**：生成 Chain 必须提交符合步骤动态合同的代表输入。宿主从已确认需求和输入提取 origin，在同一受控 BrowserSession 中执行有界的结构化模型动作与 fresh observation，随后把内存轨迹交给编译调用；TaskAuthoringJob 保存关联 browserRunId 和实际两类调用总数。候选仍需独立 sample 与不同输入 verification，探索成功本身不等于 verified。
+- **授权与恢复已收紧**：授权固定顶层 Chain id/version/digest，invoke 子链由父链 digest 固定；执行前求子链传递闭包以生成完整浏览器 action/origin grant。步骤与计划各有持久消费总账，顶层调用、重试、子调用、转换、真实底层浏览器命令、自动化活动时间和显式模型调用不会因恢复重置。子链人工等待会传播到父链，恢复复用同一子运行与检查点且不重复计费；集合超过 maxItems、预算耗尽或授权链缺失均保留明确 blocked/partial 结果。
+- **历史数据边界**：SQLite schema v10 新增当前合同表，旧 plans/chains/executions 字节不删除、不重写，只通过 `legacy_read_only` 列出和导出。BrowserRecord 的旧 `plan_evidence`/`repair` 枚举仅为历史读取；新 grant 只能创建 exploration/verification/replay。
+- **已修复产品缺陷**：除 stale 级联、固定版本、重启恢复、invoke 闭包和聚合预算外，本轮还补齐父子链等待/检查点恢复、invoke 输出拆包、计划与编译阶段的 each schema/stable key 校验、loop 终止出口防回环、节点超时贯穿底层命令进程、纯本地 wait、未实现 target observe 的明确拒绝和 camelCase 通用参数键。LangGraph 接入时发现 paused 状态仍会经 `START` 进入首节点，现已在入图前短路，防止未决浏览器副作用被恢复重放。
+- **已修复测试夹具缺陷**：旧浏览器测试改为显式 human/request_help 生命周期；API 探索夹具补齐可授权 origin；loop 回环夹具恢复可达 emit，父子恢复夹具补足完成链路所需预算。夹具修正后才断言产品行为。
+- **离线验证结论**：contracts、runtime、browser、API、Workbench 五个所属包 typecheck 曾全部通过；聚焦测试 111/111（23 + 13 + 25 + 36 + 10 + 4），其中 runtime 固定 LangGraph 正式依赖，并覆盖超过默认递归阈值的图推进与外部取消检查点。Skill `quick_validate.py` 通过，`git diff --check` 无格式错误，TS/TSX 文件均未超过 500 行。该数字只记录离线收口时的基线，不替代后续真实证据。
+- **受控真实浏览器运行链已完成**：任务 `9b60d049-9a0f-4dc5-8bc5-6fbf98adff3a` 的计划 v2 和链路 `401e77ae-51a6-4c96-81f9-ad99f7a499fc` v5 已固定。sample `d05ffc78-f737-4898-877a-d29bbc50e8d9` 访问 `example.com`，verification `d1868ac5-e87f-4923-8053-7051f8f3ec25` 用同一链路访问 `example.org`，普通执行 `98a7264c-2585-484d-87f8-e648cbf91586` 复用该版本。三次均为 6 次节点迁移、7 条真实 BrowserSkill 命令、0 次运行期模型调用，并得到各自页面的结构化结果；Workbench 现场投影和浏览器会话回收已核验。
+- **该证据不能代表自然语言编译通过**：确认需求有 1801 个字符、62 行，提前列出两个 URL、五个字段、1–7 步操作、预算和完成断言。它没有直接给 BrowserSkill 命令或选择器，但已把解法约束到接近脚本，只能证明运行器、binding、浏览器适配、审计和复跑管道。
+- **现场暴露并修复的通用缺陷**：底层 BrowserSkill 命令原先被低报为一个 browser 节点，现全部进入预算与审计；job/run/execution 顺序及 Workbench 调用摘要已改为真实含义；`each` 单项输出的运行时数组聚合现在进入静态 binding/总输出合同检查，旧不兼容计划可读但不能授权或执行。
+- **范围偏航，已停止**：受控公开页面运行链完成后又在已有京东历史任务上启动了新版批量计划 authoring。该轮记录跨度约 60 分钟，6 个 job 中 5 个失败，没有形成可执行新版计划或链路，也没有创建新的京东 BrowserRun；任务原有 legacy 计划、链路、执行和浏览器记录保持不变。这违反 ROADMAP 的当前顺序，不能算作验收。已停止该路径并移除供应商失败后的自动重试，不再通过重复生成碰候选。
+- **当前未验证**：简短自然语言到计划/链路的产品闭环、第二类非数据采集真实任务、登录/验证码的 typed 人工等待与返回、目标扩展形态和页面漂移。没有运行京东/F6 批量抓取、根级/全量测试，也没有推送远程。
+- **偏航收口复验**：移除自动供应商重试后，contracts、runtime、browser、API、Workbench 五个所属包 typecheck 通过；contracts task-chain 7/7、API task-chain 3/3 通过，`git diff --check` 无格式错误。未重复运行根级或全量套件。
+- **依赖基线失败**：锁文件变更后按官方 registry 复查，`npm audit` 当前为 1 high、3 moderate，均来自本地 AI Connect 0.3.2 发布包精确锁定的 Hono 4.12.12，消费者侧无自动修复。该结果与 LangGraph 无关；需由共享包 producer 升级并重新发布，本仓没有用 override 改写其依赖。
+- 完整实现、清除清单和未测门见 [M2–M7 实施记录](TASK_CHAIN_M2_M7_IMPLEMENTATION.md) 与 [代码处置清单](TASK_CHAIN_CODE_DISPOSITION.md)。
+
+> 以下章节是早期阶段和历史运行记录，只保留当时证据；若与本页首节冲突，以首节及其链接的当前架构/处置文档为准。
+
+## M1 通用契约出口与协议验证（2026-09-12，历史阶段记录）
+
+- **已完成**：修改前记录 [Product Alignment、Baseline Impact、Patch Disposition 与重叠补丁审计](M1_CONTRACT_IMPLEMENTATION.md)。正式 contracts root/requirement/plan/chain/binding/run/version 统一指向 `src/task-chain/`；动态输入输出 schema、11 类节点、typed 出口、固定版本链路调用、逐项 stable key、预算、检查点、独立运行/同运行恢复绑定和显式模型审计均有通用合同。
+- **兼容**：旧 contract 源码和全部已有改动保留。29 个 API/Workbench/runtime 消费者文件只把 imports 改为 `/legacy/*`，逐文件逆替换与开工快照完全一致；package.json 只追加/调整 exports，原 AI Connect vendor 依赖与 lockfile 未改。没有创建 worktree、删除文件、修改 BrowserSkill、写 SQLite 或启动浏览器/模型。
+- **历史读取合同**：`readTaskContractJson` 原样保留 JSON，旧无版本记录明确为 `legacy_read_only`，未知版本为 `unsupported_version`，损坏记录为 `invalid`。这是一条供 M4 接入的版本读取边界；**现有 repository、队列、UI 尚未接入，生产入口的只读执行门禁未完成**，不得称为用户历史数据已迁移。
+- **通过**：`npm run check --workspace @browser-capture/contracts`；`npm exec --workspace @browser-capture/contracts -- tsx --test tests/task-chain.test.ts tests/task-chain-run.test.ts`，13/13。覆盖两类任务、动态 schema/坏输入、安全 binding、11 节点族、出口/引用/验证证据、计划依赖/预算、运行身份/检查点、未知模型调用数和历史 JSON 保真。已有 diff 静态检查通过。
+- **开发失败与修复**：首次 typecheck 发现递归 schema 手写类型未显式包含 optional 的 undefined，与 exactOptionalPropertyTypes 不兼容；修正后本包复查通过。没有遗留本阶段产品/测试失败；未运行无关套件，不能据此更新其他模块的基线失败状态。
+- **阻塞与未测**：无 M1 环境阻塞。仅协议 fixture，未运行 runtime/API/UI 行为、生产存储迁移、真实浏览器、京东/F6、模型、根级测试或全量测试；未重跑已通过协议套件。产物内容校验、图可达性/支配与能力语义等仍按后续 compiler/runtime 门验证。
+- **当时后续边界**：本段记录 M1 完成时尚待执行的 M2–M6；这些事项现已由上一节的 M2–M7 收敛实现取代，不能继续把 legacy bridge 当作当前生产状态。
+
+## 通用任务链路架构收敛（2026-09-12）
+
+- 项目公共边界已固定为：把自然语言浏览器任务编译为参数化、版本化、验证过、可复跑的任务链路；普通复跑不依赖模型重新驾驶浏览器，只有链路显式包含的 LLM 节点消耗模型调用。
+- 已新增 [通用浏览器任务链路架构](TASK_CHAIN_ARCHITECTURE.md)、[通用任务链路代码收敛实施清单](TASK_CHAIN_CODE_DISPOSITION.md) 和 ADR 0001；领域术语由根 `CONTEXT.md` 维护，工程对齐门由根 `AGENTS.md` 维护。
+- 代码审计确认当前同时存在未接入生产的 workflow/run 原型和已接入但以 capture 为中心的生产路径。目标是让生产路径迁移为唯一通用 contract/compiler/runtime，迁入有效不变量后删除隔离原型、生产样例和 capture-only 公共形状。
+- 本阶段只完成文档事实源与代码处置审计，尚未修改公共合同、运行器或历史数据。后续按 M1–M7 逐阶段开发；每阶段只运行 owning package 的聚焦验证，真实浏览器验收放在合同、运行器和适配器稳定之后。
+
+## 任务计划到任务链执行（2026-09-12）
+
+Baseline Impact:
+- touched layers: Plan 合同与 Planning Run、BrowserSkill 人工等待、授权执行恢复、任务链节点投影、Workbench 与产品流程基准。
+- owning fact source: PlanRecord 保存任务计划、来源 observation 与访问前置绑定；BrowserRecord 保存浏览器运行和人工 waitpoint；ExecutionRecord 保存授权进度；ChainRecord 保存已探索验证的节点图。Done 不是认证事实源。
+- public interface changed: yes，BrowserRecord 新增 typed waitpoint，Plan 增加同记录恢复命令，来源访问属性区分 public/authenticated/unavailable。
+- new protocol/adapter/fallback: BrowserSkill request-help 生命周期；已有 Profile 先由实际来源能力核验，只有真实阻断才进入人工等待。
+- compatibility or legacy path changed: yes，历史 Plan/Browser/Execution 记录继续读取；旧 manual_required 可恢复，旧访问枚举只作读取兼容。
+- baseline update required: yes，Planning Run 按需来源取证；登录等待不消耗自动化活动预算；任务链展示节点类型。
+- architecture tests to run: 当前真实任务完成“生成计划→自动复用 Profile→确认启动→系统队列执行→任务链与结果终态”验收。
+
+Patch Disposition:
+- delete: 授权执行阶段重新解释自然搜索入口的 typed-entry 分支、存在访问前置即强制人工点击、Done 直接产生认证成功、旧 waitpoint origin 自动升级为认证来源。
+- keep: 历史 evidence/plan/execution 记录、来源防伪、计划版本/摘要、独立授权、单浏览器队列、transport 收敛修复和执行审计。
+- rewrite: Planning Run 先以 BrowserSkill Profile 核验真实来源能力；实际阻断才通过同 session/tab 的 request-help 暂停，Done 后 fresh observe 再决定绑定或阻塞；确认后逐步骤生成、验证和运行任务链。
+- reason: 任务计划必须解决来源、访问前置条件和任务级步骤；任务链必须来自授权后的真实步骤运行。
+
+- 实施状态和逐阶段验证记录见 [任务计划、人工等待与任务链路实施记录](TASK_PLAN_EXECUTION_IMPLEMENTATION.md)。
+- Workbench 导航和用户可见文案统一为“任务计划”“任务链路”。已有登录态不触发人工等待；人工窗口结束后明确显示可恢复状态，不继续展示正在等待；节点画布显示类型、具体 kind 和运行状态。
+- 现有 SQLite 中错误版本写入的步骤级 `entry` 已在存储边界迁移为来源待核验阻塞计划；任务历史保留，旧 digest 不再可执行。
+- 定向 Browser waitpoint 与同 PlanRecord 恢复用例通过；contracts、API、Workbench 类型检查通过。未运行根目录或整包测试套件。
+- 产品自身已生成并启动任务计划 v33：s1 固化验证出 10 个真实商品入口；s2 遇到浏览器命令失败后保留进度并释放浏览器。已收紧传输失败熔断、当前页修链和重复候选停机规则，两条定向回归与 API 类型检查通过。站点访问恢复前不重启真实运行，任务链和结果终态尚未完成。
+
 ## 目标产品运行架构记录（2026-09-11）
 
 - 已确认后续产品由浏览器扩展主前端、Web 辅助管理和 Node 服务端组成；扩展承载需求对话、公共 Timeline/模型设置、计划确认、用户本机浏览器执行与结果，服务端承载 AI Connect、Pi AgentSession、凭据生命周期、数据库和共享任务事实。正式职责、模型形态与待验证项见 [产品运行架构方向](PRODUCT_ARCHITECTURE.md)。
@@ -419,7 +863,7 @@ Patch Disposition:
 - 复用资产：BrowserSkill 官方能力与既有隔离 MVP 的验证方法；后续产品代码承担链路领域规则、薄 adapter 和用户流程组合。
 - 本轮实施：两个Sol/high子任务依次完成模型规则、UI、官方模型adapter及引擎恢复；Astra/high审阅并修正路由核验、中断时序、调用意图命名和主题可读性，负责真实probe与集成验收。
 
-## 下一步
+## 历史下一步（已由本页首节取代）
 
 1. 按 PRODUCT_FLOW.md、INTERVIEW_UI.md 和 WORKBENCH_LAYOUT.md 继续 S0-09：将已接通的多任务/assistant-ui/私有 skill/真实访谈切片迁移到 Fastify、Drizzle 产品会话事务，完善 Decision/Unresolved、取消与恢复；然后独立接通真实来源调研与计划。
 2. S0-10建立受控BrowserSkill adapter及权限/会话回收原型，再验证可执行DSL编译；不能把现有示意节点图当作执行器。

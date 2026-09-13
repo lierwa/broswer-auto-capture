@@ -1,9 +1,9 @@
-import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
-import type { InterviewMessage, RequirementBrief } from "@browser-capture/contracts/interview"
+import { integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import type { InterviewMessage } from "@browser-capture/contracts/interview"
 import type { ModelSelection } from "@agent-platform/ai-connect/client"
 import type { BrowserRecord } from "@browser-capture/contracts/browser"
-import type { PlanRecord, ExecutionRecord } from "@browser-capture/contracts/plan"
-import type { ChainRecord } from "@browser-capture/contracts/chain"
+import type { JsonValue, TaskContract } from "@browser-capture/contracts"
+import type { TaskAuthoringJob, TaskExecution } from "@browser-capture/contracts/api"
 
 export const tasks = sqliteTable("tasks", {
   id: text().primaryKey(), title: text().notNull(), renamed: integer({ mode: "boolean" }).notNull(),
@@ -16,7 +16,7 @@ export const messages = sqliteTable("messages", {
 }, (table) => [primaryKey({ columns: [table.taskId, table.id] })])
 export const drafts = sqliteTable("drafts", {
   taskId: taskId(), version: integer().notNull(), revision: integer().notNull(), title: text().notNull(), markdown: text().notNull(),
-  brief: text({ mode: "json" }).$type<RequirementBrief | null>(),
+  brief: text({ mode: "json" }).$type<JsonValue | null>(),
 }, (table) => [primaryKey({ columns: [table.taskId, table.version] })])
 export const turns = sqliteTable("turns", {
   taskId: taskId(), id: text().notNull(), revision: integer().notNull(), userMessageId: text().notNull(), assistantMessageId: text().notNull(),
@@ -45,7 +45,26 @@ export const aiSettings = sqliteTable("aiSettings", {
 export const browserRuns = sqliteTable("browserRuns", {
   runId: text().primaryKey(), taskId: taskId(), createdAt: text().notNull(), body: text({ mode: "json" }).$type<BrowserRecord>().notNull(),
 })
-export const plans = sqliteTable("plans", { id: text().primaryKey(), taskId: taskId(), body: text({ mode: "json" }).$type<PlanRecord>().notNull() })
-export const chains = sqliteTable("chains", { id: text().primaryKey(), taskId: taskId(), executionId: text().notNull().references(() => executions.id), body: text({ mode: "json" }).$type<ChainRecord>().notNull() })
+export const plans = sqliteTable("plans", { id: text().primaryKey(), taskId: taskId(), body: text({ mode: "json" }).$type<JsonValue>().notNull() })
+export const chains = sqliteTable("chains", { id: text().primaryKey(), taskId: taskId(), executionId: text().notNull().references(() => executions.id), body: text({ mode: "json" }).$type<JsonValue>().notNull() })
 export const executions = sqliteTable("executions", { id: text().primaryKey(), taskId: taskId(), planId: text().notNull().references(() => plans.id),
-  status: text().notNull(), body: text({ mode: "json" }).$type<ExecutionRecord>().notNull() })
+  status: text().notNull(), body: text({ mode: "json" }).$type<JsonValue>().notNull() })
+
+// 新协议使用独立事实表；旧 plans/chains/executions 只读保留，避免假迁移或破坏历史。
+export const taskContracts = sqliteTable("taskContracts", {
+  recordId: text().primaryKey(), taskId: taskId(), kind: text({ enum: ["requirement", "plan", "chain", "run"] }).notNull(),
+  entityId: text().notNull(), version: integer().notNull(), digest: text().notNull(),
+  body: text({ mode: "json" }).$type<TaskContract>().notNull(), createdAt: text().notNull(), updatedAt: text().notNull(),
+}, (table) => [uniqueIndex("task_contract_identity").on(table.kind, table.entityId, table.version)])
+export const taskAuthoringJobs = sqliteTable("taskAuthoringJobs", {
+  id: text().primaryKey(), taskId: taskId(), type: text({ enum: ["plan", "chain"] }).notNull(),
+  status: text().notNull(), body: text({ mode: "json" }).$type<TaskAuthoringJob>().notNull(),
+})
+export const taskExecutions = sqliteTable("taskExecutions", {
+  id: text().primaryKey(), taskId: taskId(), planId: text().notNull(), status: text().notNull(),
+  body: text({ mode: "json" }).$type<TaskExecution>().notNull(),
+})
+export const taskArtifacts = sqliteTable("taskArtifacts", {
+  artifactId: text().primaryKey(), taskId: taskId(), runId: text().notNull(), mediaType: text().notNull(), digest: text().notNull(),
+  body: text({ mode: "json" }).$type<JsonValue>().notNull(), createdAt: text().notNull(),
+})

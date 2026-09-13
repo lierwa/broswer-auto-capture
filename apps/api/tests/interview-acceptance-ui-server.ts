@@ -20,7 +20,6 @@ const service = await createApplication({
   root,
   directory,
   ai,
-  planExecutor: null,
   browserExecutor: async () => { throw new Error("interview_acceptance_browser_forbidden") },
   serveUi: false,
 })

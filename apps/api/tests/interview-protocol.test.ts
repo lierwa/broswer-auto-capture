@@ -78,7 +78,7 @@ test("消息 parts 的真实内容不一致时继续拒绝终态", () => {
   ], result, "run", "另一段正文"), /interview_authoring_part_text_mismatch/)
 })
 
-test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草稿且不伪造采集 brief", () => {
+test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草稿", () => {
   const state = structuredClone(emptyInterview)
   const { session } = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,
@@ -109,28 +109,17 @@ test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草�
   })
 })
 
-test("实际 composed prompt 的采集 JSON 与通用 raw Markdown 示例均可由现有协议提交", () => {
+test("实际 composed prompt 只提供一个通用 raw Markdown 草稿示例", () => {
   const state = structuredClone(emptyInterview)
-  const first = createInterviewMainAuthoring(state, "test skill", {
+  const authored = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   })
-  const captures = first.prompt.match(/<interview-result>.*?<\/interview-result>/gs) ?? []
-  const markdowns = first.prompt.match(/<interview-markdown .*?<\/interview-markdown>/gs) ?? []
-  assert.equal(captures.length, 1)
+  const markdowns = authored.prompt.match(/<interview-markdown .*?<\/interview-markdown>/gs) ?? []
   assert.equal(markdowns.length, 1)
-  first.session.push(`<authoring>${captures[0]}</authoring>`)
-
-  const capture = parseInterviewAuthoringOutput(first.session.finish(), state, [], "run")
-  assert.equal(capture.draft?.title, "short title")
-  assert.notEqual(capture.draft?.brief, null)
-
-  const second = createInterviewMainAuthoring(state, "test skill", {
-    schemaVersion: 1,
-    packages: [CommonContentUIProtocol],
-  })
-  second.session.push(`<authoring>${markdowns[0]}</authoring>`)
-  const generic = parseInterviewAuthoringOutput(second.session.finish(), state, [], "run")
+  assert.doesNotMatch(authored.prompt, /interview-result/)
+  authored.session.push(`<authoring>${markdowns[0]}</authoring>`)
+  const generic = parseInterviewAuthoringOutput(authored.session.finish(), state, [], "run")
   assert.equal(generic.draft?.title, "short title")
   assert.equal(generic.draft?.brief, null)
   assert.match(generic.draft?.markdown ?? "", /Complete browser-automation requirement/)
@@ -159,16 +148,15 @@ test("访谈注册 choice 与 multi_choice，缺失或未启用 free_form 都不
   }
 })
 
-test("Question、采集和通用候选混用或产生多个结果时拒绝", () => {
+test("Question 与草稿混用或产生多个草稿时拒绝", () => {
   const state = structuredClone(emptyInterview)
   const options = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
   const reference = createInterviewMainAuthoring(state, "test skill", options).prompt
-  const capture = reference.match(/<interview-result>.*?<\/interview-result>/s)?.[0]
   const markdown = reference.match(/<interview-markdown .*?<\/interview-markdown>/s)?.[0]
-  assert.ok(capture && markdown)
+  assert.ok(markdown)
 
   const multiple = createInterviewMainAuthoring(state, "test skill", options)
-  multiple.session.push(`<authoring>${capture}</authoring><authoring>${markdown}</authoring>`)
+  multiple.session.push(`<authoring>${markdown}</authoring><authoring>${markdown}</authoring>`)
   assert.throws(() => parseInterviewAuthoringOutput(multiple.session.finish(), state, [], "run"), /interview_authoring_cardinality_invalid/)
 
   const mixed = createInterviewMainAuthoring(state, "test skill", options)
@@ -178,7 +166,7 @@ test("Question、采集和通用候选混用或产生多个结果时拒绝", () 
   assert.throws(() => parseInterviewAuthoringOutput(mixed.session.finish(), state, [text("message", "需要确认。")], "run"), /interview_output_invalid/)
 })
 
-test("通用 Markdown 只有私有 raw candidate 一个生产入口", () => {
+test("旧 JSON 草稿标签不再是生产入口", () => {
   const state = structuredClone(emptyInterview)
   const legacy = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,

@@ -23,13 +23,15 @@ async function context() {
     const value = args[1] === "session" ? args[2] === "start" ? { session_id: "abcd" }
       : { stopped: fake.badStop ? [] : ["abcd"], failed: fake.badStop ? ["failed"] : [], return_failures: [] }
       : args[1] === "tab" ? { tabs: [{ tab_id: 1, url: "https://example.com/", active: true, scope: "agent" }] }
+      : args[1] === "request-help" ? { outcome: "timed_out" }
       : { tab_id: 1, text: fake.text, truncated: false }
     return { stdout: JSON.stringify(value), exitCode: 0 }
   }
   const open = () => createApplication({ root: projectRoot, directory: original.directory, browserExecutor: executor,
     aiModel: testAIModel((prompt, schema, signal) => original.client.runTurn(prompt, schema, signal)) })
   const current = await open()
-  const grant = (): BrowserGrant => ({ taskId, runId: randomUUID(), requirementVersion: 1, purpose: "plan_evidence",
+  current.browser.setAuthorizationValidator(() => {})
+  const grant = (): BrowserGrant => ({ taskId, runId: randomUUID(), requirementVersion: 1, purpose: "exploration",
     allowedOrigins: ["https://example.com"], actions: ["observe"], maxCommands: 20, timeoutMs: 10_000 })
   return { current, open, grant, fake, taskId, otherId, directory: original.directory }
 }
@@ -66,9 +68,9 @@ test("当前服务的等待/互斥/跨任务取消保护/停止通过正式 API 
   assert.equal((await current.browser.snapshot(taskId)).record?.status, "cancelled")
 }))
 
-test("访问受限持久化为待人工，关闭失败仅所属任务可清理且不伪造成功", async () => fixture(async ({ current, grant, fake, taskId, otherId }) => {
-  fake.text = "请先登录"
-  await assert.rejects(current.browser.run(grant(), (session) => session.command({ type: "observe" })))
+test("显式人工节点持久化为待人工，关闭失败仅所属任务可清理且不伪造成功", async () => fixture(async ({ current, grant, fake, taskId, otherId }) => {
+  await assert.rejects(current.browser.run({ ...grant(), actions: ["request_help"] },
+    (session) => session.command({ type: "request_help", reason: "login" })))
   assert.equal((await current.browser.snapshot(taskId)).record?.status, "manual_required")
   fake.badStop = true
   const binding = grant()

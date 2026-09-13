@@ -340,8 +340,8 @@ export function interviewErrorMessage(message: InterviewMessage | undefined) {
 
 function ConfirmedNext({ version, onPlan }: { version: number; onPlan(): void }) {
   return <div className="confirmed-next"><Check size={16} /><div><strong>需求 v{version} 已确认</strong>
-    <p>接下来依据这份范围制定计划，并按需核验真实来源。</p></div>
-    <Button variant="soft" onClick={onPlan}>制定抓取计划<ArrowRight size={14} /></Button></div>;
+    <p>接下来依据这份范围形成任务计划；计划会按需核验真实来源，并在授权后生成、验证和执行任务链路。</p></div>
+    <Button variant="soft" onClick={onPlan}>生成任务计划<ArrowRight size={14} /></Button></div>;
 }
 
 function TurnArtifacts({ item, state, onDraft }: { item: InterviewMessage; state: InterviewState; onDraft: (v: number) => void }) {

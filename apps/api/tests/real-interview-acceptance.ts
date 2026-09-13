@@ -83,14 +83,13 @@ try {
   const liveSelection = await readLiveSelection(liveBase)
   if (JSON.stringify(liveSelection) !== JSON.stringify(expectedSelection)) throw new Error("正式工作台当前模型选择与验收要求不一致，已停止。")
   artifact.userStateBefore = await digestLiveUserState(liveBase)
-  artifact.provenance = await capturePromptProvenance(root)
+  artifact.provenance = await readPromptProvenance(root)
 
   ai = await createAI({ storage: localStore({ directory: path.join(root, "data", "ai-connect") }) })
   service = await createApplication({
     root,
     directory,
     ai,
-    planExecutor: null,
     browserExecutor: async () => { throw new Error("interview_acceptance_browser_forbidden") },
   })
   // WHY：只在隔离 SQLite 中复制已核验的非敏感选择；凭据仍由原 managed AI 存储持有，正式设置不被写入。
@@ -412,7 +411,7 @@ async function isolatedRequest(base: string, method: "GET" | "POST", pathname: s
   return { statusCode: response.status, body: await response.json() as unknown }
 }
 
-async function capturePromptProvenance(repositoryRoot: string): Promise<PromptProvenance> {
+async function readPromptProvenance(repositoryRoot: string): Promise<PromptProvenance> {
   const skillPath = path.join(repositoryRoot, ".agents", "skills", "interview-browser-task", "SKILL.md")
   const protocolPath = path.join(repositoryRoot, "apps", "api", "src", "interview", "protocol.ts")
   const skill = loadInterviewSkill(repositoryRoot)
@@ -423,10 +422,9 @@ async function capturePromptProvenance(repositoryRoot: string): Promise<PromptPr
   const requiredHostInstructions = ["Enabled Question modes: choice, multi_choice.", "For choice and multi_choice, emit at least 2 meaningful question-option children."]
   const missing = requiredHostInstructions.filter((item) => !prompt.includes(item))
   if (missing.length) throw new Error(`host authoring prompt 缺少冻结协议：${missing.join("、")}`)
-  const captureExamples = prompt.match(/<interview-result>[\s\S]*?<\/interview-result>/g) ?? []
   const markdownExamples = prompt.match(/<interview-markdown\b[^>]*>[\s\S]*?<\/interview-markdown>/g) ?? []
-  if (captureExamples.length !== 1 || markdownExamples.length !== 1) {
-    throw new Error(`草稿指令示例数量无效：capture=${captureExamples.length}, markdown=${markdownExamples.length}`)
+  if (markdownExamples.length !== 1 || prompt.includes("interview-result")) {
+    throw new Error(`通用 Markdown 草稿指令示例数量无效：markdown=${markdownExamples.length}`)
   }
   const packagePath = path.join(repositoryRoot, "apps", "api", "package.json")
   const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as { dependencies?: Record<string, string> }
@@ -441,9 +439,7 @@ async function capturePromptProvenance(repositoryRoot: string): Promise<PromptPr
     protocolSourceMtime: (await stat(protocolPath)).mtime.toISOString(),
     generatedPromptSha256: digestBytes(Buffer.from(prompt)),
     requiredHostInstructions,
-    captureExample: captureExamples[0]!,
     markdownExample: markdownExamples[0]!,
-    interviewResultPromptLines: prompt.split("\n").filter((line) => line.includes("interview-result")),
   }
 }
 
@@ -486,8 +482,7 @@ type CaseArtifact = { id: string; taskId: string; status: "running" | "passed" |
   questionKinds: string[]; confirmedVersion: number | null; finalDraft: unknown; failure: string | null;
   failureKind: "fixture_needs_input" | "model_or_product" | "quality" | "automatic_assertion" | "harness" | null }
 type PromptProvenance = { vendorTar: string; vendorTarSha256: string; skillSha256: string; protocolSourceSha256: string;
-  protocolSourceMtime: string; generatedPromptSha256: string; requiredHostInstructions: string[]; captureExample: string;
-  markdownExample: string; interviewResultPromptLines: string[] }
+  protocolSourceMtime: string; generatedPromptSha256: string; requiredHostInstructions: string[]; markdownExample: string }
 type AcceptanceArtifact = { runId: string; mode: "preflight" | "real"; startedAt: string; completedAt: string | null;
   runtime: { node: string; execPath: string };
   selection: { connectionIdHash: string; modelId: string; reasoningEffort: string }; userStateBefore: unknown; userStateAfter: unknown;

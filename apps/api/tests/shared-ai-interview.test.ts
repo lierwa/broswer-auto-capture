@@ -71,13 +71,13 @@ test("保存共享选择后访谈走 Pi Main 的 canonical history 与公共事�
     assert.match(JSON.stringify(providerRequests[0]), /本轮只形成可确认的任务需求/)
     assert.doesNotMatch(JSON.stringify(providerRequests[0]), /每次复跑创建独立运行/)
 
-    responseText = "<authoring><interview-result>{bad</interview-result></authoring>"
+    responseText = "<authoring><interview-markdown title=\"坏草稿\">未闭合"
     send("把范围改为公开在售商品"); await coordinator.waitForIdle()
     const failed = store.snapshot(id)
     assert.equal(failed.messages.at(-1)?.status, "failed")
     assert.deepEqual(failed.messages.at(-1)?.aiEvents.filter((event) => event.type !== "extension").map((event) => event.type),
       ["generation.started", "text.delta", "generation.completed"])
-    assert.match(JSON.stringify(providerRequests[1]), /<authoring><interview-result>/)
+    assert.match(JSON.stringify(providerRequests[1]), /<interview-markdown/)
     assert.equal(providerCalls, 2)
     ai.close()
   } finally {

@@ -6,6 +6,7 @@ import {
   PI_AGENT_SESSION_ACTIVE_TASK_MESSAGE_NAME,
   type ConfirmAcceptedStep,
   type PiAgentSessionMessage,
+  type MainModelTool,
 } from "@agent-platform/pi-agent-session"
 import type { ProductStore } from "../database/store.js"
 import { DomainError } from "../errors.js"
@@ -28,6 +29,7 @@ export type PreparedMainAIModel = Readonly<{
     sessionId: string
     messages: readonly PiAgentSessionMessage[]
     activeTask: string
+    tools?: readonly MainModelTool[]
     signal: AbortSignal
     onEvent(event: AIEvent): void
   }>): Promise<Readonly<{ outputText: string; confirmAcceptedStep?: ConfirmAcceptedStep }>>
@@ -39,7 +41,7 @@ export type AIModelResolver = () => Promise<PreparedAIModel>
 export type AIModelProvider = Readonly<{
   selection(): ModelSelection
   prepare(selection: ModelSelection, signal: AbortSignal): Promise<PreparedAIModel>
-  prepareMain(selection: ModelSelection): Promise<PreparedMainAIModel>
+  prepareMain(selection: ModelSelection, purpose?: "interview" | "exploration"): Promise<PreparedMainAIModel>
 }>
 
 export function lazyAIModel(provider: AIModelProvider, signal: AbortSignal): AIModelResolver {
@@ -76,10 +78,12 @@ export function createAIModelProvider(
         },
       })
     },
-    async prepareMain(selection) {
+    async prepareMain(selection, purpose = "interview") {
+      selection = Object.freeze({ ...selection })
+      await requireAgentSessionSelection(ai, subjectId, selection)
       const binding = await subject.bindAgentSession({ scope: "platform", ...selection })
       const adapter = createPiAgentSessionAdapter({
-        agentId: "browser-capture.requirement-interview",
+        agentId: purpose === "exploration" ? "browser-capture.task-exploration" : "browser-capture.requirement-interview",
         binding,
         stateDir: options.stateDir,
       })
@@ -99,14 +103,14 @@ export function createAIModelProvider(
               name: PI_AGENT_SESSION_ACTIVE_TASK_MESSAGE_NAME,
               content: [{ type: "text", text: input.activeTask }],
             }],
-            tools: [],
+            tools: purpose === "exploration" ? input.tools ?? [] : [],
             settings: { reasoningEffort: selection.reasoningEffort },
             signal: input.signal,
             onEvent: bridge.onRuntimeEvent,
           })
           await bridge.settle(result)
           if (result.status === "cancelled") throw new DOMException("Aborted", "AbortError")
-          if (result.status === "failed") throw new Error("ai_generation_failed")
+          if (result.status === "failed") throw new Error(`pi_agent_session_failed:${result.error.code}`)
           return {
             outputText: result.outputText ?? "",
             ...(result.confirmAcceptedStep ? { confirmAcceptedStep: result.confirmAcceptedStep } : {}),

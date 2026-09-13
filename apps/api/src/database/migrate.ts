@@ -31,8 +31,8 @@ PRAGMA user_version = 2;
 
 export function migrate(connection: Database.Database) {
   const version = connection.pragma("user_version", { simple: true })
-  if (version === 9) return
-  if (typeof version !== "number" || version < 0 || version > 8) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
+  if (version === 10) return
+  if (typeof version !== "number" || version < 0 || version > 9) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
   // WHY：结构变更也必须整体提交，不能让部分建表成为成功迁移标记。
   connection.transaction(() => {
     if (version === 0) connection.exec(schema)
@@ -71,13 +71,24 @@ export function migrate(connection: Database.Database) {
     if (version < 8) connection.exec(`CREATE TABLE aiSettings (
       subjectId TEXT PRIMARY KEY, selection TEXT NOT NULL CHECK(json_valid(selection))
     ); PRAGMA user_version = 8;`)
-    // WHY：来源证据已归属计划，旧计划无法在不猜测事实的前提下升级；只重置开发期业务链，保留访谈、模型选择和浏览器 Profile。
-    if (version < 9) connection.exec(`DELETE FROM chains;
-      DELETE FROM executions;
-      DELETE FROM plans;
-      DELETE FROM browserRuns WHERE json_extract(body,'$.purpose')='source_research';
-      DELETE FROM operations WHERE scope LIKE 'research:%' OR scope LIKE 'plan:%';
-      DROP TABLE researchRuns;
-      PRAGMA user_version = 9;`)
+    // WHY：旧 payload 无法无损升级；保留原表和原字节，正式运行只读取 v10 新表。
+    if (version < 9) connection.exec(`PRAGMA user_version = 9;`)
+    if (version < 10) connection.exec(`CREATE TABLE taskContracts (
+        recordId TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), kind TEXT NOT NULL,
+        entityId TEXT NOT NULL, version INTEGER NOT NULL CHECK(version > 0), digest TEXT NOT NULL,
+        body TEXT NOT NULL CHECK(json_valid(body)), createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+        UNIQUE(kind,entityId,version));
+      CREATE INDEX task_contracts_task_kind ON taskContracts(taskId,kind,version);
+      CREATE TABLE taskAuthoringJobs (id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id),
+        type TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)));
+      CREATE INDEX task_authoring_jobs_task ON taskAuthoringJobs(taskId);
+      CREATE TABLE taskExecutions (id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id),
+        planId TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)));
+      CREATE INDEX task_executions_task ON taskExecutions(taskId);
+      CREATE TABLE taskArtifacts (artifactId TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id),
+        runId TEXT NOT NULL, mediaType TEXT NOT NULL, digest TEXT NOT NULL,
+        body TEXT NOT NULL CHECK(json_valid(body)), createdAt TEXT NOT NULL);
+      CREATE INDEX task_artifacts_run ON taskArtifacts(runId);
+      PRAGMA user_version = 10;`)
   })()
 }

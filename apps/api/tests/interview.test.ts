@@ -36,8 +36,8 @@ test("Main 以任务为 canonical session，accepted history 使用同一消息�
   assert.deepEqual(mainRuns.map((run) => run.sessionId), [id, id])
   const history = mainRuns[1]!.messages as Array<{ role: string; content: Array<{ type: string; text: string }> }>
   assert.deepEqual(history.map((item) => item.role), ["user", "assistant", "user"])
-  assert.match(history[1]!.content[0]!.text, /<authoring><interview-result>/)
-  assert.doesNotMatch(store.snapshot(id).messages[1]!.text, /authoring|interview-result/)
+  assert.match(history[1]!.content[0]!.text, /<authoring><interview-markdown/)
+  assert.doesNotMatch(store.snapshot(id).messages[1]!.text, /authoring|interview-markdown/)
   assert.deepEqual(confirmed, [
     { drafts: 1, status: "succeeded" },
     { drafts: 2, status: "succeeded" },
@@ -374,7 +374,7 @@ test("Content Card 终态成功后才按作者化顺序持久化，历史快照�
     "前文",
     '<authoring><content-callout variant="highlight" label="范围">关键范围</content-callout></authoring>',
     "后文",
-    `<authoring><interview-result>${JSON.stringify({ draft })}</interview-result></authoring>`,
+    `<authoring><interview-markdown title="${draft.title}">${draft.markdown}</interview-markdown></authoring>`,
   ].join("")
   client.runTurn = async function* (prompt) {
     assert.match(prompt, /content-callout/)
@@ -413,7 +413,7 @@ test("格式化 authoring 的 Card 两侧空白不阻止草稿和审计提交", 
     "</authoring>",
     "",
     "<authoring>",
-    `<interview-result>${JSON.stringify({ draft })}</interview-result>`,
+    `<interview-markdown title="${draft.title}">${draft.markdown}</interview-markdown>`,
     "</authoring>",
   ].join("\n")
   client.runTurn = async function* () {
@@ -436,23 +436,21 @@ test("格式化 authoring 的 Card 两侧空白不阻止草稿和审计提交", 
   assert.equal(message.parts?.[0]?.type === "text" ? message.parts[0].text : null, message.text)
 }))
 
-test("采集 JSON 多写尾字符时拒绝提交，合法采集格式保持可提交", async () => fixture(async ({ coordinator, store, client, create, send }) => {
-  const envelope = JSON.stringify({ draft })
-  // WHY：通用长文不再经过 JSON；仍使用 JSON 的采集候选必须严格拒绝尾字符，不能猜修或提交部分草稿。
-  const malformed = `<authoring><interview-result>${envelope}}</interview-result></authoring>`
+test("未闭合 Markdown 草稿拒绝提交，合法通用格式保持可提交", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+  const malformed = `<authoring><interview-markdown title="${draft.title}">${draft.markdown}`
   client.runTurn = async function* () { yield { type: "turn_succeeded", outputText: malformed } }
-  const rejectedId = create(); send(rejectedId, "采集商品和评价"); await coordinator.waitForIdle()
+  const rejectedId = create(); send(rejectedId, "整理浏览器任务"); await coordinator.waitForIdle()
   const rejected = store.snapshot(rejectedId)
   assert.equal(rejected.turns[0]?.status, "failed")
   assert.equal(rejected.drafts.length, 0)
   assert.equal(rejected.audits.length, 1)
 
-  const valid = `已整理采集草稿。\n\n<authoring><interview-result>${envelope}</interview-result></authoring>`
+  const valid = `已整理任务草稿。\n\n<authoring><interview-markdown title="${draft.title}">${draft.markdown}</interview-markdown></authoring>`
   client.runTurn = async function* () { yield { type: "turn_succeeded", outputText: valid } }
-  const acceptedId = create(); send(acceptedId, "采集商品和评价"); await coordinator.waitForIdle()
+  const acceptedId = create(); send(acceptedId, "整理浏览器任务"); await coordinator.waitForIdle()
   const accepted = store.snapshot(acceptedId)
   assert.equal(accepted.turns[0]?.status, "succeeded")
-  assert.equal(accepted.drafts[0]?.brief?.goal, draft.brief.goal)
+  assert.equal(accepted.drafts[0]?.markdown, draft.markdown)
   assert.equal(accepted.audits.length, 1)
 }))
 
@@ -460,7 +458,7 @@ test("坏 Content 只降为安全正文且不越过 BAC 终态门；未注册 UI
   const ui = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
   const invalid = [
     '<authoring><content-callout variant="highlight" title="invalid">安全提示</content-callout></authoring>',
-    `<authoring><interview-result>${JSON.stringify({ draft })}</interview-result></authoring>`,
+    `<authoring><interview-markdown title="${draft.title}">${draft.markdown}</interview-markdown></authoring>`,
   ].join("")
   client.runTurn = async function* () { yield { type: "turn_succeeded", outputText: invalid } }
   const first = create()
@@ -473,11 +471,11 @@ test("坏 Content 只降为安全正文且不越过 BAC 终态门；未注册 UI
   assert.equal(rejected.drafts.length, 0)
   assert.equal(rejectedMessage.parts, undefined)
   assert.match(rejectedMessage.text, /安全提示/)
-  assert.doesNotMatch(rejectedMessage.text, /authoring|content-callout|interview-result/)
+  assert.doesNotMatch(rejectedMessage.text, /authoring|content-callout|interview-markdown/)
 
   const unregistered = [
     '<authoring><content-callout variant="highlight">未注册展示</content-callout></authoring>',
-    `<authoring><interview-result>${JSON.stringify({ draft })}</interview-result></authoring>`,
+    `<authoring><interview-markdown title="${draft.title}">${draft.markdown}</interview-markdown></authoring>`,
   ].join("")
   client.runTurn = async function* (prompt) {
     assert.doesNotMatch(prompt, /content-callout/)
@@ -492,5 +490,5 @@ test("坏 Content 只降为安全正文且不越过 BAC 终态门；未注册 UI
   assert.equal(unsupportedMessage.status, "failed")
   assert.equal(unsupported.drafts.length, 0)
   assert.equal(unsupportedMessage.parts, undefined)
-  assert.doesNotMatch(unsupportedMessage.text, /authoring|content-callout|interview-result/)
+  assert.doesNotMatch(unsupportedMessage.text, /authoring|content-callout|interview-markdown/)
 }))

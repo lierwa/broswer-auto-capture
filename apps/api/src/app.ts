@@ -14,13 +14,13 @@ import { loadInterviewSkill } from "./interview/protocol.js"
 import { DomainError } from "./errors.js"
 import { BrowserService } from "./browser/service.js"
 import { BrowserError, bskExecutor, type CommandExecutor } from "@browser-capture/browser"
-import { PlanService } from "./plan/service.js"
-import type { PlanExecutor } from "./plan/queue.js"
-import { ChainService } from "./chain/service.js"
 import { createAIModelProvider, requireAgentSessionSelection, type AIModelProvider } from "./ai/model.js"
+import { TaskChainService } from "./task-chain/service.js"
+import type { RuntimeCapabilityFactory } from "./task-chain/runtime-host.js"
 
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
-export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider; planExecutor?: PlanExecutor | null; browserExecutor?: CommandExecutor; serveUi?: boolean }
+export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider;
+  taskChainCapabilities?: RuntimeCapabilityFactory; browserExecutor?: CommandExecutor; serveUi?: boolean }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
@@ -38,11 +38,9 @@ export async function createApplication(options: AppOptions) {
   let browser: BrowserService
   try { browser = new BrowserService(store, options.directory, options.browserExecutor ?? bskExecutor(options.root)) }
   catch (error) { ai.close(); await store.close(); throw error }
-  let plan: PlanService
-  let chain: ChainService
+  let taskChain: TaskChainService
   try {
-    chain = new ChainService(store, aiModel)
-    plan = new PlanService(store, browser, coordinator, options.planExecutor === null ? undefined : options.planExecutor ?? chain.executeBatch, aiModel)
+    taskChain = new TaskChainService(store, browser, aiModel, options.taskChainCapabilities)
   }
   catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
@@ -52,7 +50,7 @@ export async function createApplication(options: AppOptions) {
       return reply.code(403).send({ error: "仅允许本机同源访问。", code: "forbidden_origin" })
     }
     // WHY：账号与模型调用会使用本机凭据；浏览器必须提供同源 Fetch Metadata，不能沿用允许无 Origin 的 CLI 读取边界。
-    if (sensitiveAIPath(request.url) && request.headers["sec-fetch-site"] !== "same-origin") {
+    if (sensitiveAIPath(request.method, request.url) && request.headers["sec-fetch-site"] !== "same-origin") {
       return reply.code(403).send({ error: "模型账号仅允许由当前工作台访问。", code: "forbidden_ai_origin" })
     }
     reply.header("Cache-Control", "no-store").header("X-Content-Type-Options", "nosniff")
@@ -63,10 +61,9 @@ export async function createApplication(options: AppOptions) {
     const status = publicStatus(error)
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
-  routes(app, coordinator, browser, plan, store, ai)
+  routes(app, coordinator, browser, taskChain, store, ai)
   await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
-  app.get("/api/chains", (request) => { const { taskId } = taskQuery.parse(request.query); return chain.snapshot(taskId, plan.snapshot(taskId)) })
-  app.addHook("preClose", async () => { await plan.close(); await browser.close(); await coordinator.close() })
+  app.addHook("preClose", async () => { await taskChain.close(); await browser.close(); await coordinator.close() })
   app.addHook("onClose", async () => { ai.close(); await store.close() })
   try {
     if (options.serveUi) {
@@ -75,7 +72,7 @@ export async function createApplication(options: AppOptions) {
         ? reply.sendFile("index.html") : reply.code(404).send({ error: "页面或接口不存在。", code: "not_found" }))
     }
     await app.ready()
-    return { app, coordinator, store, browser, plan, chain }
+    return { app, coordinator, store, browser, taskChain }
   } catch (error) { await app.close(); throw error }
 }
 function publicStatus(error: unknown) {
@@ -86,7 +83,7 @@ function publicStatus(error: unknown) {
 }
 const taskQuery = z.object({ taskId: taskIdSchema })
 const eventsQuery = taskQuery.extend({ after: z.coerce.number().int().min(-1).default(-1) })
-function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, plan: PlanService, store: ProductStore, ai: AI) {
+function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, taskChain: TaskChainService, store: ProductStore, ai: AI) {
   app.get("/api/health", () => ({ service: "browser-capture-api", version: 1 }))
   app.get("/api/model-settings", () => ({ selection: store.sharedModelSelection(SHARED_AI_SUBJECT) ?? null }))
   app.put("/api/model-settings", async (request) => {
@@ -102,21 +99,29 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
       throw new DomainError("invalid_model_selection", "模型选择无效，请重新选择账号和模型。", 400)
     }
   })
-  app.get("/api/tasks", () => plan.projectTasks(coordinator.list()))
+  app.get("/api/tasks", () => taskChain.projectTasks(coordinator.list()))
   app.post("/api/tasks", (request) => {
     const command = taskCommandSchema.parse(request.body)
-    if (command.type === "archive" && command.archived && (browser.isActive(command.id) || plan.isActive(command.id))) throw new DomainError("browser_busy", "请先停止计划或授权运行，再归档任务。", 409)
+    if (command.type === "archive" && command.archived && (browser.isActive(command.id) || taskChain.isActive(command.id))) throw new DomainError("browser_busy", "请先停止计划或授权运行，再归档任务。", 409)
     const id = coordinator.taskAction(command)
-    return { id, tasks: plan.projectTasks(coordinator.list()) }
+    return { id, tasks: taskChain.projectTasks(coordinator.list()) }
   })
   app.get("/api/interview", (request) => coordinator.snapshot(taskQuery.parse(request.query).taskId))
   app.get("/api/browser", (request) => browser.snapshot(taskQuery.parse(request.query).taskId))
   app.post("/api/browser", (request) => browser.control(taskQuery.parse(request.query).taskId, request.body))
-  app.get("/api/plan", (request) => plan.snapshot(taskQuery.parse(request.query).taskId))
-  app.post("/api/plan", async (request, reply) => reply.code(202).send(await plan.dispatch(taskQuery.parse(request.query).taskId, request.body)))
+  app.get("/api/task-chain", (request) => taskChain.snapshot(taskQuery.parse(request.query).taskId))
+  app.post("/api/task-chain", (request, reply) => reply.code(202).send(taskChain.dispatch(taskQuery.parse(request.query).taskId, request.body)))
+  app.get("/api/task-chain/legacy", (request, reply) => {
+    const query = legacyQuery.parse(request.query), body = taskChain.legacyOriginal(query.taskId, query.source, query.id)
+    return reply.type("application/json; charset=utf-8").send(body)
+  })
+  app.get("/api/task-chain/artifact", (request) => {
+    const query = artifactQuery.parse(request.query); return taskChain.repository.artifact(query.taskId, query.artifactId)
+  })
   app.post("/api/interview", (request, reply) => {
     const id = taskQuery.parse(request.query).taskId, command = interviewCommandSchema.parse(request.body)
     const state = coordinator.dispatch(id, command)
+    if (command.type === "confirm") taskChain.snapshot(id)
     return reply.code(command.type === "message" || command.type === "retry" ? 202 : 200).send({ taskId: id, state })
   })
   app.get("/api/interview/events", (request, reply) => {
@@ -126,9 +131,12 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
   })
 }
 const modelSettingsBody = z.object({ selection: z.unknown() }).strict()
-function sensitiveAIPath(url: string) {
+const legacyQuery = taskQuery.extend({ source: z.enum(["plans", "chains", "executions"]), id: z.string().min(1) })
+const artifactQuery = taskQuery.extend({ artifactId: z.string().uuid() })
+function sensitiveAIPath(method: string, url: string) {
   const pathName = url.split("?", 1)[0]
   return pathName === "/api/model-settings" || pathName === "/api/ai" || pathName?.startsWith("/api/ai/")
+    || method === "POST" && pathName === "/api/task-chain"
 }
 function stream(reply: FastifyReply, coordinator: InterviewCoordinator, id: string, after: number) {
   const controller = new AbortController()

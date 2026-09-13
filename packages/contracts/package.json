@@ -4,22 +4,26 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    ".": "./src/task-chain/index.ts",
+    "./requirement": "./src/task-chain/requirement.ts",
+    "./binding": "./src/task-chain/binding.ts",
+    "./value": "./src/task-chain/value.ts",
+    "./version": "./src/task-chain/version.ts",
+    "./api": "./src/task-chain/api.ts",
+    "./chain": "./src/task-chain/chain.ts",
+    "./plan": "./src/task-chain/plan.ts",
+    "./run": "./src/task-chain/run.ts",
     "./ai": "./src/ai.ts",
-    "./capture": "./src/capture.ts",
-    "./chain": "./src/chain.ts",
-    "./plan": "./src/plan.ts",
     "./browser": "./src/browser.ts",
     "./interview": "./src/interview.ts",
-    "./task": "./src/task.ts",
-    "./run": "./src/run.ts",
-    "./workflow": "./src/workflow.ts"
+    "./task": "./src/task.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
-    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-4f54eb7c.tgz",
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-e61cfe91.tgz",
     "zod": "4.1.8"
   },
   "devDependencies": {

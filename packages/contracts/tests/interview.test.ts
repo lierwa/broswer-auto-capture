@@ -6,12 +6,6 @@ import { createCommonChoiceQuestion, createCommonQuestionFromPanel, createCommon
 import { authoredQuestionSchema, interviewCommandSchema, interviewOutputSchema, messageSchema, modelInterviewOutputSchema, questionSchema } from "../src/interview.js"
 import { taskCommandSchema } from "../src/task.js"
 
-const brief = {
-  goal: "采集指定品牌官网产品", scope: "用户确认的品牌与官网产品范围",
-  sourceStrategy: { mode: "discover" as const, scope: "查找并核验品牌官网", providedUrls: [] },
-  deliverables: [{ entity: "产品", fields: ["名称", "链接"], coverage: "官网公开产品", limit: "完成可核验枚举" }],
-  discoveryTasks: [], completionCriteria: ["结果保留来源链接"], constraints: [], proposedDefaults: [],
-}
 const genericMarkdown = "# 任务目标\n播放指定内容并定位到目标时间。\n\n# 可观察完成标准\n目标内容正在播放且当前位置为 180 秒。"
 
 test("正式命令强制幂等键、修订及精确取消轮次，并保留用户原文", () => {
@@ -46,7 +40,7 @@ test("模型可只提交可靠问题或草稿，但完全空输出不能成为�
     mode: "free_form", prompt: "请提供要采集的品牌名称。", options: [],
   } })
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: openQuestion, draft: null }).success, true)
-  assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: null, draft: { title: "采集范围", brief } }).success, true)
+  assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: null, draft: { title: "旧结构", brief: {} } }).success, false)
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: null,
     draft: { title: "媒体播放需求", markdown: genericMarkdown, brief: null },
   }).success, true)
@@ -54,7 +48,7 @@ test("模型可只提交可靠问题或草稿，但完全空输出不能成为�
     draft: { title: "媒体播放需求", brief: null },
   }).success, false)
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: null,
-    draft: { title: "采集范围", markdown: genericMarkdown, brief },
+    draft: { title: "旧结构", markdown: genericMarkdown, brief: {} },
   }).success, false)
   assert.equal(modelInterviewOutputSchema.safeParse({ assistantText: "", question: null, draft: null }).success, false)
 })

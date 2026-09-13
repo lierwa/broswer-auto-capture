@@ -60,11 +60,11 @@ try {
   bsk observe --session $SessionId | Out-Null
   Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .chat-message").length === 4 && document.querySelector(".confirmed-next") !== null' 'reload-retains-confirmed-history'
   Send-Message 'F1开放问题：补充品牌与品类范围'
-  Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .decision-question")[1]?.textContent.includes("品牌或品类") === true && [...document.querySelectorAll(".task-workspace:not([hidden]) .decision-option")].every((item) => item.disabled) && document.querySelectorAll(".task-workspace:not([hidden]) .decision-block")[1]?.querySelectorAll("button").length === 0' 'open-question-needs-no-intermediate-button-history-readonly'
+  Assert-Page 'document.querySelectorAll(".task-workspace:not([hidden]) .decision-question")[1]?.textContent.includes("品牌或品类") === true && document.querySelectorAll(".task-workspace:not([hidden]) .decision-block")[1]?.querySelectorAll("button").length === 2' 'range-direction-question-visible'
   Send-Message '优先覆盖海尔和美的在售冰箱，没有现成商品链接'
-  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .interview-bar")?.textContent.includes("v2") === true && document.querySelectorAll(".task-workspace:not([hidden]) textarea").length === 1' 'open-answer-produces-brief-draft-with-single-composer'
+  Assert-Page 'document.querySelector(".task-workspace:not([hidden]) .interview-bar")?.textContent.includes("v2") === true && document.querySelectorAll(".task-workspace:not([hidden]) textarea").length === 1' 'range-supplement-produces-markdown-draft-with-single-composer'
   $openAnswered = Invoke-RestMethod ("http://127.0.0.1:4174/api/interview?taskId=$taskId")
-  if (@($openAnswered.decisions | Where-Object kind -eq 'option').Count -ne 1 -or @($openAnswered.decisions | Where-Object kind -eq 'draft_confirmation').Count -ne 1 -or $openAnswered.drafts.Count -ne 2 -or $null -eq $openAnswered.drafts[1].brief) { throw 'Open answer did not preserve option/confirmation history or structured brief' }
+  if (@($openAnswered.decisions | Where-Object kind -eq 'option').Count -ne 1 -or @($openAnswered.decisions | Where-Object kind -eq 'draft_confirmation').Count -ne 1 -or $openAnswered.drafts.Count -ne 2 -or $null -ne $openAnswered.drafts[1].brief -or -not $openAnswered.drafts[1].markdown.Contains('任务目标')) { throw 'Range supplement did not preserve decision history or Markdown draft' }
   Open-Latest-Draft
   Assert-Page 'document.querySelector(".draft-drawer[role=dialog]") !== null && Math.abs(document.querySelector(".draft-drawer").getBoundingClientRect().right - innerWidth) < 2 && document.querySelector(".draft-version-label .rt-SelectTrigger") !== null' 'draft-is-right-drawer-with-library-select'
   bsk press ArrowLeft --selector '[aria-label="调整需求草稿宽度"]' --session $SessionId | Out-Null

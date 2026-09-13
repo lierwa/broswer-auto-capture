@@ -12,15 +12,14 @@ import { DraftDialog } from "./DraftDialog.js";
 import { ChainView } from "./ChainView.js";
 import { Results } from "./Results.js";
 import { Plan } from "./Plan.js";
-import { PlanConnection } from "./planConnection.js";
-import type { StepId } from "./chainData.js";
+import { TaskChainConnection } from "./taskChainConnection.js";
 import type { TaskSummary } from "./taskContract.js";
 import type { useModelSettings } from "./useModelSettings.js";
 
 const views = [
   { id: "interview", name: "需求对话", icon: MessageSquare },
-  { id: "plan", name: "抓取计划", icon: FileSearch },
-  { id: "nodes", name: "抓取链路", icon: GitBranch },
+  { id: "plan", name: "任务计划", icon: FileSearch },
+  { id: "nodes", name: "任务链路", icon: GitBranch },
   { id: "results", name: "运行结果", icon: Database },
 ];
 type WorkspaceModelSettings = Pick<
@@ -49,13 +48,9 @@ export function TaskWorkspace({
   modelSettings: WorkspaceModelSettings;
 }) {
   const interview = useInterview(task.id);
-  const planConnection = useMemo(() => new PlanConnection(task.id), [task.id]);
+  const taskChainConnection = useMemo(() => new TaskChainConnection(task.id), [task.id]);
   const [activeTab, setActiveTab] = useState("interview");
   const [version, setVersion] = useState<number | null>(null);
-  const [step, setStep] = useState<StepId>("catalog");
-  const [selected, setSelected] = useState<Partial<Record<StepId, number>>>({});
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [chainSample, setChainSample] = useState(false);
   const blocked = task.archived
     ? "任务已归档，恢复后可以继续对话。"
     : otherRunning
@@ -69,7 +64,7 @@ export function TaskWorkspace({
   }
   function createPlan() {
     setActiveTab("plan");
-    if (interview.state.confirmedVersion) void planConnection.ensure(interview.state.confirmedVersion);
+    if (interview.state.confirmedVersion) void taskChainConnection.ensure(interview.state.confirmedVersion);
   }
   return (
     <section
@@ -124,7 +119,7 @@ export function TaskWorkspace({
             <Tabs.Content value="plan" forceMount hidden={activeTab !== "plan"}>
               <Plan
                 taskId={task.id}
-                connection={planConnection}
+                connection={taskChainConnection}
                 active={visible && activeTab === "plan"}
                 readOnly={task.archived}
                 confirmedVersion={interview.state.confirmedVersion}
@@ -139,21 +134,10 @@ export function TaskWorkspace({
               hidden={activeTab !== "nodes"}
             >
               <ChainView
-                taskId={task.id}
-                step={step}
-                onStep={setStep}
+                connection={taskChainConnection}
                 theme={theme}
-                selected={selected}
-                inspectorOpen={inspectorOpen}
-                sample={chainSample}
-                onSample={setChainSample}
                 active={visible && activeTab === "nodes"}
                 onPlan={() => setActiveTab("plan")}
-                onClose={() => setInspectorOpen(false)}
-                onSelect={(id, node) => {
-                  setSelected((value) => ({ ...value, [id]: node }));
-                  setInspectorOpen(true);
-                }}
               />
             </Tabs.Content>
             <Tabs.Content
@@ -164,7 +148,7 @@ export function TaskWorkspace({
               <Results
                 taskId={task.id}
                 readOnly={task.archived}
-                state={interview.state}
+                connection={taskChainConnection}
                 active={visible && activeTab === "results"}
                 onPlan={() => setActiveTab("plan")}
               />

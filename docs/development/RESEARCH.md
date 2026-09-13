@@ -1,5 +1,23 @@
 # 调研登记
 
+## 2026-09-13 京东登录、访问路径与频控判定
+
+- 当前 Chrome 首页明确显示未登录，按本次判定口径属于登录过期；当前搜索、商品卡点击和详情直达随后进入 `risk_handler`/认证页，只能证明该未登录 Profile 不能继续详情验收，不能据此声称当前仍处于频控。
+- 历史登录链可核验：2026-09-12 11:46 进入认证页，11:47 经 SSO 同步返回京东首页；2026-09-13 02:47 的原始 BrowserSkill 观察仍未出现未登录问候，并成功直接打开详情页。两者之间没有认证页记录。
+- 历史频控可核验：2026-09-12 16:29:16–16:30:16 在同一已登录时段直接打开 11 个商品页，最后一条立即转入 `cfe.m.jd.com/privatedomain/risk_handler/03101900/`；16:44 对同一商品连续三次进入风控，16:45:51 同一 URL 又恢复成功。因此不是永久 SKU 封禁，也不是直接 URL 必然被封，更符合短时频率/会话风险限制。
+- 同一公网出口的无 Cookie HTTP 对照中，首页、搜索和两条不同详情 URL 均返回 200 且未跳认证；这排除整站式纯 IP 封禁，但不能把京东内部风控归因精确到 IP、账号、Cookie 或浏览器指纹中的某一个维度。
+- 已登录时“从首页真实点击能否免于频控”没有同条件的阻断后对照。历史成功运行包含真实点击，首次频控发生在密集直达批次；只能判断降低直达频率和按页面发现链接推进更稳妥，不能声称点击路径绝不会受限。
+
+浏览器历史只按 host/path 和时间汇总；Cookie、账号标识、token、URL 查询串及页面原文均未写入项目记录。本轮到达上述结论后停止继续施压京东。
+
+采用的通用执行策略不设置固定导航间隔：正常链路仍在上一个输入完成并写入检查点后立即处理下一个输入。计划层和嵌套链路在调度前按稳定键去重；导航失败先核验实际标签页，已经落到目标页则继续，不重新导航。浏览器只根据可观察事实区分认证、验证、429 限流、拒绝访问和瞬时故障；当前 BrowserSkill 不返回响应头，因此没有 `Retry-After` 时不猜测冷却秒数。首次探索在首个外部访问中断后拒绝本会话后续浏览器命令；计划执行则写入运行事实并熔断剩余输入，`onItemFailure=continue` 只保留给业务数据缺失。新的显式执行才构成重新开放尝试，普通恢复不创建新的失败重试运行。
+
+该策略采用 HTTP `Retry-After` 的服务端时间语义，并遵循成熟可靠性实践中的“限制重试、只重试可安全重复的操作、非瞬时错误快速失败”。通用 API 客户端可对明确瞬时且幂等的请求采用有界指数退避和 jitter；浏览器导航无法从当前工具取得 `Retry-After`，且失败后页面是否已经落地需要先核验，因此本系统不自动套用一个猜测的固定等待或隐藏重试。[RFC 9110 Retry-After](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after)、[AWS Control and limit retry calls](https://docs.aws.amazon.com/wellarchitected/latest/framework/rel_mitigate_interaction_failure_limit_retries.html)、[Google Cloud Retry strategy](https://docs.cloud.google.com/storage/docs/retry-strategy)
+
+## 2026-09-13 P2 受控结构读取
+
+本机 `bsk --version` 为 0.2.1；官方 `get-html --help` 支持 tab-id、快照 ref 和 max-bytes，`snapshot --help` 支持 aria 快照。采用官方 HTML 获取加 cheerio@1.2.0 的成熟 DOM 解析，任务选择器只存任务数据，禁止任意脚本和临时引用；仅返回受限文本、公开链接和允许的状态属性，不持久化原 HTML。[Cheerio 官方 load 说明](https://cheerio.js.org/docs/basics/loading/) 已核验，registry 要求 Node >=20.18.1，本机 Node 24.14.1。离线用例通过；P6 已实际核验 get-html 返回 html/truncated/byte_size/tab_id，原 HTML 仅在内存读取。具体任务字段、业务来源和复跑仍需 P6 实际运行验证。
+
 当前采用状态和开发阅读顺序见 DEVELOPMENT_BASELINE.md，实测完成度见 PROGRESS.md。下文保留历史调研依据；日期较早的候选或原型记录不代表当前产品实现状态。
 
 ## R-016 Plan 内按需来源取证（2026-09-11）
@@ -189,6 +207,8 @@ F4 默认没有 PlanExecutor，授权记录持久停留 queued 并显示“等�
 
 #### S0-03 原型审阅与 S0-08 补充门
 
+> 2026-09-12 收敛结论：原型中的 LangGraph 选型进入正式 `TaskChainRuntime`，继续由 `StateGraph` 承担图推进、循环、取消和递归限制。XState 只完成恢复语义对照后删除。原型专用 `SqliteSaver` 独立数据库没有进入生产；正式 `TaskRun`/`TaskCheckpoint` 作为产品事实由已接通的 SQLite/Drizzle 仓储持久化，避免同一运行出现两个权威状态。以下保留当时原型证据。
+
 2026-09-05 对初始内存原型的审阅发现执行预算、恢复输入绑定和调用审计缺口。S0-08已用请求级Zod校验、run/workflow/version/输入指纹绑定、显式递归预算和边界事件替换对应实现；30项循环完成，32项任务在第17项暂停后可由新Node进程恢复完成。原型边界详见 `packages/runtime/PROTOTYPE.md`。
 
 S0-08 必须覆盖：超过引擎默认25 superstep的有界循环；运行ID绑定链路版本及输入指纹，恢复拒绝换输入；AbortSignal中断真实异步工作；checkpoint与结果去重一致；零模型证据从受控模型adapter调用事件派生。对普通节点还需隔离模型/网络入口，不以可任意更改的计数充当真实来源复跑证据。
@@ -198,6 +218,8 @@ S0-08 必须覆盖：超过引擎默认25 superstep的有界循环；运行ID绑
 资料：[LangGraph持久化](https://docs.langchain.com/oss/javascript/langgraph/persistence)、[XState持久化](https://stately.ai/docs/persistence)、[Drizzle SQLite](https://orm.drizzle.team/docs/get-started-sqlite)。XState 5.32.6实际对照测试确认活动invocation会在快照恢复后重启；副作用仍需要幂等与恢复门。多进程同时写同一数据库的锁冲突尚未验收，产品单执行队列也未接入。
 
 当前完整锁文件在官方npm registry执行 `npm audit --registry=https://registry.npmjs.org --json` 为0项已知漏洞，包含开发依赖；Vite锁定7.3.6。默认镜像没有audit接口。每次锁文件改变后再审计，扫描结果仅代表公告库覆盖范围。
+
+2026-09-12 本轮锁文件变更后复查，上述历史“0项”结果已经失效：当前审计报告 1 个 high、3 个 moderate 依赖条目，根因均为本地 AI Connect 0.3.2 发布包精确锁定的 Hono 4.12.12，`fixAvailable=false`。该问题不由 LangGraph 引入；B-A-T 不擅自改写共享发布包的依赖清单，需在 AI Connect producer 升级并重新发布后同步。
 
 | 候选 | 官方依据 | 主要代价与验证门 |
 | --- | --- | --- |
