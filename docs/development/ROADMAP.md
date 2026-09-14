@@ -2,6 +2,8 @@
 
 ## 当前执行路线（2026-09-13）
 
+2026-09-14 接续：已补齐多步骤同会话的整计划样本、换输入、一次修复重验和持久恢复，具体实现与本轮最小验证见 PROGRESS 首节。P6 真实业务门继续保留，不因本地回归通过而关闭。
+
 当前主流程以[稳定通用任务链节点迭代说明](STABLE_TASK_CHAIN_ITERATION.md)为接续入口。架构决策见 [ADR 0002](../adr/0002-pi-agent-exploration-trace-compilation.md) 与 [ADR 0003](../adr/0003-guidance-first-preexecution-and-repair-validation.md)。已确认需求先形成可组合计划，再由 Pi 在一个浏览器会话中为每个步骤探索一条代表路径；候选必须自动样本复跑，本地失败进入一次修复—验证，外部限制暂停。
 
 文档阶段 P0 已完成。剩余六个代码与验收阶段依次为：

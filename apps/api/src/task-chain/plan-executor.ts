@@ -19,10 +19,10 @@ export class TaskPlanExecutor {
       if (!this.isCurrent(record, plan)) return this.finish(record, "stale", "需求或计划版本已变化，原授权不能继续执行。")
       if (taskPlanExecutionIssues(plan).length) return this.finish(record, "blocked", "计划输入输出合同不再满足执行约束，需要生成新计划。")
       const chains = this.boundChains(record, plan)
-      record.status = "running"; record.sequence++; record.reason = "正在按授权时固定的已验证链路执行。"; this.save(record)
+      record.status = "running"; record.sequence++; record.reason = "正在执行本次计划固定的链路版本。"; this.save(record)
       const browserRunId = stableUuid(record.id, "browser", String(record.sequence))
       await this.host.group({ taskId: record.taskId, authorizationId: record.authorizationId, browserRunId,
-        requirementVersion: record.requirement.version, purpose: "replay", chains, input: record.input, signal,
+        requirementVersion: record.requirement.version, purpose: record.mode ?? "replay", chains, input: record.input, signal,
         ...executionBudget(plan, chains), consumed: record.consumed,
         scopeConsumption: Object.fromEntries(record.steps.map((step) => [step.stepId, step.consumed])),
         onConsumption: (scopeId, snapshot) => {
@@ -49,7 +49,8 @@ export class TaskPlanExecutor {
       if (!progress) throw new Error("authorized_chain_unavailable")
       try {
         const chain = this.repository.chain(record.taskId, progress.chain.id, progress.chain.version, progress.chain.digest)
-        if (chain.validation.status !== "verified" || chain.stepId !== step.id || chain.plan.id !== plan.id
+        if ((record.mode ?? "replay") === "replay" && chain.validation.status !== "verified"
+          || chain.stepId !== step.id || chain.plan.id !== plan.id
           || chain.plan.version !== plan.version || chain.plan.digest !== record.plan.digest) throw new Error()
         return chain
       } catch { throw new Error("authorized_chain_unavailable") }
@@ -74,6 +75,7 @@ export class TaskPlanExecutor {
       progress.output = outcome.output; progress.status = outcome.partial ? "partial" : "completed"
       context.nodeOutputs[step.id] = outcome.output
       if (step.completion.some((condition) => !evaluatePredicate(condition.predicate, context))) {
+        progress.status = "blocked"
         this.finish(record, "blocked", `步骤“${step.title}”未满足完成条件。`); return
       }
       this.bump(record)
@@ -129,6 +131,11 @@ export class TaskPlanExecutor {
         return { continue: false, output: null, partial }
       }
       partial = true; progress.reason = run.outcome?.reason ?? "输入未完成。"
+      // WHY：验证必须暴露每个真实失败，不能用业务 continue 策略把缺失输入算成验证完成。
+      if ((record.mode ?? "replay") !== "replay") {
+        progress.status = "failed"; this.finish(record, "failed", progress.reason)
+        return { continue: false, output: null, partial }
+      }
       if (step.invocation.mode !== "each" || step.invocation.onItemFailure === "stop") {
         this.finish(record, "failed", progress.reason)
         return { continue: false, output: null, partial }
@@ -179,7 +186,7 @@ function invocationInputs(step: TaskPlanStep, context: BindingContext) {
 }
 
 function runRequest(record: TaskExecution, chain: TaskChain, input: JsonValue, runId: string, invocationId: string): TaskRunRequest {
-  return { contractVersion: CONTRACT_VERSION, requestId: stableUuid(runId, "request"), mode: "replay", input,
+  return { contractVersion: CONTRACT_VERSION, requestId: stableUuid(runId, "request"), mode: record.mode ?? "replay", input,
     binding: { runId, invocationId, taskId: record.taskId, authorizationId: record.authorizationId, plan: chain.plan,
       chain: { id: chain.id, version: chain.version, digest: executableChainDigest(chain) }, inputDigest: digestJson(input) } }
 }

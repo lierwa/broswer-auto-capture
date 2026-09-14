@@ -46,10 +46,12 @@ export function LiveChain({ connection, active, theme, onPlan }: { connection: T
           <div className="flow-canvas" aria-label="任务链路节点画布">{active && <ReactFlow key={`${chain.id}:${chain.version}`} nodes={graph.nodes.map((item) => ({ ...item, selected: item.id === nodeId }))} edges={graph.edges} colorMode={theme} fitView minZoom={0.2} maxZoom={1.8} nodesDraggable={false} nodesConnectable={false} onNodeClick={(_, item) => setNodeId(item.id)}><Background gap={24} /><Controls showInteractive={false} /></ReactFlow>}</div>
           <div className="canvas-footer">{chain.completion.map((item) => item.description).join(" · ")}</div></div>
           <DetailPane title="节点详情" open={active && Boolean(selectedNode)} onClose={() => setNodeId(null)}>{selectedNode && <NodeDetail node={selectedNode} runs={chainRuns} />}</DetailPane></div>
-        <div className="action-gate"><h3>验证可复用边界</h3><p>预执行完成后系统会立即复跑代表输入；本地链路失败会复用原证据修复新版本并再次验证。这里再用不同输入证明绑定生效。</p>
+        {plan.steps.length > 1 ? <div className="action-gate"><h3>验证完整计划</h3>
+          <p>此链路依赖其他步骤的浏览器现场，请从计划入口验证所有步骤。</p><Button onClick={onPlan}>前往计划验证</Button></div>
+          : <div className="action-gate"><h3>验证可复用边界</h3><p>预执行完成后系统会立即复跑代表输入；本地链路失败会复用原证据修复新版本并再次验证。这里再用不同输入证明绑定生效。</p>
           <TextArea aria-label="链路验证输入 JSON" value={validationInput} onChange={(event) => setValidationInput(event.target.value)} rows={5} />{inputError && <p className="error-text">{inputError}</p>}
           <Flex gap="2"><Button disabled={view.busy || stale} onClick={() => validate(connection, chain, "sample", validationInput, setInputError)}>运行代表样本</Button>
-            <Button variant="soft" disabled={view.busy || stale || !chain.validation.evidence.some((item) => item.phase === "sample" && item.passed)} onClick={() => validate(connection, chain, "verification", validationInput, setInputError)}>用不同输入验证</Button></Flex></div>
+            <Button variant="soft" disabled={view.busy || stale || !chain.validation.evidence.some((item) => item.phase === "sample" && item.passed)} onClick={() => validate(connection, chain, "verification", validationInput, setInputError)}>用不同输入验证</Button></Flex></div>}
         <ValidationEvidence chain={chain} runs={chainRuns} />
       </>}
     </>}

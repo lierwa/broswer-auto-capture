@@ -35,10 +35,10 @@ export function annotations() {
     reuseBoundary: { description: "相同确认任务", assumptions: [], invalidationConditions: [] } }
 }
 
-export function taskQueuedModel(completeTask = true): AIModelProvider {
+export function taskQueuedModel(completeTask = true, repairDetail = false): AIModelProvider {
   const selection = { connectionId: randomUUID(), modelId: "fixture-model", reasoningEffort: "high" as const }
   const responses = [twoStepPlanCandidate(), taskAnnotations("page-one", ["paragraphs"]),
-    taskAnnotations("page-two", ["title"]), taskAnnotations("page-one", ["paragraphs"]),
+    taskAnnotations("page-two", ["title"]), taskAnnotations(repairDetail ? "page-two" : "page-one", repairDetail ? ["title"] : ["paragraphs"]),
     taskAnnotations("page-two", ["title"])]
   return { selection: () => selection, async prepare() { return { selection, async generateObject(input) {
     const value = responses.shift(); if (!value) throw new Error("fixture_response_missing"); return input.parse(value)

@@ -30,6 +30,7 @@ export function Results({ taskId, readOnly, connection, active, onPlan }: { task
     {!execution ? <div className="stage-empty"><h3>当前任务尚未运行</h3><p>链路验证与正式授权运行会分别保存输入、节点事件、输出、检查点和模型审计。</p><Button variant="soft" onClick={onPlan}>查看任务计划</Button></div> : <>
       <Select.Root value={execution.id} onValueChange={(id) => { setSelected(id); setDetailRunId(null) }}><Select.Trigger aria-label="运行历史" /><Select.Content>{executions.map((item, index) => <Select.Item key={item.id} value={item.id}>运行 {executions.length - index} · {statusLabels[item.status]}</Select.Item>)}</Select.Content></Select.Root>
       <Flex gap="2" wrap="wrap" my="3"><Badge color={execution.status === "completed" ? "green" : execution.status === "failed" || execution.status === "blocked" ? "red" : "amber"}>{statusLabels[execution.status]}</Badge>
+        <Badge color="gray">{execution.mode === "sample" ? "计划样本验证" : execution.mode === "verification" ? "计划换输入验证" : "正式复跑"}</Badge>
         <Badge color="gray">计划 v{execution.plan.version}</Badge>{state.staleIds.includes(execution.id) && <Badge color="amber">历史只读</Badge>}</Flex>
       <p role="status">{execution.reason}</p>
       <p>本次累计：转换 {execution.consumed.transitions} · 浏览器命令 {execution.consumed.browserCommands} · 自动化时间 {execution.consumed.activeMs}ms · 模型调用 {execution.consumed.llmCalls ?? "未知"} · 链路调用 {execution.consumed.invocations}</p>

@@ -247,6 +247,8 @@ test("跨步骤代表探索可由末步骤确定收敛并在重编译时复用 E
   const model = taskQueuedModel(false)
   let sessionStarts = 0
   const application = await createApplication({ root: projectRoot, directory, aiModel: model,
+    taskChainCapabilities: () => ({ ...successfulObservation(), llm: async () => ({ outcome: "success",
+      reportedInvocations: 1, output: [{ key: "confirmed", label: "本轮输入" }] }) }),
     browserExecutor: async (args) => {
       if (args[1] === "session" && args[2] === "start") sessionStarts++
       if (args[1] === "evaluate") return { stdout: JSON.stringify({ ok: true, tab_id: 1,

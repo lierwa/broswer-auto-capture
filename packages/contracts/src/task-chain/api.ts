@@ -44,6 +44,10 @@ export const taskExecutionStepSchema = z.object({
 export const taskExecutionSchema = z.object({
   contractVersion: contractVersionSchema, kind: z.literal("execution"), id: identitySchema, taskId: taskIdentitySchema,
   authorizationId: identitySchema, plan: versionReferenceSchema, requirement: requirementReferenceSchema,
+  // WHY：验证与正式执行复用同一计划运行事实；历史未标用途的记录仍是正式复跑。
+  mode: taskRunModeSchema.optional(),
+  validationRecovery: z.object({ parentExecutionId: identitySchema, attempt: z.literal(1),
+    verificationInput: jsonValueSchema.optional() }).strict().optional(),
   input: jsonValueSchema, inputDigest: digestSchema,
   consumed: consumptionSchema.default({ transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 }),
   status: z.enum(["queued", "running", "completed", "partial", "waiting_for_human", "paused", "blocked", "failed", "cancelled", "stale"]),
@@ -82,6 +86,8 @@ export const taskChainCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("generate_task_chains"), ...request, plan: versionReferenceSchema,
     input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("validate_chain"), ...request, chain: versionReferenceSchema,
+    mode: taskRunModeSchema.extract(["sample", "verification"]), input: jsonValueSchema }).strict(),
+  z.object({ type: z.literal("validate_plan"), ...request, plan: versionReferenceSchema,
     mode: taskRunModeSchema.extract(["sample", "verification"]), input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("authorize_plan"), ...request, plan: versionReferenceSchema, input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("resume_execution"), ...request, executionId: identitySchema,

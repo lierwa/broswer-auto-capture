@@ -21,10 +21,17 @@ export function Plan({ connection, active, readOnly, confirmedVersion, onIntervi
   const state = view.state, plans = state?.plans.toSorted((left, right) => right.version - left.version) ?? []
   const plan = plans.find((item) => `${item.id}:${item.version}` === selected) ?? plans[0]
   const busy = view.busy || state?.jobs.some((job) => ["queued", "running", "waiting_for_human"].includes(job.status))
+    || state?.executions.some((run) => ["queued", "running", "waiting_for_human"].includes(run.status))
   const stale = plan && state ? isStaleVersion(state, "plan", plan.id, plan.version) : false
   const executionIssues = plan ? taskPlanExecutionIssues(plan) : []
   const chains = plan && state ? Object.fromEntries(plan.steps.map((step) => [step.id, latestChain(state.chains, plan, step.id)])) : {}
-  const ready = plan ? executionIssues.length === 0 && plan.steps.every((step) => chains[step.id]?.validation.status === "verified") : false
+  const validations = plan ? (state?.executions ?? []).filter((run) => run.plan.id === plan.id && run.plan.version === plan.version
+    && run.steps.every((step) => chains[step.stepId]?.id === step.chain.id && chains[step.stepId]?.version === step.chain.version)) : []
+  const samplePassed = validations.some((run) => run.mode === "sample" && run.status === "completed")
+  const planVerified = validations.some((sample) => sample.mode === "sample" && sample.status === "completed"
+    && validations.some((run) => run.mode === "verification" && run.status === "completed" && run.inputDigest !== sample.inputDigest))
+  const ready = plan ? executionIssues.length === 0 && (plan.steps.length === 1 || planVerified)
+    && plan.steps.every((step) => chains[step.id]?.validation.status === "verified") : false
   if (!state) return <section className="artifact-view"><p role="status">{view.error || "正在读取任务计划…"}</p><Button onClick={() => void connection.reload()}>重新连接</Button></section>
   return <section className="artifact-view" aria-label="任务计划">
     <header className="view-heading"><h2>任务计划</h2><Button variant="ghost" onClick={onInterview}>返回需求对话</Button></header>
@@ -48,6 +55,20 @@ export function Plan({ connection, active, readOnly, confirmedVersion, onIntervi
           busy={Boolean(busy)} readOnly={readOnly} connection={connection} allowGenerate={false} />)}</div>
         <div className="completion-budget"><h3>整体完成与预算</h3>{plan.completion.map((item) => <p key={item.id}><strong>{item.description}</strong></p>)}
           <p>每步预算由编译后的链路推导；业务数量决定同一链路的调用次数。</p></div>
+        {plan.steps.length > 1 && <div className="action-gate"><h3>验证完整计划</h3>
+          <p>所有步骤在同一浏览器会话中运行，下游接收本次上游的真实输出。样本通过后，再填写不同输入验证。</p>
+          <TextArea aria-label="计划验证输入 JSON" value={runInput} onChange={(event) => setRunInput(event.target.value)} rows={5} />
+          <Flex gap="2"><Button disabled={readOnly || stale || busy || executionIssues.length > 0 || plan.steps.some((step) => !chains[step.id])}
+            onClick={() => dispatchJson(connection, plan, runInput, setInputError, "sample")}>验证计划样本</Button>
+            <Button variant="soft" disabled={readOnly || stale || busy || !samplePassed}
+              onClick={() => dispatchJson(connection, plan, runInput, setInputError, "verification")}>用不同输入验证计划</Button></Flex>
+          {validations.filter((run) => run.mode && run.mode !== "replay").map((run) => <p key={run.id}>
+            {run.mode === "sample" ? "样本" : "换输入"} · {run.reason}
+            {["paused", "waiting_for_human"].includes(run.status) && <Button variant="soft" disabled={readOnly || stale || view.busy}
+              onClick={() => void connection.dispatch({ type: "resume_execution", requestId: crypto.randomUUID(),
+                executionId: run.id, expectedSequence: run.sequence })}>恢复原计划验证</Button>}
+          </p>)}
+        </div>}
         <div className="action-gate"><h3>授权一次独立运行</h3><p>输入必须符合本计划保存的动态合同。授权后，每个步骤只调用其已验证链路；集合输入逐项复用同一版本。</p>
           <TextArea aria-label="运行输入 JSON" value={runInput} onChange={(event) => setRunInput(event.target.value)} rows={5} />
           {inputError && <p className="error-text">{inputError}</p>}
@@ -108,10 +129,12 @@ function dispatchPreexecution(connection: TaskChainConnection, requirement: Task
       requirementVersion: requirement.version, input })
   } catch { error("请输入有效 JSON。") }
 }
-function dispatchJson(connection: TaskChainConnection, plan: TaskPlan, raw: string, error: (value: string) => void) {
+function dispatchJson(connection: TaskChainConnection, plan: TaskPlan, raw: string, error: (value: string) => void,
+  mode?: "sample" | "verification") {
   try {
     const input: unknown = JSON.parse(raw); error("")
-    void sha256(JSON.stringify(plan)).then((digest) => connection.dispatch({ type: "authorize_plan", requestId: crypto.randomUUID(),
+    void sha256(JSON.stringify(plan)).then((digest) => connection.dispatch({
+      ...(mode ? { type: "validate_plan", mode } : { type: "authorize_plan" }), requestId: crypto.randomUUID(),
       plan: { id: plan.id, version: plan.version, digest }, input }))
   } catch { error("请输入有效 JSON。") }
 }

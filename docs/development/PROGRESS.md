@@ -1,5 +1,28 @@
 # 开发进度
 
+## 多步骤同会话验证接续（2026-09-14）
+
+Product Alignment:
+- natural-language task: 发现输入后逐项读取页面，或依次打开表单、填写并确认结果
+- reusable chain boundary: 每个计划步骤固定一条链路，样本与换输入验证复用正式计划执行器
+- runtime inputs: 计划动态输入及本次上游步骤的真实输出
+- dynamic task outputs: 各步骤输出与整体计划合同校验后的结果
+- generic platform capability used: 计划组合、单浏览器会话、版本绑定、持久运行、恢复与模型审计
+- replay model calls: 普通节点为 0，显式 llm 独立审计
+- site/task-specific code added: no
+
+已实现：多步骤候选自动排队执行完整计划样本；`validate_plan` 用当前固定版本验证样本和不同输入。下游从本次上游输出取值，验证与正式复跑复用 TaskPlanExecutor/TaskRuntimeHost、预算账本及 SQLite 运行。只有完整计划通过才发布成功证据；正式多步骤授权还需同一组版本的样本与不同输入计划结果。
+
+本地失败只用原探索轨迹修复一次，并创建新版本、从计划入口重新验证；换输入失败修复后先重验样本，再验证原失败输入。验证恢复沿用原 execution/run 和已完成输入；禁止从单链接口绕开计划现场。Workbench 增加完整计划验证、原计划恢复及验证用途标识。历史未标 mode 的记录继续按正式复跑读取，原字节不迁移。
+
+最小验证：新增计划验证 8 项全部通过（单会话、动态上游、用途审计、原运行恢复、外部阻断、固定版本、修复成功/失败上限、修复后的换输入顺序）；既有任务链与存储 10 项通过。API/Workbench TypeScript 通过。测试调试中修正了夹具的 origin 尾斜杠、授权来源遗漏和 readonly provider 包装，未放宽产品授权或输出校验。未运行根级或全量测试。真实站点验收与工作台视觉验收不由上述替身结果替代。
+
+真实环境预检最初扩展连接数为 0，因 Chrome/Edge 均未运行；启动现有 Chrome 后恢复为 1 个已连接浏览器。本机数据库止于计划 v5，远程文档中的新作业不在此机。沿用已确认需求启动新 authoring `9bc2674f-5d00-4889-815a-38ca009b3e0a`，生成计划 v6，BrowserRun `f0aec526-a3c3-4adb-872b-35d47a869ec7`。
+
+真实接续结果：一次 BrowserSkill 控制会话，19 次探索工具调用；普通 Terra medium 探索漏交结果后按现有路由升级 Terra max，并保留同一浏览器现场。结果提交多次违反 provenance 结构，后续还出现 `binding_path_missing`、`exploration_step_not_found`、动态输出类型不匹配和 `exploration_url_not_observed`。12 分钟有界尝试结束时仍为 0 个通过校验的步骤、0 条新链路、0 个正式验证运行，可验收结果仍为 0/10。作业最终 `interrupted`，BrowserRun `cancelled`，轨迹 `closed=true`，官方 `bsk session list` 确认无活动会话。没有把候选、页面浏览或模型未校验的结果写成已完成报告；Provider 内部调用总数仍为 null。
+
+尚未关闭：真实探索的合法来源和步骤结果提交、真实稳定链编译、样本/换输入/正式 10 项复跑；工作台新入口的浏览器视觉验收；长 request-help 的真实 daemon 取消路径。本次取消发生在探索模型执行期间，不能替代 request-help 取消验收。此次不再重开同一来源继续试错。
+
 ## 稳定通用任务链迭代（2026-09-14）
 
 状态：代码实现和本地定点验证通过；最后一次真实运行在京东首页验证码处按规则停止，真实业务任务未完成。

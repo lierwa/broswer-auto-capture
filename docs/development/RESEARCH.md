@@ -1,5 +1,9 @@
 # 调研登记
 
+## 2026-09-14 多步骤计划验证复用核验
+
+现有 TaskPlanExecutor 已拥有依赖输入解析、once/each/batch、稳定键、固定链路版本、预算累计和恢复；TaskRuntimeHost.group 已拥有单次 BrowserService 会话及 finally 回收。新增验证用途复用这两层，不另建调度器或运行数据库。8 项 API 定点回归证明完整计划结果门、下游动态输入、同会话、失败中止、同运行恢复及一次修复重验。BrowserService 替身验证中，一次探索加一次完整样本总共启动/关闭两次会话，三个样本 TaskRun 共享第二个会话。该结果只冻结软件组合边界，真实站点可复用性仍按 PROGRESS 的运行事实单独验收。
+
 ## 2026-09-14 Dify/Coze 工作流公共边界核准
 
 - Dify 的工作流生成把模型输出限制在有意义的节点数据，图包装、节点元数据、布局和合法性由宿主补全；工具通过 provider、tool、配置和参数接入，业务动作不会各自成为平台节点类型。[Dify builder prompt](https://github.com/langgenius/dify/blob/main/api/core/workflow/generator/prompts/builder_prompts.py)
