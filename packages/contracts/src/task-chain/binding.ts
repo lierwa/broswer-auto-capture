@@ -18,6 +18,8 @@ export const predicateSchema = z.discriminatedUnion("operator", [
   z.object({ operator: z.literal("exists"), value: valueBindingSchema }).strict(),
   z.object({ operator: z.literal("equals"), left: valueBindingSchema, right: valueBindingSchema }).strict(),
   z.object({ operator: z.literal("greater_than"), left: valueBindingSchema, right: valueBindingSchema }).strict(),
+  z.object({ operator: z.literal("array_length_at_least"), value: valueBindingSchema,
+    minimum: valueBindingSchema }).strict(),
 ])
 // fresh observation 是等待条件的被检对象；不伪造一个尚未完成节点的输出 binding。
 export const observationConditionSchema = z.discriminatedUnion("operator", [

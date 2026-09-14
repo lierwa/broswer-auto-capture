@@ -5,6 +5,8 @@ date: 2026-09-13
 
 # 使用 Pi AgentSession 探索，并从真实轨迹编译任务链路
 
+> 2026-09-14：探索与轨迹编译边界继续有效；主流程顺序和修复验证由 [ADR 0003](0003-guidance-first-preexecution-and-repair-validation.md) 补充，TaskPlan 改为成功预执行后的派生产物。
+
 ## Context
 
 B-A-T 已有一套通用 `TaskChain` IR、LangGraph 执行器、BrowserSkill 适配器、版本与运行持久化。上一版首次探索却由 API 宿主实现了一套固定轮数的“模型输出一个命令，宿主执行，再把观察发回模型”的循环；探索结束后，又要求一次结构化模型调用直接生成近乎完整的 `TaskChain`。这条路径重复实现了成熟 AgentSession 的工具循环，也让模型同时猜测浏览器路径、节点图、连线、预算和错误出口。

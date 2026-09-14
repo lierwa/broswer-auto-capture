@@ -11,11 +11,11 @@ test("Pi 工具会话执行多次工具并返回业务结果，关闭一次", as
     selection: testSelection,
     async run(input) {
       runs++
-      assert.match(input.activeTask, /当前步骤的 complete_step 被接受前，不得开始下一个步骤/)
+      assert.doesNotMatch(input.activeTask, /严格按计划步骤顺序/)
       assert.match(input.activeTask, /发现或枚举多个可见候选时，必须先调用 page/)
       assert.match(input.activeTask, /达到该数量前不得提交较短集合/)
-      assert.match(input.activeTask, /先用 tabs 查找来源页 URL 完全一致的现有标签并 tab_select/)
-      assert.match(input.activeTask, /each authoring 只执行计划绑定的首项/)
+      assert.match(input.activeTask, /先用 tabs 查找 URL 完全一致的现有标签并 tab_select/)
+      assert.match(input.activeTask, /运行指导文档/)
       assert.match(input.activeTask, /本地工具错误必须在当前会话修正，不得转给用户/)
       const tool = input.tools![0]!
       const first = await tool.execute("call1", { command: { type: "navigate", url: "https://example.org/" } }, input.signal)
@@ -30,6 +30,29 @@ test("Pi 工具会话执行多次工具并返回业务结果，关闭一次", as
     onEvent() {}, async execute(command, callId) { invoked++; return { type: command.type, callId } } })
   assert.equal(result.outputText, '{"title":"Example"}')
   assert.equal(invoked, 2); assert.equal(runs, 1); assert.equal(closed, 1)
+})
+
+test("Pi 正常结束但漏交业务结果时在同一会话收到缺口并继续", async () => {
+  let closed = 0, runs = 0, completed = false
+  const sessions: string[] = []
+  const model: PreparedMainAIModel = {
+    selection: testSelection,
+    async run(input) {
+      runs++; sessions.push(input.sessionId)
+      if (runs === 1) return { outputText: "页面工作已完成。" }
+      assert.match(JSON.stringify(input.messages), /没有调用 complete 提交业务结果/)
+      const complete = input.tools!.find((tool) => tool.name === "complete")!
+      await complete.execute("complete-1", { result: { title: "Example" }, provenance: [{ source: "tool",
+        outputPath: ["title"], eventId: "page-1", resultPath: ["title"] }] }, input.signal)
+      return { outputText: "已提交。" }
+    },
+    async close() { closed++ },
+  }
+  const result = await runExplorationAgent(model, { jobId: "job", context: {}, signal: new AbortController().signal,
+    onEvent() {}, async execute() { return null }, complete() { completed = true; return { accepted: true } },
+    completionStatus: () => completed ? null : "没有调用 complete 提交业务结果。" })
+  assert.equal(result.outputText, "已提交。")
+  assert.equal(runs, 2); assert.deepEqual(sessions, ["job", "job"]); assert.equal(closed, 1)
 })
 
 test("工具边界拒绝未授权动作和非法参数", async () => {

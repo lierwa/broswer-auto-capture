@@ -2,7 +2,7 @@ import type { ChainNode, TaskAuthoringJob, TaskChain, TaskRun } from "@browser-c
 import type { TaskChainState } from "@browser-capture/contracts/api"
 
 export const chainFamilyLabels: Record<ChainNode["kind"], string> = {
-  browser: "浏览器动作", observe: "现场观察", data: "数据处理", condition: "条件", loop: "循环",
+  capability: "通用能力", branch: "分支", browser: "浏览器动作", observe: "现场观察", data: "数据处理", condition: "条件", loop: "循环",
   invoke: "链路调用", human: "人工等待", llm: "显式模型", checkpoint: "检查点", emit: "发布输出", terminal: "终态",
 }
 
@@ -37,6 +37,7 @@ export function projectChainGraph(chain: TaskChain, runs: TaskRun[]) {
 }
 
 export function chainOperation(node: ChainNode) {
+  if (node.kind === "capability") return `${node.capability.name}@${node.capability.version}`
   if (node.kind === "browser" || node.kind === "data") return node.operation
   if (node.kind === "observe") return node.scope
   if (node.kind === "human") return node.reason

@@ -4,18 +4,14 @@ import { setTimeout as delay } from "node:timers/promises"
 import { BrowserError, commandSchema, type BrowserGrant, type BrowserCommand, type BrowserHelpObserver, type BrowserHelpState, type BrowserInspection, type HumanWaitReason } from "./contracts.js"
 import { PAGE_LINKS_EXPRESSION, evaluatedPageSchema, pageSchema, publicUrl } from "./page.js"
 import { extractTarget, htmlResultSchema } from "./structured-read.js"
-import { domActivationExpression, domActivationTabId, helpPrompt, sameNavigationLocation } from "./session-support.js"
+import { domActivationExpression, domActivationTabId, helpPrompt, sameNavigationLocation,
+  sameRegistrableSite, targetActionArguments } from "./session-support.js"
 export type Invoke = (command: string, args: string[], cleanup?: boolean, signal?: AbortSignal) => Promise<unknown>
 const tabsSchema = z.object({ tabs: z.array(z.object({ tab_id: z.number().int(), active: z.boolean(), scope: z.literal("agent"), url: z.string() })) })
-const observationSchema = z.object({ text: z.string(), tab_id: z.number().int(), truncated: z.boolean() })
-type Observation = z.infer<typeof observationSchema>
-const ACTION_NAVIGATION_COMMIT_BUDGET_MS = 10_000
-const ACTION_NETWORK_IDLE_BUDGET_MS = 5_000
-const SEMANTIC_TARGET_WAIT_BUDGET_MS = 24_000
-const SEMANTIC_TARGET_MAX_OBSERVATIONS = 6
-const SEMANTIC_TARGET_STATIC_OBSERVATIONS = 2
-const SEMANTIC_TARGET_OBSERVE_MAX_TOKENS = 50_000
-const SEMANTIC_TARGET_REVEAL_STEPS = 2
+const observationSchema = z.object({ text: z.string(), tab_id: z.number().int(), truncated: z.boolean() }); type Observation = z.infer<typeof observationSchema>
+const ACTION_NAVIGATION_COMMIT_BUDGET_MS = 10_000, ACTION_NETWORK_IDLE_BUDGET_MS = 5_000
+const SEMANTIC_TARGET_WAIT_BUDGET_MS = 24_000, SEMANTIC_TARGET_MAX_OBSERVATIONS = 6
+const SEMANTIC_TARGET_STATIC_OBSERVATIONS = 2, SEMANTIC_TARGET_OBSERVE_MAX_TOKENS = 50_000, SEMANTIC_TARGET_REVEAL_STEPS = 2
 type CommandTarget = Extract<BrowserCommand, { type: "click" }>["target"]
 const actionResultSchema = z.object({ tab_id: z.number().int() }).passthrough()
 const optionalTabResultSchema = z.object({ tab_id: z.number().int().optional() }).passthrough()
@@ -40,7 +36,7 @@ export class BrowserSession {
   private lastInspection: BrowserInspection | null = null
   private commandSignal: AbortSignal | undefined
   private networkSince = 0
-  private pendingActionNavigation: { tabId: number; fromUrl: string } | null = null
+  private pendingActionNavigation: { tabId: number; fromUrl: string; awaitingTransition: boolean } | null = null
   private actionSpawnedTabs = new Set<number>()
   constructor(private readonly grant: BrowserGrant, private readonly sessionId: string, private readonly rawInvoke: Invoke,
     private readonly onHelp: BrowserHelpObserver = () => {}) {}
@@ -54,6 +50,12 @@ export class BrowserSession {
     return scope ? Math.max(0, Date.now() - scope.startedAt - (this.totalWaitedMs() - scope.waitedAtStart)) : 0
   }
   private totalWaitedMs() { return this.waitedMs + (this.waitingSince === null ? 0 : Date.now() - this.waitingSince) }
+  async waitOutsideBudget<T>(work: () => Promise<T>) {
+    if (this.waitingSince !== null || this.pending) throw new BrowserError("busy")
+    this.waitingSince = Date.now()
+    try { return await work() }
+    finally { this.waitedMs += Date.now() - this.waitingSince; this.waitingSince = null }
+  }
   private assertActiveTime() {
     const scope = this.scope
     if (scope?.signal.aborted || this.commandSignal?.aborted) throw new BrowserError("cancelled")
@@ -141,23 +143,25 @@ export class BrowserSession {
     return current.id
   }
   private async allowedCurrentTabState() {
-    const current = await this.settlePendingAction(await this.currentTabState())
+    const current = await this.settlePendingAction(await this.currentTabState(), true)
     await this.allowCurrentState(current)
     return current
   }
   private async settlePendingAction(current: { id: number; url: string }, awaitInitialTransition = false) {
     const pending = this.pendingActionNavigation
     let transitioned = pending && (pending.tabId !== current.id || pending.fromUrl !== current.url)
-    if (!pending || !awaitInitialTransition && (!transitioned || publicUrl(current.url))) return current
+    if (!pending) return current
+    if (transitioned) pending.awaitingTransition = false
+    if (transitioned && publicUrl(current.url)
+      || !transitioned && (!awaitInitialTransition || !pending.awaitingTransition)) return current
     const scopeRemaining = this.scope ? this.scope.timeoutMs - this.stepElapsedMs() : this.grant.timeoutMs - this.activeElapsedMs()
     if (scopeRemaining <= 0) throw new BrowserError("budget_exceeded")
     const timeoutMs = Math.max(1, Math.min(ACTION_NAVIGATION_COMMIT_BUDGET_MS, Math.floor(scopeRemaining)))
-    if (awaitInitialTransition && !transitioned) {
-      // WHY：click 返回时同标签导航可能尚未开始；先等一次 commit，不能用固定 sleep 或重复点击碰运气。
-      await this.waitForNavigation(current.id, "commit", timeoutMs)
-      current = await this.currentTabState()
-      transitioned = pending.tabId !== current.id || pending.fromUrl !== current.url
-    }
+    // WHY：同标签导航可能尚未开始，新活动标签也可能先暴露空 URL；只等浏览器提交地址，不能用固定 sleep 猜时机。
+    pending.awaitingTransition = false
+    await this.waitForNavigation(current.id, "commit", timeoutMs)
+    current = await this.currentTabState()
+    transitioned = pending.tabId !== current.id || pending.fromUrl !== current.url
     if (!transitioned && publicUrl(current.url)) return current
     // WHY：URL/标签变化只证明导航已提交；读取业务页面前还要等主文档 load，已完成页面由 BrowserSkill readyState probe 立即返回。
     await this.waitForNavigation(current.id, "load", timeoutMs)
@@ -274,6 +278,8 @@ export class BrowserSession {
     if (command.type === "navigate") {
       this.allow(command.url)
       if (command.reuseOpenTab && await this.activateOpenTab(command.url)) return null
+      if (command.reuseOpenTab && !(await this.listTabs()).some((tab) => tab.active)) { await this.tabAction({ type: "tab_open", url: command.url, background: false }); return null }
+      const beforeUrl = (await this.currentTabState()).url
       let result: z.infer<typeof actionResultSchema> | null = null
       let commandError: unknown = null
       try {
@@ -289,7 +295,7 @@ export class BrowserSession {
         const interruption = await this.navigationInterruption(command.url, current.url)
         if (interruption) throw interruption
       }
-      try { this.allow(current.url) }
+      try { this.allowActionLanding(current.url, command.url) }
       catch (error) {
         if (error instanceof BrowserError && error.code === "origin_denied") {
           throw new BrowserError("origin_denied", { origin: new URL(command.url).origin,
@@ -298,7 +304,8 @@ export class BrowserSession {
         throw error
       }
       if (commandError) {
-        if (sameNavigationLocation(command.url, current.url)) return null
+        // WHY：CLI 回包失败但活动标签已经落到同一站点，真实落点优先；原标签未变化则保留原错误，避免把旧页面当成成功导航。
+        if (sameNavigationLocation(command.url, current.url) || current.url !== beforeUrl && sameRegistrableSite(command.url, current.url)) return null
         throw commandError
       }
       if (!result || current.id !== result.tab_id) throw new BrowserError("invalid_response")
@@ -342,8 +349,9 @@ export class BrowserSession {
   }
   private async listTabs() {
     const result = tabsSchema.parse(await this.invoke("tab_list", ["tab", "list", "--scope", "agent", "--session", this.sessionId]))
-    for (const tab of result.tabs) this.allow(tab.url)
-    return result.tabs.map((tab) => ({ tabId: tab.tab_id, url: tab.url, active: tab.active }))
+    const allowed = result.tabs.filter((tab) => { try { this.allow(tab.url); return true }
+      catch (error) { if (error instanceof BrowserError && error.code === "origin_denied") return false; throw error } })
+    return allowed.map((tab) => ({ tabId: tab.tab_id, url: tab.url, active: tab.active }))
   }
   private async activateOpenTab(url: string) {
     const tabs = await this.listTabs()
@@ -408,13 +416,13 @@ export class BrowserSession {
       throw new BrowserError("invalid_response")
     }
   }
-  private allowActionLanding(url: string) {
+  private allowActionLanding(url: string, navigationTarget?: string) {
     try { this.allow(url); return } catch (error) {
       if (!(error instanceof BrowserError) || error.code !== "origin_denied") throw error
     }
     const value = publicUrl(url)
-    if (!value) throw new BrowserError("origin_denied")
-    // TRADE-OFF：只扩展已授权页面上的成功用户动作实际落点；动作前 direct navigate 和其他未访问 origin 仍被拒绝。
+    if (!value || navigationTarget && !sameRegistrableSite(navigationTarget, value)) throw new BrowserError("origin_denied")
+    // TRADE-OFF：只扩展本次导航的同站落点或已授权页面上的成功动作落点；任意跨站 direct navigate 仍被拒绝。
     this.evidencedOrigins.add(new URL(value).origin)
   }
   private async targetAction(command: Exclude<BrowserCommand, { type: "read" | "page" | "follow" | "navigate" | "observe" | "tabs"
@@ -422,24 +430,16 @@ export class BrowserSession {
     const target = "target" in command ? command.target : undefined
     const located = await this.resolveActionTarget(target)
     const domTarget = command.type === "click" && command.dispatch === "dom" ? command.target : undefined
-    // WHY：press 的目标引用必须通过 --ref，其他动作才接受位置参数；不能把成功定位误报为键盘执行失败。
-    const keyTarget = located.args[0]?.startsWith("@") ? ["--ref", ...located.args] : located.args
     const args = domTarget ? ["evaluate", domActivationExpression(domTarget)]
-      : command.type === "click" || command.type === "hover" ? [command.type, ...located.args]
-      : command.type === "fill" ? ["fill", ...located.args, "--value", command.value]
-        : command.type === "press" ? ["press", command.key, ...keyTarget]
-          : command.type === "select" ? ["select", ...located.args, ...command.values.flatMap((value) => ["--value", value])]
-            : command.type === "upload" ? ["upload", ...located.args,
-              ...command.files.flatMap((file) => ["--file", file]), "--mode", command.mode]
-              : ["download", ...located.args, "--out", command.out, ...(command.overwrite ? ["--overwrite"] : [])]
+      : targetActionArguments(command, located.args)
     const raw = await this.invoke(domTarget ? "evaluate" : command.type,
       [...args, "--session", this.sessionId, "--tab-id", String(located.tabId)])
     const result = domTarget ? { tab_id: domActivationTabId(raw) } : optionalTabResultSchema.parse(raw)
     let current = await this.currentTabState()
     const canNavigate = ["click", "press"].includes(command.type)
     if (canNavigate) {
-      this.pendingActionNavigation = { tabId: located.tabId, fromUrl: located.url }
-      current = await this.settlePendingAction(current, true)
+      this.pendingActionNavigation = { tabId: located.tabId, fromUrl: located.url, awaitingTransition: true }
+      current = await this.settlePendingAction(current)
     }
     if (result.tab_id !== undefined && result.tab_id !== located.tabId
       && (!canNavigate || result.tab_id !== current.id)) throw new BrowserError("invalid_response")
@@ -471,9 +471,11 @@ export class BrowserSession {
       this.allow(command.url)
       const result = actionResultSchema.parse(await this.invoke("tab_create", ["tab", "create", "--session", this.sessionId,
         "--url", command.url, ...(command.background ? ["--no-active"] : [])]))
-      const tabs = await this.listTabs(), created = tabs.find((tab) => tab.tabId === result.tab_id)
-      if (!created || (!command.background && !created.active)) throw new BrowserError("invalid_response")
-      return JSON.stringify(created)
+      const raw = tabsSchema.parse(await this.invoke("tab_list", ["tab", "list", "--scope", "agent", "--session", this.sessionId])),
+        landed = raw.tabs.find((tab) => tab.tab_id === result.tab_id)
+      if (!landed || (!command.background && !landed.active)) throw new BrowserError("invalid_response")
+      this.allowActionLanding(landed.url, command.url); this.actionSpawnedTabs.add(result.tab_id)
+      return JSON.stringify({ tabId: landed.tab_id, url: landed.url, active: landed.active })
     }
     const tabs = await this.listTabs()
     if (!tabs.some((tab) => tab.tabId === command.tabId)) throw new BrowserError("permission_denied")

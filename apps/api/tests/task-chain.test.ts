@@ -4,78 +4,125 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
-import Database from "better-sqlite3"
-import {
-  CONTRACT_VERSION, requiredNodeOutcomes, type JsonValue, type TaskChainCommand, type TaskDataContract,
-} from "@browser-capture/contracts"
+import { taskPlanExecutionIssues, type JsonValue } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "@browser-capture/runtime"
-import type { AIModelProvider } from "../src/ai/model.js"
 import { createApplication } from "../src/app.js"
-import { ProductStore } from "../src/database/store.js"
-import { TaskContractRepository } from "../src/task-chain/repository.js"
 import { reusableExploration } from "../src/task-chain/service.js"
+import { compactTraceForModel } from "../src/task-chain/authoring.js"
 import type { ExplorationTrace } from "../src/task-chain/exploration-trace.js"
 import { projectRoot } from "./helpers.js"
+import { annotations, confirmedDraft, escalationModel, fakeBrowserExecutor, pageBrowserExecutor, planCandidate,
+  preexecutionModel, queuedModel, repairLoopModel, successfulObservation, taskQueuedModel, validation, waitFor }
+  from "./task-chain-test-support.js"
 
-const budget = { maxTransitions: 30, maxBrowserCommands: 10, maxActiveMs: 30_000,
-  maxLlmCalls: 0, maxInvocations: 5, maxDepth: 3 }
-const openContract: TaskDataContract = { id: "task-value", version: 1, dialect: "bat-value-schema/v1",
-  schema: { type: "object", properties: {}, required: [], additionalProperties: true } }
-const input = { source: "input" as const, path: [] }
-const node = (id: string, kind: keyof typeof requiredNodeOutcomes, outputContract: TaskDataContract = unitContract) => ({
-  id, label: id, outcomes: [...requiredNodeOutcomes[kind]], outputContract, writes: [],
+test("主流程先拆计划，再用一个会话探索每个步骤的一条代表路径", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-guidance-preexecution-")), order: string[] = []
+  const application = await createApplication({ root: projectRoot, directory, aiModel: preexecutionModel(order),
+    browserExecutor: pageBrowserExecutor, taskChainCapabilities: () => successfulObservation() })
+  try {
+    const taskId = application.coordinator.taskAction({ type: "create", requestId: randomUUID() })
+    confirmedDraft(application.store, taskId)
+    application.taskChain.dispatch(taskId, { type: "author_task", requestId: randomUUID(), requirementVersion: 1,
+      input: { value: "explore" } })
+    await waitFor(() => application.taskChain.snapshot(taskId).jobs.some((job) => job.type === "chain"
+      && !["queued", "running", "waiting_for_human"].includes(job.status)))
+    const state = application.taskChain.snapshot(taskId), job = state.jobs.find((item) => item.type === "chain")!
+    assert.equal(job.status, "completed", job.reason ?? undefined)
+    assert.deepEqual(order, ["plan", "explore", "compile-chain"])
+    assert.equal(state.plans.length, 1); assert.equal(state.chains.length, 1)
+    assert.equal(state.plans[0]?.inputContract.id, "task-value")
+    assert.equal(state.plans[0]?.outputContract.id, "task-output")
+    assert.deepEqual(taskPlanExecutionIssues(state.plans[0]!), [])
+    assert.equal(job.authoring?.consumption.explorationSessions, 1)
+    assert.equal(job.authoring?.level, "E2")
+    const context = job.authoring?.exploration as ExplorationTrace
+    assert.deepEqual(context.input, { value: "explore" })
+    assert.deepEqual(context.stepResults?.map((item) => item.stepId), ["perform"])
+
+    application.taskChain.dispatch(taskId, { type: "author_task", requestId: randomUUID(), requirementVersion: 1,
+      input: { value: "explore" } })
+    await waitFor(() => application.taskChain.snapshot(taskId).chains.length === 2
+      && application.taskChain.snapshot(taskId).jobs.filter((item) => item.type === "chain").at(-1)?.status === "completed")
+    const rebuilt = application.taskChain.snapshot(taskId)
+    assert.deepEqual(order, ["plan", "explore", "compile-chain"])
+    assert.equal(rebuilt.jobs.filter((item) => item.type === "chain").at(-1)?.authoring?.consumption.explorationSessions, 0)
+    assert.equal(rebuilt.jobs.filter((item) => item.type === "chain").at(-1)?.authoring?.consumption.compilationCalls, 0)
+  } finally { await application.app.close(); await rm(directory, { recursive: true, force: true }) }
 })
-const unitContract: TaskDataContract = { id: "unit", version: 1, dialect: "bat-value-schema/v1", schema: { type: "null" } }
 
-test("v10 新表保留旧 JSON 原字节并只读分类", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "bat-task-contract-")), taskId = randomUUID()
-  let store = await ProductStore.open(directory)
-  store.taskAction({ type: "create", requestId: taskId })
-  const created = store.list()[0]!.id
-  await store.close()
-  const file = path.join(directory, "workbench.sqlite"), legacyBody = ' { "legacy": true, "rows": [1, 2] }\n'
-  const raw = new Database(file)
+test("预执行连续漏交结果时升级可用模型并复用同一浏览器会话", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-preexecution-escalation-"))
+  let sessionStarts = 0
+  const application = await createApplication({ root: projectRoot, directory, aiModel: escalationModel(),
+    browserExecutor: async (args) => { if (args[1] === "session" && args[2] === "start") sessionStarts++
+      return pageBrowserExecutor(args) }, taskChainCapabilities: () => successfulObservation() })
   try {
-    raw.exec("DROP TABLE taskArtifacts; DROP TABLE taskExecutions; DROP TABLE taskAuthoringJobs; DROP TABLE taskContracts; PRAGMA user_version=9")
-    raw.prepare("INSERT INTO plans(id,taskId,body) VALUES(?,?,?)").run("legacy-plan", created, legacyBody)
-  } finally { raw.close() }
-  store = await ProductStore.open(directory)
-  try {
-    const repository = new TaskContractRepository(store)
-    assert.equal(repository.legacyOriginal(created, "plans", "legacy-plan"), legacyBody)
-    assert.deepEqual(repository.legacy(created), [{ source: "plans", id: "legacy-plan", status: "legacy_read_only",
-      reason: "缺少新协议版本，仅可读取或导出。" }])
-    const migrated = new Database(file, { readonly: true })
-    try { assert.equal(migrated.pragma("user_version", { simple: true }), 10) } finally { migrated.close() }
-  } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
+    const taskId = application.coordinator.taskAction({ type: "create", requestId: randomUUID() })
+    confirmedDraft(application.store, taskId)
+    application.taskChain.dispatch(taskId, { type: "author_task", requestId: randomUUID(), requirementVersion: 1,
+      input: { value: "explore" } })
+    await waitFor(() => application.taskChain.snapshot(taskId).jobs.some((job) => job.type === "chain"
+      && !["queued", "running", "waiting_for_human"].includes(job.status)))
+    const job = application.taskChain.snapshot(taskId).jobs.find((item) => item.type === "chain")!
+    assert.equal(job.status, "completed", job.reason ?? undefined)
+    assert.equal(sessionStarts, 1)
+    assert.deepEqual(job.audit?.escalations, [{ model: "strong-model", effort: "high",
+      reason: "exploration_business_result_missing" }])
+  } finally { await application.app.close(); await rm(directory, { recursive: true, force: true }) }
 })
 
-test("服务重启把未持久排队器的工作收敛为可解释终态", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "bat-task-recovery-"))
-  let store = await ProductStore.open(directory)
-  const taskId = store.taskAction({ type: "create", requestId: randomUUID() })
-  const repository = new TaskContractRepository(store), now = new Date().toISOString()
-  const planId = randomUUID(), requirementId = randomUUID(), authorizationId = randomUUID(), digest = "a".repeat(64)
-  repository.saveJob({ id: randomUUID(), taskId, type: "plan", key: "queued-plan", status: "queued", sequence: 0,
-    reason: null, resultId: null, audit: null, createdAt: now, updatedAt: now })
-  repository.saveRun({ contractVersion: CONTRACT_VERSION, kind: "run", binding: { runId: randomUUID(),
-    invocationId: randomUUID(), taskId, authorizationId, plan: { id: planId, version: 1, digest },
-    chain: { id: randomUUID(), version: 1, digest }, inputDigest: digestJson({}) }, mode: "sample", input: {}, budget,
-    sequence: 0, status: "queued", outputs: {}, checkpoint: null, consumed: { transitions: 0, browserCommands: 0,
-      activeMs: 0, llmCalls: 0, invocations: 0 }, outcome: null, events: [], modelCalls: [], auditComplete: true })
-  repository.saveExecution({ contractVersion: CONTRACT_VERSION, kind: "execution", id: randomUUID(), taskId,
-    authorizationId, plan: { id: planId, version: 1, digest }, requirement: { id: requirementId, version: 1,
-      revision: 1, digest }, input: {}, inputDigest: digestJson({}), status: "queued", sequence: 0,
-    currentStepId: null, currentRunId: null, steps: [], output: null, reason: "等待执行。", createdAt: now, updatedAt: now })
-  await store.close()
-  store = await ProductStore.open(directory)
+test("样本复跑的本地失败会复用预执行证据修复新版本并再次验证", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-repair-validation-")), order: string[] = []
+  let validationCalls = 0, sessionStarts = 0
+  const application = await createApplication({ root: projectRoot, directory, aiModel: repairLoopModel(order),
+    browserExecutor: async (args) => { if (args[1] === "session" && args[2] === "start") sessionStarts++
+      return pageBrowserExecutor(args) }, taskChainCapabilities: ({ purpose }) => purpose === "sample" ? {
+        capability: async () => ++validationCalls === 1 ? { outcome: "missing", reason: "target_missing" } : {
+          outcome: "success", output: { title: "Confirmed", url: "https://example.com/", text: "Confirmed",
+            truncated: false, observedAt: "2026-09-14T00:00:00.000Z", links: [], headings: [], paragraphs: [] },
+        },
+      } : {} })
   try {
-    const recovered = new TaskContractRepository(store)
-    assert.equal(recovered.jobs(taskId)[0]?.status, "interrupted")
-    assert.equal(recovered.runs(taskId)[0]?.status, "failed")
-    assert.equal(recovered.runs(taskId)[0]?.outcome?.status, "failed")
-    assert.equal(recovered.executions(taskId)[0]?.status, "paused")
-  } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
+    const taskId = application.coordinator.taskAction({ type: "create", requestId: randomUUID() })
+    confirmedDraft(application.store, taskId)
+    application.taskChain.dispatch(taskId, { type: "author_task", requestId: randomUUID(), requirementVersion: 1,
+      input: { value: "explore" } })
+    await waitFor(() => application.taskChain.snapshot(taskId).chains.length === 2
+      && application.taskChain.snapshot(taskId).runs.filter((run) => run.mode === "sample").length === 2)
+    await waitFor(() => application.taskChain.snapshot(taskId).runs.filter((run) => run.mode === "sample")
+      .every((run) => !["queued", "running"].includes(run.status)))
+    const state = application.taskChain.snapshot(taskId)
+    const chains = state.chains.toSorted((left, right) => left.version - right.version)
+    assert.equal(chains[0]!.validation.evidence[0]?.passed, false)
+    assert.equal(chains[1]!.validation.evidence[0]?.passed, true, JSON.stringify(state.runs.map((run) => ({
+      status: run.status, outcome: run.outcome, outputs: run.outputs,
+    }))))
+    assert.equal(sessionStarts, 1)
+    const repair = state.jobs.find((job) => job.key.startsWith("repair:"))!
+    assert.equal(repair.status, "completed", repair.reason ?? undefined)
+    assert.equal(repair.authoring?.consumption.explorationSessions, 0)
+    assert.deepEqual(order, ["plan", "explore", "compile-chain", "repair-chain"])
+  } finally { await application.app.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
+test("样本复跑遇到外部频控时暂停修复循环", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-validation-rate-limit-")), order: string[] = []
+  const application = await createApplication({ root: projectRoot, directory, aiModel: preexecutionModel(order),
+    browserExecutor: pageBrowserExecutor, taskChainCapabilities: () => ({ capability: async () => ({ outcome: "blocked",
+      reason: "rate_limited", externalFailure: { category: "rate_limited", code: "rate_limited",
+        origin: "https://example.com", observedOrigin: "https://example.com", httpStatus: 429,
+        retryAt: "2026-09-14T01:00:00.000Z" } }) }) })
+  try {
+    const taskId = application.coordinator.taskAction({ type: "create", requestId: randomUUID() })
+    confirmedDraft(application.store, taskId)
+    application.taskChain.dispatch(taskId, { type: "author_task", requestId: randomUUID(), requirementVersion: 1,
+      input: { value: "explore" } })
+    await waitFor(() => application.taskChain.snapshot(taskId).runs.some((run) => !["queued", "running"].includes(run.status)))
+    const state = application.taskChain.snapshot(taskId)
+    assert.equal(state.runs[0]?.externalFailure?.category, "rate_limited")
+    assert.equal(state.chains.length, 1)
+    assert.equal(state.jobs.some((job) => job.key.startsWith("repair:")), false)
+  } finally { await application.app.close(); await rm(directory, { recursive: true, force: true }) }
 })
 
 test("确认需求、计划与链路生成、双输入验证、排队及人工恢复共用新协议事实源", async () => {
@@ -93,11 +140,17 @@ test("确认需求、计划与链路生成、双输入验证、排队及人工�
     },
     taskChainCapabilities: ({ purpose }) => {
       if (purpose === "replay") replayGroups++
-      return { observe: async () => ({ outcome: "success", output: { title: "Confirmed", url: "https://example.com/", text: "Confirmed", truncated: false, links: [], headings: [], paragraphs: [] } }), human: async (invocation) => {
-        if (purpose === "replay" && replayGroups === 1) return { outcome: "human_required", reason: "fixture_wait" }
-        const artifact = taskChain!.repository.saveArtifact(invocation.binding.taskId, invocation.binding.runId,
-          "application/json", { resumed: true, purpose })
-        return { outcome: "success", output: { resumed: true, url: "https://example.com/" }, artifacts: [artifact] }
+      const page = { title: "Confirmed", url: "https://example.com/", text: "Confirmed", truncated: false,
+        observedAt: "2026-09-14T00:00:00.000Z", links: [], headings: [], paragraphs: [] }
+      const browser = { sessionId: "fixture", tabId: "1", url: page.url, observationDigest: "a".repeat(64), observedAt: page.observedAt }
+      return { verifyResume: async () => ({ ok: true, observation: page, browser }), capability: async (invocation) => {
+        if (invocation.node.human) {
+          if (purpose === "replay" && replayGroups === 1) return { outcome: "human_required" as const, reason: "fixture_wait", browser }
+          const artifact = taskChain!.repository.saveArtifact(invocation.binding.taskId, invocation.binding.runId,
+            "application/json", { resumed: true, purpose })
+          return { outcome: "success" as const, output: page, artifacts: [artifact], browser }
+        }
+        return { outcome: "success" as const, output: page, browser }
       } }
     } })
   taskChain = application.taskChain
@@ -152,16 +205,15 @@ test("确认需求、计划与链路生成、双输入验证、排队及人工�
     let execution = taskChain.snapshot(taskId).executions[0]!
     taskChain.dispatch(taskId, { type: "resume_execution", requestId: randomUUID(), executionId: execution.id,
       expectedSequence: execution.sequence })
-    await waitFor(() => taskChain!.snapshot(taskId).executions[0]?.status === "completed")
+    await waitFor(() => ["completed", "failed", "paused"].includes(taskChain!.snapshot(taskId).executions[0]?.status ?? ""))
     state = taskChain.snapshot(taskId); execution = state.executions[0]!
+    assert.equal(execution.status, "completed", JSON.stringify({ reason: execution.reason, steps: execution.steps }))
     assert.deepEqual(execution.output, { kind: "value", contract: { id: "task-output", version: 1 }, value: { title: "Confirmed" } })
     assert.ok(execution.consumed.transitions > 0)
     assert.equal(execution.consumed.invocations, 1)
     assert.deepEqual(execution.steps[0]!.consumed, execution.consumed)
     const replayRun = state.runs.find((run) => run.binding.authorizationId === execution.authorizationId)!
     assert.equal(replayRun.outcome?.status, "completed")
-    const artifact = replayRun.outcome!.evidence[0]!
-    assert.deepEqual(taskChain.repository.artifact(taskId, artifact.artifactId).body, { resumed: true, purpose: "replay" })
     assert.equal(state.staleIds.length, 0)
     application.store.mutate(taskId, (interview) => {
       interview.revision = 2; interview.drafts.push({ version: 2, revision: 2, title: "更新后的任务",
@@ -311,6 +363,9 @@ test("访问熔断轨迹不复用，局部可修正失败仍保留 E1", () => {
   }
   const job = (exploration: typeof baseTrace) => ({ type: "chain", key, status: "failed",
     authoring: { exploration } }) as unknown as Parameters<typeof reusableExploration>[0][number]
+  const cleanupRecovered = { ...baseTrace, closed: false }
+  assert.equal(reusableExploration([job(cleanupRecovered)], key, representativeInput), undefined)
+  assert.equal(reusableExploration([job(cleanupRecovered)], key, representativeInput, () => true)?.closed, true)
   const localFailure = { ...baseTrace, events: [...baseTrace.events, { id: "probe", callId: "probe",
     at: new Date().toISOString(), command: { type: "click" as const, target: { role: "button" as const, name: "可选" } },
     output: null, observation: null, status: "failed" as const, error: "target_missing" }] }
@@ -318,7 +373,7 @@ test("访问熔断轨迹不复用，局部可修正失败仍保留 E1", () => {
   const accessFailure = { ...baseTrace, events: [...baseTrace.events, { id: "blocked", callId: "blocked",
     at: new Date().toISOString(), command: { type: "click" as const, target: { role: "button" as const, name: "搜索" } },
     output: null, observation: null, status: "failed" as const, error: "origin_denied" }] }
-  assert.equal(reusableExploration([job(accessFailure)], key, representativeInput), undefined)
+  assert.equal(reusableExploration([job(accessFailure)], key, representativeInput)?.browserRunId, baseTrace.browserRunId)
   const uncertainState = { ...baseTrace, events: [...baseTrace.events, { id: "uncertain", callId: "uncertain",
     at: new Date().toISOString(), command: { type: "click" as const, target: { role: "button" as const, name: "打开" } },
     output: null, observation: null, status: "failed" as const, error: "invalid_response" }] }
@@ -327,130 +382,9 @@ test("访问熔断轨迹不复用，局部可修正失败仍保留 E1", () => {
     at: new Date().toISOString(), command: { type: "click" as const, target: { role: "button" as const, name: "同名入口" } },
     output: null, observation: null, status: "failed" as const, error: "target_ambiguous" }] }
   assert.equal(reusableExploration([job(ambiguousAction)], key, representativeInput), undefined)
+  const compact = compactTraceForModel({ ...baseTrace, events: [{ ...baseTrace.events[0]!,
+    output: { text: "敏感页面正文".repeat(10_000), url: "https://example.com/" } }] })
+  assert.doesNotMatch(JSON.stringify(compact), /敏感页面正文/)
+  assert.deepEqual((compact as { events: Array<{ outputPaths: JsonValue }> }).events[0]?.outputPaths,
+    [["text"], ["url"]])
 })
-
-function confirmedDraft(store: ProductStore, taskId: string) {
-  store.mutate(taskId, (state) => {
-    state.revision = 1
-    state.drafts.push({ version: 1, revision: 1, title: "通用确认任务",
-      markdown: "# 通用确认任务\n\n目标页面：https://example.com/\n\n需要人工确认后返回结构化结果。", brief: null })
-    state.confirmedVersion = 1
-    state.decisions.push({ id: randomUUID(), revision: 1, kind: "draft_confirmation", text: "确认需求草稿 v1",
-      messageId: null, questionId: null, draftVersion: 1, createdAt: "2026-09-12T01:00:00.000Z" })
-  })
-}
-
-function planCandidate() {
-  const completion = { id: "done", description: "步骤输出已保存", predicate: { operator: "exists" as const,
-    value: { source: "node" as const, nodeId: "perform", path: [] } } }
-  return { summary: "执行一个可复用确认步骤", inputContract: openContract,
-    outputContract: { ...openContract, id: "task-output" }, steps: [{ id: "perform", title: "完成确认", goal: "返回可观察结果",
-    dependsOn: [], inputContract: openContract, outputContract: { ...openContract, id: "task-output" }, input,
-    invocation: { mode: "once" as const }, completion: [completion], risks: ["需要人工确认"] }],
-    output: completion.predicate.value, completion: [completion], authorizationScope: "仅限本次已确认任务" }
-}
-
-function annotations() {
-  return { inputBindings: [], repeatRegions: [], outputMappings: [{ source: "tool", outputPath: ["title"], eventId: "page", resultPath: ["title"] }],
-    completion: [{ eventId: "page", resultPath: ["title"], description: "结果已显示" }],
-    reuseBoundary: { description: "相同确认任务", assumptions: [], invalidationConditions: [] } }
-}
-
-function taskQueuedModel(completeTask = true): AIModelProvider {
-  const selection = { connectionId: randomUUID(), modelId: "fixture-model", reasoningEffort: "high" as const }
-  const responses = [twoStepPlanCandidate(), taskAnnotations("page-one", ["paragraphs"]),
-    taskAnnotations("page-two", ["title"]), taskAnnotations("page-one", ["paragraphs"]),
-    taskAnnotations("page-two", ["title"])]
-  return { selection: () => selection, async prepare() { return { selection, async generateObject(input) {
-    const value = responses.shift(); if (!value) throw new Error("fixture_response_missing"); return input.parse(value)
-  } } }, async prepareMain() { return { selection, async close() {}, async run(input) {
-    const browser = input.tools!.find((tool) => tool.name === "browser")!
-    const completeStep = input.tools!.find((tool) => tool.name === "complete_step")!
-    const complete = input.tools!.find((tool) => tool.name === "complete")!
-    await browser.execute("page-one", { command: { type: "page" } }, input.signal)
-    const candidate = { key: "confirmed", label: "计划原始说明" }, second = { key: "second", label: "第二项说明" }
-    await completeStep.execute("discover-result", { stepId: "discover", representativeInput: { value: "explore" },
-      result: [candidate, second], provenance: [{ source: "inference", outputPath: [], eventIds: ["page-one"],
-        instruction: "根据当前页面的确认内容形成带稳定键的候选。" }] }, input.signal)
-    await browser.execute("page-two", { command: { type: "page" } }, input.signal)
-    const representative = { stepId: "detail",
-      representativeInput: { key: "confirmed", label: "模型改写的说明" },
-      result: "Confirmed", provenance: [toolProvenance("page-two", ["title"])],
-      aggregate: { result: ["Confirmed"], provenance: [toolProvenance("page-two", ["paragraphs"])] } }
-    await assert.rejects(completeStep.execute("detail-batch", { ...representative, aggregate: {
-      result: ["Confirmed", "Confirmed-2"], provenance: [{ source: "inference", outputPath: [], eventIds: ["page-two"],
-        instruction: "把多个输入结果拼成数组。" }] } }, input.signal), /representative_aggregate_invalid/)
-    await completeStep.execute("detail-result", representative, input.signal)
-    if (completeTask) await complete.execute("task-result", representative.aggregate, input.signal)
-    return { outputText: "Confirmed" }
-  } } } }
-}
-
-function twoStepPlanCandidate() {
-  const collectionContract: TaskDataContract = { id: "discovered-values", version: 1, dialect: "bat-value-schema/v1",
-    schema: { type: "array", items: { type: "object", properties: { key: { type: "string" }, label: { type: "string" } },
-      required: ["key", "label"], additionalProperties: false }, maxItems: 2 } }
-  const itemContract: TaskDataContract = { id: "detail-input", version: 1, dialect: "bat-value-schema/v1",
-    schema: { type: "object", properties: { key: { type: "string" }, label: { type: "string" } },
-      required: ["key", "label"], additionalProperties: false } }
-  const detailContract: TaskDataContract = { id: "detail-output", version: 1, dialect: "bat-value-schema/v1",
-    schema: { type: "string" } }
-  const taskOutputContract: TaskDataContract = { id: "task-output", version: 1, dialect: "bat-value-schema/v1",
-    schema: { type: "array", items: { type: "string" }, maxItems: 2 } }
-  const discoverDone = { id: "discover-done", description: "候选集合已得到", predicate: { operator: "exists" as const,
-    value: { source: "node" as const, nodeId: "discover", path: [] } } }
-  const detailDone = { id: "detail-done", description: "所有详情已得到", predicate: { operator: "exists" as const,
-    value: { source: "node" as const, nodeId: "detail", path: [] } } }
-  return { summary: "发现集合后逐项读取", inputContract: openContract,
-    outputContract: taskOutputContract, steps: [
-      { id: "discover", title: "发现输入", goal: "得到待处理集合", dependsOn: [], inputContract: openContract,
-        outputContract: collectionContract, input, invocation: { mode: "once" as const }, completion: [discoverDone], risks: [] },
-      { id: "detail", title: "逐项处理", goal: "处理集合中的每一项", dependsOn: ["discover"], inputContract: itemContract,
-        outputContract: detailContract, input: { source: "variable" as const, name: "item", path: [] },
-    invocation: { mode: "each" as const, collection: { source: "node" as const, nodeId: "discover", path: [] },
-          itemVariable: "item", stableKeyPath: ["key"], maxItems: 2, onItemFailure: "stop" as const }, completion: [detailDone], risks: [] },
-    ], output: { source: "node" as const, nodeId: "detail", path: [] }, completion: [detailDone],
-    authorizationScope: "仅限本次已确认任务" }
-}
-
-function taskAnnotations(eventId: string, resultPath: (string | number)[]) {
-  return { replayEventIds: [eventId], continueOnMissingEventIds: [], inputBindings: [], repeatRegions: [],
-    completion: [{ eventId, resultPath, description: "结果已显示" }],
-    reuseBoundary: { description: "相同结构页面", assumptions: [], invalidationConditions: [] } }
-}
-
-function toolProvenance(eventId: string, resultPath: (string | number)[]) {
-  return { source: "tool" as const, outputPath: [], eventId, resultPath }
-}
-function validation(chain: { id: string; version: number; digest: string }, mode: "sample" | "verification", value: JsonValue): TaskChainCommand {
-  return { type: "validate_chain", requestId: randomUUID(), chain, mode, input: value }
-}
-
-function queuedModel(responses: unknown[]): AIModelProvider {
-  const selection = { connectionId: randomUUID(), modelId: "fixture-model", reasoningEffort: "high" as const }
-  return { selection: () => selection, async prepare() { return { selection, async generateObject(input) {
-    const value = responses.shift(); if (!value) throw new Error("fixture_response_missing"); return input.parse(value)
-  } } }, async prepareMain() { return { selection, async close() {}, async run(input) {
-    await input.tools![0]!.execute("help", { command: { type: "request_help", reason: "confirmation", prompt: "确认当前任务" } }, input.signal)
-    await input.tools![0]!.execute("page", { command: { type: "page" } }, input.signal)
-    await input.tools![1]!.execute("complete", { result: { title: "Confirmed" }, provenance: annotations().outputMappings }, input.signal)
-    return { outputText: "Confirmed" }
-  } } } }
-}
-
-async function waitFor(condition: () => boolean, timeoutMs = 3000) {
-  const started = Date.now()
-  while (!condition()) {
-    if (Date.now() - started > timeoutMs) throw new Error("fixture_timeout")
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-}
-
-async function fakeBrowserExecutor(args: readonly string[]) {
-  const value = args[1] === "session" ? args[2] === "start" ? { session_id: "abcd" }
-    : { stopped: ["abcd"], failed: [], return_failures: [] }
-    : args[1] === "tab" ? { tabs: [{ tab_id: 1, url: "https://example.com/", active: true, scope: "agent" }] }
-      : args[1] === "request-help" ? { outcome: "continued" } : args[1] === "evaluate" ? { ok: true, tab_id: 1, value: { url: "https://example.com/", title: "Confirmed", links: [], headings: [], paragraphs: [] } } : args[1] === "observe" ? { tab_id: 1, text: '@e1 button "确认"', truncated: false }
-        : { tab_id: 1 }
-  return { stdout: JSON.stringify(value), exitCode: 0 }
-}

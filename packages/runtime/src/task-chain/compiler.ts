@@ -11,7 +11,7 @@ export interface CompiledTaskChain {
 
 export function compileTaskChain(raw: unknown): CompiledTaskChain {
   const chain = taskChainSchema.parse(raw)
-  const nodes = new Map(chain.nodes.map((node) => [node.id, node] as const))
+  const nodes = new Map<string, ChainNode>(chain.nodes.map((node) => [node.id, node]))
   const edges = new Map(chain.edges.map((edge) => [`${edge.from}:${edge.outcome}`, edge] as const))
   assertReachability(chain, nodes, edges)
   assertBoundedCycles(chain, nodes, edges)
@@ -42,18 +42,20 @@ function assertDataOperationArguments(nodes: ReadonlyMap<string, ChainNode>) {
 }
 
 function assertStaticContracts(chain: TaskChain, nodes: ReadonlyMap<string, ChainNode>) {
-  const emitNames = new Set<string>(), unitKinds = new Set<ChainNode["kind"]>(["browser", "condition", "loop", "checkpoint", "terminal"])
+  const emitNames = new Set<string>(), unitKinds = new Set<ChainNode["kind"]>(["browser", "condition", "branch", "loop", "checkpoint"])
   const completed = [...nodes.values()].filter((node) => node.kind === "terminal" && node.status === "completed")
   if (!completed.length) throw new Error("chain_completed_terminal_missing")
   let exposesChainOutput = false
   for (const node of nodes.values()) {
     if (unitKinds.has(node.kind) && node.outputContract.schema.type !== "null") throw new Error("unit_node_contract_required")
     if (node.kind === "terminal" && node.writes.length) throw new Error("terminal_write_forbidden")
-    if (node.kind !== "emit") continue
-    if (emitNames.has(node.name)) throw new Error("duplicate_emit_name")
-    emitNames.add(node.name)
-    if (JSON.stringify(node.outputContract) !== JSON.stringify(node.contract)) throw new Error("emit_contract_mismatch")
-    if (JSON.stringify(node.contract) === JSON.stringify(chain.outputContract)) exposesChainOutput = true
+    const output = node.kind === "emit" ? { name: node.name, contract: node.contract }
+      : node.kind === "terminal" && "result" in node && node.result ? node.result : null
+    if (!output) continue
+    if (emitNames.has(output.name)) throw new Error("duplicate_emit_name")
+    emitNames.add(output.name)
+    if (JSON.stringify(node.outputContract) !== JSON.stringify(output.contract)) throw new Error("emit_contract_mismatch")
+    if (JSON.stringify(output.contract) === JSON.stringify(chain.outputContract)) exposesChainOutput = true
   }
   if (!exposesChainOutput) throw new Error("chain_output_not_emitted")
 }
@@ -76,7 +78,9 @@ function assertVariableAvailability(chain: TaskChain, nodes: ReadonlyMap<string,
   for (const node of nodes.values()) for (const binding of nodeBindings(node)) {
     if (binding.source !== "variable") continue
     const localItem = node.kind === "invoke" && node.iteration.mode === "each" && binding.name === node.iteration.itemVariable
-    if (!localItem && !before.get(node.id)!.has(binding.name)) throw new Error("binding_variable_not_available")
+    const localAccumulator = node.kind === "loop" && "accumulators" in node
+      && node.accumulators.some((accumulator) => accumulator.variable === binding.name)
+    if (!localItem && !localAccumulator && !before.get(node.id)!.has(binding.name)) throw new Error("binding_variable_not_available")
   }
   const completed = [...nodes.values()].filter((node) => node.kind === "terminal" && node.status === "completed")
   for (const condition of chain.completion) for (const binding of predicateBindings(condition.predicate)) {
@@ -90,6 +94,9 @@ function assignedAfter(before: ReadonlySet<string>, node: ChainNode, outcome: Ch
   const assigned = new Set(before)
   if (outputOutcomes.has(outcome)) for (const write of node.writes) assigned.add(write.variable)
   if (node.kind === "loop" && outputOutcomes.has(outcome)) assigned.add(node.cursorVariable)
+  if (node.kind === "loop" && "accumulators" in node && outputOutcomes.has(outcome)) {
+    for (const accumulator of node.accumulators) assigned.add(accumulator.variable)
+  }
   if (node.kind === "loop" && node.iteration.mode === "each" && outcome === "body") assigned.add(node.iteration.itemVariable)
   return assigned
 }
@@ -108,6 +115,16 @@ function assertBindingPaths(chain: TaskChain, nodes: ReadonlyMap<string, ChainNo
   }
   for (const node of nodes.values()) for (const write of node.writes) assertSchemaPath(node.outputContract.schema, write.path)
   for (const node of nodes.values()) {
+    if (node.kind === "loop" && "accumulators" in node) for (const accumulator of node.accumulators) {
+      const contract = chain.variables[accumulator.variable]
+      if (contract?.schema.type !== "array") throw new Error("loop_accumulator_array_contract_required")
+      if (accumulator.stableKeyPath) {
+        const stableKey = schemaAtPath(contract.schema.items, accumulator.stableKeyPath)
+        if (!stableKey || !["string", "number", "integer", "boolean"].includes(stableKey.type)) {
+          throw new Error("loop_accumulator_stable_key_contract_required")
+        }
+      }
+    }
     if ((node.kind !== "loop" && node.kind !== "invoke") || node.iteration.mode !== "each") continue
     const binding = node.iteration.collection
     if (binding.source === "constant") throw new Error("iteration_collection_binding_required")
@@ -226,7 +243,8 @@ function assertBindingDominance(chain: TaskChain, nodes: ReadonlyMap<string, Cha
   }
   for (const node of nodes.values()) {
     for (const binding of nodeBindings(node)) {
-      if (binding.source === "node" && (binding.nodeId === node.id || !dominators.get(node.id)!.has(binding.nodeId))) {
+      if (binding.source === "node" && !deferredLoopBinding(node, binding, dominators)
+        && (binding.nodeId === node.id || !dominators.get(node.id)!.has(binding.nodeId))) {
         throw new Error("binding_node_not_dominating")
       }
     }
@@ -237,4 +255,15 @@ function assertBindingDominance(chain: TaskChain, nodes: ReadonlyMap<string, Cha
       throw new Error("completion_binding_not_dominating")
     }
   }
+}
+
+function deferredLoopBinding(node: ChainNode, binding: ValueBinding, dominators: ReadonlyMap<string, ReadonlySet<string>>) {
+  if (binding.source !== "node" || node.kind !== "loop" || !("body" in node)
+    || !node.body.exits.some((exit) => dominators.get(exit)?.has(binding.nodeId))) return false
+  const deferred = [...node.accumulators.flatMap((accumulator) => [accumulator.next,
+    ...(accumulator.appendWhen ? predicateBindings(accumulator.appendWhen) : [])]),
+  ...(node.stopWhen ? predicateBindings(node.stopWhen) : []),
+  ...(node.iteration.mode === "while" && node.iteration.repeatCondition
+    ? predicateBindings(node.iteration.repeatCondition) : [])]
+  return deferred.some((candidate) => candidate.source === "node" && candidate.nodeId === binding.nodeId)
 }

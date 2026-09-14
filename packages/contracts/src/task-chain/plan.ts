@@ -1,14 +1,18 @@
 import { z } from "zod"
 import { budgetSchema, contractVersionSchema, entityVersionReferenceSchema, identitySchema, keySchema, taskIdentitySchema, textSchema } from "./common.js"
-import { completionConditionSchema, valueBindingSchema, type ValueBinding } from "./binding.js"
+import { completionConditionSchema, valueBindingSchema, valuePathSchema, type ValueBinding } from "./binding.js"
 import { invocationModeSchema, predicateBindings } from "./node.js"
 import { requirementReferenceSchema } from "./requirement.js"
 import { parseTaskValue, taskDataContractSchema, type TaskDataContract, type ValueSchema } from "./value.js"
 
+const taskPlanInvocationSchema = z.union([invocationModeSchema, z.object({ mode: z.literal("batch"),
+  collection: valueBindingSchema, itemVariable: keySchema, stableKeyPath: valuePathSchema,
+  maxItems: z.number().int().positive() }).strict()])
+
 export const taskPlanStepSchema = z.object({
   id: keySchema, title: textSchema, goal: textSchema, dependsOn: z.array(keySchema),
   inputContract: taskDataContractSchema, outputContract: taskDataContractSchema,
-  input: valueBindingSchema, invocation: invocationModeSchema,
+  input: valueBindingSchema, invocation: taskPlanInvocationSchema,
   chain: entityVersionReferenceSchema, budget: budgetSchema,
   completion: z.array(completionConditionSchema).min(1), risks: z.array(textSchema),
 }).strict()
@@ -29,14 +33,14 @@ export const taskPlanSchema = z.object({
     if (seen.has(step.id) || new Set(step.dependsOn).size !== step.dependsOn.length
       || step.dependsOn.some((id) => !seen.has(id))) issue("plan_dependency_order")
     // WHY：计划采用相同 binding 词汇；node 引用已完成步骤，each 的变量仅在逐项调用内可用。
-    const bindings = [step.input, ...(step.invocation.mode === "each" ? [step.invocation.collection] : [])]
+    const bindings = [step.input, ...(step.invocation.mode === "once" ? [] : [step.invocation.collection])]
     for (const binding of bindings) {
       if (binding.source === "node" && !step.dependsOn.includes(binding.nodeId)) issue("plan_input_dependency")
       if (binding.source === "variable" && (binding !== step.input || step.invocation.mode !== "each"
         || binding.name !== step.invocation.itemVariable)) issue("plan_input_variable")
     }
     let itemSchema: ValueSchema | null | undefined
-    if (step.invocation.mode === "each") {
+    if (step.invocation.mode !== "once") {
       const collection = bindingSchema(step.invocation.collection, plan.inputContract.schema, outputs, new Map())
       if (!collection || collection.type !== "array") issue("plan_each_collection_contract_required")
       else {
@@ -80,7 +84,7 @@ export type TaskPlanStep = z.infer<typeof taskPlanStepSchema>
 export function taskPlanExecutionIssues(raw: unknown): string[] {
   const plan = taskPlanSchema.parse(raw), outputs = new Map<string, ValueSchema>(), issues: string[] = []
   for (const step of plan.steps) {
-    const collection = step.invocation.mode === "each"
+    const collection = step.invocation.mode !== "once"
       ? bindingSchema(step.invocation.collection, plan.inputContract.schema, outputs, new Map()) : undefined
     const variables = step.invocation.mode === "each" && collection?.type === "array"
       ? new Map([[step.invocation.itemVariable, collection.items]]) : new Map<string, ValueSchema>()

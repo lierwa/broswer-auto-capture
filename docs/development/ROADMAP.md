@@ -2,14 +2,14 @@
 
 ## 当前执行路线（2026-09-13）
 
-当前开发以 [首次探索与任务链路编译重构实施说明](TASK_CHAIN_AUTHORING_REDESIGN.md) 为唯一接续入口，并以 [清理清单](TASK_CHAIN_AUTHORING_CLEANUP.md) 作为每阶段完成门。架构决策见 [ADR 0002](../adr/0002-pi-agent-exploration-trace-compilation.md)。上一版“API 手写结构化模型命令循环，再让模型生成完整 Chain IR”的路径已经否决；它即使偶然跑通页面，也不能证明输出来源和链路可复跑。
+当前主流程以[稳定通用任务链节点迭代说明](STABLE_TASK_CHAIN_ITERATION.md)为接续入口。架构决策见 [ADR 0002](../adr/0002-pi-agent-exploration-trace-compilation.md) 与 [ADR 0003](../adr/0003-guidance-first-preexecution-and-repair-validation.md)。已确认需求先形成可组合计划，再由 Pi 在一个浏览器会话中为每个步骤探索一条代表路径；候选必须自动样本复跑，本地失败进入一次修复—验证，外部限制暂停。
 
 文档阶段 P0 已完成。剩余六个代码与验收阶段依次为：
 
-1. **P1 Pi AgentSession 探索入口**：复用 AI Connect 中用户选择的订阅模型，让 Pi AgentSession 使用 BrowserSkill 完成代表任务；不在 API 中重写 Agent 循环。
-2. **P2 BrowserSkill 工具桥与类型化轨迹**：记录工具调用、动作后观察、业务结果和字段来源，补齐经验证的通用结构化读取能力。
-3. **P3 语义计划与紧凑编译注解**：模型只标注输入、循环、输出来源、完成条件和复用假设，不生成完整图或技术预算。
-4. **P4 确定性 Trace-to-Graph 编译器**：宿主生成唯一现有 `TaskChain`，补齐绑定、边、错误出口、检查点、终止和推导预算，再交给 `compileTaskChain`。
+1. **P1 可组合计划**：先确定可复用步骤、数据依赖、代表输入及 `once`、`each`、`batch` 调用语义；不得先跑完整任务再从执行记录拆图。
+2. **P2 Pi 代表路径探索**：复用 AI Connect 中用户选择的订阅模型，让 Pi AgentSession 在一个 BrowserSkill 会话内只探索每个步骤的一条代表路径。
+3. **P3 稳定能力轨迹**：记录工具调用、动作后观察、业务结果和字段来源；模型只补充输入、循环、输出来源、完成条件和复用假设。
+4. **P4 确定性稳定图编译器**：宿主只生成 `capability`、`llm`、`branch`、`loop`、`invoke`、`terminal` 六类节点，补齐绑定、出口和推导预算，再交给 `compileTaskChain`。
 5. **P5 产品编排、恢复与 Workbench**：接入探索/可编译/样本可执行/换输入已验证四级状态，分开登录等待、技术预算和供应商错误。
 6. **P6 真实浏览器验收、清理与冻结**：先核验同一 Profile 登录，再做一个京东详情代表输入、两个不同输入、一个品牌 10 个型号的同链复跑及一类非数据采集任务；最后删除所有被替代实现和过时材料。
 

@@ -45,6 +45,13 @@ export function evaluatePredicate(predicate: Predicate, context: BindingContext)
   if (predicate.operator === "exists") {
     try { return resolveBinding(predicate.value, context) !== null } catch { return false }
   }
+  if (predicate.operator === "array_length_at_least") {
+    const value = resolveBinding(predicate.value, context), minimum = resolveBinding(predicate.minimum, context)
+    if (!Array.isArray(value) || typeof minimum !== "number" || !Number.isInteger(minimum) || minimum < 0) {
+      throw new Error("predicate_array_length_required")
+    }
+    return value.length >= minimum
+  }
   const left = resolveBinding(predicate.left, context), right = resolveBinding(predicate.right, context)
   if (predicate.operator === "equals") return JSON.stringify(left) === JSON.stringify(right)
   if (typeof left !== "number" || typeof right !== "number") throw new Error("predicate_number_required")

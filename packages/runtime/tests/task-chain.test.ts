@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
-import { CONTRACT_VERSION, type TaskCheckpoint, type TaskRun } from "@browser-capture/contracts"
+import { CONTRACT_VERSION, requiredStableNodeOutcomes, stableTaskChainSchema, taskChainSchema,
+  type JsonValue, type StableTaskChain, type TaskCheckpoint, type TaskRun } from "@browser-capture/contracts"
 import { compileTaskChain, TaskChainRuntime, type TaskChainCapabilities } from "@browser-capture/runtime"
 import {
   alternateInvocationId, alternateRunId, browserEffectChain, checkpointChain, childChainId,
@@ -38,14 +39,77 @@ test("普通运行器按稳定键有界循环；复跑同一链路不调用模�
   assert.deepEqual(stableKeys, ["repeat=first", "repeat=second", "repeat=third"])
 })
 
+test("稳定 while 循环只保存一份翻页能力，并把各批结果按稳定键累计", async () => {
+  const chain = pagedCollectionChain(), pages = [
+    { items: [{ id: "two", text: "乙" }], hasMore: true },
+    { items: [{ id: "two", text: "重复" }, { id: "three", text: "丙" }], hasMore: false },
+  ]
+  let bodyCalls = 0
+  const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {
+    capability: async ({ node }) => {
+      if (node.id === "open") return { outcome: "success", output: { items: [{ id: "one", text: "甲" }], hasMore: true } }
+      bodyCalls += 1
+      return { outcome: "success", output: pages.shift()! }
+    },
+  } })
+  assert.equal(run.status, "completed", JSON.stringify(run.outcome))
+  assert.equal(bodyCalls, 2)
+  assert.deepEqual(run.outputs.result, { kind: "value", contract: { id: "items", version: 1 }, value: [
+    { id: "one", text: "甲" }, { id: "two", text: "乙" }, { id: "three", text: "丙" },
+  ] })
+  assert.equal(run.consumed.llmCalls, 0)
+  assert.equal(chain.nodes.filter((node) => node.id === "nextPage").length, 1)
+})
+
+test("循环按本轮结果决定累计，并在动态数量满足后立即停止", async () => {
+  const source = pagedCollectionChain(), loop = source.nodes.find((node) => node.kind === "loop")
+  if (!loop || loop.kind !== "loop" || !("accumulators" in loop)) assert.fail("stable loop fixture")
+  loop.accumulators[0]!.appendWhen = { operator: "equals",
+    left: { source: "node", nodeId: "nextPage", path: ["hasMore"] },
+    right: { source: "constant", value: true } }
+  loop.stopWhen = { operator: "array_length_at_least",
+    value: { source: "variable", name: "collected", path: [] },
+    minimum: { source: "constant", value: 2 } }
+  const chain = stableTaskChainSchema.parse(source)
+  let bodyCalls = 0
+  const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {
+    capability: async ({ node }) => {
+      if (node.id === "open") return { outcome: "success", output: { items: [{ id: "one", text: "甲" }], hasMore: true } }
+      bodyCalls += 1
+      return { outcome: "success", output: { items: [{ id: "two", text: "乙" }], hasMore: true } }
+    },
+  } })
+  assert.equal(run.status, "completed", JSON.stringify(run.outcome))
+  assert.equal(bodyCalls, 1)
+  assert.deepEqual(run.outputs.result, { kind: "value", contract: { id: "items", version: 1 }, value: [
+    { id: "one", text: "甲" }, { id: "two", text: "乙" },
+  ] })
+
+  const filteredSource = pagedCollectionChain(), filteredLoop = filteredSource.nodes.find((node) => node.kind === "loop")
+  if (!filteredLoop || filteredLoop.kind !== "loop" || !("accumulators" in filteredLoop)) assert.fail("stable loop fixture")
+  filteredLoop.accumulators[0]!.appendWhen = { operator: "equals",
+    left: { source: "node", nodeId: "nextPage", path: ["hasMore"] },
+    right: { source: "constant", value: true } }
+  const filtered = stableTaskChainSchema.parse(filteredSource)
+  const filteredRun = await new TaskChainRuntime().execute({ chain: filtered, request: requestFor(filtered, null), capabilities: {
+    capability: async ({ node }) => node.id === "open"
+      ? { outcome: "success", output: { items: [{ id: "one", text: "甲" }], hasMore: true } }
+      : { outcome: "success", output: { items: [{ id: "two", text: "乙" }], hasMore: false } },
+  } })
+  assert.deepEqual(filteredRun.outputs.result, { kind: "value", contract: { id: "items", version: 1 }, value: [
+    { id: "one", text: "甲" },
+  ] })
+})
+
 test("运行图可按链路预算推进超过默认递归阈值", async () => {
   const source = loopChain()
   const chain = { ...source,
     budget: { ...source.budget, maxBrowserCommands: 40 },
     nodes: source.nodes.map((node) => node.kind === "loop" ? { ...node, maxIterations: 40 } : node) }
+  const parsed = taskChainSchema.parse(chain)
   const manyItems = Array.from({ length: 30 }, (_, index) => ({ id: `item-${index}`, value: `值-${index}` }))
   let browserCalls = 0
-  const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, { items: manyItems }), capabilities: {
+  const run = await new TaskChainRuntime().execute({ chain: parsed, request: requestFor(parsed, { items: manyItems }), capabilities: {
     browser: async () => { browserCalls += 1; return { outcome: "success", output: null } },
   } })
   assert.equal(run.status, "completed")
@@ -115,8 +179,9 @@ test("外部访问中断跨终止节点保留在 TaskRun", async () => {
 test("invoke each 超出 maxItems 时保留部分结果且不能伪装完成", async () => {
   const source = invokeChain(), chain = { ...source, nodes: source.nodes.map((node) => node.kind === "invoke"
     ? { ...node, iteration: { ...node.iteration, maxItems: 2 } } : node) }
+  const parsed = taskChainSchema.parse(chain)
   let calls = 0
-  const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, { items }), capabilities: {
+  const run = await new TaskChainRuntime().execute({ chain: parsed, request: requestFor(parsed, { items }), capabilities: {
     invoke: async ({ input }) => { calls += 1; return { outcome: { status: "completed", reason: "子链完成",
       evidence: [], completionEvidence: ["child"] }, output: { kind: "value",
       contract: { id: "child-output", version: 1 }, value: input } } },
@@ -128,7 +193,8 @@ test("invoke each 超出 maxItems 时保留部分结果且不能伪装完成", a
 test("子链人工等待向父链传播；同一子调用恢复时不重复计费", async () => {
   const source = invokeChain(), chain = { ...source, nodes: source.nodes.map((node) => node.kind === "invoke"
     ? { ...node, iteration: { ...node.iteration, maxItems: 1 } } : node) }
-  const request = requestFor(chain, { items: [items[0]!] })
+  const parsed = taskChainSchema.parse(chain)
+  const request = requestFor(parsed, { items: [items[0]!] })
   let calls = 0
   const invoke: NonNullable<TaskChainCapabilities["invoke"]> = async ({ input }) => {
     calls += 1
@@ -137,11 +203,11 @@ test("子链人工等待向父链传播；同一子调用恢复时不重复计�
       : { outcome: { status: "completed" as const, reason: "子链完成", evidence: [], completionEvidence: ["child"] },
         output: { kind: "value" as const, contract: { id: "child-output", version: 1 }, value: input } }
   }
-  const waiting = await new TaskChainRuntime().execute({ chain, request, capabilities: { invoke } })
+  const waiting = await new TaskChainRuntime().execute({ chain: parsed, request, capabilities: { invoke } })
   assert.equal(waiting.status, "waiting_for_human")
   assert.equal(waiting.consumed.invocations, 1)
   const checkpoint = waiting.checkpoint!
-  const completed = await new TaskChainRuntime().execute({ chain, request, capabilities: { invoke }, control: {
+  const completed = await new TaskChainRuntime().execute({ chain: parsed, request, capabilities: { invoke }, control: {
     checkpoint, resumeRequest: resumeRequest(checkpoint),
   } })
   assert.equal(completed.status, "completed")
@@ -276,6 +342,55 @@ test("compiler 拒绝无界回边、不可完成预算、提前读取变量和�
   scalarLoop.iteration.collection = { source: "input", path: ["items", 0, "id"] }
   assert.throws(() => compileTaskChain(scalarCollection), /iteration_collection_contract_required/)
 })
+
+function pagedCollectionChain(): StableTaskChain {
+  const unit = { id: "unit", version: 1, dialect: "bat-value-schema/v1" as const, schema: { type: "null" as const } }
+  const item = { type: "object" as const, properties: { id: { type: "string" as const }, text: { type: "string" as const } },
+    required: ["id", "text"], additionalProperties: false }
+  const itemsContract = { id: "items", version: 1, dialect: "bat-value-schema/v1" as const,
+    schema: { type: "array" as const, items: item } }
+  const pageContract = { id: "page", version: 1, dialect: "bat-value-schema/v1" as const,
+    schema: { type: "object" as const, properties: { items: itemsContract.schema,
+      hasMore: { type: "boolean" as const } }, required: ["items", "hasMore"], additionalProperties: false } }
+  const capability = (id: string) => ({ id, label: id, kind: "capability" as const,
+    capability: { name: "test.page", version: 1 }, input: {}, config: {}, effect: "read" as const,
+    timeoutMs: 1000, outcomes: [...requiredStableNodeOutcomes.capability], outputContract: pageContract, writes: [] })
+  const open = capability("open"), next = capability("nextPage")
+  const loop = { id: "pages", label: "pages", kind: "loop" as const,
+    iteration: { mode: "while" as const,
+      condition: { operator: "equals" as const, left: { source: "node" as const, nodeId: open.id, path: ["hasMore"] },
+        right: { source: "constant" as const, value: true } },
+      repeatCondition: { operator: "equals" as const, left: { source: "node" as const, nodeId: next.id, path: ["hasMore"] },
+        right: { source: "constant" as const, value: true } } },
+    cursorVariable: "cursor", maxIterations: 3, body: { entry: next.id, exits: [next.id] },
+    accumulators: [{ variable: "collected", initial: { source: "node" as const, nodeId: open.id, path: ["items"] },
+      next: { source: "node" as const, nodeId: next.id, path: ["items"] }, operation: "append_unique" as const,
+      stableKeyPath: ["id"] }], outcomes: [...requiredStableNodeOutcomes.loop], outputContract: unit, writes: [] }
+  const completed = { id: "completed", label: "completed", kind: "terminal" as const, status: "completed" as const,
+    reason: "done", evidence: [{ source: "variable" as const, name: "collected", path: [] }],
+    result: { name: "result", output: { kind: "value" as const,
+      value: { source: "variable" as const, name: "collected", path: [] } }, contract: itemsContract },
+    outcomes: [], outputContract: itemsContract, writes: [] }
+  const failed = { id: "failed", label: "failed", kind: "terminal" as const, status: "failed" as const,
+    reason: "failed", evidence: [{ source: "constant" as const, value: "failed" }], outcomes: [], outputContract: unit, writes: [] }
+  const edges = [
+    ...open.outcomes.map((outcome) => ({ from: open.id, outcome, to: outcome === "success" ? loop.id : failed.id })),
+    ...loop.outcomes.map((outcome) => ({ from: loop.id, outcome,
+      to: outcome === "body" ? next.id : outcome === "done" ? completed.id : failed.id })),
+    ...next.outcomes.map((outcome) => ({ from: next.id, outcome, to: outcome === "success" ? loop.id : failed.id })),
+  ]
+  return stableTaskChainSchema.parse({ contractVersion: CONTRACT_VERSION, kind: "chain", nodeModel: "stable/v1",
+    id: "40000000-0000-4000-8000-000000000001", taskId: "40000000-0000-4000-8000-000000000002", version: 1,
+    plan: { id: "40000000-0000-4000-8000-000000000003", version: 1, digest: "e".repeat(64) },
+    stepId: "collect", name: "paged collection", inputContract: unit, outputContract: itemsContract,
+    variables: { cursor: { id: "cursor", version: 1, dialect: "bat-value-schema/v1", schema: { type: "integer", minimum: 0 } },
+      collected: itemsContract }, entry: open.id, nodes: [open, loop, next, completed, failed], edges,
+    completion: [{ id: "result", description: "result exists",
+      predicate: { operator: "exists", value: { source: "variable", name: "collected", path: [] } } }],
+    budget: { maxTransitions: 20, maxBrowserCommands: 0, maxActiveMs: 10_000, maxLlmCalls: 0, maxInvocations: 1, maxDepth: 1 },
+    reuseBoundary: { description: "same output shape", assumptions: [], invalidationConditions: [] },
+    implementationSummary: "one bounded body", validation: { status: "candidate", evidence: [] } })
+}
 
 function resumeRequest(checkpoint: TaskCheckpoint) {
   return { contractVersion: CONTRACT_VERSION, requestId: alternateRunId, binding: checkpoint.binding,

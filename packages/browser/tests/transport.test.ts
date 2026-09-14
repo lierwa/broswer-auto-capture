@@ -37,3 +37,22 @@ test("父命令退出但继承 stdout 未关闭时，仍按真实退出码及时
     await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   }
 })
+
+test("取消长命令先发送 Ctrl-C 并等待 CLI 收尾", async () => {
+  if (process.platform === "win32") return
+  const prefix = path.join(tmpdir(), "browser-transport-cancel-")
+  const directory = await mkdtemp(prefix), ready = path.join(directory, "ready"), stopped = path.join(directory, "stopped")
+  const executable = path.join(directory, "bsk"), originalPath = process.env.PATH
+  try {
+    await writeFile(executable, `#!/usr/bin/env node\nconst {writeFileSync}=require('node:fs')\nprocess.on('SIGINT',()=>setTimeout(()=>{writeFileSync(${JSON.stringify(stopped)},'stopped');process.exit(130)},50))\nwriteFileSync(${JSON.stringify(ready)},'ready')\nsetInterval(()=>{},1000)\n`, { mode: 0o755 })
+    process.env.PATH = `${directory}${path.delimiter}${originalPath ?? ""}`
+    const controller = new AbortController(), outcome = bskExecutor(directory)(["request-help", "--timeout", "5m"], controller.signal)
+    await waitForFile(ready); controller.abort()
+    await assert.rejects(outcome, (error) => error instanceof Error && "code" in error && error.code === "cancelled")
+    await access(stopped)
+  } finally {
+    process.env.PATH = originalPath
+    assert.ok(path.resolve(directory).startsWith(path.resolve(prefix)))
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  }
+})

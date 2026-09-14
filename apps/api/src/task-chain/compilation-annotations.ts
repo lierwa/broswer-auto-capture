@@ -3,13 +3,20 @@ import { valuePathSchema } from "@browser-capture/contracts"
 import { readPath } from "@browser-capture/runtime"
 import { provenanceSchema, type ExplorationTrace } from "./exploration-trace.js"
 
+const repeatAggregateSchema = z.object({ outputPath: valuePathSchema, itemOutputPath: valuePathSchema,
+  stableKeyPath: valuePathSchema.optional(), appendWhen: z.object({ path: valuePathSchema,
+    equals: z.json() }).strict().optional(), stopAfterInputPath: valuePathSchema.optional() }).strict()
+
 export const compilationAnnotationsSchema = z.object({
   replayEventIds: z.array(z.string()).default([]),
   continueOnMissingEventIds: z.array(z.string()).default([]),
   inputBindings: z.array(z.object({ eventId: z.string(), commandPath: valuePathSchema, inputPath: valuePathSchema }).strict()),
-  repeatRegions: z.array(z.object({ startEventId: z.string(), endEventId: z.string(), collectionPath: valuePathSchema,
+  repeatRegions: z.array(z.object({ startEventId: z.string(), endEventId: z.string(), collectionPath: valuePathSchema.optional(),
+    collectionEvent: z.object({ eventId: z.string(), resultPath: valuePathSchema }).strict().optional(),
     stableKeyPath: valuePathSchema, maxItems: z.number().int().positive(), itemBindings: z.array(z.object({
-      eventId: z.string(), commandPath: valuePathSchema, itemPath: valuePathSchema }).strict()).min(1) }).strict()),
+      eventId: z.string(), commandPath: valuePathSchema, itemPath: valuePathSchema }).strict()).min(1),
+    aggregate: repeatAggregateSchema.optional(), additionalAggregates: z.array(repeatAggregateSchema).default([]) }).strict()
+    .refine((value) => Boolean(value.collectionPath) !== Boolean(value.collectionEvent), "repeat_collection_source_required")),
   outputMappings: z.array(provenanceSchema).min(1),
   completion: z.array(z.object({ eventId: z.string(), resultPath: valuePathSchema.describe(
     "相对于对应探索事件 event.output 根节点的路径。例如 event.output 为 {text: ...} 时填写 [\"text\"]，不能填写 [\"output\", \"text\"]。"),
@@ -28,9 +35,13 @@ export function validateAnnotations(raw: unknown, trace: ExplorationTrace) {
   if (!value.replayEventIds.length && candidates.some((event) => event.status !== "completed")) throw new Error("annotation_replay_path_required")
   const requested = value.replayEventIds.length ? value.replayEventIds : candidates.map((event) => event.id)
   if (new Set(requested).size !== requested.length) throw new Error("annotation_replay_event_invalid")
-  const required = [...value.outputMappings.flatMap((item) => item.source === "tool" ? [item.eventId] : item.eventIds),
+  const requiredMappings = value.outputMappings.filter((mapping) => !aggregatedMapping(mapping.outputPath, value.repeatRegions)
+    || value.repeatRegions.some((region) => regionAggregates(region)
+      .some((aggregate) => samePath(mapping.outputPath, aggregate.itemOutputPath))))
+  const required = [...requiredMappings.flatMap((item) => item.source === "tool" ? [item.eventId] : item.eventIds),
     ...value.inputBindings.map((item) => item.eventId), ...value.completion.map((item) => item.eventId),
-    ...value.repeatRegions.flatMap((item) => [item.startEventId, item.endEventId, ...item.itemBindings.map((binding) => binding.eventId)])]
+    ...value.repeatRegions.flatMap((item) => [item.startEventId, item.endEventId,
+      ...(item.collectionEvent ? [item.collectionEvent.eventId] : []), ...item.itemBindings.map((binding) => binding.eventId)])]
   // WHY：字段来源和完成条件已由宿主校验；模型漏列它自己引用的成功事件时按原轨迹顺序补齐，不能再次访问页面修编译元数据。
   const replaySet = new Set([...requested, ...required, ...value.continueOnMissingEventIds])
   const replayEventIds = trace.events.filter((event) => replaySet.has(event.id)).map((event) => event.id)
@@ -76,13 +87,48 @@ export function validateAnnotations(raw: unknown, trace: ExplorationTrace) {
   }
   for (const region of value.repeatRegions) {
     const start = trace.events.findIndex((event) => event.id === region.startEventId), end = trace.events.findIndex((event) => event.id === region.endEventId)
-    const collection = readPath(trace.input, region.collectionPath)
+    const collectionEvent = region.collectionEvent ? events.get(region.collectionEvent.eventId) : null
+    const collection = collectionEvent ? readPath(collectionEvent.output, region.collectionEvent!.resultPath)
+      : readPath(trace.input, region.collectionPath!)
     if (start < 0 || end < start || !Array.isArray(collection) || !collection.length || collection.length > region.maxItems) throw new Error("annotation_repeat_invalid")
+    if (collectionEvent && (collectionEvent.status !== "completed"
+      || trace.events.findIndex((event) => event.id === collectionEvent.id) >= start)) throw new Error("annotation_repeat_collection_event_invalid")
     const keys = collection.map((item) => readPath(item, region.stableKeyPath))
     if (keys.some((key) => !["string", "number", "boolean"].includes(typeof key)) || new Set(keys.map(String)).size !== keys.length) throw new Error("annotation_stable_key_invalid")
     for (const binding of region.itemBindings) {
       const index = trace.events.findIndex((event) => event.id === binding.eventId)
       if (index < start || index > end || JSON.stringify(readPath(z.json().parse(trace.events[index]!.command), binding.commandPath)) !== JSON.stringify(readPath(collection[0]!, binding.itemPath))) throw new Error("annotation_repeat_binding_invalid")
+    }
+    const outputPaths = new Set<string>()
+    for (const definition of regionAggregates(region)) {
+      const aggregate = readPath(trace.result.result, definition.outputPath)
+      const representative = readPath(trace.result.result, definition.itemOutputPath)
+      if (!Array.isArray(aggregate) || !aggregate.length || aggregate.length > region.maxItems
+        || JSON.stringify(aggregate[0]) !== JSON.stringify(representative)) throw new Error("annotation_repeat_aggregate_invalid")
+      const outputKey = JSON.stringify(definition.outputPath)
+      if (outputPaths.has(outputKey)) throw new Error("annotation_repeat_aggregate_duplicate")
+      outputPaths.add(outputKey)
+      const mapping = value.outputMappings.find((item) => samePath(item.outputPath, definition.itemOutputPath))
+      if (!mapping) throw new Error("annotation_repeat_aggregate_mapping_missing")
+      const sources = mapping.source === "tool" ? [mapping.eventId] : mapping.eventIds
+      if (sources.some((eventId) => {
+        const position = trace.events.findIndex((event) => event.id === eventId)
+        return position < start || position > end
+      })) throw new Error("annotation_repeat_aggregate_source_outside_body")
+      if (definition.appendWhen
+        && JSON.stringify(readPath(representative, definition.appendWhen.path)) !== JSON.stringify(definition.appendWhen.equals)) {
+        throw new Error("annotation_repeat_append_condition_unobserved")
+      }
+      if (definition.stableKeyPath) {
+        const key = readPath(representative, definition.stableKeyPath)
+        if (!["string", "number", "boolean"].includes(typeof key)) throw new Error("annotation_repeat_aggregate_stable_key_invalid")
+      }
+      if (definition.stopAfterInputPath) {
+        const target = readPath(trace.input, definition.stopAfterInputPath)
+        if (typeof target !== "number" || !Number.isInteger(target) || target < 1 || target > region.maxItems) {
+          throw new Error("annotation_repeat_stop_target_invalid")
+        }
+      }
     }
   }
   for (const event of selected as NonNullable<typeof selected[number]>[]) {
@@ -99,6 +145,16 @@ export function validateAnnotations(raw: unknown, trace: ExplorationTrace) {
     }
   }
   return value
+}
+function aggregatedMapping(path: (string | number)[], regions: CompilationAnnotations["repeatRegions"]) {
+  return regions.some((region) => regionAggregates(region).some((aggregate) => path.length === aggregate.outputPath.length + 1
+    && aggregate.outputPath.every((part, index) => path[index] === part) && typeof path.at(-1) === "number"))
+}
+export function regionAggregates(region: CompilationAnnotations["repeatRegions"][number]) {
+  return [...(region.aggregate ? [region.aggregate] : []), ...region.additionalAggregates]
+}
+function samePath(left: (string | number)[], right: (string | number)[]) {
+  return left.length === right.length && left.every((part, index) => part === right[index])
 }
 function sameParent(left: (string | number)[], right: (string | number)[]) {
   if (left.length !== right.length || left.length < 2) return false

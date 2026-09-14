@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { getDomain } from "tldts"
 import { BrowserError, type BrowserCommand, type HumanWaitReason } from "./contracts.js"
 
 const domActivationResultSchema = z.object({ ok: z.literal(true), tab_id: z.number().int(),
@@ -23,9 +24,31 @@ export function sameNavigationLocation(left: string, right: string) {
   return a.origin === b.origin && a.pathname === b.pathname && a.search === b.search
 }
 
+export function sameRegistrableSite(left: string, right: string) {
+  try {
+    const values = [new URL(left), new URL(right)]
+    if (values.some((value) => value.username || value.password || !["http:", "https:"].includes(value.protocol))) return false
+    const sites = values.map((value) => getDomain(value.hostname, { allowPrivateDomains: true }) ?? value.hostname)
+    return sites[0] === sites[1]
+  } catch { return false }
+}
+
 export function helpPrompt(reason: HumanWaitReason) {
   if (reason === "login") return "请在当前 Agent Window 中完成登录，并回到当前来源页面。完成后点击 Done, return control；请勿向系统发送密码或验证码。"
   if (reason === "captcha") return "请在当前 Agent Window 中完成验证码或人机验证。完成后点击 Done, return control。"
   if (reason === "confirmation") return "请检查当前页面并完成人工确认。完成后点击 Done, return control；如非预期请取消。"
   return "当前来源显示访问限制。只处理网站提供的正常浏览器内登录或验证，不通过移动端业务跳转绕过限制；页面恢复后点击 Done, return control，否则请取消。"
+}
+
+type TargetAction = Exclude<BrowserCommand, { type: "read" | "page" | "follow" | "navigate" | "observe" | "tabs"
+  | "tab_open" | "tab_select" | "tab_close" | "request_help" }>
+export function targetActionArguments(command: TargetAction, located: string[]) {
+  const keyTarget = located[0]?.startsWith("@") ? ["--ref", ...located] : located
+  if (command.type === "click" || command.type === "hover") return [command.type, ...located]
+  if (command.type === "fill") return ["fill", ...located, "--value", command.value]
+  if (command.type === "press") return ["press", command.key, ...keyTarget]
+  if (command.type === "select") return ["select", ...located, ...command.values.flatMap((value) => ["--value", value])]
+  if (command.type === "upload") return ["upload", ...located,
+    ...command.files.flatMap((file) => ["--file", file]), "--mode", command.mode]
+  return ["download", ...located, "--out", command.out, ...(command.overwrite ? ["--overwrite"] : [])]
 }

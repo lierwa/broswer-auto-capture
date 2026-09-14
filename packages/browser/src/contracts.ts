@@ -72,6 +72,7 @@ export interface BrowserFailureEvidence {
   origin?: string
   observedOrigin?: string
   httpStatus?: number
+  retryAt?: number
 }
 export class BrowserError extends Error {
   constructor(readonly code: BrowserFailure, readonly evidence: BrowserFailureEvidence = {}) {

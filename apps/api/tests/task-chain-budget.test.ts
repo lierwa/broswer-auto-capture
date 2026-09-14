@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import test from "node:test"
-import { CONTRACT_VERSION, requiredNodeOutcomes, taskChainSchema, type JsonValue, type TaskBudget, type TaskChain,
+import { CONTRACT_VERSION, requiredNodeOutcomes, taskChainSchema, type JsonValue, type LegacyTaskChain, type TaskBudget, type TaskChain,
   type TaskConsumption, type TaskRun, type TaskRunRequest } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest, stableUuid, type RuntimeControl } from "@browser-capture/runtime"
 import { BrowserError, type BrowserGrant } from "@browser-capture/browser"
@@ -89,14 +89,14 @@ test("代表路径已有浏览器失败时不覆盖成业务结果缺失", async
     observedAt: "2026-09-13T00:00:00.000Z" }
   const browser = { setAuthorizationValidator() {}, async snapshot() { return { cleanupRequired: false, record: { status: "failed" } } },
     async run(_grant: BrowserGrant, work: (session: object, signal: AbortSignal) => Promise<unknown>) {
-      const session = { async command() { commands++; if (commands > 1) throw new BrowserError("origin_denied"); return null },
+      const session = { async command() { commands++; if (commands > 1) throw new BrowserError("access_denied"); return null },
         state: () => inspection, beginStep() {}, activeElapsedMs: () => 0, stepElapsedMs: () => 0 }
       return work(session, new AbortController().signal)
     } } as unknown as BrowserService
   const model: PreparedMainAIModel = { selection: { connectionId: randomUUID(), modelId: "fixture", reasoningEffort: "high" },
     async run(input) {
-      await assert.rejects(input.tools![0]!.execute("blocked", { command: { type: "page" } }), /origin_denied/)
-      await assert.rejects(input.tools![0]!.execute("blocked-again", { command: { type: "page" } }), /origin_denied/)
+      await assert.rejects(input.tools![0]!.execute("blocked", { command: { type: "page" } }), /access_denied/)
+      await assert.rejects(input.tools![0]!.execute("blocked-again", { command: { type: "page" } }), /access_denied/)
       return { outputText: "页面受阻" }
     }, async close() {} }
   const host = new TaskRuntimeHost({} as TaskContractRepository, browser,
@@ -105,8 +105,8 @@ test("代表路径已有浏览器失败时不覆盖成业务结果缺失", async
     requirementVersion: 1, outputContract: { id: "unit", version: 1, dialect: "bat-value-schema/v1", schema: { type: "null" } },
     budget, representativeInput: { url: "https://example.com/" }, context: {}, signal: new AbortController().signal,
     onTrace(trace) { capturedError = trace.events.at(-1)?.error ?? null } }, model, () => {}),
-  (error) => error instanceof BrowserError && error.code === "origin_denied" && error.message === "exploration_browser_failed:origin_denied")
-  assert.equal(capturedError, "origin_denied")
+  (error) => error instanceof BrowserError && error.code === "access_denied" && error.message === "exploration_browser_failed:access_denied")
+  assert.equal(capturedError, "access_denied")
   assert.equal(commands, 2) // initial observe + first failed command；熔断后的第二次调用没有到达 BrowserSession。
 })
 
@@ -120,7 +120,7 @@ test("访问熔断后只放行人工等待，Done 后在同一探索 fresh obser
         origin: string; requestedAt: string; resolvedAt: string | null }) => void) {
       const session = { async command(value: { type: string }) {
         commands.push(value.type)
-        if (value.type === "page") throw new BrowserError("origin_denied")
+        if (value.type === "page") throw new BrowserError("verification_required")
         if (value.type === "request_help") {
           const requestedAt = new Date().toISOString(), id = randomUUID()
           onHelp?.({ id, reason: "access", status: "waiting", prompt: "请完成验证", origin: inspection.url,
@@ -134,7 +134,7 @@ test("访问熔断后只放行人工等待，Done 后在同一探索 fresh obser
     } } as unknown as BrowserService
   const model: PreparedMainAIModel = { selection: { connectionId: randomUUID(), modelId: "fixture", reasoningEffort: "high" },
     async run(input) {
-      await assert.rejects(input.tools![0]!.execute("blocked", { command: { type: "page" } }), /origin_denied/)
+      await assert.rejects(input.tools![0]!.execute("blocked", { command: { type: "page" } }), /verification_required/)
       await input.tools![0]!.execute("help", { command: { type: "request_help", reason: "access", prompt: "请完成验证" } })
       await input.tools![1]!.execute("complete", { result: null,
         provenance: [{ source: "tool", outputPath: [], eventId: "initial", resultPath: [] }] })
@@ -219,7 +219,7 @@ test("探索中的局部动作错误允许在同一会话修正且不打开访�
   assert.equal(trace.result?.result && (trace.result.result as { title?: string }).title, "Recovered")
   assert.equal(commands, 5) // initial observe + failed click + page + observed navigate + fresh observe
   assert.equal(opensAccessCircuit("origin_denied", "tab_open"), false)
-  assert.equal(opensAccessCircuit("origin_denied", "page"), true)
+  assert.equal(opensAccessCircuit("origin_denied", "page"), false)
 })
 
 test("未修正的局部定位错误仍归类为业务结果缺失", async () => {
@@ -322,12 +322,12 @@ test("invoke 子链人工等待后复用同一持久化运行与检查点", asyn
   assert.equal([...saved.keys()].filter((id) => id === childRunId).length, 1)
 })
 
-function fakeChain(taskId: string, stepId: string, nodes: JsonValue[]): TaskChain {
+function fakeChain(taskId: string, stepId: string, nodes: JsonValue[]): LegacyTaskChain {
   const contract = { id: `${stepId}-value`, version: 1, dialect: "bat-value-schema/v1" as const,
     schema: { type: "object" as const, properties: {}, required: [], additionalProperties: true } }
   return { contractVersion: CONTRACT_VERSION, kind: "chain", id: randomUUID(), taskId, version: 1,
     plan: { id: randomUUID(), version: 1, digest: "a".repeat(64) }, stepId, name: stepId,
-    inputContract: contract, outputContract: contract, variables: {}, entry: "entry", nodes: nodes as TaskChain["nodes"], edges: [],
+    inputContract: contract, outputContract: contract, variables: {}, entry: "entry", nodes: nodes as LegacyTaskChain["nodes"], edges: [],
     completion: [], budget, reuseBoundary: { description: "fixture", assumptions: [], invalidationConditions: [] },
     implementationSummary: "fixture", validation: { status: "verified", evidence: [] } }
 }

@@ -46,13 +46,15 @@ export class TaskRuntimeHost {
   async explore(input: Readonly<{ taskId: string; authorizationId: string; browserRunId: string;
     requirementVersion: number; outputContract: TaskDataContract; budget: TaskBudget; representativeInput: JsonValue; context: JsonValue; signal: AbortSignal;
     stepContracts?: ReadonlyArray<{ id: string; inputContract: TaskDataContract; outputContract: TaskDataContract;
-      invocation: { mode: "once" } | { mode: "each"; maxItems: number } }>;
+      invocation: { mode: "once" } | { mode: "each" | "batch"; maxItems: number } }>;
     acceptStepResult?(result: ExplorationStepResult): ExplorationStepResult;
+    onModelEscalation?(selection: PreparedMainAIModel["selection"], reason: string): void;
     onTrace?(trace: ExplorationTrace): void; onHumanWait?(waitpoint: BrowserHelpState): void }>, model: PreparedMainAIModel,
     onEvent: (event: AIEvent) => void): Promise<ExplorationTrace> {
     let sessionStarted = false
     const trace: ExplorationTrace = { jobId: input.authorizationId, browserRunId: input.browserRunId, input: input.representativeInput,
-      events: [], result: null, calls: 0, conclusion: "", closed: false, stepResults: [] }
+      events: [], result: null, calls: 0, conclusion: "", closed: false,
+      ...(input.stepContracts ? { stepResults: [] } : {}) }
     try {
     if (input.budget.maxBrowserCommands === 0) throw new Error("exploration_browser_budget_required")
     if (input.budget.maxActiveMs < 1000) throw new Error("exploration_active_budget_too_small")
@@ -100,11 +102,17 @@ export class TaskRuntimeHost {
           }
           finally { browserActiveMs += Math.max(0, Date.now() - startedAt) }
         }
-        await command({ type: "observe" })
-        trace.events.push(traceEvent("initial", { type: "observe" }, null, session.state()))
+        try {
+          await command({ type: "observe" })
+          trace.events.push(traceEvent("initial", { type: "observe" }, null, session.state()))
+        } catch (error) {
+          // WHY：新会话可能先暴露用户原有且未授权的活动标签；它不是本任务页面，忽略后让首个显式导航创建任务标签。
+          if (!(error instanceof BrowserError) || error.code !== "origin_denied") throw error
+          trace.events.push(traceEvent("initial", { type: "observe" }, null, null, "origin_denied"))
+        }
         let calls = 0
         sessionStarted = true
-        const result = await runExplorationAgent(model, {
+        const agentInput: Parameters<typeof runExplorationAgent>[1] = {
           jobId: input.authorizationId, context: input.context, signal, onEvent: (event) => {
             if (event.type === "generation.completed") { calls++; trace.calls = calls }
             onEvent(event)
@@ -141,9 +149,9 @@ export class TaskRuntimeHost {
             const result = validateExplorationResult({ result: submission.result, provenance: submission.provenance },
               step.outputContract, trace.events)
             assertTraceUrls(result.result, trace)
-            if (step.invocation.mode === "once" && submission.aggregate) throw new Error("exploration_step_aggregate_unexpected")
+            if (step.invocation.mode !== "each" && submission.aggregate) throw new Error("exploration_step_aggregate_unexpected")
             if (step.invocation.mode === "each" && !submission.aggregate) throw new Error("exploration_step_aggregate_required")
-            const runtimeResult = step.invocation.mode === "once" ? result : validateExplorationResult(submission.aggregate,
+            const runtimeResult = step.invocation.mode !== "each" ? result : validateExplorationResult(submission.aggregate,
               { ...step.outputContract, schema: { type: "array", items: step.outputContract.schema, maxItems: step.invocation.maxItems } }, trace.events)
             assertTraceUrls(runtimeResult.result, trace)
             const proposed = { stepId: step.id, input: representativeInput, result, runtimeResult }
@@ -160,10 +168,23 @@ export class TaskRuntimeHost {
             input.onTrace?.(trace)
             return { accepted: true }
           },
-        })
-        const allStepsSubmitted = input.stepContracts !== undefined
+          completionStatus: () => trace.result || input.stepContracts !== undefined
+            && trace.stepResults?.length === input.stepContracts.length ? null
+              : input.stepContracts === undefined ? "没有调用 complete 提交业务结果。"
+                : `还有 ${input.stepContracts.length - (trace.stepResults?.length ?? 0)} 个步骤没有调用 complete_step。`,
+        }
+        let result = await runExplorationAgent(model, agentInput)
+        const allStepsSubmitted = () => input.stepContracts !== undefined
           && trace.stepResults?.length === input.stepContracts.length
-        if (!trace.result && !allStepsSubmitted) throw incompleteExplorationError(trace)
+        if (!trace.result && !allStepsSubmitted() && this.ai.strongerSelection) {
+          const selection = await this.ai.strongerSelection(model.selection, signal)
+          if (selection && (selection.modelId !== model.selection.modelId
+            || selection.reasoningEffort !== model.selection.reasoningEffort)) {
+            input.onModelEscalation?.(selection, "exploration_business_result_missing")
+            result = await runExplorationAgent(await this.ai.prepareMain(selection, "exploration"), agentInput)
+          }
+        }
+        if (!trace.result && !allStepsSubmitted()) throw incompleteExplorationError(trace)
         trace.calls = calls; trace.conclusion = result.outputText
         return trace
       }, input.signal, input.onHumanWait)
@@ -186,10 +207,11 @@ export class TaskRuntimeHost {
     if (injected) return work(this.executor(injected, input.purpose, input.signal, ledger, 0))
     const actions = [...new Set(closure.flatMap(taskChainBrowserActions))]
     if (!actions.length) {
-      const hasLocalBrowserNode = closure.some((chain) => chain.nodes.some((node) => node.kind === "browser"))
+      const hasLocalBrowserNode = closure.some((chain) => chain.nodes.some((node) => node.kind === "browser"
+        || node.kind === "capability" && node.capability.name.startsWith("browser.")))
       if (!hasLocalBrowserNode) return work(this.executor({}, input.purpose, input.signal, ledger, 0))
       const local = new TaskChainBrowserAdapter({ command: async () => { throw new BrowserError("capability_unsupported") }, state: () => null })
-      return work(this.executor({ browser: local.browser }, input.purpose, input.signal, ledger, 0))
+      return work(this.executor({ browser: local.browser, capability: local.capability }, input.purpose, input.signal, ledger, 0))
     }
     const grant = browserGrant(input, closure, actions)
     const browserScopes = new Set(input.chains.filter((chain) =>
@@ -206,7 +228,7 @@ export class TaskRuntimeHost {
             Math.min(remaining.maxActiveMs, grant.timeoutMs), lifetime,
             () => ledger.account(scopeId, { browserCommands: 1 }))
         }
-        return work(this.executor({ browser: adapter.browser, observe: adapter.observe, human: adapter.human,
+        return work(this.executor({ capability: adapter.capability, browser: adapter.browser, observe: adapter.observe, human: adapter.human,
           verifyResume: adapter.verifyResume, activeElapsedMs: session.activeElapsedMs.bind(session) },
         input.purpose, AbortSignal.any([input.signal, lifetime]), ledger, 0, undefined, prepare))
       }, input.signal)
@@ -286,8 +308,8 @@ class ExplorationBrowserError extends BrowserError {
 export function opensAccessCircuit(code: BrowserFailure, command: BrowserCommand["type"]) {
   // WHY：定位歧义、局部读取和动作命令错误可由探索模型在原会话内修正；只有外部访问事实或不确定导航才停止后续访问。
   if ((code === "command_failed" || code === "invalid_response") && (command === "navigate" || command === "follow")) return true
-  if (code === "origin_denied" && command === "tab_open") return false
-  return ["authentication_required", "verification_required", "rate_limited", "access_denied", "origin_denied",
+  if (code === "origin_denied") return false
+  return ["authentication_required", "verification_required", "rate_limited", "access_denied",
     "transient_failure", "readiness_timeout", "manual_required",
     "cleanup_required", "session_closed"].includes(code)
 }

@@ -1,7 +1,7 @@
 import { z } from "zod"
 import {
   CONTRACT_VERSION, parseTaskValue, taskPlanExecutionIssues, taskPlanSchema, taskPlanStepSchema,
-  type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskPlan, type TaskRequirement,
+  type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskDataContract, type TaskPlan, type TaskRequirement,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest, readPath, resolveBinding, stableUuid, type BindingContext } from "@browser-capture/runtime"
 import type { BrowserHelpState } from "@browser-capture/browser"
@@ -11,10 +11,12 @@ import type { TaskRuntimeHost } from "./runtime-host.js"
 import type { ExplorationStepResult, ExplorationTrace } from "./exploration-trace.js"
 import { compilationModelAnnotationsSchema, validateAnnotations } from "./compilation-annotations.js"
 import { compileExplorationTrace } from "./trace-compiler.js"
+import { annotationPrompt, planPrompt, repairAnnotationPrompt } from "./authoring-prompts.js"
+export { compactTraceForModel } from "./authoring-prompts.js"
 
 export const semanticPlanSchema = taskPlanSchema.omit({ contractVersion: true, kind: true, id: true, taskId: true,
   version: true, requirement: true, evidence: true, steps: true, budget: true })
-  .extend({ steps: z.array(taskPlanStepSchema.omit({ chain: true, budget: true })).min(1).max(100) }).strict()
+  .extend({ steps: z.array(taskPlanStepSchema.omit({ chain: true, budget: true })).min(1).max(6) }).strict()
 export class TaskChainAuthoring {
   constructor(private readonly repository: TaskContractRepository, private readonly ai: AIModelProvider,
     private readonly host: TaskRuntimeHost) {}
@@ -33,6 +35,51 @@ export class TaskChainAuthoring {
     } catch (error) { this.fail(job, signal, error); throw error }
   }
 
+  async preexecute(job: TaskAuthoringJob, requirement: TaskRequirement, input: JsonValue, signal: AbortSignal,
+    reusablePlanCandidate?: JsonValue) {
+    try {
+      const model = await this.begin(job, "chain_exploration_and_compilation", signal)
+      const planningCalls = reusablePlanCandidate === undefined ? 1 : 0
+      job.authoring = { stage: "planning", level: "E0", failureLayer: null, exploration: null, annotations: null,
+        consumption: { explorationToolCalls: 0, explorationSessions: 0, compilationCalls: planningCalls, providerInvocations: null } }
+      this.save(job)
+      const value = reusablePlanCandidate ?? await generateJson(model, semanticPlanSchema, planPrompt(requirement, input), signal,
+        (event) => { job.audit!.events.push(event); this.save(job) })
+      const plan = parsePlanCandidate(value, requirement, stableUuid(requirement.taskId, "plan"),
+        this.repository.nextPlanVersion(requirement.taskId))
+      parseTaskValue(plan.inputContract, input)
+      this.repository.savePlan(plan)
+      const compiled = await this.taskWithModel(job, requirement, plan, input, signal, model, undefined, undefined, planningCalls)
+      return { plan, ...compiled }
+    } catch (error) { this.fail(job, signal, error); throw error }
+  }
+
+  async repair(job: TaskAuthoringJob, plan: TaskPlan, chain: TaskChain, failedRun: {
+    status: string; outcome: unknown; input: JsonValue; binding: { runId: string }
+  }, trace: ExplorationTrace, signal: AbortSignal) {
+    try {
+      const model = await this.begin(job, "chain_exploration_and_compilation", signal)
+      job.authoring = { stage: "compiling", level: "E2", failureLayer: "链路验证", exploration: z.json().parse(trace),
+        annotations: null, consumption: { explorationToolCalls: 0, explorationSessions: 0,
+          compilationCalls: 1, providerInvocations: null } }
+      job.browserRunId = trace.browserRunId; this.save(job)
+      const raw = await generateJson(model, compilationModelAnnotationsSchema,
+        repairAnnotationPrompt(trace, chain, failedRun), signal,
+        (event) => { job.audit!.events.push(event); this.save(job) })
+      const annotations = validateAnnotations({ ...compilationModelAnnotationsSchema.parse(raw),
+        outputMappings: trace.result!.provenance }, trace)
+      const repaired = compileExplorationTrace(trace, annotations, plan, chain.stepId,
+        this.repository.nextChainVersion(plan.taskId, chain.id), model.selection.modelId)
+      requirePlannedChainShape(plan.steps.find((item) => item.id === chain.stepId)!, repaired)
+      this.repository.saveChain(repaired)
+      const reference = { id: repaired.id, version: repaired.version, digest: executableChainDigest(repaired) }
+      job.authoring.annotations = z.json().parse(annotations); job.authoring.compiledChain = reference
+      job.authoring.compiledChains = [reference]; job.authoring.stage = "compiled"; job.authoring.level = "E2"
+      this.complete(job, repaired.id, 1)
+      return repaired
+    } catch (error) { this.fail(job, signal, error); throw error }
+  }
+
   async chain(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, stepId: string,
     input: JsonValue, signal: AbortSignal, reusableExploration?: ExplorationTrace) {
     const step = plan.steps.find((item) => item.id === stepId)
@@ -48,7 +95,9 @@ export class TaskChainAuthoring {
         browserRunId: job.browserRunId, requirementVersion: requirement.version,
         budget: step.budget, outputContract: step.outputContract, representativeInput: input, context: z.json().parse(JSON.parse(JSON.stringify({
           requirement: requirement.definition.body, plan: plan.summary, step, input,
-        }))), signal, onTrace: (trace) => {
+        }))), signal, onModelEscalation: (selection, reason) => {
+          job.audit!.escalations.push({ model: selection.modelId, effort: selection.reasoningEffort, reason }); this.save(job)
+        }, onTrace: (trace) => {
           job.authoring!.exploration = z.json().parse(trace)
           job.authoring!.consumption.explorationToolCalls = trace.events.filter((event) => event.id !== "initial").length
           if (trace.result) { job.authoring!.stage = "explored"; job.authoring!.level = "E1" }
@@ -65,6 +114,7 @@ export class TaskChainAuthoring {
       const annotations = validateAnnotations({ ...compilationModelAnnotationsSchema.parse(raw), outputMappings: exploration.result!.provenance }, exploration)
       job.authoring.annotations = z.json().parse(annotations); this.save(job)
       const chain = compileExplorationTrace(exploration, annotations, plan, stepId, version, model.selection.modelId)
+      requirePlannedChainShape(step, chain)
       job.authoring.stage = "compiled"; job.authoring.level = "E2"
       job.authoring.compiledChain = { id: chain.id, version: chain.version, digest: executableChainDigest(chain) }
       // WHY：Pi bridge 的 generation 是会话边界，不等于内部 Provider 请求次数，未知总数保持 null。
@@ -77,10 +127,19 @@ export class TaskChainAuthoring {
     reusableExploration?: ExplorationTrace, reusableAnnotations?: JsonValue) {
     try {
       const model = await this.begin(job, "chain_exploration_and_compilation", signal)
+      const result = await this.taskWithModel(job, requirement, plan, input, signal, model,
+        reusableExploration, reusableAnnotations)
+      return result
+    } catch (error) { this.fail(job, signal, error); throw error }
+  }
+
+  private async taskWithModel(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, input: JsonValue,
+    signal: AbortSignal, model: PreparedAIModel, reusableExploration?: ExplorationTrace,
+    reusableAnnotations?: JsonValue, priorCompilationCalls = 0) {
       job.authoring = { stage: reusableExploration ? "explored" : "exploring", level: reusableExploration ? "E1" : "E0",
         failureLayer: null, exploration: reusableExploration ? z.json().parse(reusableExploration) : null, annotations: null,
         consumption: { explorationToolCalls: 0, explorationSessions: reusableExploration ? 0 : 1,
-          compilationCalls: 0, providerInvocations: null } }
+          compilationCalls: priorCompilationCalls, providerInvocations: null } }
       job.browserRunId = reusableExploration?.browserRunId ?? stableUuid(job.id, "task-exploration-browser"); this.save(job)
       const progression = taskProgression(plan, input)
       const exploration = reusableExploration ?? await this.host.explore({ taskId: plan.taskId, authorizationId: job.id,
@@ -90,6 +149,9 @@ export class TaskChainAuthoring {
           outputContract: step.outputContract, invocation: step.invocation })),
         acceptStepResult: progression.accept,
         context: z.json().parse(JSON.parse(JSON.stringify({ requirement: requirement.definition.body, plan, input }))), signal,
+        onModelEscalation: (selection, reason) => {
+          job.audit!.escalations.push({ model: selection.modelId, effort: selection.reasoningEffort, reason }); this.save(job)
+        },
         onTrace: (trace) => {
           job.authoring!.exploration = z.json().parse(trace)
           job.authoring!.consumption.explorationToolCalls = trace.events.filter((event) => event.id !== "initial").length
@@ -121,12 +183,14 @@ export class TaskChainAuthoring {
           const onEvent: Parameters<PreparedAIModel["generateObject"]>[0]["onEvent"] = (event) => {
             job.audit!.events.push(event); this.save(job)
           }
-          const raw = await generateJson(model, compilationModelAnnotationsSchema, annotationPrompt(trace), signal, onEvent)
+          const raw = await generateJson(model, compilationModelAnnotationsSchema,
+            annotationPrompt(trace, step.invocation), signal, onEvent)
           annotations = validateAnnotations({ ...compilationModelAnnotationsSchema.parse(raw),
             outputMappings: trace.result!.provenance }, trace)
         }
         const version = this.repository.nextChainVersion(plan.taskId, step.chain.id)
         const chain = compileExplorationTrace(trace, annotations, plan, step.id, version, model.selection.modelId)
+        requirePlannedChainShape(step, chain)
         compiled.push({ chain, annotations: z.json().parse(annotations) })
       }
       for (const item of compiled) this.repository.saveChain(item.chain)
@@ -137,15 +201,14 @@ export class TaskChainAuthoring {
       job.authoring.stage = "compiled"; job.authoring.level = "E2"
       job.authoring.compiledChain = references[0]!; job.authoring.compiledChains = references
       this.complete(job, plan.id, null)
-      return references
-    } catch (error) { this.fail(job, signal, error); throw error }
+      return { references, chains: compiled.map((item) => item.chain), exploration }
   }
 
   private async begin(job: TaskAuthoringJob, purpose: "plan_creation" | "chain_exploration_and_compilation", signal: AbortSignal) {
     const selection = this.ai.selection()
     job.status = "running"; job.sequence++; job.updatedAt = new Date().toISOString(); job.reason = null
     job.audit = { purpose, model: selection.modelId, effort: selection.reasoningEffort,
-      status: "intended", reportedInvocations: null, events: [] }
+      status: "intended", reportedInvocations: null, events: [], escalations: [] }
     this.save(job)
     return this.ai.prepare(selection, signal)
   }
@@ -190,7 +253,7 @@ function taskProgression(plan: TaskPlan, input: JsonValue) {
     const step = plan.steps[position]
     if (!step || submitted.stepId !== step.id) throw new Error(`exploration_step_order_invalid:${submitted.stepId}`)
     let expected: JsonValue
-    if (step.invocation.mode === "once") expected = parseTaskValue(step.inputContract, resolveBinding(step.input, context))
+    if (step.invocation.mode !== "each") expected = parseTaskValue(step.inputContract, resolveBinding(step.input, context))
     else {
       const inputs = eachInputs(step, context)
       if (!inputs.length) throw new Error(`exploration_step_representative_missing:${step.id}`)
@@ -202,7 +265,7 @@ function taskProgression(plan: TaskPlan, input: JsonValue) {
         throw new Error(`exploration_step_representative_result_mismatch:${step.id}`)
       }
     }
-    if (step.invocation.mode === "once") {
+    if (step.invocation.mode !== "each") {
       if (digestJson(expected) !== digestJson(submitted.input)) throw new Error(`exploration_step_input_mismatch:${step.id}`)
     } else {
       const expectedKey = readPath(expected, step.invocation.stableKeyPath)
@@ -267,32 +330,6 @@ async function generateJson<T>(model: PreparedAIModel, schema: z.ZodType<T>, pro
   return model.generateObject({ prompt, jsonSchema, parse: (value) => z.json().parse(value), signal, onEvent })
 }
 
-function planPrompt(requirement: TaskRequirement) {
-  return `你在为通用浏览器任务生成可组合 TaskPlan。计划步骤只表示用户要求在每次正式执行中发生的业务动作。`+
-    `每个步骤之后都会由宿主独立执行代表输入探索、链路编译、样本验证、换输入验证和授权复跑；这些产品生命周期动作绝不能成为计划步骤。`+
-    `每个步骤必须对应一条可独立探索和复跑的浏览器流程；纯本地汇总、拼接或报告排版不能另建步骤，计划输出应直接绑定已有步骤输出。`+
-    `一个无需拆分的浏览器任务只生成一个步骤；存在不同数据依赖或可独立复用的浏览器流程时必须拆步。`+
-    `上一步产出集合、下一步对每项重复同一流程时，下一步使用 invocation.mode=each 和集合 binding，不得塞进一个巨型 once 步骤，也不得把同构输入展开成多份步骤。`+
-    `列表页公开目标 href 时，发现步骤直接输出本次页面的有序落点集合，后续 each 步骤消费这些落点。`+
-    `列表页只暴露可点击语义目标时，发现步骤输出本次页面的有序稳定目标及已观察来源 URL；紧随其后的 each 步骤在同一产品运行和浏览器会话中逐项进入目标，并在这一次访问中完成该目标要求的全部业务动作和真实落点记录。不得再生成一个只解析落点、随后又重新访问同一落点的中间步骤。`+
-    `可点击语义目标必须把 role、name 和可选 occurrence 声明为对象中的独立字段并原样传给 each 输入；不得把“role: name”拼成一个 locator 字符串，因为该字符串无法形成类型化参数 binding。`+
-    `首个浏览器步骤需要导航、但已确认需求没有可绑定的字面公开 URL 时，计划级 inputContract 必须声明必填的 startUrl 字符串，并由首步骤 input binding 引用；该 URL 只能由后续授权输入提供，模型不得猜测或硬编码。`+
-    `不得根据站点标识拼接或猜测 URL，也不得把多个目标展开成多份步骤。`+
-    `each.collection 必须引用任务输入或已依赖步骤输出中的数组，step.input 必须引用同一 invocation.itemVariable；maxItems 只声明业务数量。`+
-    `each 步骤的 outputContract 描述单次链路输出，计划运行时会把多次输出聚合成数组；后续 each 可用 collection 指向该步骤及数组路径，不要把单次 outputContract 人为包成数组。`+
-    `计划级引用 each 步骤输出时看到的是聚合数组，不能直接引用单项字段；该步骤完成条件使用自身输出空路径，计划 outputContract 则声明与该聚合数组完全相同的数组结构。`+
-    `登录态、验证码和页面可访问性属于链路在真实浏览器中观察或 human 节点处理的现场事实，不得让运行输入用 authenticated、loggedIn 等布尔值自行宣称已经满足。`+
-    `不得写入网站或业务专用平台类型；网站名称和字段只能存在于本计划的版本化任务合同与文字中。\n\n`+
-    `已确认需求：\n${requirement.definition.body}\n\n根据需求声明计划级动态输入与输出合同；任务字段只能出现在这些版本化合同中。`+
-    `每个步骤声明单次链路调用的动态输入输出、依赖、binding、调用模式、完成条件和风险；不得生成技术预算或节点图。`+
-    `每个步骤的 input binding 必须产生符合该步骤 inputContract 的完整值；不能把 string 绑定给 object 合同。`+
-    `需要逐项处理集合时使用 invocation.mode=each，itemVariable 的 schema 必须与步骤输入合同一致。`+
-    `各项互相独立且部分结果仍有业务价值时，each 使用 onItemFailure=continue；只有任一项失败会使全部结果无效时才用 stop。认证、验证码、限流、拒绝和其他外部访问阻断由宿主熔断，不能用 continue 忽略。`+
-    `binding 路径只能引用合同中明确定义的属性或数组索引，不能使用 length 等计算属性。`+
-    `候选必须少于 8000 个字符：使用完成依赖所需的最少步骤，通常二至四步且不得超过六步；每步只写一个完成条件和至多三个简短风险，不复述需求正文。`+
-    `链路引用和计划总预算由宿主分配与汇总，不要输出。`
-}
-
 type PlanCandidate = z.infer<typeof semanticPlanSchema>
 
 function materializePlan(candidate: PlanCandidate, requirement: TaskRequirement, id: string, version: number) {
@@ -304,11 +341,55 @@ function materializePlan(candidate: PlanCandidate, requirement: TaskRequirement,
 }
 
 function parsePlanCandidate(value: JsonValue, requirement: TaskRequirement, id: string, version: number) {
-  const candidate = requireStartUrlInput(semanticPlanSchema.parse(value), requirement)
+  const candidate = requireStartUrlInput(normalizeBoundStepContracts(
+    normalizeEachCompletionBindings(semanticPlanSchema.parse(value))), requirement)
   const plan = taskPlanSchema.parse(materializePlan(candidate, requirement, id, version))
   const issues = taskPlanExecutionIssues(plan)
   if (issues.length) throw new Error(issues.join(","))
   return plan
+}
+
+export function normalizeBoundStepContracts(candidate: PlanCandidate): PlanCandidate {
+  const normalized = structuredClone(candidate), outputs = new Map<string, TaskDataContract>()
+  for (const step of normalized.steps) {
+    const source = step.input.source === "constant" || step.input.path.length ? undefined
+      : step.input.source === "input" ? normalized.inputContract
+      : step.input.source === "node" ? outputs.get(step.input.nodeId) : undefined
+    // WHY：整值 binding 的 schema 由来源唯一决定；模型重复抄一份更窄合同只会制造计划内自相矛盾。
+    if (source) step.inputContract = { ...step.inputContract, schema: structuredClone(source.schema) }
+    outputs.set(step.id, step.outputContract)
+  }
+  const output = normalized.output
+  if (output.source === "node" && output.path.length === 0) {
+    const step = normalized.steps.find((item) => item.id === output.nodeId)
+    // WHY：计划公开输出是最终结果的唯一合同；整值透传时由宿主同步末步 schema，避免模型重复抄写产生漂移。
+    if (step && step.invocation.mode !== "each") step.outputContract = {
+      ...step.outputContract, schema: structuredClone(normalized.outputContract.schema),
+    }
+  }
+  return normalized
+}
+
+export function normalizeEachCompletionBindings(candidate: PlanCandidate): PlanCandidate {
+  const normalized = structuredClone(candidate)
+  for (const step of normalized.steps) {
+    if (step.invocation.mode !== "each") continue
+    const binding = <T extends { source: string; nodeId?: string; path?: (string | number)[] }>(value: T): T =>
+      value.source === "node" && value.nodeId === step.id && typeof value.path?.[0] !== "number"
+        ? { ...value, path: [0, ...value.path!] } : value
+    for (const condition of step.completion) {
+      if (condition.predicate.operator === "exists") condition.predicate.value = binding(condition.predicate.value)
+      else if (condition.predicate.operator === "array_length_at_least") {
+        condition.predicate.value = binding(condition.predicate.value)
+        condition.predicate.minimum = binding(condition.predicate.minimum)
+      }
+      else {
+        condition.predicate.left = binding(condition.predicate.left)
+        condition.predicate.right = binding(condition.predicate.right)
+      }
+    }
+  }
+  return normalized
 }
 
 function requireStartUrlInput(candidate: PlanCandidate, requirement: TaskRequirement): PlanCandidate {
@@ -357,13 +438,8 @@ function settledGenerationCount(events: NonNullable<TaskAuthoringJob["audit"]>["
   return started.size > 0 && [...started].every((id) => completed.has(id)) ? completed.size : null
 }
 
-function annotationPrompt(trace: ExplorationTrace) {
-  return "只给真实探索轨迹的紧凑编译注解。不要生成节点、连线、脚本、技术预算或轨迹外动作。" +
-    "replayEventIds 按原轨迹顺序列出正式复跑实际需要的 completed 事件；失败探针必须排除但会由宿主保留审计，所有 binding、来源、完成条件和循环引用的事件都必须在该列表中。" +
-    "tabs、tab_select 和 tab_close 只管理首次探索的临时标签，不得列入 replayEventIds、来源或完成条件；如果后续业务事件必须依赖临时标签编号才能成立，这条轨迹不可复现。" +
-    "continueOnMissingEventIds 只列出成功轨迹中用于关闭临时遮罩等非必要目标交互：同类页面没有该目标时仍能完成任务；只容忍 target missing，超时、认证、验证、限流、拒绝和其他失败仍停止。导航、读取、填写、选择、业务提交及任何被来源、绑定、完成条件或循环引用的事件不得列入。" +
-    "inputBindings 把 command 内样本常量映射到 input 的分段路径；同一个动态目标的 name、role 等 locator 字段只要来自 input 就必须分别绑定。字段来源由宿主直接复用 result.provenance，不要再输出 outputMappings。" +
-    "completion 的 resultPath 从对应事件的 output 根开始，例如 output 中有 text 就写 [\"text\"]，绝不能写 [\"output\",\"text\"]；只引用可观察的非空工具结果。" +
-    "repeatRegions 只标记真实重复区域、输入集合、稳定键和业务上限；无重复填空数组。" +
-    "不能参数化或来源不可复现时不要伪造。reuseBoundary 说明适用条件和失效条件。\n" + JSON.stringify(trace)
+export function requirePlannedChainShape(step: TaskPlan["steps"][number], chain: TaskChain) {
+  if (step.invocation.mode === "batch" && !chain.nodes.some((node) => node.kind === "loop")) {
+    throw new Error("batch_chain_loop_required")
+  }
 }

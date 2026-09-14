@@ -65,7 +65,7 @@ export const taskCheckpointSchema = z.object({
   consumed: consumptionSchema, events: z.array(nodeExecutionEventSchema), modelCalls: z.array(modelCallAuditSchema),
   auditComplete: z.boolean(),
   externalFailure: externalFailureSchema.nullable().optional(),
-  pendingEffect: z.object({ kind: z.enum(["browser", "llm", "invoke"]), nodeId: keySchema,
+  pendingEffect: z.object({ kind: z.enum(["capability", "browser", "llm", "invoke"]), nodeId: keySchema,
     stableKey: textSchema, idempotencyKey: textSchema,
     status: z.enum(["planned", "started", "uncertain"]) }).strict().nullable(),
 }).strict().superRefine((checkpoint, ctx) => {

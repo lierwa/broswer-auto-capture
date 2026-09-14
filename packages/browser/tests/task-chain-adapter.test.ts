@@ -113,6 +113,24 @@ test("adapter 只映射 BrowserSkill 已支持命令；scroll 用受控按键，
   ])
 })
 
+test("browser.perform 一个能力节点完成动作并返回动作后的新鲜观察", async () => {
+  const port = new FakePort(); port.observations.push(inspection("dialog opened"))
+  const node: Extract<ChainNode, { kind: "capability" }> = { id: "openAndCapture", label: "open and capture",
+    kind: "capability", capability: { name: "browser.perform", version: 1 }, input: {
+      targetRole: { source: "constant", value: "button" }, targetName: { source: "constant", value: "Open" },
+    }, config: { mode: "perform", operation: "click", arguments: {},
+      target: { kind: "semantic", role: "targetRole", name: "targetName" }, capture: { scope: "page" } },
+    effect: "external_write", timeoutMs: 2000, outcomes: ["success", "missing", "timeout", "blocked", "human_required", "failed", "cancelled"],
+    outputContract: observationContract, writes: [] }
+  const result = await new TaskChainBrowserAdapter(port).capability({ node,
+    input: { targetRole: "button", targetName: "Open" }, config: node.config, signal: new AbortController().signal })
+  assert.equal(result.outcome, "success")
+  assert.equal((result.output as { text: string }).text, "dialog opened")
+  assert.deepEqual(port.commands, [
+    { type: "click", target: { role: "button", name: "Open" } }, { type: "page" },
+  ])
+})
+
 test("浏览器节点超时会取消底层命令并返回 typed timeout", async () => {
   const port: TaskChainBrowserPort = { state: () => null, command: async (_command, signal) => new Promise((_resolve, reject) => {
     const cancel = () => reject(new BrowserError("cancelled"))
@@ -125,6 +143,19 @@ test("浏览器节点超时会取消底层命令并返回 typed timeout", async 
   assert.equal(result.reason, "node_timeout")
 })
 
+test("宿主节流完成后才开始浏览器节点超时", async () => {
+  let receivedTimeout = 0
+  const port: TaskChainBrowserPort = { state: () => null, command: async () => { throw new Error("fallback_used") },
+    commandWithTimeout: async (_command, _signal, timeoutMs) => {
+      await new Promise((resolve) => setTimeout(resolve, 30)); receivedTimeout = timeoutMs; return null
+    } }
+  const node = { ...browserNode("navigate"), timeoutMs: 10 }
+  const result = await new TaskChainBrowserAdapter(port).browser({ node,
+    arguments: { url: "https://example.com/", captureNetworkEvidence: true }, signal: new AbortController().signal })
+  assert.equal(result.outcome, "success")
+  assert.equal(receivedTimeout, 10)
+})
+
 test("外部访问失败携带通用分类、origin 与 HTTP 事实", async () => {
   const port: TaskChainBrowserPort = { state: () => null, command: async () => {
     throw new BrowserError("rate_limited", { origin: "https://example.com", observedOrigin: "https://example.com", httpStatus: 429 })
@@ -134,6 +165,15 @@ test("外部访问失败携带通用分类、origin 与 HTTP 事实", async () =
   assert.equal(result.outcome, "blocked")
   assert.deepEqual(result.externalFailure, { category: "rate_limited", code: "rate_limited",
     origin: "https://example.com", observedOrigin: "https://example.com", httpStatus: 429, retryAt: null })
+})
+
+test("本地来源授权拒绝是本地失败，不伪装成外部拒绝或人工等待", async () => {
+  const port: TaskChainBrowserPort = { state: () => null, command: async () => { throw new BrowserError("origin_denied") } }
+  const result = await new TaskChainBrowserAdapter(port).browser({ node: browserNode("navigate"),
+    arguments: { url: "https://outside.example/" }, signal: new AbortController().signal })
+  assert.equal(result.outcome, "failed")
+  assert.equal(result.reason, "origin_denied")
+  assert.equal(result.externalFailure, undefined)
 })
 
 test("target 读取使用稳定 CSS，缺失目标拒绝且不回退整页", async () => {

@@ -7,7 +7,8 @@ export class UncertainEffectError extends Error {}
 export function assertBudget(state: RuntimeState) {
   const { consumed, budget } = state.run, next = state.compiled.nodes.get(state.checkpoint.cursor)
   if (consumed.transitions >= budget.maxTransitions) throw new BudgetError("转换预算已用尽。")
-  if (next?.kind === "browser" && consumed.browserCommands >= budget.maxBrowserCommands) throw new BudgetError("浏览器命令预算已用尽。")
+  if ((next?.kind === "browser" || next?.kind === "capability" && next.capability.name.startsWith("browser."))
+    && consumed.browserCommands >= budget.maxBrowserCommands) throw new BudgetError("浏览器命令预算已用尽。")
   if (consumed.activeMs >= budget.maxActiveMs) throw new BudgetError("自动化活动时间预算已用尽。")
   if (consumed.invocations >= budget.maxInvocations) throw new BudgetError("链路调用预算已用尽。")
   if (next?.kind === "llm" && consumed.llmCalls === null) throw new BudgetError("显式模型调用数未知，不能继续消耗预算。")

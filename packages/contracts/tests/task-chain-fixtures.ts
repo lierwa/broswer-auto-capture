@@ -1,4 +1,4 @@
-import type { ChainNode, TaskChain, TaskDataContract, TaskPlan, TaskRequirement, ValueSchema } from "../src/task-chain/index.js"
+import type { LegacyChainNode, TaskChain, TaskDataContract, TaskPlan, TaskRequirement, ValueSchema } from "../src/task-chain/index.js"
 import { CONTRACT_VERSION, requiredNodeOutcomes } from "../src/task-chain/index.js"
 
 export const ids = {
@@ -19,7 +19,7 @@ export function dataContract(id: string, schema: ValueSchema): TaskDataContract 
 }
 const inputContract = dataContract("task-input", { type: "object", properties: { destination: { type: "string" } }, required: ["destination"], additionalProperties: false })
 export const nullContract = dataContract("unit", { type: "null" })
-export function nodeBase(id: string, kind: ChainNode["kind"], outputContract = nullContract) {
+export function nodeBase(id: string, kind: LegacyChainNode["kind"], outputContract = nullContract) {
   return { id, label: id, outcomes: [...requiredNodeOutcomes[kind]], outputContract, writes: [] }
 }
 
@@ -33,11 +33,11 @@ function taskFixture(goal: string, outputContract: TaskDataContract, action: "da
     steps: [{ id: "perform", title: goal, goal, dependsOn: [], inputContract, outputContract, input: inputBinding,
       invocation: { mode: "once" }, chain: { id: ids.chain, version: 1 }, budget, completion: [condition("perform")], risks: [] }],
     output: nodeBinding("perform"), budget, completion: [condition("perform")], evidence: [], authorizationScope: "一个已确认输入" }
-  const middle: ChainNode = action === "data"
+  const middle: LegacyChainNode = action === "data"
     ? { ...nodeBase("act", "data", outputContract), kind: "data", operation: "extract", arguments: { value: nodeBinding("observe") } }
     : { ...nodeBase("act", "browser", outputContract), kind: "browser", operation: "click", arguments: {},
       target: { kind: "semantic", role: "button", name: { source: "constant", value: "播放" } }, timeoutMs: 2000 }
-  const nodes: ChainNode[] = [
+  const nodes: LegacyChainNode[] = [
     { ...nodeBase("open", "browser"), kind: "browser", operation: "navigate", arguments: { url: { source: "input", path: ["destination"] } }, timeoutMs: 2000 },
     { ...nodeBase("observe", "observe", outputContract), kind: "observe", scope: "page", stableWhen: { operator: "exists", path: [] }, timeoutMs: 2000 },
     middle,

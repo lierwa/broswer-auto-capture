@@ -17,10 +17,12 @@ import { BrowserError, bskExecutor, type CommandExecutor } from "@browser-captur
 import { createAIModelProvider, requireAgentSessionSelection, type AIModelProvider } from "./ai/model.js"
 import { TaskChainService } from "./task-chain/service.js"
 import type { RuntimeCapabilityFactory } from "./task-chain/runtime-host.js"
+import { OriginAccessGate } from "./browser/origin-access-gate.js"
 
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
 export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider;
-  taskChainCapabilities?: RuntimeCapabilityFactory; browserExecutor?: CommandExecutor; serveUi?: boolean }
+  taskChainCapabilities?: RuntimeCapabilityFactory; browserExecutor?: CommandExecutor; serveUi?: boolean;
+  originAccessGate?: OriginAccessGate }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
@@ -36,7 +38,8 @@ export async function createApplication(options: AppOptions) {
   })
   const coordinator = new InterviewCoordinator(store, aiModel, loadInterviewSkill(options.root))
   let browser: BrowserService
-  try { browser = new BrowserService(store, options.directory, options.browserExecutor ?? bskExecutor(options.root)) }
+  try { browser = new BrowserService(store, options.directory, options.browserExecutor ?? bskExecutor(options.root),
+    options.originAccessGate ?? (options.browserExecutor ? undefined : new OriginAccessGate(store))) }
   catch (error) { ai.close(); await store.close(); throw error }
   let taskChain: TaskChainService
   try {

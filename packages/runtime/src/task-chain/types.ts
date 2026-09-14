@@ -4,6 +4,17 @@ import type {
 } from "@browser-capture/contracts"
 export type { NodeCapabilityResult }
 
+export interface CapabilityNodeInvocation {
+  binding: RunBinding
+  node: Extract<ChainNode, { kind: "capability" }>
+  input: Record<string, JsonValue>
+  config: JsonValue
+  resumeCondition?: { operator: "exists"; path: (string | number)[] }
+    | { operator: "equals"; path: (string | number)[]; expected: JsonValue }
+  idempotencyKey: string
+  signal: AbortSignal
+}
+
 export interface BrowserNodeInvocation {
   binding: RunBinding
   node: Extract<ChainNode, { kind: "browser" }>
@@ -49,6 +60,7 @@ export interface InvokeChainInvocation {
 }
 
 export interface TaskChainCapabilities {
+  capability?(invocation: CapabilityNodeInvocation): Promise<NodeCapabilityResult>
   browser?(invocation: BrowserNodeInvocation): Promise<NodeCapabilityResult>
   observe?(invocation: ObserveNodeInvocation): Promise<NodeCapabilityResult>
   human?(invocation: HumanNodeInvocation): Promise<NodeCapabilityResult>

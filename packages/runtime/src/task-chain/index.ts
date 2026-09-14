@@ -1,4 +1,5 @@
 export * from "./bindings.js"
+export * from "./capabilities.js"
 export * from "./compiler.js"
 export * from "./data.js"
 export * from "./hash.js"

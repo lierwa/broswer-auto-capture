@@ -1,5 +1,5 @@
 import {
-  CONTRACT_VERSION, requiredNodeOutcomes, type ChainNode, type JsonValue,
+  CONTRACT_VERSION, legacyTaskChainSchema, requiredNodeOutcomes, type JsonValue, type LegacyChainNode, type LegacyTaskChain,
   type TaskChain, type TaskDataContract, type TaskRunRequest, type ValueBinding, type ValueSchema,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "../src/task-chain/index.js"
@@ -36,39 +36,40 @@ function contract(id: string, schema: ValueSchema): TaskDataContract {
 function binding(source: "input" | "variable", path: (string | number)[] = [], name?: string) {
   return source === "input" ? { source, path } as const : { source, name: name!, path } as const
 }
-function base(id: string, kind: ChainNode["kind"], outputContract = nullContract) {
+function base(id: string, kind: LegacyChainNode["kind"], outputContract = nullContract) {
   return { id, label: id, outcomes: [...requiredNodeOutcomes[kind]], outputContract, writes: [] }
 }
-function edges(node: ChainNode, success: string, failure = "error") {
+function edges(node: LegacyChainNode, success: string, failure = "error") {
   return node.outcomes.map((outcome) => ({ from: node.id, outcome, to: outcome === "success" ? success : failure }))
 }
 function chainBase(name: string, inputContract: TaskDataContract, outputContract: TaskDataContract,
-  nodes: ChainNode[], chainEdges: TaskChain["edges"], entry: string, variables: TaskChain["variables"] = {}): TaskChain {
+  nodes: LegacyChainNode[], chainEdges: LegacyTaskChain["edges"], entry: string,
+  variables: LegacyTaskChain["variables"] = {}): LegacyTaskChain {
   const output = { source: "node" as const, nodeId: "emit", path: [] }
   const predicate = outputContract.schema.type === "null"
     ? { operator: "equals" as const, left: output, right: { source: "constant" as const, value: null } }
     : { operator: "exists" as const, value: output }
-  return { contractVersion: CONTRACT_VERSION, kind: "chain", id: uuids.chain, taskId: uuids.task, version: 1,
+  return legacyTaskChainSchema.parse({ contractVersion: CONTRACT_VERSION, kind: "chain", id: uuids.chain, taskId: uuids.task, version: 1,
     plan, stepId: "perform", name, inputContract, outputContract, variables, entry, nodes, edges: chainEdges,
     completion: [{ id: "output-ready", description: "输出已经发布", predicate }],
     budget, reuseBoundary: { description: "不同运行输入复用同一结构", assumptions: ["输入符合契约"],
       invalidationConditions: ["能力合同变化"] }, implementationSummary: "运行时内存夹具",
-    validation: { status: "candidate", evidence: [] } }
+    validation: { status: "candidate", evidence: [] } })
 }
-function terminal(id: string, status: "completed" | "failed"): ChainNode {
+function terminal(id: string, status: "completed" | "failed"): LegacyChainNode {
   return { ...base(id, "terminal"), kind: "terminal", status, reason: status === "completed" ? "完成" : "失败",
     evidence: [{ source: "input", path: [] }] }
 }
-function emit(outputContract: TaskDataContract, value: ValueBinding): ChainNode {
+function emit(outputContract: TaskDataContract, value: ValueBinding): LegacyChainNode {
   return { ...base("emit", "emit", outputContract), kind: "emit", name: "result",
     output: { kind: "value", value }, contract: outputContract }
 }
 
 export function loopChain(): TaskChain {
-  const loop: ChainNode = { ...base("repeat", "loop"), kind: "loop", iteration: {
+  const loop: LegacyChainNode = { ...base("repeat", "loop"), kind: "loop", iteration: {
     mode: "each", collection: binding("input", ["items"]), itemVariable: "item", stableKeyPath: ["id"],
   }, cursorVariable: "cursor", maxIterations: 10 }
-  const visit: ChainNode = { ...base("visit", "browser"), kind: "browser", operation: "wait",
+  const visit: LegacyChainNode = { ...base("visit", "browser"), kind: "browser", operation: "wait",
     arguments: { item: binding("variable", [], "item") }, timeoutMs: 1000 }
   const publish = emit(itemsContract, binding("input", ["items"]))
   const done = terminal("done", "completed"), error = terminal("error", "failed")
@@ -82,7 +83,7 @@ export function loopChain(): TaskChain {
 }
 
 export function invokeChain(): TaskChain {
-  const invoke: ChainNode = { ...base("invoke", "invoke", opaqueListContract), kind: "invoke",
+  const invoke: LegacyChainNode = { ...base("invoke", "invoke", opaqueListContract), kind: "invoke",
     chain: { id: childChainId, version: 3, digest: "b".repeat(64) }, input: binding("variable", [], "item"),
     iteration: { mode: "each", collection: binding("input", ["items"]), itemVariable: "item",
       stableKeyPath: ["id"], maxItems: 10, onItemFailure: "stop" } }
@@ -93,7 +94,7 @@ export function invokeChain(): TaskChain {
 }
 
 export function humanChain(): TaskChain {
-  const human: ChainNode = { ...base("human", "human", readyContract), kind: "human", reason: "login",
+  const human: LegacyChainNode = { ...base("human", "human", readyContract), kind: "human", reason: "login",
     prompt: "请完成当前页面操作", resumeWhen: { operator: "equals", path: ["ready"],
       expected: { source: "constant", value: true } }, timeoutMs: 1000 }
   const publish = emit(readyContract, { source: "node", nodeId: human.id, path: [] })
@@ -103,7 +104,7 @@ export function humanChain(): TaskChain {
 }
 
 export function llmChain(): TaskChain {
-  const llm: ChainNode = { ...base("llm", "llm", textContract), kind: "llm", instruction: "转换输入",
+  const llm: LegacyChainNode = { ...base("llm", "llm", textContract), kind: "llm", instruction: "转换输入",
     input: binding("input"), model: "fixture-model", timeoutMs: 1000 }
   const publish = emit(textContract, { source: "node", nodeId: llm.id, path: [] })
   const done = terminal("done", "completed"), error = terminal("error", "failed")
@@ -112,7 +113,7 @@ export function llmChain(): TaskChain {
 }
 
 export function browserEffectChain(): TaskChain {
-  const browser: ChainNode = { ...base("browser", "browser", nullContract), kind: "browser", operation: "wait",
+  const browser: LegacyChainNode = { ...base("browser", "browser", nullContract), kind: "browser", operation: "wait",
     arguments: {}, timeoutMs: 1000 }
   const publish = emit(nullContract, { source: "node", nodeId: browser.id, path: [] })
   const done = terminal("done", "completed"), error = terminal("error", "failed")
@@ -121,9 +122,9 @@ export function browserEffectChain(): TaskChain {
 }
 
 export function checkpointChain(): TaskChain {
-  const data: ChainNode = { ...base("data", "data", textContract), kind: "data", operation: "extract",
+  const data: LegacyChainNode = { ...base("data", "data", textContract), kind: "data", operation: "extract",
     arguments: { source: binding("input") } }
-  const checkpoint: ChainNode = { ...base("checkpoint", "checkpoint"), kind: "checkpoint",
+  const checkpoint: LegacyChainNode = { ...base("checkpoint", "checkpoint"), kind: "checkpoint",
     resumeWhen: { operator: "exists", path: [] } }
   const publish = emit(textContract, { source: "node", nodeId: data.id, path: [] })
   const done = terminal("done", "completed"), error = terminal("error", "failed")

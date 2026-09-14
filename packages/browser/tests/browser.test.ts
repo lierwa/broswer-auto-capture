@@ -86,6 +86,18 @@ test("重定向到未授权页面只返回访问边界且不擅自请求人工�
     target: { role: "link", name: "下一页", occurrence: 2 } })), code("target_missing"))
 }))
 
+test("直接导航的同站验证落点可在原会话观察并显式交给人工", async () => fixture(async ({ host, fake, calls }) => {
+  fake.tabUrl = "https://verify.example.com/challenge"; fake.text = "页面要求完成真人验证"
+  await host.run(grant(), async (session) => {
+    await session.command({ type: "navigate", url: "https://example.com/page" })
+    assert.match((await session.command({ type: "observe" }))!, /真人验证/)
+    await session.command({ type: "request_help", reason: "captcha", timeoutMs: 1_000 })
+    assert.match((await session.command({ type: "observe" }))!, /登录后的业务页面/)
+  })
+  assert.equal(calls.filter((args) => args[1] === "navigate").length, 1)
+  assert.equal(calls.filter((args) => args[1] === "request-help").length, 1)
+}))
+
 test("显式人工决策在同会话等待，完成后重新观察；超时不自动重试", async () => fixture(async ({ host, fake, calls, directory }) => {
   fake.text = "@e1 textbox \"搜索\""
   const value = "sensitive-test-value"
@@ -125,6 +137,15 @@ test("显式人工决策在同会话等待，完成后重新观察；超时不�
   assert.doesNotMatch(audit, /sensitive-test-value|sensitive-private-page|验证码|搜索/)
   assert.match(audit, /"phase":"intended"/)
   assert.match(audit, /"purpose":"verification"/)
+}))
+
+test("站点节流等待不消耗浏览器活动时间预算", async () => fixture(async ({ host }) => {
+  await host.run(grant(), async (session) => {
+    session.beginStep(20, 100, new AbortController().signal, () => {})
+    await session.waitOutsideBudget(() => new Promise<void>((resolve) => setTimeout(resolve, 150)))
+    assert.ok(session.stepElapsedMs() < 100)
+    await session.command({ type: "observe" })
+  })
 }))
 
 test("同一数据目录的两个 host 互斥，预算和取消均保留 finally 关闭", async () => fixture(async ({ host, directory, execute, calls }) => {
@@ -235,11 +256,38 @@ test("完整语义名称变化时只按唯一稳定子串回退", async () => fi
   assert.equal(calls.find((args) => args[1] === "click")?.[2], "@e8")
 }))
 
+test("旧会话未授权活动标签不阻断新导航且新建标签在 finally 回收", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "browser-capture-stale-tab-")), calls: string[][] = []
+  let tabs = [{ tab_id: 16, url: "https://outside.example.net/old", scope: "agent" as const, active: true }]
+  const execute: CommandExecutor = async (args) => {
+    calls.push([...args])
+    if (args[1] === "session" && args[2] === "start") return { stdout: JSON.stringify({ session_id: "abcd" }), exitCode: 0 }
+    if (args[1] === "session") return { stdout: JSON.stringify({ stopped: ["abcd"], failed: [], return_failures: [] }), exitCode: 0 }
+    if (args[1] === "tab" && args[2] === "list") return { stdout: JSON.stringify({ tabs }), exitCode: 0 }
+    if (args[1] === "tab" && args[2] === "create") {
+      tabs = [{ ...tabs[0]!, active: false }, { tab_id: 17, url: "https://verify.example.com/challenge", scope: "agent", active: true }]
+      return { stdout: JSON.stringify({ tab_id: 17 }), exitCode: 0 }
+    }
+    if (args[1] === "tab" && args[2] === "close") {
+      tabs = tabs.filter((tab) => tab.tab_id !== Number(args[3])); return { stdout: JSON.stringify({ tab_id: Number(args[3]) }), exitCode: 0 }
+    }
+    return { stdout: JSON.stringify({ tab_id: 17 }), exitCode: 0 }
+  }
+  const host = new BrowserHost(directory, execute)
+  try {
+    await host.run(grant(), (session) => session.command({ type: "navigate", url: "https://example.com/", reuseOpenTab: true }))
+    assert.equal(calls.filter((args) => args[1] === "navigate").length, 0)
+    assert.equal(calls.filter((args) => args[1] === "tab" && args[2] === "create").length, 1)
+    assert.deepEqual(tabs.map((tab) => tab.tab_id), [16])
+  } finally { await host.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
 test("恢复已观察来源 URL 时复用原标签且点击新标签在切换输入及 finally 中回收", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-capture-tab-bound-"))
   const calls: string[][] = []
   let nextTabId = 18
-  let tabs = [{ tab_id: 17, url: "https://example.com/source", scope: "agent" as const, active: true }]
+  let tabs = [{ tab_id: 16, url: "https://unrelated.example.net/old", scope: "agent" as const, active: false },
+    { tab_id: 17, url: "https://example.com/source", scope: "agent" as const, active: true }]
   const execute: CommandExecutor = async (args) => {
     calls.push([...args])
     if (args[1] === "session" && args[2] === "start") return { stdout: JSON.stringify({ session_id: "abcd" }), exitCode: 0 }
@@ -270,12 +318,12 @@ test("恢复已观察来源 URL 时复用原标签且点击新标签在切换输
       await session.command({ type: "click", target: { role: "link", name: "打开详情" } })
       await session.command({ type: "navigate", url: "https://example.com/source", reuseOpenTab: true })
       await session.command({ type: "click", target: { role: "link", name: "打开详情" } })
-      assert.deepEqual(tabs.map((tab) => tab.tab_id), [17, 19])
+      assert.deepEqual(tabs.map((tab) => tab.tab_id), [16, 17, 19])
     })
     assert.equal(calls.filter((args) => args[1] === "navigate").length, 0)
     assert.equal(calls.filter((args) => args[1] === "tab" && args[2] === "select").length, 1)
     assert.deepEqual(calls.filter((args) => args[1] === "tab" && args[2] === "close").map((args) => args[3]), ["18", "19"])
-    assert.deepEqual(tabs.map((tab) => tab.tab_id), [17])
+    assert.deepEqual(tabs.map((tab) => tab.tab_id), [16, 17])
     const finalTabClose = calls.findLastIndex((args) => args[1] === "tab" && args[2] === "close")
     const sessionStop = calls.findIndex((args) => args[1] === "session" && args[2] === "stop")
     assert.ok(finalTabClose >= 0 && sessionStop > finalTabClose)

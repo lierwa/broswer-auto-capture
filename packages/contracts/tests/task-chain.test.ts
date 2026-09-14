@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
-import { CONTRACT_VERSION, chainNodeSchema, parseTaskValue, taskChainSchema, taskDataContractSchema, taskPlanExecutionIssues,
-  taskPlanSchema, taskRequirementSchema, valueBindingSchema, type ChainNode } from "@browser-capture/contracts"
+import { CONTRACT_VERSION, chainNodeSchema, parseTaskValue, requiredStableNodeOutcomes, stableChainNodeSchema,
+  taskChainSchema, taskDataContractSchema, taskPlanExecutionIssues, taskPlanSchema, taskRequirementSchema,
+  valueBindingSchema, type ChainNode, type StableChainNode } from "@browser-capture/contracts"
 import { budget, condition, dataContract, digest, extractionFixture, ids, inputBinding, nodeBase, nodeBinding,
   nullContract, playbackFixture, reference } from "./task-chain-fixtures.js"
 
@@ -45,7 +46,7 @@ test("值绑定只允许四类来源和安全路径，常量内的 source 仍是
   }
 })
 
-test("十一类节点均有类型化操作；普通节点拒绝隐式模型和临时浏览器引用", () => {
+test("历史十一类节点保持只读兼容；普通节点拒绝隐式模型和临时浏览器引用", () => {
   const nodes: ChainNode[] = [
     ...playbackFixture.chain.nodes,
     extractionFixture.chain.nodes[2]!,
@@ -63,6 +64,27 @@ test("十一类节点均有类型化操作；普通节点拒绝隐式模型和�
   }
   assert.equal(chainNodeSchema.safeParse({ ...nodes[0], target: { kind: "ref", ref: "@e1" } }).success, false)
   assert.equal(chainNodeSchema.safeParse({ ...nodes[0], operation: "evaluate" }).success, false)
+})
+
+test("新链只用六类稳定节点，站点动作通过通用能力配置表达", () => {
+  const base = <K extends StableChainNode["kind"]>(id: string, kind: K) => ({ id, label: id,
+    outcomes: [...requiredStableNodeOutcomes[kind]], outputContract: nullContract, writes: [] })
+  const nodes: StableChainNode[] = [
+    { ...base("perform", "capability"), kind: "capability", capability: { name: "browser.perform", version: 1 },
+      input: { action: inputBinding }, config: { capture: { scope: "page" } }, effect: "idempotent_write", timeoutMs: 2000 },
+    { ...base("think", "llm"), kind: "llm", instruction: "判断页面状态", input: nodeBinding("perform"), model: "fixture-model", timeoutMs: 1000 },
+    { ...base("branch", "branch"), kind: "branch", predicate: condition("think").predicate },
+    { ...base("repeat", "loop"), kind: "loop", iteration: { mode: "each", collection: inputBinding,
+      itemVariable: "item", stableKeyPath: ["id"] }, cursorVariable: "cursor", maxIterations: 10,
+      body: { entry: "perform", exits: ["think"] }, accumulators: [] },
+    { ...base("call", "invoke"), kind: "invoke", chain: reference(ids.chain), input: inputBinding,
+      iteration: { mode: "once" } },
+    { ...base("done", "terminal"), kind: "terminal", status: "completed", reason: "完成",
+      evidence: [nodeBinding("perform")] },
+  ]
+  assert.deepEqual(new Set(nodes.map((node) => node.kind)), new Set(["capability", "llm", "branch", "loop", "invoke", "terminal"]))
+  for (const node of nodes) assert.equal(stableChainNodeSchema.safeParse(node).success, true)
+  assert.equal(stableChainNodeSchema.safeParse({ ...nodes[0], kind: "open_comment_popup" }).success, false)
 })
 
 test("图身份、出口、binding 和 verified 证据拒绝伪造或缺失", () => {
@@ -128,6 +150,13 @@ test("组合计划逐项调用同一链路，拒绝未声明依赖和预算扩�
     invocation: { ...second.invocation, stableKeyPath: ["missing"] } }] }).success, false)
   assert.equal(taskPlanSchema.safeParse({ ...plan, output: { source: "node", nodeId: second.id, path: ["missing"] } }).success, false)
   assert.equal(taskPlanSchema.safeParse({ ...plan, steps: [second, first] }).success, false)
+
+  const batch = { ...second, id: "batch-consume", inputContract: itemsContract, outputContract: resultContract,
+    input: nodeBinding(first.id), invocation: { mode: "batch" as const, collection: nodeBinding(first.id),
+      itemVariable: "item", stableKeyPath: ["id"], maxItems: 30 }, completion: [condition("batch-consume")] }
+  const batchPlan = { ...plan, steps: [first, batch], output: nodeBinding(batch.id) }
+  assert.equal(taskPlanSchema.safeParse(batchPlan).success, true)
+  assert.deepEqual(taskPlanExecutionIssues(batchPlan), [])
 })
 
 test("包出口只暴露通用 IR，不再保留旧运行合同入口", async () => {

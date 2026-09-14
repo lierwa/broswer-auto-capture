@@ -1,5 +1,13 @@
 # 调研登记
 
+## 2026-09-14 Dify/Coze 工作流公共边界核准
+
+- Dify 的工作流生成把模型输出限制在有意义的节点数据，图包装、节点元数据、布局和合法性由宿主补全；工具通过 provider、tool、配置和参数接入，业务动作不会各自成为平台节点类型。[Dify builder prompt](https://github.com/langgenius/dify/blob/main/api/core/workflow/generator/prompts/builder_prompts.py)
+- Dify 的计划阶段先划分步骤和依赖，再由 builder 物化工作流；iteration 是持有内部子图的容器，同构处理不会展开为 N 份节点。[Dify planner prompt](https://github.com/langgenius/dify/blob/main/api/core/workflow/generator/prompts/planner_prompts.py)、[Dify iteration](https://docs.dify.ai/en/guides/workflow/node/iteration)
+- Coze 的节点以统一 NodeSchema 声明输入、输出和配置；循环与批处理通过内部工作流组合，由统一运行框架管理。[Coze workflow node backend design](https://github.com/coze-dev/coze-studio/wiki/11.-Add-new-workflow-node-types-(backend))
+
+B-A-T 据此把新链冻结为六类控制节点：`capability`、`llm`、`branch`、`loop`、`invoke`、`terminal`。浏览器点击、滚动、读取和数据变换是版本化能力配置；站点、商品、评论等只存在于任务数据。计划提供 `once`、`each`、`batch` 三种调用语义；需要跨项累计、去重或按结果停止时使用 `batch`，整份集合只调用一条含显式 `loop` 的链。
+
 ## 2026-09-13 京东登录、访问路径与频控判定
 
 - 当前 Chrome 首页明确显示未登录，按本次判定口径属于登录过期；当前搜索、商品卡点击和详情直达随后进入 `risk_handler`/认证页，只能证明该未登录 Profile 不能继续详情验收，不能据此声称当前仍处于频控。

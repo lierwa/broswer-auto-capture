@@ -13,6 +13,7 @@ export const authoringAuditSchema = z.object({
   purpose: z.enum(["plan_creation", "chain_compilation", "chain_exploration_and_compilation"]), model: textSchema, effort: textSchema,
   status: z.enum(["intended", "completed", "failed", "interrupted"]),
   reportedInvocations: z.number().int().nonnegative().nullable(), events: z.array(aiEventSchema),
+  escalations: z.array(z.object({ model: textSchema, effort: textSchema, reason: textSchema }).strict()).default([]),
 }).strict()
 
 export const taskAuthoringJobSchema = z.object({
@@ -74,6 +75,8 @@ export const taskChainCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cancel_authoring"), jobId: identitySchema }).strict(),
   z.object({ type: z.literal("resume_validation"), ...request, runId: identitySchema, expectedSequence: z.number().int().nonnegative() }).strict(),
   z.object({ type: z.literal("generate_plan"), ...request, requirementVersion: z.number().int().positive() }).strict(),
+  z.object({ type: z.literal("author_task"), ...request, requirementVersion: z.number().int().positive(),
+    input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("generate_chain"), ...request, plan: versionReferenceSchema,
     stepId: keySchema, input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("generate_task_chains"), ...request, plan: versionReferenceSchema,

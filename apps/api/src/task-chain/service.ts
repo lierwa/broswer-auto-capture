@@ -11,6 +11,8 @@ import type { BrowserFailure } from "@browser-capture/browser"
 import type { ProductStore } from "../database/store.js"
 import { conflict } from "../errors.js"
 import { TaskChainAuthoring } from "./authoring.js"
+import { reusablePlanCandidate } from "./authoring-recovery.js"
+import { planPrompt } from "./authoring-prompts.js"
 import { TaskPlanExecutor } from "./plan-executor.js"
 import { TaskContractRepository } from "./repository.js"
 import { syncConfirmedRequirement } from "./requirement.js"
@@ -18,7 +20,8 @@ import { opensAccessCircuit, TaskRuntimeHost, type RuntimeCapabilityFactory } fr
 import { explorationTraceSchema, type ExplorationTrace } from "./exploration-trace.js"
 
 type QueueItem = { type: "execution"; taskId: string; id: string; resume: boolean }
-  | { type: "validation"; taskId: string; runId: string; resume?: boolean }
+  | { type: "validation"; taskId: string; runId: string; resume?: boolean; repairAttempt?: number;
+    followUp?: { mode: "sample" | "verification"; input: JsonValue } }
 
 export class TaskChainService {
   readonly repository: TaskContractRepository
@@ -61,6 +64,7 @@ export class TaskChainService {
     }
     else if (command.type === "resume_validation") this.resumeValidation(taskId, command)
     else if (command.type === "generate_plan") this.generatePlan(taskId, command)
+    else if (command.type === "author_task") this.authorTask(taskId, command)
     else if (command.type === "generate_task_chains") this.generateTaskChains(taskId, command)
     else if (command.type === "generate_chain") this.generateChain(taskId, command)
     else if (command.type === "validate_chain") this.validateChain(taskId, command)
@@ -101,6 +105,38 @@ export class TaskChainService {
     const job = this.newJob(taskId, command.requestId, "plan", `${requirement.id}:${requirement.version}`)
     this.store.recordOperation("task-chain:plan", command.requestId, command, job.id)
     this.startAuthoring(taskId, job, (signal) => this.authoring.plan(job, requirement, signal))
+  }
+
+  private authorTask(taskId: string, command: Extract<TaskChainCommand, { type: "author_task" }>) {
+    if (this.store.operation("task-chain:author-task", command.requestId, command)) return
+    const requirement = syncConfirmedRequirement(this.store, this.repository, taskId)
+    if (!requirement || requirement.version !== command.requirementVersion) conflict("只能为当前已确认需求执行预执行。")
+    const input = command.input
+    // WHY：恢复候选必须绑定实际规划规则；prompt 改变后不能把旧语义计划带进新的浏览器探索。
+    const key = `${requirement.id}:${requirement.version}:task-authoring:${digestJson(planPrompt(requirement, input))}:${digestJson(input)}`
+    const jobs = this.repository.jobs(taskId)
+    const reusableCandidate = reusablePlanCandidate(jobs, key)
+    const prior = jobs.findLast((item) => item.key === key && item.status === "completed" && item.resultId
+      && item.authoring?.exploration && item.authoring.annotations)
+    const reusablePlan = prior ? this.repository.plans(taskId).findLast((plan) => plan.id === prior.resultId
+      && planMatchesRequirement(plan, requirement)) : undefined
+    const stepIds = reusablePlan?.steps.map((step) => step.id) ?? []
+    const reusable = reusablePlan ? reusableTaskExploration(jobs, key, input, stepIds) : undefined
+    const reusableAnnotations = reusablePlan ? reusableTaskAnnotations(jobs, key, reusable, stepIds) : undefined
+    const job = this.newJob(taskId, command.requestId, "chain", key)
+    this.store.recordOperation("task-chain:author-task", command.requestId, command, job.id)
+    this.startAuthoring(taskId, job, async (signal) => {
+      const { chains, exploration } = reusablePlan && reusable
+        ? await this.authoring.task(job, requirement, reusablePlan, input, signal, reusable, reusableAnnotations)
+        : await this.authoring.preexecute(job, requirement, input, signal, reusableCandidate)
+      if (chains.length === 1) {
+        const sample = exploration.stepResults?.find((result) => result.stepId === chains[0]!.stepId)?.input
+        if (sample === undefined) throw new Error(`exploration_step_result_missing:${chains[0]!.stepId}`)
+        this.enqueueValidation(taskId, chains[0]!, "sample", sample,
+          stableUuid(command.requestId, "sample-validation", chains[0]!.stepId), 0)
+      }
+      this.scheduleDrain()
+    })
   }
 
   private generateChain(taskId: string, command: Extract<TaskChainCommand, { type: "generate_chain" }>) {
@@ -230,17 +266,20 @@ export class TaskChainService {
         const controller = new AbortController(); this.controllers.set(`${taskId}:${key}`, controller)
         try {
           if (item.type === "execution") await this.executor.execute(this.repository.execution(taskId, item.id), controller.signal, item.resume)
-          else await this.runValidation(item.taskId, item.runId, controller.signal, item.resume)
+          else await this.runValidation(item.taskId, item.runId, controller.signal, item.resume,
+            item.repairAttempt ?? 0, item.followUp)
         } finally { this.controllers.delete(`${taskId}:${key}`) }
       }
     } finally { this.draining = false }
   }
 
-  private async runValidation(taskId: string, runId: string, signal: AbortSignal, resume = false) {
+  private async runValidation(taskId: string, runId: string, signal: AbortSignal, resume = false, repairAttempt = 0,
+    followUp?: { mode: "sample" | "verification"; input: JsonValue }) {
     const queued = this.repository.run(taskId, runId)
     const chain = this.repository.chain(taskId, queued.binding.chain.id, queued.binding.chain.version, queued.binding.chain.digest)
+    let completed: TaskRun
     try {
-      const run = await this.host.group({ taskId, authorizationId: queued.binding.authorizationId,
+      completed = await this.host.group({ taskId, authorizationId: queued.binding.authorizationId,
         browserRunId: resume ? stableUuid(runId, "resume", String(queued.sequence)) : runId,
         requirementVersion: this.repository.plan(taskId, chain.plan.id, chain.plan.version).requirement.version,
         purpose: queued.mode, chains: [chain], input: queued.input, signal, budget: chain.budget,
@@ -249,7 +288,6 @@ export class TaskChainService {
         checkpoint: queued.checkpoint, resumeRequest: { contractVersion: CONTRACT_VERSION,
           requestId: stableUuid(runId, "resume-request", String(queued.sequence)), binding: queued.binding,
           checkpointId: queued.checkpoint.id, expectedSequence: queued.checkpoint.sequence } } : undefined))
-      this.recordValidation(chain, run)
     } catch (error) {
       const failed = this.repository.run(taskId, runId)
       if (signal.aborted && failed.checkpoint) {
@@ -260,6 +298,17 @@ export class TaskChainService {
           reason: `验证未完成：${error instanceof Error ? error.message : "host_failed"}`, evidence: [] }
       }
       this.repository.saveRun(failed)
+      return
+    }
+    const passed = this.recordValidation(chain, completed)
+    if (passed && followUp) {
+      this.enqueueValidation(taskId, chain, followUp.mode, followUp.input,
+        stableUuid(completed.binding.runId, "follow-up"), repairAttempt)
+      return
+    }
+    if (!passed) {
+      const validated = this.repository.chain(taskId, chain.id, chain.version)
+      await this.repairValidation(taskId, validated, completed, repairAttempt, followUp, signal)
     }
   }
 
@@ -274,6 +323,39 @@ export class TaskChainService {
     const verified = passed.some((sample) => sample.phase === "sample" && passed.some((verification) => verification.phase === "verification"
       && verification.chainDigest === sample.chainDigest && verification.inputDigest !== sample.inputDigest))
     this.repository.updateChainValidation({ ...chain, validation: { status: verified ? "verified" : "candidate", evidence: all } })
+    return evidence.passed
+  }
+
+  private async repairValidation(taskId: string, chain: TaskChain, run: TaskRun, repairAttempt: number,
+    followUp: { mode: "sample" | "verification"; input: JsonValue } | undefined, signal: AbortSignal) {
+    if (repairAttempt >= 1 || run.externalFailure || !["sample", "verification"].includes(run.mode)
+      || !["failed", "partial", "blocked"].includes(run.status)) return
+    const trace = repairTrace(this.repository.jobs(taskId), chain)
+    if (!trace) return
+    const plan = this.repository.plan(taskId, chain.plan.id, chain.plan.version, chain.plan.digest)
+    const attempt = repairAttempt + 1, requestId = stableUuid(run.binding.runId, "repair", String(attempt))
+    const job = this.newJob(taskId, requestId, "chain", `repair:${chain.id}:${chain.version}:${run.binding.runId}`)
+    let repaired: TaskChain
+    try { repaired = await this.authoring.repair(job, plan, chain, run, trace, signal) }
+    catch { return }
+    if (run.mode === "verification") {
+      const sample = chain.validation.evidence.findLast((item) => item.phase === "sample" && item.passed)
+      if (!sample) return
+      const sampleRun = this.repository.run(taskId, sample.runId)
+      this.enqueueValidation(taskId, repaired, "sample", sampleRun.input, stableUuid(requestId, "sample"), attempt,
+        { mode: "verification", input: run.input })
+      return
+    }
+    this.enqueueValidation(taskId, repaired, run.mode as "sample" | "verification", run.input,
+      stableUuid(requestId, "retry"), attempt, followUp)
+  }
+
+  private enqueueValidation(taskId: string, chain: TaskChain, mode: "sample" | "verification", input: JsonValue,
+    requestId: string, repairAttempt: number, followUp?: { mode: "sample" | "verification"; input: JsonValue }) {
+    const queued = queuedValidationRun(taskId, requestId, chain, input, mode)
+    this.repository.saveRun(queued)
+    this.queue.push({ type: "validation", taskId, runId: queued.binding.runId, repairAttempt,
+      ...(followUp ? { followUp } : {}) })
   }
 }
 
@@ -309,17 +391,34 @@ function zeroConsumption() {
   return { transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 }
 }
 
-export function reusableExploration(jobs: TaskAuthoringJob[], key: string, input: JsonValue): ExplorationTrace | undefined {
+function repairTrace(jobs: TaskAuthoringJob[], chain: TaskChain): ExplorationTrace | null {
+  const source = jobs.findLast((job) => job.type === "chain" && job.authoring?.exploration
+    && [job.authoring.compiledChain, ...(job.authoring.compiledChains ?? [])].some((reference) => reference?.id === chain.id
+      && reference.version === chain.version))
+  if (!source?.authoring?.exploration) return null
+  const parsed = explorationTraceSchema.safeParse(source.authoring.exploration)
+  if (!parsed.success || !parsed.data.closed) return null
+  const step = parsed.data.stepResults?.find((item) => item.stepId === chain.stepId)
+  if (!step) return parsed.data.result ? parsed.data : null
+  const { stepResults: _stepResults, ...base } = parsed.data
+  return { ...base, input: step.input, result: step.result }
+}
+
+export function reusableExploration(jobs: TaskAuthoringJob[], key: string, input: JsonValue,
+  recoveredCleanup: (browserRunId: string) => boolean = () => false): ExplorationTrace | undefined {
   const candidate = jobs.findLast((job) => job.type === "chain" && job.key === key
     && !["queued", "running"].includes(job.status) && job.authoring?.exploration !== null)
   if (!candidate?.authoring?.exploration) return undefined
   const parsed = explorationTraceSchema.safeParse(candidate.authoring.exploration)
-  if (!parsed.success || !parsed.data.closed || !parsed.data.result
+  if (!parsed.success || !parsed.data.result
     || JSON.stringify(parsed.data.input) !== JSON.stringify(input)) return undefined
+  const trace = parsed.data.closed ? parsed.data
+    : recoveredCleanup(parsed.data.browserRunId) ? { ...parsed.data, closed: true } : undefined
+  if (!trace) return undefined
   // WHY：编译元数据失败可复用已完成 E1；不确定页面状态或同名动作未消歧都缺少可冻结事实，修复后必须重新探索。
-  if (parsed.data.events.some((event) => ["invalid_response", "target_ambiguous"].includes(event.error ?? "") || event.error
+  if (trace.events.some((event) => ["invalid_response", "target_ambiguous"].includes(event.error ?? "") || event.error
     && opensAccessCircuit(event.error as BrowserFailure, event.command.type))) return undefined
-  return parsed.data
+  return trace
 }
 
 export function reusableTaskExploration(jobs: TaskAuthoringJob[], key: string, input: JsonValue,

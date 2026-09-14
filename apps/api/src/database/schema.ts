@@ -45,6 +45,12 @@ export const aiSettings = sqliteTable("aiSettings", {
 export const browserRuns = sqliteTable("browserRuns", {
   runId: text().primaryKey(), taskId: taskId(), createdAt: text().notNull(), body: text({ mode: "json" }).$type<BrowserRecord>().notNull(),
 })
+export const originAccessEvents = sqliteTable("originAccessEvents", {
+  id: text().primaryKey(), origin: text().notNull(), runId: text().notNull(), action: text().notNull(), occurredAt: integer().notNull(),
+})
+export const originAccessBlocks = sqliteTable("originAccessBlocks", {
+  origin: text().primaryKey(), runId: text().notNull(), reason: text().notNull(), blockedUntil: integer().notNull(), updatedAt: integer().notNull(),
+})
 export const plans = sqliteTable("plans", { id: text().primaryKey(), taskId: taskId(), body: text({ mode: "json" }).$type<JsonValue>().notNull() })
 export const chains = sqliteTable("chains", { id: text().primaryKey(), taskId: taskId(), executionId: text().notNull().references(() => executions.id), body: text({ mode: "json" }).$type<JsonValue>().notNull() })
 export const executions = sqliteTable("executions", { id: text().primaryKey(), taskId: taskId(), planId: text().notNull().references(() => plans.id),

@@ -1,8 +1,8 @@
 import type { ChainNode, TaskConsumption } from "@browser-capture/contracts"
 import type { TaskChainCapabilities } from "./types.js"
 
-type AccountedOperation = ChainNode["kind"] | "resume"
-const browserBacked = new Set<AccountedOperation>(["browser", "observe", "human", "resume"])
+type AccountedOperation = ChainNode["kind"] | "browser_capability" | "resume"
+const browserBacked = new Set<AccountedOperation>(["browser", "observe", "human", "browser_capability", "resume"])
 
 export async function withBrowserCommandAccounting<T>(capabilities: TaskChainCapabilities,
   consumed: TaskConsumption, operation: AccountedOperation, work: () => Promise<T>): Promise<T> {
@@ -13,7 +13,7 @@ export async function withBrowserCommandAccounting<T>(capabilities: TaskChainCap
     const after = commandCount(capabilities)
     if (before === null || after === null) {
       // WHY：独立 runtime 可注入抽象 browser capability；没有宿主计数器时保留既有的一动作一次计费语义。
-      if (operation === "browser") consumed.browserCommands += 1
+      if (operation === "browser" || operation === "browser_capability") consumed.browserCommands += 1
     } else {
       if (after < before) throw new Error("browser_command_count_regressed")
       consumed.browserCommands += after - before

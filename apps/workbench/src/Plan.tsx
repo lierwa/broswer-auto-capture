@@ -32,23 +32,20 @@ export function Plan({ connection, active, readOnly, confirmedVersion, onIntervi
     {view.error && <Callout.Root color="red"><Callout.Text>{view.error}</Callout.Text><Button onClick={() => void connection.retry()}>重试原请求</Button><Button variant="ghost" onClick={connection.dismiss}>关闭</Button></Callout.Root>}
     {!state.requirement ? <div className="stage-empty"><h3>先确认当前需求草稿</h3><p>计划只绑定当前明确确认的需求版本；修改需求后旧计划保持只读。</p><Button onClick={onDraft}>查看草稿</Button></div> : <>
       <RequirementDefinition requirement={state.requirement} />
-      {!plan ? <div className="stage-empty"><h3>尚未生成任务计划</h3><p>模型只负责把已确认需求拆成可组合步骤；浏览器能力将在链路验证时确认。</p>
-        <Button disabled={readOnly || busy || confirmedVersion !== state.requirement.version} onClick={() => void connection.dispatch({ type: "generate_plan", requestId: crypto.randomUUID(), requirementVersion: state.requirement!.version })}>生成任务计划</Button></div> : <>
+      {!plan ? <div className="stage-empty"><h3>生成计划并探索代表路径</h3><p>系统先拆出可复用步骤；Pi 在一个浏览器会话中只探索每种步骤的一条代表路径，再生成并验证候选链路。</p>
+        <TextArea aria-label="预执行代表输入 JSON" value={runInput} onChange={(event) => setRunInput(event.target.value)} rows={5} />
+        {inputError && <p className="error-text">{inputError}</p>}
+        <Button disabled={readOnly || busy || confirmedVersion !== state.requirement.version}
+          onClick={() => dispatchPreexecution(connection, state.requirement!, runInput, setInputError)}>生成并验证候选链路</Button></div> : <>
         <Flex gap="2" wrap="wrap" my="3"><Select.Root value={`${plan.id}:${plan.version}`} onValueChange={setSelected}><Select.Trigger aria-label="计划版本" /><Select.Content>{plans.map((item) => <Select.Item key={`${item.id}:${item.version}`} value={`${item.id}:${item.version}`}>计划 v{item.version}</Select.Item>)}</Select.Content></Select.Root>
           <Badge color={stale ? "amber" : "green"}>{stale ? "历史只读" : "绑定当前需求"}</Badge>
           <Badge color={executionIssues.length ? "red" : ready ? "green" : "gray"}>{executionIssues.length ? "执行合同不兼容" : ready ? "所有链路已验证" : "链路待生成或验证"}</Badge>
-          <Button variant="soft" disabled={readOnly || busy || confirmedVersion !== state.requirement.version}
-            onClick={() => void connection.dispatch({ type: "generate_plan", requestId: crypto.randomUUID(), requirementVersion: state.requirement!.version })}>重新生成计划</Button></Flex>
+          </Flex>
         {executionIssues.length > 0 && <Callout.Root color="red"><Callout.Text>这份计划的输入输出绑定不适用于执行，请重新生成计划。问题：{executionIssues.join("、")}</Callout.Text></Callout.Root>}
         <h3>{plan.summary}</h3><p>授权范围：{plan.authorizationScope}</p>
-        <div className="action-gate"><h3>首次完整任务探索</h3><p>Pi 在一个受控浏览器会话中完成整项任务；宿主从同一真实轨迹为各可复用步骤编译链路。</p>
-          <TextArea aria-label="完整任务代表输入 JSON" value={runInput} onChange={(event) => setRunInput(event.target.value)} rows={5} />
-          {inputError && <p className="error-text">{inputError}</p>}
-          <Button disabled={readOnly || stale || busy || executionIssues.length > 0}
-            onClick={() => dispatchTask(connection, plan, runInput, setInputError)}>完成整项任务并生成全部链路</Button></div>
         <div className="plan-cards">{plan.steps.map((step, index) => <StepCard key={step.id} index={index} plan={plan} step={step}
           {...(chains[step.id] ? { chain: chains[step.id] } : {})} stale={stale} incompatible={executionIssues.length > 0}
-          busy={Boolean(busy)} readOnly={readOnly} connection={connection} allowGenerate={plan.steps.length === 1} />)}</div>
+          busy={Boolean(busy)} readOnly={readOnly} connection={connection} allowGenerate={false} />)}</div>
         <div className="completion-budget"><h3>整体完成与预算</h3>{plan.completion.map((item) => <p key={item.id}><strong>{item.description}</strong></p>)}
           <p>每步预算由编译后的链路推导；业务数量决定同一链路的调用次数。</p></div>
         <div className="action-gate"><h3>授权一次独立运行</h3><p>输入必须符合本计划保存的动态合同。授权后，每个步骤只调用其已验证链路；集合输入逐项复用同一版本。</p>
@@ -75,7 +72,9 @@ function StepCard({ index, plan, step, chain, stale, incompatible, busy, readOnl
   const status = !chain ? "尚未生成" : chain.validation.status === "verified" ? "换输入验证通过" : "候选链路待验证"
   return <article className="plan-card"><Flex justify="between" align="start"><div><span className="mono">{String(index + 1).padStart(2, "0")}</span><h3>{step.title}</h3></div><Badge color={chain?.validation.status === "verified" ? "green" : "gray"}>{status}</Badge></Flex>
     <p>{step.goal}</p><p>依赖：{step.dependsOn.length ? step.dependsOn.join("、") : "无"}</p>
-    <p>调用：{step.invocation.mode === "once" ? "单次" : `逐项复用，最多 ${step.invocation.maxItems} 项；失败时 ${step.invocation.onItemFailure}`}</p>
+    <p>调用：{step.invocation.mode === "once" ? "单次" : step.invocation.mode === "batch"
+      ? `批量复用一条带循环的链路，最多 ${step.invocation.maxItems} 项`
+      : `逐项复用，最多 ${step.invocation.maxItems} 项；失败时 ${step.invocation.onItemFailure}`}</p>
     <p>输入 {step.inputContract.id}@{step.inputContract.version} → 输出 {step.outputContract.id}@{step.outputContract.version}</p>
     <p>{chain ? budgetText(chain.budget) : "技术预算将在链路编译后确定。"}</p>{step.risks.map((risk, riskIndex) => <p key={riskIndex}>{risk}</p>)}
     {allowGenerate && <><TextArea aria-label={`${step.title} 代表输入 JSON`} value={sampleInput}
@@ -101,11 +100,12 @@ function dispatchChain(connection: TaskChainConnection, plan: TaskPlan, stepId: 
       plan: { id: plan.id, version: plan.version, digest }, stepId, input }))
   } catch { error("请输入有效 JSON。") }
 }
-function dispatchTask(connection: TaskChainConnection, plan: TaskPlan, raw: string, error: (value: string) => void) {
+function dispatchPreexecution(connection: TaskChainConnection, requirement: TaskRequirement, raw: string,
+  error: (value: string) => void) {
   try {
     const input: unknown = JSON.parse(raw); error("")
-    void sha256(JSON.stringify(plan)).then((digest) => connection.dispatch({ type: "generate_task_chains",
-      requestId: crypto.randomUUID(), plan: { id: plan.id, version: plan.version, digest }, input }))
+    void connection.dispatch({ type: "author_task", requestId: crypto.randomUUID(),
+      requirementVersion: requirement.version, input })
   } catch { error("请输入有效 JSON。") }
 }
 function dispatchJson(connection: TaskChainConnection, plan: TaskPlan, raw: string, error: (value: string) => void) {

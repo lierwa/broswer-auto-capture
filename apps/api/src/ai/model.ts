@@ -42,6 +42,7 @@ export type AIModelProvider = Readonly<{
   selection(): ModelSelection
   prepare(selection: ModelSelection, signal: AbortSignal): Promise<PreparedAIModel>
   prepareMain(selection: ModelSelection, purpose?: "interview" | "exploration"): Promise<PreparedMainAIModel>
+  strongerSelection?(selection: ModelSelection, signal: AbortSignal): Promise<ModelSelection | null>
 }>
 
 export function lazyAIModel(provider: AIModelProvider, signal: AbortSignal): AIModelResolver {
@@ -118,6 +119,28 @@ export function createAIModelProvider(
         },
         async close() { await adapter.close?.() },
       })
+    },
+    async strongerSelection(selection, signal) {
+      signal.throwIfAborted()
+      const account = (await subject.catalog()).find((item) => item.connectionId === selection.connectionId
+        && item.supportedSurfaces.includes("agentSession"))
+      if (!account) return null
+      const effortOrder = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const
+      const current = account.availableModels.find((item) => item.modelId === selection.modelId)
+      if (current) {
+        const strongerEffort = current.supportedReasoningEfforts
+          .filter((effort) => effortOrder.indexOf(effort) > effortOrder.indexOf(selection.reasoningEffort)).at(-1)
+        if (strongerEffort) return { ...selection, reasoningEffort: strongerEffort }
+      }
+      // TRADE-OFF：平台不硬编码供应商型号；只在目录明确给出更大的上下文、输出上限且支持推理时升级。
+      const candidates = account.availableModels.filter((item) => item.modelId !== selection.modelId && item.reasoning
+        && (!current || item.contextWindow >= current.contextWindow && item.maxTokens >= current.maxTokens)
+        && (!current || item.contextWindow > current.contextWindow || item.maxTokens > current.maxTokens))
+        .toSorted((left, right) => right.contextWindow - left.contextWindow || right.maxTokens - left.maxTokens)
+      const target = candidates[0]
+      if (!target) return null
+      return { connectionId: selection.connectionId, modelId: target.modelId,
+        reasoningEffort: target.supportedReasoningEfforts.at(-1) ?? target.defaultReasoningEffort }
     },
   }
 }

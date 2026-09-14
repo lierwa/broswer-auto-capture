@@ -9,10 +9,14 @@ import { applyWrites, evaluatePredicate, readObservation, readPath, resolveBindi
 import { withBrowserCommandAccounting } from "./browser-consumption.js"
 import { compileTaskChain, type CompiledTaskChain } from "./compiler.js"
 import { executeDataOperation } from "./data.js"
+import { executeBuiltinCapability } from "./capabilities.js"
 import { driveTaskChain } from "./engine.js"
 import { digestJson, executableChainDigest, stableUuid } from "./hash.js"
+import { executeLoop } from "./loop.js"
 import { RuntimeBudgetExceededError, type NodeCapabilityResult, type TaskChainCapabilities, type TaskChainRuntimeInput } from "./types.js"
 import { BudgetError, UncertainEffectError, activeNow, assertBudget, executionStableKey, modelCount, now } from "./runtime-support.js"
+import { beginEffect, completeEffect, failRun, finishTerminal, invokedOutput, markEffectUncertain,
+  pauseRun, persistRun, recordEvent, syncCheckpoint } from "./run-state.js"
 export type RuntimeState = {
   compiled: CompiledTaskChain; run: TaskRun; context: BindingContext; checkpoint: TaskCheckpoint
   capabilities: TaskChainCapabilities; signal: AbortSignal; pauseAtCheckpoint: boolean
@@ -33,7 +37,7 @@ export class TaskChainRuntime {
       ? await resumeState(compiled, input.request, input.control.resumeRequest, input.control.checkpoint, capabilities, signal)
       : startState(compiled, input.request, capabilities, signal)
     state.pauseAtCheckpoint = input.control?.pauseAtCheckpoint ?? false
-    await persist(state)
+    await persistRun(state)
     try {
       await driveTaskChain(state, {
         signal, maxTransitions: compiled.chain.budget.maxTransitions,
@@ -43,18 +47,18 @@ export class TaskChainRuntime {
           assertBudget(current)
           current.capabilities.accountConsumption?.({ transitions: 1 })
           await executeNode(current)
-          await persist(current)
+          await persistRun(current)
         },
       })
     } catch (error) {
-      if (signal.aborted) await pause(state, "interrupted", "运行已中断；检查点与未决副作用保留。")
-      else if (error instanceof BudgetError || error instanceof RuntimeBudgetExceededError) await pause(state, "budget", error.message)
-      else await fail(state, error)
+      if (signal.aborted) await pauseRun(state, "interrupted", "运行已中断；检查点与未决副作用保留。")
+      else if (error instanceof BudgetError || error instanceof RuntimeBudgetExceededError) await pauseRun(state, "budget", error.message)
+      else await failRun(state, error)
     }
     state.run.auditComplete = state.run.modelCalls.every((audit) => audit.status !== "intended")
     state.run.consumed.llmCalls = modelCount(state.run)
     if (state.run.checkpoint) { syncCheckpoint(state); state.run.checkpoint = structuredClone(state.checkpoint) }
-    await persist(state)
+    await persistRun(state)
     return taskRunSchema.parse(state.run)
   }
 }
@@ -129,11 +133,12 @@ function validateCheckpointValues(compiled: CompiledTaskChain, checkpoint: TaskC
     if (!contract) throw new Error("checkpoint_variable_unknown")
     parseTaskValue(contract, value)
   }
-  const emits = new Map([...compiled.nodes.values()].filter((node) => node.kind === "emit").map((node) => [node.name, node]))
+  const emits = new Map([...compiled.nodes.values()].flatMap((node) => node.kind === "emit" ? [[node.name, node.contract] as const]
+    : node.kind === "terminal" && "result" in node && node.result ? [[node.result.name, node.result.contract] as const] : []))
   for (const [name, output] of Object.entries(checkpoint.outputs)) {
-    const emit = emits.get(name)
-    if (!emit) throw new Error("checkpoint_output_unknown")
-    parseTaskOutput(emit.contract, output)
+    const contract = emits.get(name)
+    if (!contract) throw new Error("checkpoint_output_unknown")
+    parseTaskOutput(contract, output)
   }
   for (const event of checkpoint.events) {
     if (!compiled.nodes.has(event.nodeId) || event.invocationId !== checkpoint.binding.invocationId) throw new Error("checkpoint_event_invalid")
@@ -157,11 +162,13 @@ async function executeNode(state: RuntimeState) {
   const node = state.compiled.nodes.get(state.checkpoint.cursor)!
   const started = activeNow(state), stableKey = executionStableKey(state)
   const idempotencyKey = `${state.run.binding.runId}:${state.run.binding.invocationId}:${node.id}:${stableKey ?? "root"}`
-  event(state, node, "planned", null, idempotencyKey, stableKey)
-  event(state, node, "started", null, idempotencyKey, stableKey)
+  recordEvent(state, node, "planned", null, idempotencyKey, stableKey)
+  recordEvent(state, node, "started", null, idempotencyKey, stableKey)
   let result: NodeCapabilityResult
+  const accounting = node.kind === "capability" && node.capability.name.startsWith("browser.")
+    ? "browser_capability" : node.kind
   try { result = nodeCapabilityResultSchema.parse(await withBrowserCommandAccounting(state.capabilities,
-    state.run.consumed, node.kind, () => dispatchNode(state, node, idempotencyKey, stableKey))) }
+    state.run.consumed, accounting, () => dispatchNode(state, node, idempotencyKey, stableKey))) }
   catch (error) {
     if (error instanceof UncertainEffectError || error instanceof RuntimeBudgetExceededError) throw error
     const failure = node.outcomes.includes("failed") ? "failed" : node.outcomes.includes("blocked") ? "blocked" : null
@@ -184,13 +191,18 @@ async function executeNode(state: RuntimeState) {
   if (result.externalFailure) {
     state.checkpoint.externalFailure = structuredClone(result.externalFailure)
     state.run.externalFailure = structuredClone(result.externalFailure)
-  } else if ((node.kind === "browser" || node.kind === "observe") && result.outcome === "success") {
+  } else if ((node.kind === "browser" || node.kind === "observe"
+    || node.kind === "capability" && node.capability.name.startsWith("browser.")) && result.outcome === "success") {
     state.checkpoint.externalFailure = null; state.run.externalFailure = null
   }
-  event(state, node, "finished", result.outcome, idempotencyKey, stableKey)
+  recordEvent(state, node, "finished", result.outcome, idempotencyKey, stableKey)
   state.resumingNodeId = null
   if (node.kind === "terminal") {
     await finishTerminal(state, node)
+    return
+  }
+  if (node.kind === "capability" && result.outcome === "human_required") {
+    waitForCapabilityHuman(state, node, result.reason)
     return
   }
   if (state.run.status === "waiting_for_human") {
@@ -212,16 +224,17 @@ async function executeNode(state: RuntimeState) {
   if (node.kind === "checkpoint") {
     state.checkpoint.id = randomUUID()
     state.run.checkpoint = structuredClone(state.checkpoint)
-    await persist(state)
-    if (state.pauseAtCheckpoint) await pause(state, "requested", "运行在显式检查点暂停。")
+    await persistRun(state)
+    if (state.pauseAtCheckpoint) await pauseRun(state, "requested", "运行在显式检查点暂停。")
   }
 }
 async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey: string,
   stableKey: string | null): Promise<NodeCapabilityResult> {
   const context = state.context
+  if (node.kind === "capability") return executeCapability(state, node, idempotencyKey, stableKey)
   if (node.kind === "data") return { outcome: "success", output: executeDataOperation(node.operation, resolveBindings(node.arguments, context)) }
-  if (node.kind === "condition") return { outcome: evaluatePredicate(node.predicate, context) ? "true" : "false", output: null }
-  if (node.kind === "loop") return executeLoop(state, node)
+  if (node.kind === "condition" || node.kind === "branch") return { outcome: evaluatePredicate(node.predicate, context) ? "true" : "false", output: null }
+  if (node.kind === "loop") return executeLoop(state, node, writeVariable)
   if (node.kind === "browser") {
     if (!state.capabilities.browser) throw new Error("browser_capability_unavailable")
     await beginEffect(state, "browser", node.id, stableKey, idempotencyKey)
@@ -255,7 +268,53 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
     return { outcome: "success", output: (output.kind === "value" ? output.value : output.artifact) as unknown as JsonValue }
   }
   if (node.kind === "checkpoint") return { outcome: "success", output: null }
+  if (node.kind === "terminal" && "result" in node && node.result) {
+    const raw = node.result.output.kind === "value" ? { kind: "value", contract: {
+      id: node.result.contract.id, version: node.result.contract.version }, value: resolveBinding(node.result.output.value, context) }
+      : resolveBinding(node.result.output.artifact, context)
+    const output = parseTaskOutput(node.result.contract, raw)
+    state.run.outputs[node.result.name] = output; state.checkpoint.outputs[node.result.name] = output
+    return { outcome: "success", output: (output.kind === "value" ? output.value : output.artifact) as unknown as JsonValue }
+  }
   return { outcome: "success", output: null }
+}
+
+async function executeCapability(state: RuntimeState, node: Extract<ChainNode, { kind: "capability" }>,
+  idempotencyKey: string, stableKey: string | null): Promise<NodeCapabilityResult> {
+  if (state.resumingNodeId === node.id && state.resumeObservation !== null && node.human
+    && observationMatches(node.human.resumeWhen, state.resumeObservation, state.context)) {
+    return { outcome: "success", output: structuredClone(state.resumeObservation), browser: state.checkpoint.browser ?? undefined }
+  }
+  const invocation = { binding: state.run.binding, node, input: resolveBindings(node.input, state.context),
+    config: structuredClone(node.config), idempotencyKey,
+    ...(node.human ? { resumeCondition: node.human.resumeWhen.operator === "exists" ? node.human.resumeWhen
+      : { ...node.human.resumeWhen, expected: resolveBinding(node.human.resumeWhen.expected, state.context) } } : {}),
+    signal: state.signal }
+  const builtin = executeBuiltinCapability(invocation)
+  if (builtin) return builtin
+  if (!state.capabilities.capability) throw new Error("capability_unavailable")
+  const effect = node.effect !== "read"
+  if (effect) await beginEffect(state, "capability", node.id, stableKey, idempotencyKey)
+  let result: NodeCapabilityResult
+  try {
+    result = nodeCapabilityResultSchema.parse(await state.capabilities.capability(invocation))
+  } catch (error) {
+    if (effect) await markEffectUncertain(state)
+    throw effect ? new UncertainEffectError(error instanceof Error ? error.message : "capability_effect_uncertain") : error
+  }
+  if (effect) completeEffect(state)
+  if (result.outcome === "success" && node.stableWhen
+    && !observationMatches(node.stableWhen, result.output ?? null, state.context)) return { ...result, outcome: "missing" }
+  return result
+}
+
+function waitForCapabilityHuman(state: RuntimeState, node: Extract<ChainNode, { kind: "capability" }>, reason?: string) {
+  syncCheckpoint(state); state.checkpoint.id = randomUUID()
+  state.checkpoint.resumeWhen = node.human?.resumeWhen ?? null
+  state.run.checkpoint = structuredClone(state.checkpoint); state.run.status = "waiting_for_human"
+  state.run.outcome = { status: "waiting_for_human", waitpointId: stableUuid(state.run.binding.runId, node.id, "waitpoint"),
+    checkpointId: state.checkpoint.id, reason: reason ?? node.human?.prompt ?? "需要用户处理当前浏览器页面。",
+    evidence: structuredClone(state.checkpoint.artifacts) }
 }
 function resolveTarget(target: Extract<ChainNode, { kind: "browser" | "observe" }>["target"], context: BindingContext) {
   if (!target) return undefined
@@ -265,41 +324,11 @@ function resolveTarget(target: Extract<ChainNode, { kind: "browser" | "observe" 
     ...(target.occurrence === undefined ? {} : { occurrence: resolveBinding(target.occurrence, context) }) }
     : { kind: target.kind, strategy: target.strategy, value: resolveBinding(target.value, context) }
 }
-function observationMatches(condition: Extract<ChainNode, { kind: "observe" }>["stableWhen"], observation: JsonValue, context: BindingContext) {
+function observationMatches(condition: Extract<ChainNode, { kind: "observe" }>["stableWhen"]
+  | NonNullable<Extract<ChainNode, { kind: "capability" }>["stableWhen"]>, observation: JsonValue, context: BindingContext) {
   const found = readObservation(observation, condition.path)
   if (condition.operator === "exists") return found.exists && found.value !== null
   return found.exists && JSON.stringify(found.value) === JSON.stringify(resolveBinding(condition.expected, context))
-}
-function executeLoop(state: RuntimeState, node: Extract<ChainNode, { kind: "loop" }>): NodeCapabilityResult {
-  const frame = state.checkpoint.loops[node.id] ?? { index: 0, completedStableKeys: [], activeStableKey: null }
-  if (frame.activeStableKey !== null) {
-    if (!frame.completedStableKeys.includes(frame.activeStableKey)) frame.completedStableKeys.push(frame.activeStableKey)
-    frame.activeStableKey = null; frame.index += 1
-  }
-  state.checkpoint.loops[node.id] = frame
-  writeVariable(state, node.cursorVariable, frame.index)
-  if (node.iteration.mode === "while") {
-    if (!evaluatePredicate(node.iteration.condition, state.context)) return { outcome: "done", output: null }
-    if (frame.index >= node.maxIterations) return { outcome: "limit", output: null }
-    frame.activeStableKey = String(frame.index)
-    return { outcome: "body", output: null }
-  }
-  const collection = resolveBinding(node.iteration.collection, state.context)
-  if (!Array.isArray(collection)) throw new Error("loop_collection_required")
-  let item: JsonValue | undefined, stableKey = ""
-  while (frame.index < collection.length) {
-    item = collection[frame.index]!
-    const stableValue = readPath(item, node.iteration.stableKeyPath)
-    if (!["string", "number", "boolean"].includes(typeof stableValue)) throw new Error("loop_stable_key_scalar_required")
-    stableKey = String(stableValue)
-    if (!frame.completedStableKeys.includes(stableKey)) break
-    frame.index += 1
-  }
-  if (frame.index >= collection.length) return { outcome: "done", output: null }
-  if (frame.index >= node.maxIterations) return { outcome: "limit", output: null }
-  writeVariable(state, node.iteration.itemVariable, item!)
-  frame.activeStableKey = stableKey
-  return { outcome: "body", output: null }
 }
 async function executeHuman(state: RuntimeState, node: Extract<ChainNode, { kind: "human" }>): Promise<NodeCapabilityResult> {
   if (state.resumingNodeId === node.id && state.resumeObservation !== null) {
@@ -422,77 +451,4 @@ function waitForInvokedHuman(state: RuntimeState, node: Extract<ChainNode, { kin
   syncCheckpoint(state); state.checkpoint.id = randomUUID(); state.run.checkpoint = structuredClone(state.checkpoint); state.run.status = "waiting_for_human"
   state.run.outcome = { status: "waiting_for_human", waitpointId: stableUuid(state.run.binding.runId, node.id, "waitpoint"),
     checkpointId: state.checkpoint.id, reason, evidence: structuredClone(state.checkpoint.artifacts) }
-}
-function invokedOutput(output: TaskOutput): JsonValue {
-  return output.kind === "value" ? output.value : { artifactId: output.artifact.artifactId,
-    mediaType: output.artifact.mediaType, digest: output.artifact.digest }
-}
-async function finishTerminal(state: RuntimeState, node: Extract<ChainNode, { kind: "terminal" }>) {
-  for (const evidence of node.evidence) resolveBinding(evidence, state.context)
-  if (node.status === "completed" && state.compiled.chain.completion.some((condition) => !evaluatePredicate(condition.predicate, state.context))) {
-    throw new Error("completion_condition_failed")
-  }
-  const artifacts = structuredClone(state.checkpoint.artifacts), reason = node.reason
-  state.run.status = node.status
-  state.run.outcome = node.status === "completed" ? { status: "completed", reason, evidence: artifacts, completionEvidence: state.compiled.chain.completion.map((item) => item.id) }
-    : node.status === "partial" ? { status: "partial", reason, evidence: artifacts, remaining: [reason] }
-      : node.status === "blocked" ? { status: "blocked", reason, evidence: artifacts, code: "terminal_blocked" }
-        : node.status === "failed" ? { status: "failed", reason, evidence: artifacts, code: "terminal_failed" }
-          : { status: "cancelled", reason, evidence: artifacts }
-  state.run.checkpoint = null
-}
-async function pause(state: RuntimeState, cause: "drift" | "budget" | "interrupted" | "requested", reason: string) {
-  syncCheckpoint(state); state.checkpoint.id = randomUUID()
-  state.run.checkpoint = structuredClone(state.checkpoint)
-  state.run.status = "paused"
-  state.run.outcome = { status: "paused", cause, checkpointId: state.checkpoint.id, reason, evidence: structuredClone(state.checkpoint.artifacts) }
-}
-async function fail(state: RuntimeState, error: unknown) {
-  const reason = error instanceof Error ? error.message : "runtime_failed"
-  state.run.status = "failed"
-  state.run.outcome = { status: "failed", code: reason, reason: `运行失败：${reason}`, evidence: structuredClone(state.checkpoint.artifacts) }
-  if (state.checkpoint.pendingEffect) state.checkpoint.pendingEffect.status = "uncertain"
-  syncCheckpoint(state)
-  state.run.checkpoint = structuredClone(state.checkpoint)
-}
-function event(state: RuntimeState, node: ChainNode, status: "planned" | "started" | "finished",
-  outcome: NodeOutcome | null, idempotencyKey: string, stableKey: string | null) {
-  state.run.sequence += 1
-  state.run.events.push({ sequence: state.run.sequence, at: now(state).toISOString(), invocationId: state.run.binding.invocationId,
-    nodeId: node.id, status, outcome, idempotencyKey, stableKey })
-}
-function syncCheckpoint(state: RuntimeState) {
-  state.checkpoint.sequence = state.run.sequence
-  state.checkpoint.mode = state.run.mode
-  state.checkpoint.nodeOutputs = structuredClone(state.context.nodeOutputs)
-  state.checkpoint.variables = structuredClone(state.context.variables)
-  state.checkpoint.outputs = structuredClone(state.run.outputs)
-  state.checkpoint.consumed = structuredClone(state.run.consumed)
-  state.checkpoint.events = structuredClone(state.run.events)
-  state.checkpoint.modelCalls = structuredClone(state.run.modelCalls)
-  state.checkpoint.auditComplete = state.run.auditComplete
-}
-async function beginEffect(state: RuntimeState, kind: "browser" | "llm" | "invoke", nodeId: string,
-  stableKey: string | null, idempotencyKey: string) {
-  state.checkpoint.pendingEffect = { kind, nodeId, stableKey: stableKey ?? "root", idempotencyKey, status: "planned" }
-  syncCheckpoint(state); state.run.checkpoint = structuredClone(state.checkpoint)
-  await persist(state)
-  state.checkpoint.pendingEffect.status = "started"
-  syncCheckpoint(state); state.run.checkpoint = structuredClone(state.checkpoint)
-  await persist(state)
-}
-function completeEffect(state: RuntimeState) {
-  state.checkpoint.pendingEffect = null
-  syncCheckpoint(state)
-  state.run.checkpoint = structuredClone(state.checkpoint)
-}
-async function markEffectUncertain(state: RuntimeState) {
-  if (state.checkpoint.pendingEffect) state.checkpoint.pendingEffect.status = "uncertain"
-  syncCheckpoint(state); state.run.checkpoint = structuredClone(state.checkpoint)
-  await persist(state)
-}
-
-async function persist(state: RuntimeState) {
-  if (state.capabilities.persist) await state.capabilities.persist(taskRunSchema.parse({ ...state.run,
-    checkpoint: state.run.checkpoint ? structuredClone(state.run.checkpoint) : null }))
 }

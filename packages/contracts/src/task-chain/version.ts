@@ -6,7 +6,7 @@ import { taskRequirementSchema } from "./requirement.js"
 import { taskRunSchema } from "./run.js"
 import { jsonValueSchema, type JsonValue } from "./value.js"
 
-export const taskContractSchema = z.discriminatedUnion("kind", [taskRequirementSchema, taskPlanSchema, taskChainSchema, taskRunSchema])
+export const taskContractSchema = z.union([taskRequirementSchema, taskPlanSchema, taskChainSchema, taskRunSchema])
 export type TaskContract = z.infer<typeof taskContractSchema>
 export type ContractReadResult =
   | { status: "current"; originalJson: string; record: TaskContract }

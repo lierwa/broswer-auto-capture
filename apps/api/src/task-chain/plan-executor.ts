@@ -129,7 +129,7 @@ export class TaskPlanExecutor {
         return { continue: false, output: null, partial }
       }
       partial = true; progress.reason = run.outcome?.reason ?? "输入未完成。"
-      if (step.invocation.mode === "once" || step.invocation.onItemFailure === "stop") {
+      if (step.invocation.mode !== "each" || step.invocation.onItemFailure === "stop") {
         this.finish(record, "failed", progress.reason)
         return { continue: false, output: null, partial }
       }
@@ -138,7 +138,7 @@ export class TaskPlanExecutor {
         return { continue: false, output: null, partial }
       }
     }
-    const output = step.invocation.mode === "once" ? outputs[0] ?? null : outputs
+    const output = step.invocation.mode === "each" ? outputs : outputs[0] ?? null
     return { continue: true, output, partial }
   }
 
@@ -159,7 +159,7 @@ export class TaskPlanExecutor {
 }
 
 function invocationInputs(step: TaskPlanStep, context: BindingContext) {
-  if (step.invocation.mode === "once") return [{ input: parseTaskValue(step.inputContract, resolveBinding(step.input, context)), stableKey: "root" }]
+  if (step.invocation.mode !== "each") return [{ input: parseTaskValue(step.inputContract, resolveBinding(step.input, context)), stableKey: "root" }]
   const invocation = step.invocation
   const collection = resolveBinding(invocation.collection, context)
   if (!Array.isArray(collection)) throw new Error("plan_each_collection_required")

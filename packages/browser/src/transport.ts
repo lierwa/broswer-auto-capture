@@ -14,13 +14,15 @@ export function bskExecutor(cwd: string): CommandExecutor {
     let stdout = "", spawned = false, settled = false
     let timeout: ReturnType<typeof setTimeout> | undefined
     let exitSettle: ReturnType<typeof setTimeout> | undefined
-    const terminate = () => {
-      try { child.kill() } catch {}
+    let cancellation: ReturnType<typeof setTimeout> | undefined
+    const terminate = (signal: NodeJS.Signals = "SIGTERM") => {
+      try { child.kill(signal) } catch {}
       child.stdout.destroy()
     }
     const cleanup = () => {
       if (timeout) clearTimeout(timeout)
       if (exitSettle) clearTimeout(exitSettle)
+      if (cancellation) clearTimeout(cancellation)
       signal?.removeEventListener("abort", cancel)
       child.stdout.removeListener("data", onData)
       child.removeListener("spawn", onSpawn)
@@ -41,7 +43,13 @@ export function bskExecutor(cwd: string): CommandExecutor {
       if (terminateChild) terminate()
       resolve({ stdout, exitCode })
     }
-    const cancel = () => fail(new BrowserError("cancelled"), true)
+    const cancel = () => {
+      if (settled) return
+      if (!spawned || process.platform === "win32") { fail(new BrowserError("cancelled"), true); return }
+      // WHY：request-help 是 daemon 中的长命令；先给 CLI 发送 Ctrl-C 并等它退出，让 daemon 清除 busy 后才能关闭所属 session。
+      try { child.kill("SIGINT") } catch { fail(new BrowserError("cancelled"), true); return }
+      cancellation = setTimeout(() => fail(new BrowserError("cancelled"), true), 2_000)
+    }
     const onData = (chunk: string) => {
       if (stdout.length + chunk.length > 2_000_000) { finish(-1, true); return }
       stdout += chunk
@@ -49,8 +57,11 @@ export function bskExecutor(cwd: string): CommandExecutor {
     const onSpawn = () => { spawned = true }
     const onError = () => fail(spawned ? new BrowserError("command_failed") : new CommandLaunchError(), true)
     // WHY：CLI 已退出但它启动的 daemon 继承 stdout 时不会产生 close；exit 后让当前数据事件排空即可按真实退出码结算。
-    const onExit = (code: number | null) => { exitSettle = setTimeout(() => finish(code ?? -1), 0) }
-    const onClose = (code: number | null) => finish(code ?? -1)
+    const onExit = (code: number | null) => {
+      if (signal?.aborted) { fail(new BrowserError("cancelled")); return }
+      exitSettle = setTimeout(() => finish(code ?? -1), 0)
+    }
+    const onClose = (code: number | null) => signal?.aborted ? fail(new BrowserError("cancelled")) : finish(code ?? -1)
     // WHY：daemon 可能继承 CLI 的 stdout；超时必须自己结束 Promise，不能把 close 当作 kill 的确认信号。
     timeout = setTimeout(() => fail(new BrowserError("command_failed"), true), commandTimeoutMs(args))
     signal?.addEventListener("abort", cancel, { once: true })

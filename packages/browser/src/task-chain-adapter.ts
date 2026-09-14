@@ -4,11 +4,13 @@ import { z } from "zod"
 import type {
   ChainNode, JsonValue, NodeCapabilityResult, ResumeVerificationResult, TaskChain, TaskCheckpoint,
 } from "@browser-capture/contracts"
+import { browserOperationSchema, requiredLegacyNodeOutcomes } from "@browser-capture/contracts"
 import { BrowserError, type BrowserCommand, type BrowserGrant, type BrowserInspection } from "./contracts.js"
 import { pageSchema } from "./page.js"
 
 export interface TaskChainBrowserPort {
   command(command: unknown, signal?: AbortSignal): Promise<string | null>
+  commandWithTimeout?(command: unknown, signal: AbortSignal, timeoutMs: number): Promise<string | null>
   state(): BrowserInspection | null
 }
 export interface BrowserAdapterInvocation {
@@ -31,6 +33,13 @@ export interface HumanAdapterInvocation {
     | { operator: "equals"; path: (string | number)[]; expected: JsonValue }
   signal: AbortSignal
 }
+export interface CapabilityAdapterInvocation {
+  node: Extract<ChainNode, { kind: "capability" }>
+  input: Record<string, JsonValue>
+  config: JsonValue
+  resumeCondition?: HumanAdapterInvocation["resumeCondition"]
+  signal: AbortSignal
+}
 
 const keySchema = z.enum(["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight",
   "PageDown", "PageUp", "Home", "End"])
@@ -38,16 +47,61 @@ const tabIdSchema = z.number().int().nonnegative()
 const durationSchema = z.number().int().nonnegative().max(1_440_000)
 const pathSchema = z.string().trim().min(1).max(32_767)
 const targetRoles = new Set(["link", "button", "textbox", "combobox"])
+const inputNameSchema = z.string().regex(/^[a-z][A-Za-z0-9_-]{0,63}$/)
+const capabilityTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("semantic"), role: inputNameSchema, name: inputNameSchema,
+    fallbackName: inputNameSchema.optional(), occurrence: inputNameSchema.optional() }).strict(),
+  z.object({ kind: z.literal("locator"), strategy: z.enum(["css", "label", "text", "test_id"]),
+    value: inputNameSchema }).strict(),
+])
+const captureSchema = z.object({ scope: z.enum(["page", "target", "tabs", "downloads"]),
+  target: capabilityTargetSchema.optional(), maxItems: z.number().int().min(1).max(300).optional() }).strict()
+export const browserCapabilityConfigSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("perform"), operation: browserOperationSchema.nullable(),
+    arguments: z.record(inputNameSchema, inputNameSchema), target: capabilityTargetSchema.optional(),
+    capture: captureSchema.optional() }).strict().refine((value) => value.operation !== null || value.capture !== undefined,
+      "browser_capability_empty"),
+  z.object({ mode: z.literal("human") }).strict(),
+])
 
 export class TaskChainBrowserAdapter {
   constructor(private readonly session: TaskChainBrowserPort) {}
 
+  capability = async (invocation: CapabilityAdapterInvocation): Promise<NodeCapabilityResult> => {
+    if (invocation.node.capability.name !== "browser.perform" || invocation.node.capability.version !== 1) {
+      return unsupported("capability_unsupported")
+    }
+    const config = browserCapabilityConfigSchema.parse(invocation.config)
+    if (config.mode === "human") return this.requestHuman(invocation)
+    let action: NodeCapabilityResult = { outcome: "success", output: null }
+    if (config.operation !== null) {
+      const node: Extract<ChainNode, { kind: "browser" }> = { id: invocation.node.id, label: invocation.node.label,
+        kind: "browser", operation: config.operation, arguments: {}, timeoutMs: invocation.node.timeoutMs,
+        outcomes: [...requiredLegacyNodeOutcomes.browser], outputContract: invocation.node.outputContract, writes: [] }
+      action = await this.browser({ node, arguments: selectInputs(invocation.input, config.arguments),
+        ...(config.target ? { target: targetFromInputs(config.target, invocation.input) } : {}), signal: invocation.signal })
+      if (action.outcome !== "success" || !config.capture) return action
+    }
+    if (!config.capture) return action
+    const node: Extract<ChainNode, { kind: "observe" }> = { id: invocation.node.id, label: invocation.node.label,
+      kind: "observe", scope: config.capture.scope,
+      ...(config.capture.target ? { target: legacyTarget(config.capture.target, invocation.input) } : {}),
+      ...(config.capture.maxItems === undefined ? {} : { maxItems: config.capture.maxItems }),
+      stableWhen: { operator: "exists", path: [] }, timeoutMs: invocation.node.timeoutMs,
+      outcomes: [...requiredLegacyNodeOutcomes.observe], outputContract: invocation.node.outputContract, writes: [] }
+    return this.observe({ node, ...(config.capture.target
+      ? { target: targetFromInputs(config.capture.target, invocation.input) } : {}), signal: invocation.signal })
+  }
+
   browser = async (invocation: BrowserAdapterInvocation): Promise<NodeCapabilityResult> => {
-    const timeout = AbortSignal.timeout(invocation.node.timeoutMs)
+    const managed = Boolean(this.session.commandWithTimeout) && invocation.node.operation !== "wait"
+    const timeout = managed ? null : AbortSignal.timeout(invocation.node.timeoutMs)
     try {
-      const output = await this.executeBrowser({ ...invocation, signal: AbortSignal.any([invocation.signal, timeout]) })
+      const output = await this.executeBrowser({ ...invocation,
+        signal: timeout ? AbortSignal.any([invocation.signal, timeout]) : invocation.signal })
       return { outcome: "success", output }
-    } catch (error) { return deadlineFailure(error, invocation.signal, timeout, invocationOrigin(invocation, this.session.state())) }
+    } catch (error) { return timeout ? deadlineFailure(error, invocation.signal, timeout,
+      invocationOrigin(invocation, this.session.state())) : browserFailure(error, invocationOrigin(invocation, this.session.state())) }
   }
 
   observe = async (invocation: ObserveAdapterInvocation): Promise<NodeCapabilityResult> => {
@@ -61,11 +115,14 @@ export class TaskChainBrowserAdapter {
         const raw = await this.session.command({ type: "read", selector: target.selector,
           ...(invocation.node.maxItems === undefined ? {} : { maxItems: invocation.node.maxItems }) }, signal)
         const output = parseCommandOutput(raw)
-        return { outcome: "success", output }
+        const inspection = this.session.state()
+        return { outcome: "success", output, ...(inspection ? { browser: browserSummary(inspection) } : {}) }
       }
       if (invocation.node.scope === "tabs") {
         const raw = await this.session.command({ type: "tabs" }, signal)
-        return { outcome: "success", output: parseCommandOutput(raw) }
+        const inspection = this.session.state()
+        return { outcome: "success", output: parseCommandOutput(raw),
+          ...(inspection ? { browser: browserSummary(inspection) } : {}) }
       }
       const raw = await this.session.command({ type: "page" }, signal)
       const inspection = this.session.state()
@@ -117,6 +174,24 @@ export class TaskChainBrowserAdapter {
     return { outcome: "success", output: observationValue(inspection), browser: browserSummary(inspection) }
   }
 
+  private async requestHuman(invocation: CapabilityAdapterInvocation): Promise<NodeCapabilityResult> {
+    const human = invocation.node.human
+    if (!human || !invocation.resumeCondition) return unsupported("capability_human_contract_required")
+    try {
+      const current = await this.freshObservation(invocation.signal)
+      if (current.outcome !== "success" || matches(invocation.resumeCondition, current.output ?? null)) return current
+      await this.session.command({ type: "request_help", reason: helpReason(human.reason),
+        prompt: human.prompt, timeoutMs: invocation.node.timeoutMs }, invocation.signal)
+      const resumed = await this.freshObservation(invocation.signal)
+      return resumed.outcome === "success" && matches(invocation.resumeCondition, resumed.output ?? null)
+        ? resumed : { ...resumed, outcome: "blocked", reason: "human_resume_condition_not_met" }
+    } catch (error) {
+      const failure = browserFailure(error, inspectionOrigin(this.session.state()))
+      const inspection = this.session.state()
+      return failure.outcome === "human_required" && inspection ? { ...failure, browser: browserSummary(inspection) } : failure
+    }
+  }
+
   private async executeBrowser({ node, arguments: args, target, signal }: BrowserAdapterInvocation): Promise<JsonValue> {
     signal.throwIfAborted()
     const commandTarget = target ? lowLevelTarget(target) : undefined
@@ -124,45 +199,75 @@ export class TaskChainBrowserAdapter {
       const reuseOpenTab = z.boolean().optional().parse(args.reuseOpenTab)
       return this.command({ type: "navigate", url: z.string().url().parse(args.url),
         captureNetworkEvidence: z.boolean().default(false).parse(args.captureNetworkEvidence),
-        ...(reuseOpenTab === undefined ? {} : { reuseOpenTab }) }, signal)
+        ...(reuseOpenTab === undefined ? {} : { reuseOpenTab }) }, signal, node.timeoutMs)
     }
     if (node.operation === "click") {
       const dispatch = z.literal("dom").optional().parse(args.dispatch)
-      return this.command({ type: "click", target: requiredTarget(commandTarget), ...(dispatch ? { dispatch } : {}) }, signal)
+      return this.command({ type: "click", target: requiredTarget(commandTarget), ...(dispatch ? { dispatch } : {}) }, signal, node.timeoutMs)
     }
-    if (node.operation === "hover") return this.command({ type: "hover", target: requiredTarget(commandTarget) }, signal)
-    if (node.operation === "fill") return this.command({ type: "fill", target: requiredTarget(commandTarget), value: z.string().parse(args.value) }, signal)
-    if (node.operation === "press") return this.command({ type: "press", ...(commandTarget ? { target: commandTarget } : {}), key: keySchema.parse(args.key) }, signal)
-    if (node.operation === "select") return this.command({ type: "select", target: requiredTarget(commandTarget), values: selectValues(args) }, signal)
-    if (node.operation === "scroll") return this.scroll(args, signal)
+    if (node.operation === "hover") return this.command({ type: "hover", target: requiredTarget(commandTarget) }, signal, node.timeoutMs)
+    if (node.operation === "fill") return this.command({ type: "fill", target: requiredTarget(commandTarget), value: z.string().parse(args.value) }, signal, node.timeoutMs)
+    if (node.operation === "press") return this.command({ type: "press", ...(commandTarget ? { target: commandTarget } : {}), key: keySchema.parse(args.key) }, signal, node.timeoutMs)
+    if (node.operation === "select") return this.command({ type: "select", target: requiredTarget(commandTarget), values: selectValues(args) }, signal, node.timeoutMs)
+    if (node.operation === "scroll") return this.scroll(args, signal, node.timeoutMs)
     if (node.operation === "drag") throw new BrowserError("capability_unsupported")
     if (node.operation === "tab_open") return this.command({ type: "tab_open", url: z.string().url().parse(args.url),
-      background: z.boolean().default(false).parse(args.background) }, signal)
+      background: z.boolean().default(false).parse(args.background) }, signal, node.timeoutMs)
     if (node.operation === "tab_select" || node.operation === "tab_close") {
-      return this.command({ type: node.operation, tabId: tabIdSchema.parse(args.tabId) }, signal)
+      return this.command({ type: node.operation, tabId: tabIdSchema.parse(args.tabId) }, signal, node.timeoutMs)
     }
     if (node.operation === "upload") return this.command({ type: "upload", target: requiredTarget(commandTarget),
-      files: z.array(pathSchema).min(1).max(20).parse(args.files), mode: z.enum(["input", "drop"]).default("input").parse(args.mode) }, signal)
+      files: z.array(pathSchema).min(1).max(20).parse(args.files), mode: z.enum(["input", "drop"]).default("input").parse(args.mode) }, signal, node.timeoutMs)
     if (node.operation === "download") return this.command({ type: "download", ...(commandTarget ? { target: commandTarget } : {}),
-      out: pathSchema.parse(args.out), overwrite: z.boolean().default(false).parse(args.overwrite) }, signal)
+      out: pathSchema.parse(args.out), overwrite: z.boolean().default(false).parse(args.overwrite) }, signal, node.timeoutMs)
     const durationMs = durationSchema.parse(args.durationMs)
     if (durationMs > node.timeoutMs) throw new BrowserError("budget_exceeded")
     await delay(durationMs, undefined, { signal })
     return null
   }
 
-  private async command(command: BrowserCommand, signal: AbortSignal) {
-    return parseCommandOutput(await this.session.command(command, signal))
+  private async command(command: BrowserCommand, signal: AbortSignal, timeoutMs: number) {
+    return parseCommandOutput(await (this.session.commandWithTimeout
+      ? this.session.commandWithTimeout(command, signal, timeoutMs) : this.session.command(command, signal)))
   }
 
-  private async scroll(args: Record<string, JsonValue>, signal: AbortSignal) {
+  private async scroll(args: Record<string, JsonValue>, signal: AbortSignal, timeoutMs: number) {
     const direction = z.enum(["up", "down"]).parse(args.direction), steps = z.number().int().min(1).max(20).default(1).parse(args.steps)
     for (let index = 0; index < steps; index++) {
       signal.throwIfAborted()
-      await this.session.command({ type: "press", key: direction === "down" ? "PageDown" : "PageUp" }, signal)
+      await (this.session.commandWithTimeout
+        ? this.session.commandWithTimeout({ type: "press", key: direction === "down" ? "PageDown" : "PageUp" }, signal, timeoutMs)
+        : this.session.command({ type: "press", key: direction === "down" ? "PageDown" : "PageUp" }, signal))
     }
     return null
   }
+}
+
+function selectInputs(input: Record<string, JsonValue>, mapping: Record<string, string>) {
+  return Object.fromEntries(Object.entries(mapping).map(([name, source]) => {
+    if (!Object.hasOwn(input, source)) throw new BrowserError("invalid_response")
+    return [name, input[source]!]
+  }))
+}
+
+function targetFromInputs(config: z.infer<typeof capabilityTargetSchema>, input: Record<string, JsonValue>): NonNullable<BrowserAdapterInvocation["target"]> {
+  const value = (name: string) => {
+    if (!Object.hasOwn(input, name)) throw new BrowserError("invalid_response")
+    return input[name]!
+  }
+  return config.kind === "semantic" ? { kind: "semantic", role: value(config.role), name: value(config.name),
+    ...(config.fallbackName ? { fallbackName: value(config.fallbackName) } : {}),
+    ...(config.occurrence ? { occurrence: value(config.occurrence) } : {}) }
+    : { kind: "locator", strategy: config.strategy, value: value(config.value) }
+}
+
+function legacyTarget(config: z.infer<typeof capabilityTargetSchema>, input: Record<string, JsonValue>): Extract<ChainNode, { kind: "observe" }>["target"] {
+  const target = targetFromInputs(config, input)
+  const constant = (value: JsonValue) => ({ source: "constant" as const, value })
+  return target.kind === "semantic" ? { kind: "semantic", role: typeof target.role === "string" ? target.role : constant(target.role),
+    name: constant(target.name), ...(target.fallbackName === undefined ? {} : { fallbackName: constant(target.fallbackName) }),
+    ...(target.occurrence === undefined ? {} : { occurrence: constant(target.occurrence) }) }
+    : { kind: "locator", strategy: target.strategy as "css" | "label" | "text" | "test_id", value: constant(target.value) }
 }
 
 function lowLevelTarget(target: NonNullable<BrowserAdapterInvocation["target"]>): Extract<BrowserCommand, { type: "click" }>["target"] {
@@ -229,8 +334,8 @@ function browserFailure(error: unknown, origin: string | null = null): NodeCapab
   if (error.code === "authentication_required") return failureResult("human_required", error, "authentication", origin)
   if (error.code === "verification_required") return failureResult("human_required", error, "verification", origin)
   if (error.code === "rate_limited") return failureResult("blocked", error, "rate_limited", origin)
-  if (error.code === "access_denied" || error.code === "origin_denied") return failureResult(
-    error.code === "origin_denied" ? "human_required" : "blocked", error, "access_denied", origin)
+  if (error.code === "access_denied") return failureResult("blocked", error, "access_denied", origin)
+  if (error.code === "origin_denied") return { outcome: "failed", reason: error.code }
   if (error.code === "transient_failure" || error.code === "command_failed" || error.code === "invalid_response") {
     return failureResult("failed", error, "transient", origin)
   }
@@ -252,7 +357,8 @@ function failureResult(outcome: "timeout" | "blocked" | "human_required" | "fail
   category: "authentication" | "verification" | "rate_limited" | "access_denied" | "transient", fallbackOrigin: string | null): NodeCapabilityResult {
   return { outcome, reason: error.code, externalFailure: { category, code: error.code,
     origin: error.evidence.origin ?? fallbackOrigin, observedOrigin: error.evidence.observedOrigin ?? null,
-    httpStatus: error.evidence.httpStatus ?? null, retryAt: null } }
+    httpStatus: error.evidence.httpStatus ?? null,
+    retryAt: error.evidence.retryAt === undefined ? null : new Date(error.evidence.retryAt).toISOString() } }
 }
 
 function invocationOrigin(invocation: BrowserAdapterInvocation, inspection: BrowserInspection | null) {
@@ -281,6 +387,17 @@ function helpReason(reason: Extract<ChainNode, { kind: "human" }>["reason"]): Ex
 export function taskChainBrowserActions(chain: TaskChain): BrowserGrant["actions"] {
   const actions = new Set<BrowserGrant["actions"][number]>()
   for (const node of chain.nodes) {
+    if (node.kind === "capability" && node.capability.name === "browser.perform") {
+      const parsed = browserCapabilityConfigSchema.safeParse(node.config)
+      if (!parsed.success) continue
+      if (parsed.data.mode === "human") { actions.add("observe"); actions.add("request_help"); continue }
+      const operation = parsed.data.operation
+      const mapped = operation === "scroll" ? "press" : operation === "wait" || operation === "drag" ? null : operation
+      if (mapped) actions.add(mapped)
+      if (parsed.data.capture) actions.add(parsed.data.capture.scope === "tabs" ? "tabs"
+        : parsed.data.capture.scope === "page" ? "page" : parsed.data.capture.scope === "target" ? "read" : "observe")
+      continue
+    }
     if (node.kind === "observe") {
       actions.add(node.scope === "tabs" ? "tabs" : node.scope === "page" ? "page" : node.scope === "target" ? "read" : "observe")
     }
