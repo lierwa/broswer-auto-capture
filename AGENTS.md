@@ -48,6 +48,28 @@ Product Alignment:
 
 ## 读取与组件复用
 
+- 任何非平凡的通用能力或基础设施在实现前，必须先检查仓库现有依赖、官方实现和成熟开源项目；已有方案覆盖核心需求时，默认通过其公开 API、适配层或独立进程直接复用，不得在项目内重写同等能力。
+- Star 数、README 宣传和样例运行不能单独证明可复用。选型必须核验实际源码与真实行为，包括许可证、维护状态、语言与运行时、Windows 兼容、浏览器会话所有权、敏感数据边界、复跑时模型调用、持久化事实源以及与现有 IR/runtime 的职责冲突。
+- B-A-T 自有代码只承担项目独有职责：把外部组件的事件和结果适配为版本化 `TaskChain`、补齐输入输出绑定、验证证据、运行审计和产品生命周期。外部成熟组件已经拥有的 Agent loop、浏览器控制、工作流记录、选择器解析、图调度、校验或恢复能力不得复制一份。
+- 不采用已有成熟方案时，必须记录该方案无法满足的具体不变量和源码或运行证据；“接入麻烦”“希望完全控制”“以后可能扩展”不能作为自研理由。只缺少局部能力时，应先适配或扩展现有组件，不得重造整套系统。
+- 引入、替换或删除承担关键能力的库前，必须完成下列记录，并在最小真实样本上验证后才能冻结选型：
+
+```text
+Reuse Assessment:
+- capability:
+- existing implementation in repository:
+- mature candidates and pinned versions:
+- selected implementation:
+- reused public surface:
+- B-A-T-owned adapter and remaining gap:
+- license/runtime/platform fit:
+- browser/runtime/state ownership conflicts:
+- replay model calls:
+- rejected candidates and evidence:
+- focused validation:
+```
+
+- 若 `Reuse Assessment` 不能证明项目新增代码只是在适配成熟能力或实现 B-A-T 独有契约，必须停止实现，先完成选型或修正设计。
 - 所有项目命令必须显式使用当前实际 checkout 根目录作为 workdir；不得把任一开发机器的历史绝对路径写成项目事实。禁止扫描或读取 `node_modules`；通过官方文档、明确源码路径、类型检查和行为测试核验依赖。
 - 结构查询优先CodeGraph；本项目未初始化时先请求初始化授权，已知具体文件可以定点读取。相邻项目只读参考。
 - 调研与验收门记录在 `docs/development/RESEARCH.md`，阶段计划在ROADMAP，当前证据在PROGRESS；先验证再冻结选型。

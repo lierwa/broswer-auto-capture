@@ -1,5 +1,26 @@
 # 开发进度
 
+## 临时预执行闭环已通过（2026-09-15）
+
+Product Alignment:
+- natural-language task: 用一个代表输入完成一次真实、自然语言驱动的浏览器任务
+- reusable chain boundary: 先保留成功执行的类型化历史，链路编译延后
+- runtime inputs: 自然语言目标、起始地址或代表输入、动态输出合同、现有预算
+- dynamic task outputs: Schema 校验后的业务结果与宿主自动记录的执行历史
+- generic platform capability used: AI Connect、Pi AgentSession、BrowserSkill、BrowserService、Zod、现有运行审计
+- replay model calls: N/A；当前只验 E1
+- site/task-specific code added: no
+
+已实现隔离的 business-only 预执行：继续复用 AI Connect、Pi AgentSession、BrowserSkill 和 BrowserService；`record_output` 支持 `set`/`append` 增量写入，无效写入不进入 revision；`finish({})` 只由宿主依据动态合同接受。精确 issue、待完成路径、合法示例、浏览器事件窗口、当前 URL、模型调用和最终摘要都保存在内部 `PreexecutionArtifact`。旧 `complete_step` authoring、链路编译器和公共 TaskChain contract 保持原样。
+
+验收证据：
+
+- **A 聚焦闭环通过**：`node --import tsx --test apps/api/tests/preexecution-agent.test.ts` 最终 6/6；覆盖错误类型、漏字段、同一 adapter/session continuation、execute 前 Pi tool failure、外部阻断、取消、连续 5 次失败上限，以及同一 Pi turn 并行工具调用在唯一 BrowserSession 内串行。受影响既有测试 `exploration-agent.test.ts` 与 `task-chain-budget.test.ts` 共 15/15；`npm run check --workspace @browser-capture/api` 通过。
+- **B GitHub 公开页通过**：输入为“打开 `https://github.com/browser-use/browser-use`，返回仓库名称、页面当前可见 star 数和主要语言”及动态业务合同。AI Connect 实际选择 `gpt-5.6-terra` / `medium`；preexecution run `aed39704-c86a-4a45-8094-3a0d8e8368b2`，browser run `51778ad8-d852-402d-a841-49f35440818c`。真实输出为 `browser-use/browser-use`、`114.6k stars`、`Python`；3 次成功 write，`finishAccepted=true`，digest `172c6827ccc1e0b4762fe36dacbe40199fee3fc3866f2cf919a629b6906d1ffd`，artifact `closed=true`，结束后 `bsk session list` 无活动会话。
+- **C 京东单详情页来源门通过**：A、B 通过后只使用已持久化代表 URL `https://item.jd.com/100382263436.html`，不访问评论、不批量、不重复撞站。preexecution run `fe47cf98-b416-4415-b501-758d926e8d64`，browser run `fb8ec4d9-2632-43eb-bbda-8888111b7e26`；实际取得标题、两个页面价格口径、当前可见主图说明和 7 项规格，4 次成功 write，`finishAccepted=true`，digest `ddab009eeda7a95924e43ed85a2d8c6b52118fcb35467cd855dd5fbd83f43503`，`closed=true`，无登录/验证码/频控，结束后无活动会话。
+
+问题分类：产品 POC 首次 B 使用的 12 条底层命令默认预算不足，导航后 `page` 在第 13 条调用前终止，已把显式真实 runner 的固定上限修正为 100；首次 C 暴露 Pi 同一 turn 并行 read 会让唯一 BrowserSession 将后到调用误报为 `permission_denied`，已把每个语义动作与其 fresh observation 整体串行并新增回归。测试本身无已知失败；受控中止错误的人工等待后遗留一条 owner 记录，已通过 BrowserService 既有 cleanup 路径关闭，最终 browser owner 和 session 均为 closed/空。未测试项为链路编译、链路复跑、换输入复跑、公共 API/UI 和技术栈替换；这些均不属于临时 E1，且本轮没有进入这些路径。真实 artifact 留在 Git 忽略的 `work/preexecution-poc/`，没有提交页面原文、Cookie、Profile 或登录信息。
+
 ## 多步骤同会话验证接续（2026-09-14）
 
 Product Alignment:

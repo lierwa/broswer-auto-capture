@@ -1,10 +1,13 @@
 import { z } from "zod"
 import { commandSchema, type BrowserCommand } from "@browser-capture/browser"
-import type { MainModelTool } from "@agent-platform/pi-agent-session"
+import { PI_AGENT_SESSION_AI_EVENT_NAMESPACE, type MainModelTool } from "@agent-platform/pi-agent-session"
 import type { AIEvent } from "@browser-capture/contracts/ai"
-import type { JsonValue } from "@browser-capture/contracts"
+import type { JsonValue, TaskDataContract } from "@browser-capture/contracts"
 import type { PreparedMainAIModel } from "../ai/model.js"
 import { explorationResultSchema, explorationStepSubmissionSchema } from "./exploration-trace.js"
+import { describeOutputContract, finishInputSchema, normalizeToolInputFailure, recordOutputInputSchema,
+  type OutputFailure } from "./preexecution-output.js"
+import type { PreexecutionModelRun } from "./preexecution-trace.js"
 
 const toolInput = z.object({ command: commandSchema }).strict()
 
@@ -78,4 +81,153 @@ export async function runExplorationAgent(model: PreparedMainAIModel, input: {
     }
     return result!
   } finally { await model.close() }
+}
+
+type BusinessAgentState = Readonly<{
+  status: "running" | "waiting_for_human" | "failed" | "completed"
+  finishAccepted: boolean
+  lastFeedback: OutputFailure | null
+}>
+
+export type BusinessPreexecutionAgentInput = Readonly<{
+  jobId: string
+  goal: string
+  startUrl: string
+  outputContract: TaskDataContract
+  signal: AbortSignal
+  onEvent(event: AIEvent): void
+  execute(command: BrowserCommand, callId: string, signal: AbortSignal, modelRunId: string): Promise<JsonValue>
+  recordOutput(raw: unknown, callId: string, modelRunId: string): JsonValue
+  finish(raw: unknown, callId: string, modelRunId: string): JsonValue
+  repairable(failure: OutputFailure, tool: string, callId: string | null, modelRunId: string): OutputFailure
+  runtimeToolFailure(failure: RuntimeToolFailure, modelRunId: string): OutputFailure | void
+  completionFeedback(modelRunId: string): OutputFailure
+  continuationLimit(modelRunId: string): void
+  state(): BusinessAgentState
+  onModelRun(run: PreexecutionModelRun): void
+}>
+
+type RuntimeToolFailure = z.infer<typeof runtimeToolFailureSchema>
+const runtimeToolFailureSchema = z.object({
+  type: z.literal("tool.execution.failed"), callId: z.string(), toolName: z.string(),
+  error: z.object({ code: z.string(), message: z.string(), retryable: z.boolean() }).passthrough(),
+}).passthrough()
+
+/** WHY：临时 E1 只验证业务执行；输出由宿主累积，模型不填写链路或 provenance。 */
+export async function runBusinessPreexecutionAgent(model: PreparedMainAIModel, input: BusinessPreexecutionAgentInput) {
+  let activeRunId = input.jobId
+  const tools = businessTools(input, () => activeRunId)
+  const activeTask = "在当前浏览器会话中完成给定自然语言任务。只记录页面中实际观察到的业务值；用 record_output 分段保存。" +
+    "工具返回 ok=false 时，按 issues 修正并继续同一会话。所有必填字段写完后调用 finish({})，由宿主验收。" +
+    "只有 fresh 页面内容明确显示登录、验证码、访问限制或需要人工决定时才调用 request_help，不要绕过；" +
+    "permission_denied、target_missing、target_ambiguous 和参数错误属于本地工具反馈，应在当前会话修正。"
+  let messages = [{ role: "user" as const, content: [{ type: "text" as const, text: JSON.stringify({
+    goal: input.goal, startUrl: input.startUrl, outputContract: input.outputContract,
+  }) }] }]
+  let result: Awaited<ReturnType<PreparedMainAIModel["run"]>> | undefined
+  try {
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      input.signal.throwIfAborted()
+      activeRunId = attempt === 0 ? input.jobId : `${input.jobId}:continuation:${attempt}`
+      const audit = modelRun(model, activeRunId, input.jobId)
+      let eventFeedback: OutputFailure | null = null
+      input.onModelRun(audit)
+      try {
+        result = await model.run({ runId: activeRunId, sessionId: input.jobId, messages, activeTask, tools,
+          signal: input.signal, onEvent: (event) => {
+            eventFeedback = acceptBusinessEvent(event, audit, input) ?? eventFeedback
+          } })
+        settleModelRun(audit, "completed", null, input)
+      } catch (error) {
+        const cancelled = error instanceof DOMException && error.name === "AbortError"
+        settleModelRun(audit, cancelled ? "cancelled" : "failed", safeErrorCode(error), input)
+        throw error
+      }
+      if (input.state().finishAccepted || input.state().status !== "running") return result
+      const feedback = eventFeedback ?? input.completionFeedback(activeRunId)
+      if (input.state().status !== "running") return result
+      if (attempt === 2) { input.continuationLimit(activeRunId); return result }
+      messages = [{ role: "user", content: [{ type: "text", text:
+        `继续同一预执行；保留当前浏览器现场并按宿主反馈修正：${JSON.stringify(feedback)}` }] }]
+    }
+    return result!
+  } finally { await model.close() }
+}
+
+function businessTools(input: BusinessPreexecutionAgentInput, runId: () => string): MainModelTool[] {
+  const browserParameters = jsonParameters(toolInput), recordParameters = jsonParameters(recordOutputInputSchema)
+  const finishParameters = jsonParameters(finishInputSchema)
+  return [
+    { name: "browser", label: "受控浏览器", description: "读取页面或执行已授权的浏览器动作。navigate 只使用 startUrl；后续页面使用实际观察到的链接。动作结果包含 fresh observation。",
+      parameters: browserParameters, async execute(callId: string, raw: unknown, signal?: AbortSignal) {
+        const lifetime = AbortSignal.any([input.signal, ...(signal ? [signal] : [])])
+        lifetime.throwIfAborted()
+        const parsed = toolInput.safeParse(raw)
+        if (!parsed.success) return toolResult(input.repairable(normalizeToolInputFailure(parsed.error, raw,
+          { command: { type: "observe" } }, input.state().lastFeedback?.pendingPaths ?? [], "browser 的合法参数"),
+        "browser", callId, runId()))
+        if (parsed.data.command.type === "upload" || parsed.data.command.type === "download") {
+          return toolResult(input.repairable(simpleFailure("exploration_action_not_authorized", "受控浏览器动作",
+            parsed.data.command.type, { command: { type: "observe" } }), "browser", callId, runId()))
+        }
+        return toolResult(await input.execute(parsed.data.command, callId, lifetime, runId()))
+      } },
+    { name: "record_output", label: "增量保存业务结果", description: describeOutputContract(input.outputContract, input.goal),
+      parameters: recordParameters, async execute(callId: string, raw: unknown) {
+        input.signal.throwIfAborted(); return toolResult(input.recordOutput(raw, callId, runId()))
+      } },
+    { name: "finish", label: "请求宿主验收", description: "不重复提交结果。所有必填业务字段写入后调用 finish({})；宿主会返回精确缺口或 accepted=true。",
+      parameters: finishParameters, async execute(callId: string, raw: unknown) {
+        input.signal.throwIfAborted(); return toolResult(input.finish(raw, callId, runId()))
+      } },
+  ]
+}
+
+function jsonParameters(schema: z.ZodType) {
+  const { $schema: _, ...parameters } = z.toJSONSchema(schema, { target: "draft-7" })
+  return z.record(z.string(), z.json()).parse(parameters)
+}
+
+function toolResult(value: JsonValue) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(value) }], details: {} }
+}
+
+function simpleFailure(code: string, expected: string, received: string, example: JsonValue): OutputFailure {
+  return { ok: false, code, retryable: true, issues: [{ path: [], expected, received,
+    message: `${received} 不属于本次预执行授权` }], pendingPaths: [], example }
+}
+
+function acceptBusinessEvent(event: AIEvent, audit: PreexecutionModelRun, input: BusinessPreexecutionAgentInput) {
+  if (event.type === "generation.started" && !audit.invocationIds.includes(event.invocationId)) {
+    audit.invocationIds.push(event.invocationId); input.onModelRun(audit)
+  }
+  const failure = runtimeToolFailure(event)
+  const feedback = failure ? input.runtimeToolFailure(failure, audit.runId) : undefined
+  input.onEvent(event)
+  return feedback
+}
+
+function runtimeToolFailure(event: AIEvent): RuntimeToolFailure | null {
+  if (event.type !== "extension" || event.namespace !== PI_AGENT_SESSION_AI_EVENT_NAMESPACE
+    || event.name !== "tool.execution.failed") return null
+  const parsed = runtimeToolFailureSchema.safeParse(event.payload)
+  return parsed.success ? parsed.data : null
+}
+
+function modelRun(model: PreparedMainAIModel, runId: string, sessionId: string): PreexecutionModelRun {
+  return { runId, sessionId, modelId: model.selection.modelId, reasoningEffort: model.selection.reasoningEffort,
+    status: "running", startedAt: new Date().toISOString(), finishedAt: null, invocationIds: [], errorCode: null }
+}
+
+function settleModelRun(run: PreexecutionModelRun, status: "completed" | "failed" | "cancelled", errorCode: string | null,
+  input: BusinessPreexecutionAgentInput) {
+  run.status = status; run.finishedAt = new Date().toISOString(); run.errorCode = errorCode; input.onModelRun(run)
+}
+
+function safeErrorCode(error: unknown) {
+  if (error instanceof DOMException && error.name === "AbortError") return "cancelled"
+  if (!(error instanceof Error)) return "unknown"
+  if (/model_account/i.test(error.message)) return "model_account_failed"
+  if (/pi_agent_session/i.test(error.message)) return "pi_agent_session_failed"
+  return "agent_run_failed"
 }

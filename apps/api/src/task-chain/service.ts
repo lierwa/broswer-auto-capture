@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto"
 import {
   CONTRACT_VERSION, parseTaskValue, taskChainCommandSchema, taskChainStateSchema, taskPlanExecutionIssues,
   type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskChainCommand, type TaskExecution,
   type TaskPlan, type TaskRun,
 } from "@browser-capture/contracts"
+import type { AIEvent } from "@browser-capture/contracts/ai"
 import type { TaskSummary } from "@browser-capture/contracts/task"
 import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
 import type { AIModelProvider } from "../ai/model.js"
@@ -20,6 +22,8 @@ import { explorationTraceSchema, type ExplorationTrace } from "./exploration-tra
 import { reusableExploration, reusableTaskExploration, reusableTaskAnnotations } from "./exploration-reuse.js"
 import { matchingPlanValidations, planValidationPassed, queuedPlanValidation, recordChainValidation, recordPlanValidation } from "./plan-validation.js"
 import { queuedValidationRun, validationRequest, queuedExecution } from "./queued-runs.js"
+import type { BusinessPreexecutionRequest } from "./preexecution-runtime.js"
+import type { PreexecutionArtifact } from "./preexecution-trace.js"
 export { reusableExploration, reusableTaskExploration, reusableTaskAnnotations } from "./exploration-reuse.js"
 
 type QueueItem = { type: "execution"; taskId: string; id: string; resume: boolean }
@@ -38,7 +42,7 @@ export class TaskChainService {
   private draining = false
   private closing = false
 
-  constructor(private readonly store: ProductStore, browser: BrowserService, ai: AIModelProvider,
+  constructor(private readonly store: ProductStore, browser: BrowserService, private readonly ai: AIModelProvider,
     capabilityFactory?: RuntimeCapabilityFactory) {
     this.repository = new TaskContractRepository(store)
     this.host = new TaskRuntimeHost(this.repository, browser, ai, capabilityFactory)
@@ -91,6 +95,14 @@ export class TaskChainService {
   }
   isActive(taskId: string) { return [...this.controllers.keys()].some((key) => key.startsWith(`${taskId}:`))
     || this.queue.some((item) => item.taskId === taskId) }
+
+  async preexecuteBusinessOnly(input: Omit<BusinessPreexecutionRequest, "authorizationId" | "browserRunId">,
+    onEvent: (event: AIEvent) => void = () => {}): Promise<PreexecutionArtifact> {
+    this.store.task(input.taskId)
+    const selection = this.ai.selection()
+    const model = await this.ai.prepareMain(selection, "exploration")
+    return this.host.preexecuteBusinessOnly({ ...input, authorizationId: randomUUID(), browserRunId: randomUUID() }, model, onEvent)
+  }
 
   legacyOriginal(taskId: string, source: "plans" | "chains" | "executions", id: string) {
     return this.repository.legacyOriginal(taskId, source, id)

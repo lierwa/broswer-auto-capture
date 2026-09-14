@@ -1,5 +1,15 @@
 # 调研登记
 
+## 2026-09-15 browser-use / workflow-use 临时预执行复用核验
+
+当前失败点位于真实浏览器操作之后的业务结果提交：Pi 已通过 BrowserSkill 产生工具轨迹，但 `complete_step` 要求模型一次填写业务结果、步骤元数据、聚合语义和逐字段 provenance；校验失败主要以 throw 或粗粒度“尚未完成”反馈结束，不能形成可靠的同会话修复循环。临时验证保留 TypeScript、AI Connect、Pi AgentSession、BrowserSkill、BrowserService、Zod、SQLite 和现有 TaskChain/LangGraph，只 clean-room 复刻 browser-use/workflow-use 的有界 Agent loop、结构化错误回传、增量业务输出、最终宿主验收和执行历史。不引入 Python sidecar，不复制 AGPL 源码，不在 E1 通过前编译或复跑链路。
+
+- `browser-use` 0.13.10（`5c892e013a73e6622e6f50336e1eb0aa2c4405f2`）为 MIT；Agent 实现包含失败计数、ActionResult 错误历史和结构化最终输出，可作为行为设计依据。[Agent views](https://github.com/browser-use/browser-use/blob/main/browser_use/agent/views.py)、[Agent service](https://github.com/browser-use/browser-use/blob/main/browser_use/agent/service.py)、[License](https://github.com/browser-use/browser-use/blob/main/LICENSE)
+- `workflow-use` 当前核验提交为 `5d2d19fe8835cc86f1bf3e04302a5000d590f249`，README 描述自然语言执行一次、保存历史、生成语义工作流和无 AI 复用；项目同时标注早期开发，许可为 AGPL-3.0，因此不作为依赖或源码移植来源。[Repository](https://github.com/browser-use/workflow-use)、[License](https://github.com/browser-use/workflow-use/blob/main/LICENSE)
+- 当前 BrowserSkill 使用 `cli-v0.2.1`（`90b0ff301b33c90ad937a994113e494b2fa4d4f6`）；真实运行已经证明工具桥能驱动浏览器，当前选择继续复用，不新增第二套浏览器控制和会话生命周期。
+
+完整协议、范围、错误分类和验收门见[临时预执行 Agent Loop 验证方案](TEMPORARY_PREEXECUTION_AGENT_LOOP.md)。
+
 ## 2026-09-14 多步骤计划验证复用核验
 
 现有 TaskPlanExecutor 已拥有依赖输入解析、once/each/batch、稳定键、固定链路版本、预算累计和恢复；TaskRuntimeHost.group 已拥有单次 BrowserService 会话及 finally 回收。新增验证用途复用这两层，不另建调度器或运行数据库。8 项 API 定点回归证明完整计划结果门、下游动态输入、同会话、失败中止、同运行恢复及一次修复重验。BrowserService 替身验证中，一次探索加一次完整样本总共启动/关闭两次会话，三个样本 TaskRun 共享第二个会话。该结果只冻结软件组合边界，真实站点可复用性仍按 PROGRESS 的运行事实单独验收。
