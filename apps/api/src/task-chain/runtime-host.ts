@@ -4,14 +4,18 @@ import {
   type TaskDataContract, type TaskBudget, type TaskConsumption, type TaskRunMode, type TaskRunRequest, type ValueSchema, type VersionReference,
 } from "@browser-capture/contracts"
 import type { AIEvent } from "@browser-capture/contracts/ai"
-import { BrowserError, TaskChainBrowserAdapter, taskChainBrowserActions,
+import { BrowserError, browserGrantLimits, TaskChainBrowserAdapter, taskChainBrowserActions,
   type BrowserCommand, type BrowserFailure, type BrowserGrant, type BrowserHelpState } from "@browser-capture/browser"
 import {
   TaskChainRuntime, digestJson, executableChainDigest, stableUuid,
-  RuntimeBudgetExceededError, type InvokeChainInvocation, type RuntimeControl, type TaskChainCapabilities,
+  RuntimeBudgetExceededError, type InvokeChainInvocation, type LlmNodeInvocation, type RuntimeControl,
+  type TaskChainCapabilities,
 } from "@browser-capture/runtime"
 import type { AIModelProvider, PreparedAIModel, PreparedMainAIModel } from "../ai/model.js"
 import type { BrowserService } from "../browser/service.js"
+import type { UpstreamBrowserRuntime, UpstreamBrowserSession } from "../upstream-browser/service.js"
+import { workflowArtifactMediaType, workflowArtifactSchema, workflowDelegateConfigSchema,
+  workflowValues } from "../upstream-browser/workflow-artifact.js"
 import type { TaskContractRepository } from "./repository.js"
 import { explorationStepSubmissionSchema, traceEvent, validateExplorationResult,
   type ExplorationStepResult, type ExplorationTrace } from "./exploration-trace.js"
@@ -19,7 +23,8 @@ import { runExplorationAgent } from "./exploration-agent.js"
 import { TaskBudgetLedger, type BudgetSnapshot } from "./budget-ledger.js"
 import { collectOrigins, collectUrls, explorationCapabilities, grantSignature, needsFreshObservation,
   opensAccessCircuit, traceObservation, traceOutput, valueJsonSchema } from "./exploration-browser-support.js"
-import { runBusinessPreexecution, type BusinessPreexecutionRequest } from "./preexecution-runtime.js"
+import { runBusinessPreexecution, runPlannedPreexecution, type BusinessPreexecutionRequest,
+  type PlannedPreexecutionRequest } from "./preexecution-runtime.js"
 export { opensAccessCircuit } from "./exploration-browser-support.js"
 
 export type RuntimeCapabilityFactory = (input: Readonly<{
@@ -38,8 +43,11 @@ const explorationWallTimeoutMs = 180_000
 
 export class TaskRuntimeHost {
   private readonly activeGrants = new Map<string, string>()
+  private readonly upstream: UpstreamBrowserRuntime
   constructor(private readonly repository: TaskContractRepository, private readonly browser: BrowserService,
-    private readonly ai: AIModelProvider, private readonly factory?: RuntimeCapabilityFactory) {
+    private readonly ai: AIModelProvider, private readonly factory?: RuntimeCapabilityFactory,
+    upstream?: UpstreamBrowserRuntime) {
+    this.upstream = upstream ?? { withSession: async () => { throw new Error("upstream_browser_runtime_unavailable") } }
     browser.setAuthorizationValidator((grant) => {
       if (this.activeGrants.get(grant.runId) !== grantSignature(grant)) throw new Error("task_chain_grant_not_active")
     })
@@ -69,8 +77,8 @@ export class TaskRuntimeHost {
     const grant: BrowserGrant = { taskId: input.taskId, runId: input.browserRunId, ownerId: input.authorizationId,
       ...(process.env.BROWSER_SKILL_BROWSER ? { browserInstanceId: process.env.BROWSER_SKILL_BROWSER } : {}),
       requirementVersion: input.requirementVersion, purpose: "exploration", allowedOrigins, actions: explorationCapabilities,
-      maxCommands: Math.min(3850, input.budget.maxBrowserCommands),
-      timeoutMs: Math.min(1_440_000, Math.max(explorationWallTimeoutMs, input.budget.maxActiveMs)) }
+      maxCommands: Math.min(browserGrantLimits.maxCommands, input.budget.maxBrowserCommands),
+      timeoutMs: Math.min(browserGrantLimits.timeoutMs, Math.max(explorationWallTimeoutMs, input.budget.maxActiveMs)) }
     this.activeGrants.set(grant.runId, grantSignature(grant))
     try {
       return await this.browser.run(grant, async (session, lifetime) => {
@@ -149,12 +157,13 @@ export class TaskRuntimeHost {
             if (trace.stepResults!.some((item) => item.stepId === step.id)) throw new Error("exploration_step_duplicate")
             const representativeInput = parseTaskValue(step.inputContract, submission.representativeInput)
             const result = validateExplorationResult({ result: submission.result, provenance: submission.provenance },
-              step.outputContract, trace.events)
+              step.outputContract, trace.events, representativeInput)
             assertTraceUrls(result.result, trace)
             if (step.invocation.mode !== "each" && submission.aggregate) throw new Error("exploration_step_aggregate_unexpected")
             if (step.invocation.mode === "each" && !submission.aggregate) throw new Error("exploration_step_aggregate_required")
             const runtimeResult = step.invocation.mode !== "each" ? result : validateExplorationResult(submission.aggregate,
-              { ...step.outputContract, schema: { type: "array", items: step.outputContract.schema, maxItems: step.invocation.maxItems } }, trace.events)
+              { ...step.outputContract, schema: { type: "array", items: step.outputContract.schema, maxItems: step.invocation.maxItems } },
+              trace.events, representativeInput)
             assertTraceUrls(runtimeResult.result, trace)
             const proposed = { stepId: step.id, input: representativeInput, result, runtimeResult }
             const accepted = input.acceptStepResult
@@ -164,7 +173,7 @@ export class TaskRuntimeHost {
             return { accepted: true }
           } } : {}),
           complete: (raw) => {
-            const completed = validateExplorationResult(raw, input.outputContract, trace.events)
+            const completed = validateExplorationResult(raw, input.outputContract, trace.events, trace.input)
             assertTraceUrls(completed.result, trace)
             trace.result = completed
             input.onTrace?.(trace)
@@ -206,6 +215,14 @@ export class TaskRuntimeHost {
       releaseGrant: (grant) => this.activeGrants.delete(grant.runId) })
   }
 
+  async preexecutePlan(input: PlannedPreexecutionRequest, selection: PreparedMainAIModel["selection"],
+    onEvent: (event: AIEvent) => void) {
+    return runPlannedPreexecution(input, { browser: this.browser, onEvent,
+      modelForStep: () => this.ai.prepareMain(selection, "exploration"),
+      registerGrant: (grant) => this.activeGrants.set(grant.runId, grantSignature(grant)),
+      releaseGrant: (grant) => this.activeGrants.delete(grant.runId) })
+  }
+
   async group<T>(input: RuntimeGroup, work: (execute: (chain: TaskChain, request: TaskRunRequest,
     control?: RuntimeControl) => Promise<TaskRun>) => Promise<T>) {
     const scopes = new Map(input.chains.map((chain) => [chain.stepId, { budget: input.scopeBudgets?.[chain.stepId] ?? chain.budget,
@@ -214,6 +231,19 @@ export class TaskRuntimeHost {
     const closure = this.chainClosure(input.taskId, input.chains)
     const injected = await this.factory?.({ taskId: input.taskId, authorizationId: input.authorizationId, purpose: input.purpose })
     if (injected) return work(this.executor(injected, input.purpose, input.signal, ledger, 0))
+    const delegated = closure.flatMap((chain) => chain.nodes.filter((node) => node.kind === "llm"
+      && "delegate" in node && node.delegate?.capability.name === "browser.workflow-use"))
+    if (delegated.length) {
+      const incompatible = closure.some((chain) => chain.nodes.some((node) => node.kind === "browser" || node.kind === "observe"
+        || node.kind === "human" || node.kind === "capability" && node.capability.name.startsWith("browser.")))
+      if (incompatible) throw new Error("mixed_browser_runtime_unsupported")
+      const models = [...new Set(delegated.flatMap((node) => node.kind === "llm" ? [node.model] : []))]
+      if (models.length !== 1) throw new Error("workflow_model_selection_mismatch")
+      const selection = { ...this.ai.selection(), modelId: models[0]! }
+      return this.upstream.withSession({ selection, signal: input.signal, ownerId: input.browserRunId }, async (session) =>
+        work(this.executor({ llm: (invocation) => this.workflowLlm(session, invocation) },
+          input.purpose, input.signal, ledger, 0)))
+    }
     const actions = [...new Set(closure.flatMap(taskChainBrowserActions))]
     if (!actions.length) {
       const hasLocalBrowserNode = closure.some((chain) => chain.nodes.some((node) => node.kind === "browser"
@@ -308,6 +338,36 @@ export class TaskRuntimeHost {
       jsonSchema: envelope.jsonSchema, parse: envelope.parse, signal, onEvent: () => {} })
     return { outcome: "success" as const, output: value, reportedInvocations: 1 }
   }
+
+  private async workflowLlm(session: UpstreamBrowserSession, invocation: LlmNodeInvocation) {
+    if (!("delegate" in invocation.node) || !invocation.node.delegate) return this.llm(invocation.node.model, invocation.node.instruction,
+      invocation.input, invocation.node.outputContract.schema, invocation.signal)
+    if (invocation.node.delegate.capability.name !== "browser.workflow-use"
+      || invocation.node.delegate.capability.version !== 1) throw new Error("workflow_capability_unsupported")
+    const config = workflowDelegateConfigSchema.parse(invocation.node.delegate.config)
+    const stored = this.repository.artifact(invocation.binding.taskId, config.artifactId)
+    if (stored.mediaType !== workflowArtifactMediaType || stored.digest !== config.digest) throw new Error("workflow_artifact_reference_mismatch")
+    const artifact = workflowArtifactSchema.parse(stored.body)
+    if (artifact.definitionDigest !== config.definitionDigest || digestJson(artifact.definition) !== config.definitionDigest
+      || JSON.stringify(artifact.inputBindings) !== JSON.stringify(config.inputBindings)) throw new Error("workflow_artifact_digest_mismatch")
+    const result = await session.replay({ definition: artifact.definition,
+      inputs: workflowValues(invocation.input, config.inputBindings), outputSchema: invocation.node.outputContract.schema,
+      artifactKey: `${invocation.binding.runId}-${invocation.node.id}`,
+      ...(invocation.onModelCall ? { onModelCall: invocation.onModelCall } : {}) })
+    invocation.signal.throwIfAborted()
+    const reportedInvocations = result.modelCalls.filter((call) => call.status !== "intended")
+      .reduce((sum, call) => sum + (call.reportedInvocations ?? 0), 0)
+    const evidence = this.repository.saveArtifact(invocation.binding.taskId, invocation.binding.runId,
+      "application/vnd.bat.workflow-use-run+json;version=1", z.json().parse({ mode: "workflow-use-run/v1",
+        stage: invocation.mode === "sample" ? "sample_replayed" : invocation.mode === "verification" ? "input_verified" : "authorized_replay",
+        runId: invocation.binding.runId,
+        definitionDigest: artifact.definitionDigest, inputDigest: invocation.binding.inputDigest,
+        outputDigest: digestJson(result.output), stepCount: result.stepCount, browserCommands: result.browserCommands,
+        rawResult: result.rawResult, modelPurposes: [...new Set(result.modelCalls.map((call) => call.purpose))] }))
+    return { outcome: "success" as const, output: parseTaskValue(invocation.node.outputContract, result.output),
+      artifacts: [evidence], browser: result.browser, reportedInvocations,
+      reportedBrowserCommands: result.browserCommands }
+  }
 }
 
 class ExplorationBrowserError extends BrowserError {
@@ -330,8 +390,8 @@ export function runtimeOutputEnvelope(schema: ValueSchema) {
 }
 
 function browserGrant(input: RuntimeGroup, chains: TaskChain[], actions: BrowserGrant["actions"]): BrowserGrant {
-  const maxCommands = Math.min(3850, input.budget.maxBrowserCommands - input.consumed.browserCommands)
-  const timeoutMs = Math.min(1_440_000, input.budget.maxActiveMs - input.consumed.activeMs)
+  const maxCommands = Math.min(browserGrantLimits.maxCommands, input.budget.maxBrowserCommands - input.consumed.browserCommands)
+  const timeoutMs = Math.min(browserGrantLimits.timeoutMs, input.budget.maxActiveMs - input.consumed.activeMs)
   if (maxCommands < 1 || timeoutMs < 1000) throw new RuntimeBudgetExceededError("浏览器预算已用尽。")
   return { taskId: input.taskId, runId: input.browserRunId, ownerId: input.authorizationId,
     ...(process.env.BROWSER_SKILL_BROWSER ? { browserInstanceId: process.env.BROWSER_SKILL_BROWSER } : {}),

@@ -1,6 +1,6 @@
 import type {
   ChainNode, InvokeChainResult, JsonValue, NodeCapabilityResult, ResumeVerificationResult,
-  RunBinding, TaskCheckpoint, TaskConsumption, TaskRun, TaskRunRequest, VersionReference,
+  RunBinding, TaskCheckpoint, TaskConsumption, TaskRun, TaskRunMode, TaskRunRequest, VersionReference,
 } from "@browser-capture/contracts"
 export type { NodeCapabilityResult }
 
@@ -43,11 +43,22 @@ export interface HumanNodeInvocation {
 
 export interface LlmNodeInvocation {
   binding: RunBinding
+  mode: TaskRunMode
   node: Extract<ChainNode, { kind: "llm" }>
   input: JsonValue
   callId: string
   signal: AbortSignal
+  onModelCall?(report: ModelCallReport): Promise<void>
 }
+
+export type ModelCallReport = Readonly<{
+  callId: string
+  purpose: "agent" | "judge" | "workflow_generation" | "variable_suggestion" | "extract" | "output_conversion"
+  model: string
+  intendedAt: string
+  status: "intended" | "completed" | "failed" | "interrupted"
+  reportedInvocations: number | null
+}>
 
 export interface InvokeChainInvocation {
   parent: RunBinding

@@ -153,7 +153,8 @@ test("组合计划逐项调用同一链路，拒绝未声明依赖和预算扩�
 
   const batch = { ...second, id: "batch-consume", inputContract: itemsContract, outputContract: resultContract,
     input: nodeBinding(first.id), invocation: { mode: "batch" as const, collection: nodeBinding(first.id),
-      itemVariable: "item", stableKeyPath: ["id"], maxItems: 30 }, completion: [condition("batch-consume")] }
+      itemVariable: "item", stableKeyPath: ["id"], maxItems: 30,
+      aggregates: [{ outputPath: [] }] }, completion: [condition("batch-consume")] }
   const batchPlan = { ...plan, steps: [first, batch], output: nodeBinding(batch.id) }
   assert.equal(taskPlanSchema.safeParse(batchPlan).success, true)
   assert.deepEqual(taskPlanExecutionIssues(batchPlan), [])

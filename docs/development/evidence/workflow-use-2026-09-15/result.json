@@ -1,0 +1,93 @@
+{
+  "date": "2026-09-15",
+  "head": "c13aa641031d4f44ec3d9b32aeea2b3dcd65268f",
+  "workflow_commit": "5d2d19fe8835cc86f1bf3e04302a5000d590f249",
+  "sha256": {
+    "browser_manifest": "f06f598f90b6b71f6509013174fab0e7c625e8aa59797ef97430043f3c1dec82",
+    "workflow_manifest": "e9197030f501e822ac8db4f09ab12c9c8857554ea8c158fa719238284b4088f8",
+    "workflow_lock": "e4cd1f329b678508c1a82e7d1555550815b41cec990f45e27bce2bfdf54fd14e",
+    "workflow_prompt": "287e28210b3ca856cfa09f008eaabaf517d95777915210457f9e8711000fff9a"
+  },
+  "locked_import": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.12.13",
+    "checks": {
+      "browser_agent": {
+        "status": "passed"
+      },
+      "browser_history_schema": {
+        "status": "passed"
+      },
+      "workflow_public": {
+        "status": "passed"
+      }
+    },
+    "browser-use": "0.13.8",
+    "workflow-use": "0.2.11",
+    "mcp": "1.29.1"
+  },
+  "agent": {
+    "checks": [
+      {
+        "index": 0,
+        "session_id": "06aa9061-ba18-7559-8000-7dcafe2b561f",
+        "success": true,
+        "validated": true,
+        "output": {
+          "name": "Aster",
+          "release": "7.4"
+        }
+      },
+      {
+        "index": 1,
+        "session_id": "06aa9061-ba18-7559-8000-7dcafe2b561f",
+        "success": true,
+        "validated": true,
+        "output": {
+          "name": "Aster",
+          "release": "7.4"
+        }
+      }
+    ],
+    "closed": true
+  },
+  "workflow": {
+    "stage": "public_generation",
+    "closed": true,
+    "source_success": true,
+    "source_validated": true,
+    "error": {
+      "type": "KeyError",
+      "message": "'variable'"
+    }
+  },
+  "original_dirty_source_files_preserved": true,
+  "upstream_source_modified": false,
+  "agent_model_calls": {
+    "agent": 4,
+    "judge": 2,
+    "extract": 0
+  },
+  "agent_cdp_closed": true,
+  "live_bridge": {
+    "model": "gpt-5.6-terra",
+    "effort": "medium",
+    "messages_preserved": true,
+    "image_color": "red",
+    "earlier_token": "LARCH",
+    "inputTokens": 195,
+    "outputTokens": 31
+  },
+  "workflow_model_calls": 0,
+  "remote_revision_check": "main was 5d2d19f during this session; subsequent path-history query hit GitHub API rate limit",
+  "final_validation": {
+    "model_bridge_tests": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "api_typecheck": "passed",
+    "git_diff_check": "passed",
+    "probe_chrome_processes_remaining": 0
+  }
+}

@@ -32,6 +32,15 @@ export const capabilityReferenceSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/),
   version: z.number().int().positive(),
 }).strict()
+export const modelCallPurposeSchema = z.enum([
+  "explicit_llm", "agent", "judge", "workflow_generation", "variable_suggestion", "extract", "output_conversion",
+])
+const delegatedLlmSchema = z.object({
+  capability: capabilityReferenceSchema, config: jsonValueSchema,
+  effect: z.enum(["read", "idempotent_write", "external_write"]),
+  modelPurposes: z.array(modelCallPurposeSchema.exclude(["explicit_llm"])).min(1),
+  maxInvocations: z.number().int().positive(), maxBrowserCommands: z.number().int().nonnegative(),
+}).strict()
 const humanResumeSchema = z.object({
   reason: z.enum(["login", "captcha", "one_time_code", "confirmation", "permission", "access_restriction", "other"]),
   prompt: textSchema, resumeWhen: observationConditionSchema,
@@ -57,7 +66,7 @@ export const stableChainNodeSchema = z.discriminatedUnion("kind", [
     stableWhen: observationConditionSchema.optional(), human: humanResumeSchema.optional(),
     timeoutMs: z.number().int().positive() }).strict(),
   base.extend({ kind: z.literal("llm"), instruction: textSchema, input: valueBindingSchema,
-    model: textSchema, timeoutMs: z.number().int().positive() }).strict(),
+    model: textSchema, timeoutMs: z.number().int().positive(), delegate: delegatedLlmSchema.optional() }).strict(),
   base.extend({ kind: z.literal("branch"), predicate: predicateSchema }).strict(),
   base.extend({ kind: z.literal("loop"), iteration: z.discriminatedUnion("mode", [
     z.object({ mode: z.literal("each"), collection: valueBindingSchema, itemVariable: keySchema, stableKeyPath: valuePathSchema }).strict(),

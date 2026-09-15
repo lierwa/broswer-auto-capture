@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+export const browserGrantLimits = { maxCommands: 3850, timeoutMs: 1_440_000 } as const
+
 const cssSelectorSchema = z.string().trim().min(1).max(1000)
   .refine((value) => !/:has-text\s*\(|:text(?:-is)?\s*\(|:visible\b|:contains\s*\(/i.test(value), "unsupported_selector_syntax")
   .describe("浏览器标准 CSS 选择器；不支持 Playwright/jQuery 的 :has-text、:text、:visible 或 :contains 伪选择器。")
@@ -22,7 +24,8 @@ export const grantSchema = z.object({
   })).max(64),
   actions: z.array(z.enum(["navigate", "observe", "click", "hover", "fill", "press", "select", "tabs",
     "tab_open", "tab_select", "tab_close", "upload", "download", "page", "read", "follow", "request_help"])).min(1),
-  maxCommands: z.number().int().min(1).max(3850), timeoutMs: z.number().int().min(1000).max(1_440_000),
+  maxCommands: z.number().int().min(1).max(browserGrantLimits.maxCommands),
+  timeoutMs: z.number().int().min(1000).max(browserGrantLimits.timeoutMs),
 }).strict()
 export type BrowserGrant = z.infer<typeof grantSchema>
 export type HumanWaitReason = z.infer<typeof humanWaitReasonSchema>

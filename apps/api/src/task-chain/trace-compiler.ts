@@ -16,7 +16,7 @@ export function compileExplorationTrace(trace: ExplorationTrace, raw: unknown, p
   version: number, modelId: string) {
   const step = plan.steps.find((item) => item.id === stepId)
   if (!step) throw new Error("plan_step_not_found")
-  validateExplorationResult(trace.result, step.outputContract, trace.events)
+  validateExplorationResult(trace.result, step.outputContract, trace.events, trace.input)
   const validated = validateAnnotations(raw, trace)
   assertRepeatedOutputsCollapsed(validated)
   const restored = restoreObservedEntry(trace, validated, step.inputContract)
@@ -73,7 +73,7 @@ export function compileExplorationTrace(trace: ExplorationTrace, raw: unknown, p
     id: step.chain.id, taskId: plan.taskId, version, plan: { id: plan.id, version: plan.version, digest: digestJson(plan) },
     stepId, name: step.title, inputContract: step.inputContract, outputContract: step.outputContract,
     variables, entry, nodes, edges, completion: [...completion, ...localCompletion(step)],
-    budget: deriveBudget(nodes, factors), reuseBoundary: restored.annotations.reuseBoundary,
+    budget: deriveBudget(nodes, factors, step.budget), reuseBoundary: restored.annotations.reuseBoundary,
     implementationSummary: "成功轨迹先归并为语义能力，再生成稳定控制图；重复证据不扩张节点，普通复跑不调用模型。",
     validation: { status: "candidate", evidence: [] } })
   return compileTaskChain(chain).chain
@@ -103,7 +103,7 @@ function semanticEvents(events: ExplorationEvent[], annotations: CompilationAnno
       .some((aggregate) => samePath(mapping.outputPath, aggregate.itemOutputPath))))
   const required = new Set<string>([
     ...annotations.inputBindings.map((item) => item.eventId),
-    ...mapped.flatMap((item) => item.source === "tool" ? [item.eventId] : item.eventIds),
+    ...mapped.flatMap(mappingEventIds),
     ...annotations.completion.map((item) => item.eventId), ...annotations.continueOnMissingEventIds,
     ...annotations.repeatRegions.flatMap((item) => [item.startEventId, item.endEventId,
       ...(item.collectionEvent ? [item.collectionEvent.eventId] : []), ...item.itemBindings.map((binding) => binding.eventId)]),
@@ -136,7 +136,18 @@ function outputNodes(annotations: CompilationAnnotations, trace: ExplorationTrac
     }
   }
   for (const [index, mapping] of annotations.outputMappings.entries()) {
-    if (aggregatedChild(mapping.outputPath, annotations)) continue
+    if (aggregatedChild(mapping.outputPath, annotations) || aggregateMapping(mapping.outputPath, annotations)) continue
+    if (mapping.source === "aggregate_count") {
+      const aggregate = aggregateBodies.find((item) => samePath(item.definition.outputPath, mapping.aggregateOutputPath))
+      if (!aggregate) throw new Error("trace_aggregate_count_source_missing")
+      const id = `mapping${index}Count`
+      const contract = outputFieldContract(id, outputContract, mapping.outputPath,
+        readPath(trace.result!.result, mapping.outputPath))
+      nodes.push(dataCapability(id, contract, "count", { source: { source: "variable",
+        name: aggregateVariable(aggregate.regionIndex, aggregate.aggregateIndex), path: [] } }))
+      addField(mapping.outputPath, output(id), contract)
+      continue
+    }
     const compiled = compileMapping(mapping, `mapping${index}`, trace, outputContract, eventOutputs, modelId)
     nodes.push(...compiled.nodes); addField(mapping.outputPath, compiled.binding, compiled.contract)
   }
@@ -152,6 +163,10 @@ function outputNodes(annotations: CompilationAnnotations, trace: ExplorationTrac
 function compileMapping(mapping: CompilationAnnotations["outputMappings"][number], id: string,
   trace: ExplorationTrace, outputContract: TaskDataContract, eventOutputs: Map<string, string>, modelId: string) {
   const contract = outputFieldContract(id, outputContract, mapping.outputPath, readPath(trace.result!.result, mapping.outputPath))
+  if (mapping.source === "input") {
+    return { nodes: [] as StableChainNode[], binding: { source: "input" as const, path: mapping.inputPath }, contract }
+  }
+  if (mapping.source === "aggregate_count") throw new Error("trace_aggregate_count_compile_position_invalid")
   if (mapping.source === "tool") {
     const nodeId = eventOutputs.get(mapping.eventId)
     if (!nodeId) throw new Error("trace_output_event_missing")
@@ -171,10 +186,19 @@ function compileMapping(mapping: CompilationAnnotations["outputMappings"][number
   return { nodes, binding: output(inferenceId), contract }
 }
 
+function mappingEventIds(mapping: CompilationAnnotations["outputMappings"][number]) {
+  return mapping.source === "tool" ? [mapping.eventId] : mapping.source === "inference" ? mapping.eventIds : []
+}
+
 function aggregatedChild(path: (string | number)[], annotations: CompilationAnnotations) {
   return annotations.repeatRegions.some((region) => regionAggregates(region).some((aggregate) =>
     path.length === aggregate.outputPath.length + 1
     && aggregate.outputPath.every((part, index) => path[index] === part) && typeof path.at(-1) === "number"))
+}
+
+function aggregateMapping(path: (string | number)[], annotations: CompilationAnnotations) {
+  return annotations.repeatRegions.some((region) => regionAggregates(region)
+    .some((aggregate) => samePath(path, aggregate.itemOutputPath)))
 }
 
 function samePath(left: (string | number)[], right: (string | number)[]) {
@@ -348,25 +372,15 @@ function withPath(binding: ValueBinding, path: (string | number)[]): ValueBindin
   return binding.source === "constant" ? binding : { ...binding, path: [...binding.path, ...path] }
 }
 
-function deriveBudget(nodes: StableChainNode[], factors: Map<string, number>) {
-  const commands = nodes.reduce((sum, node) => sum + (factors.get(node.id) ?? 1) * capabilityCommandCost(node), 0)
+function deriveBudget(nodes: StableChainNode[], factors: Map<string, number>, authorized: TaskPlan["steps"][number]["budget"]) {
+  const hasBrowser = nodes.some((node) => node.kind === "capability" && node.capability.name === "browser.perform")
   return { maxTransitions: Math.max(1, nodes.reduce((sum, node) => sum + (factors.get(node.id) ?? 1), 0)),
-    maxBrowserCommands: commands, maxActiveMs: Math.max(1000, nodes.reduce((sum, node) => sum
-      + (factors.get(node.id) ?? 1) * ("timeoutMs" in node ? node.timeoutMs : 1), 0)),
+    // WHY：BrowserSkill 自己展开并逐条记账底层命令；编译器只继承计划已授权的硬上限，不能猜动作展开成本。
+    maxBrowserCommands: hasBrowser ? authorized.maxBrowserCommands : 0,
+    maxActiveMs: Math.min(authorized.maxActiveMs, Math.max(1000, nodes.reduce((sum, node) => sum
+      + (factors.get(node.id) ?? 1) * ("timeoutMs" in node ? node.timeoutMs : 1), 0))),
     maxLlmCalls: nodes.filter((node) => node.kind === "llm").reduce((sum, node) => sum + (factors.get(node.id) ?? 1), 0),
     maxInvocations: 1, maxDepth: 1 }
-}
-
-function capabilityCommandCost(node: StableChainNode) {
-  if (node.kind !== "capability" || node.capability.name !== "browser.perform" || !node.config
-    || typeof node.config !== "object" || Array.isArray(node.config)) return 0
-  if (node.config.mode === "human") return 8
-  if (node.config.mode !== "perform") return 0
-  const operation = node.config.operation
-  const action = operation === null ? 0 : operation === "navigate" ? 3 : operation === "scroll" ? 2 : 1
-  const capture = node.config.capture && typeof node.config.capture === "object" && !Array.isArray(node.config.capture)
-    ? node.config.capture.scope === "page" ? 5 : node.config.capture.scope === "target" ? 3 : 1 : 0
-  return action + capture
 }
 
 function restoreObservedEntry(trace: ExplorationTrace, annotations: CompilationAnnotations, inputContract: TaskDataContract) {
@@ -376,7 +390,7 @@ function restoreObservedEntry(trace: ExplorationTrace, annotations: CompilationA
     ...annotations.outputMappings.filter((mapping) => !aggregatedChild(mapping.outputPath, annotations)
       || annotations.repeatRegions.some((region) => regionAggregates(region)
         .some((aggregate) => samePath(mapping.outputPath, aggregate.itemOutputPath))))
-      .flatMap((mapping) => mapping.source === "tool" ? [mapping.eventId] : mapping.eventIds),
+      .flatMap(mappingEventIds),
     ...annotations.completion.map((item) => item.eventId),
     ...annotations.repeatRegions.flatMap((region) => [region.startEventId, region.endEventId,
       ...(region.collectionEvent ? [region.collectionEvent.eventId] : []), ...region.itemBindings.map((binding) => binding.eventId)]),

@@ -5,7 +5,7 @@ import type {
   ChainNode, JsonValue, NodeCapabilityResult, ResumeVerificationResult, TaskChain, TaskCheckpoint,
 } from "@browser-capture/contracts"
 import { browserOperationSchema, requiredLegacyNodeOutcomes } from "@browser-capture/contracts"
-import { BrowserError, type BrowserCommand, type BrowserGrant, type BrowserInspection } from "./contracts.js"
+import { BrowserError, browserGrantLimits, type BrowserCommand, type BrowserGrant, type BrowserInspection } from "./contracts.js"
 import { pageSchema } from "./page.js"
 
 export interface TaskChainBrowserPort {
@@ -44,7 +44,7 @@ export interface CapabilityAdapterInvocation {
 const keySchema = z.enum(["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight",
   "PageDown", "PageUp", "Home", "End"])
 const tabIdSchema = z.number().int().nonnegative()
-const durationSchema = z.number().int().nonnegative().max(1_440_000)
+const durationSchema = z.number().int().nonnegative().max(browserGrantLimits.timeoutMs)
 const pathSchema = z.string().trim().min(1).max(32_767)
 const targetRoles = new Set(["link", "button", "textbox", "combobox"])
 const inputNameSchema = z.string().regex(/^[a-z][A-Za-z0-9_-]{0,63}$/)

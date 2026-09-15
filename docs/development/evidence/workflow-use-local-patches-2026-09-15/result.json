@@ -1,0 +1,78 @@
+{
+  "date": "2026-09-15",
+  "workflow_use": {
+    "version": "0.2.11",
+    "commit": "5d2d19fe8835cc86f1bf3e04302a5000d590f249",
+    "license": "AGPL-3.0"
+  },
+  "browser_use": {
+    "version": "0.13.8",
+    "source": "workflow-use upstream lock"
+  },
+  "patches": [
+    {
+      "file": "patches/workflow-use/0001-escape-workflow-prompt-variable-placeholders.patch",
+      "sha256": "b41b21da09efbe13e1082f8a722f10446ccbe4d4575349e9e65b38e24178fd06",
+      "focused_test": "passed"
+    },
+    {
+      "file": "patches/workflow-use/0002-dispatch-page-extraction-steps.patch",
+      "sha256": "a196162065e6c80fca300bb1952caf3c44591f1c177151e41c3d77028158c585",
+      "focused_test": "passed"
+    }
+  ],
+  "patch_application": {
+    "fresh_source_copy": true,
+    "apply_check": "passed",
+    "apply": "passed",
+    "reverse_check": "passed",
+    "ruff_check": "passed",
+    "ruff_format_check": "passed"
+  },
+  "collection_gate": {
+    "history_success": true,
+    "history_validated": true,
+    "step_types": ["navigation", "click", "extract_page_content"],
+    "workflow_inputs": ["start_url"],
+    "definition_sha256": "14af86a076bfb726632ba6d0be07c8a09299b74466997f9a9870cadad36bb8d5",
+    "sample": {"name": "Aster", "release": "7.4"},
+    "different_input": {"name": "Beryl", "release": "8.2"},
+    "sample_replayed": true,
+    "input_verified": true,
+    "extraction_fallbacks": 0,
+    "browser_session_shared": true,
+    "browser_closed": true,
+    "model_calls": {
+      "workflow_generation": 1,
+      "extract": 2,
+      "output_conversion": 2
+    }
+  },
+  "noncollection_gate": {
+    "history_success": true,
+    "history_validated": true,
+    "step_types": ["navigation", "input", "click", "extract_page_content"],
+    "workflow_inputs": ["start_url", "draft_text"],
+    "definition_sha256": "686cb928140d33bc65268d4393b9d13de52d2156569ad1f7dcf88f838fb5b202",
+    "sample": {"draft_text": "Alpha local draft", "preview_visible": true, "submitted": false},
+    "different_input": {"draft_text": "Beta revised draft", "preview_visible": true, "submitted": false},
+    "sample_replayed": true,
+    "input_verified": true,
+    "extraction_fallbacks": 0,
+    "browser_session_shared_across_agent_and_replays": true,
+    "browser_closed": true,
+    "model_calls": {
+      "agent": 2,
+      "judge": 1,
+      "workflow_generation": 1,
+      "extract": 2,
+      "output_conversion": 2
+    }
+  },
+  "artifact_status": "input_verified",
+  "genericity_gate": "passed",
+  "product_wiring": "not_started",
+  "windows": "not_tested",
+  "distribution": "blocked_pending_agpl_decision",
+  "remaining_browser_processes": 0
+}

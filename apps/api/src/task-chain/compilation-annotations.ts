@@ -38,7 +38,7 @@ export function validateAnnotations(raw: unknown, trace: ExplorationTrace) {
   const requiredMappings = value.outputMappings.filter((mapping) => !aggregatedMapping(mapping.outputPath, value.repeatRegions)
     || value.repeatRegions.some((region) => regionAggregates(region)
       .some((aggregate) => samePath(mapping.outputPath, aggregate.itemOutputPath))))
-  const required = [...requiredMappings.flatMap((item) => item.source === "tool" ? [item.eventId] : item.eventIds),
+  const required = [...requiredMappings.flatMap(mappingEventIds),
     ...value.inputBindings.map((item) => item.eventId), ...value.completion.map((item) => item.eventId),
     ...value.repeatRegions.flatMap((item) => [item.startEventId, item.endEventId,
       ...(item.collectionEvent ? [item.collectionEvent.eventId] : []), ...item.itemBindings.map((binding) => binding.eventId)])]
@@ -103,14 +103,18 @@ export function validateAnnotations(raw: unknown, trace: ExplorationTrace) {
     for (const definition of regionAggregates(region)) {
       const aggregate = readPath(trace.result.result, definition.outputPath)
       const representative = readPath(trace.result.result, definition.itemOutputPath)
-      if (!Array.isArray(aggregate) || !aggregate.length || aggregate.length > region.maxItems
-        || JSON.stringify(aggregate[0]) !== JSON.stringify(representative)) throw new Error("annotation_repeat_aggregate_invalid")
+      const containerFragment = samePath(definition.outputPath, definition.itemOutputPath)
+      if (!Array.isArray(aggregate) || aggregate.length > region.maxItems
+        || containerFragment && (!Array.isArray(representative) || representative.length > 1)
+        || !containerFragment && (!aggregate.length || JSON.stringify(aggregate[0]) !== JSON.stringify(representative))) {
+        throw new Error("annotation_repeat_aggregate_invalid")
+      }
       const outputKey = JSON.stringify(definition.outputPath)
       if (outputPaths.has(outputKey)) throw new Error("annotation_repeat_aggregate_duplicate")
       outputPaths.add(outputKey)
       const mapping = value.outputMappings.find((item) => samePath(item.outputPath, definition.itemOutputPath))
       if (!mapping) throw new Error("annotation_repeat_aggregate_mapping_missing")
-      const sources = mapping.source === "tool" ? [mapping.eventId] : mapping.eventIds
+      const sources = mappingEventIds(mapping)
       if (sources.some((eventId) => {
         const position = trace.events.findIndex((event) => event.id === eventId)
         return position < start || position > end
@@ -120,8 +124,11 @@ export function validateAnnotations(raw: unknown, trace: ExplorationTrace) {
         throw new Error("annotation_repeat_append_condition_unobserved")
       }
       if (definition.stableKeyPath) {
-        const key = readPath(representative, definition.stableKeyPath)
-        if (!["string", "number", "boolean"].includes(typeof key)) throw new Error("annotation_repeat_aggregate_stable_key_invalid")
+        const sample = containerFragment && Array.isArray(representative) ? representative[0] : representative
+        if (sample !== undefined) {
+          const key = readPath(sample, definition.stableKeyPath)
+          if (!["string", "number", "boolean"].includes(typeof key)) throw new Error("annotation_repeat_aggregate_stable_key_invalid")
+        }
       }
       if (definition.stopAfterInputPath) {
         const target = readPath(trace.input, definition.stopAfterInputPath)
@@ -152,6 +159,9 @@ function aggregatedMapping(path: (string | number)[], regions: CompilationAnnota
 }
 export function regionAggregates(region: CompilationAnnotations["repeatRegions"][number]) {
   return [...(region.aggregate ? [region.aggregate] : []), ...region.additionalAggregates]
+}
+function mappingEventIds(mapping: CompilationAnnotations["outputMappings"][number]) {
+  return mapping.source === "tool" ? [mapping.eventId] : mapping.source === "inference" ? mapping.eventIds : []
 }
 function samePath(left: (string | number)[], right: (string | number)[]) {
   return left.length === right.length && left.every((part, index) => part === right[index])

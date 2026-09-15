@@ -1,5 +1,20 @@
 # 开发路线
 
+## browser-use / workflow-use 替换路线（2026-09-15）
+
+本路线取代下方临时复刻 Agent Loop 的继续开发安排。具体范围见 [阶段 0 处置](BROWSER_USE_REPLACEMENT.md)，本地集成决策见 [ADR 0004](../adr/0004-browser-use-workflow-use-replacement.md)。
+
+1. 阶段 0：只读核验、逐文件处置与草案，已完成；已有后续实施授权。
+2. 阶段 1：官方锁依赖/许可证/平台；macOS 官方 lock 安装和 import 通过，0.13.10 组合失败已记录。
+3. 阶段 2：AI Connect 薄模型桥及本机协议/日志隔离；真实 vision/multi-message/schema 调用已通过，Windows 仍待测。
+4. 阶段 3：无害本地 Agent 完整 task、history、judge 和共享 Browser 关闭，已通过。
+5. 阶段 4：两份获授权的本地上游补丁修复 prompt 和 extraction dispatch；公开生成、样本及不同 primitive 输入复跑已通过。
+6. 阶段 5：非采集“填写并预览、禁止提交”任务的 Agent、生成和两个输入复跑已通过；见[补丁与兼容证据](evidence/workflow-use-local-patches-2026-09-15/README.md)。
+7. 阶段 6–7：本地产品接线、旧自研新路径退出及最小合同/生命周期验证已通过；真实产品链完成样本、不同输入验证和授权复跑，状态到 `verified`。见[产品接线验收](evidence/workflow-use-product-2026-09-15/README.md)。
+8. 阶段 8：新京东需求版本确认后才失效化旧 artifact、单品→样本→换 URL→完整任务。
+
+本地补丁只维护上游原生改动和回归测试；禁止在 B-A-T 中另写 converter/executor。禁止通过 BrowserSkill 跑新 authoring/replay，禁止嵌套 Pi loop 或复制模型凭据。失败不通过重复运行掩盖。
+
 ## 临时 E1 验证接续（2026-09-15）
 
 当前优先级暂停在链路编译之前：先按[临时预执行 Agent Loop 验证方案](TEMPORARY_PREEXECUTION_AGENT_LOOP.md)证明 `AI Connect -> Pi AgentSession -> BrowserSkill -> 有效业务结果`。保留现有技术栈，只复刻 browser-use/workflow-use 的同会话错误修复、增量业务输出和宿主最终验收；不引入 Python 运行时，不复制 AGPL 源码。

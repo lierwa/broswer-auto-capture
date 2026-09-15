@@ -1,0 +1,79 @@
+From: B-A-T local integration
+Subject: [PATCH] Dispatch page extraction steps in semantic execution
+
+Workflow generation and the deterministic converter emit
+extract_page_content steps, which the schema parses as PageExtractionStep.
+SemanticWorkflowExecutor only dispatched ExtractStep, so run_with_no_ai raised
+Unsupported step type for a schema-valid generated workflow. Normalize the page
+extraction variant to the existing extraction implementation and preserve common
+step metadata.
+
+---
+ workflows/workflow_use/workflow/semantic_executor.py | 8 ++++++++
+ workflows/tests/test_semantic_executor_page_extraction.py | 34 ++++++++++++++++++++++++++++++++
+ 2 files changed, 42 insertions(+)
+
+diff --git a/workflows/workflow_use/workflow/semantic_executor.py b/workflows/workflow_use/workflow/semantic_executor.py
+--- a/workflows/workflow_use/workflow/semantic_executor.py
++++ b/workflows/workflow_use/workflow/semantic_executor.py
+@@ -17,6 +17,7 @@
+ 	InputStep,
+ 	KeyPressStep,
+ 	NavigationStep,
++	PageExtractionStep,
+ 	ScrollStep,
+ 	SelectChangeStep,
+ 	WorkflowStep,
+@@ -1879,6 +1880,13 @@
+ 			return await self.execute_scroll_step(step)
+ 		elif step.type == 'button':
+ 			return await self.execute_button_step(step)
++		elif isinstance(step, PageExtractionStep):
++			extract_step = ExtractStep(
++				type='extract',
++				extractionGoal=step.goal,
++				**step.model_dump(exclude={'type', 'goal'}),
++			)
++			return await self.execute_extract_step(extract_step)
+ 		elif isinstance(step, ExtractStep):
+ 			return await self.execute_extract_step(step)
+ 		elif step.type == 'go_back':
+diff --git a/workflows/tests/test_semantic_executor_page_extraction.py b/workflows/tests/test_semantic_executor_page_extraction.py
+new file mode 100644
+--- /dev/null
++++ b/workflows/tests/test_semantic_executor_page_extraction.py
+@@ -0,0 +1,34 @@
++import unittest
++from unittest.mock import AsyncMock
++
++from workflow_use.schema.views import ExtractStep, PageExtractionStep
++from workflow_use.workflow.semantic_executor import SemanticWorkflowExecutor
++
++
++class SemanticWorkflowExecutorTests(unittest.IsolatedAsyncioTestCase):
++	async def test_page_extraction_step_is_normalized_for_extract_execution(self):
++		executor = SemanticWorkflowExecutor.__new__(SemanticWorkflowExecutor)
++		executor._refresh_semantic_mapping = AsyncMock()
++		expected_result = object()
++		executor.execute_extract_step = AsyncMock(return_value=expected_result)
++		step = PageExtractionStep(
++			type='extract_page_content',
++			goal='Read the release details',
++			description='Extract release fields',
++			output='release',
++		)
++
++		result = await executor.execute_step(step)
++
++		self.assertIs(result, expected_result)
++		executor._refresh_semantic_mapping.assert_awaited_once_with()
++		executor.execute_extract_step.assert_awaited_once()
++		normalized_step = executor.execute_extract_step.await_args.args[0]
++		self.assertIsInstance(normalized_step, ExtractStep)
++		self.assertEqual(normalized_step.extractionGoal, step.goal)
++		self.assertEqual(normalized_step.description, step.description)
++		self.assertEqual(normalized_step.output, step.output)
++
++
++if __name__ == '__main__':
++	unittest.main()

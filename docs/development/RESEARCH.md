@@ -1,5 +1,35 @@
 # 调研登记
 
+## 2026-09-15 workflow-use 本地产品接线验证
+
+固定 workflow-use 0.2.11、browser-use 0.13.8、MCP 1.29.1 和两份补丁已经通过可复现安装入口 `npm run upstream:setup`；首次安装会核对补丁 hash、应用补丁、按官方 `uv.lock` 同步 Python 3.12 环境并运行两项上游回归和 Ruff，重复运行只校验受管安装。产品默认 Python 路径指向该隔离环境，不依赖开发机历史 checkout。
+
+正式产品 `createApplication` 使用真实 AI Connect、browser-use Agent/Browser 和 workflow-use 完成 `author_task`、样本、不同输入验证、计划授权复跑。旧 BrowserSkill executor 被设置为调用即失败且调用数为零。三次 workflow 输出分别为 Aster/7.4、Beryl/8.2、Aster/7.4；每次实际消费 3 个浏览器命令，`extract` 和 `output_conversion` 各 1 次，模型审计完整。产品链状态 `verified`，计划执行 completed，应用和浏览器最终关闭。安全证据见[产品接线验收](evidence/workflow-use-product-2026-09-15/README.md)。
+
+本轮还区分并修复了 B-A-T adapter 的四类问题：Python UTC 时间必须满足产品 Zod `datetime` 的 `Z` 形式；started/completed 模型事件必须保持 call identity；runtime 必须拒绝重复、漏报、未声明和超预算调用；取消终态不能被较晚返回的 abort 覆盖。它们不改变 workflow-use 上游问题结论，也不扩大上游补丁范围。Windows 与 AGPL 分发仍是交付门；真实京东继续等待新需求版本确认。
+
+## 2026-09-15 workflow-use 本地补丁与公开入口验证
+
+原样上游 `0.2.11 @ 5d2d19f` 的 LLM workflow prompt 缺少花括号转义，修复后又暴露 schema 接受 `extract_page_content`、semantic executor 却不分派 `PageExtractionStep`。用户明确授权以本地上游补丁继续验证；两项修复分别维护为独立 unified patch 和离线回归测试，不进入 B-A-T converter/executor。
+
+补丁系列从固定 commit 全新副本完成 apply/reverse check、回归测试和上游 Ruff check/format。公开生成入口、同输入复跑、不同 primitive 输入复跑均通过；采集任务得到 Aster/7.4 与 Beryl/8.2，非采集“填写并预览、禁止提交”任务用两个草稿输入均达到 `submitted=false`。两类任务所有原始 extraction 都是 AI-powered，没有 basic preview、raw fallback 或 error；Browser 会话分别保持一致并在 finally 关闭。
+
+实测证明 `run_with_no_ai` 仍会因 extract 和 output conversion 调用模型，所以产品必须保留真实用途审计，不能按方法名宣称零模型。workflow-use 正常 ActionResult 的 `success` 仍可能为 null，准入要联合执行步数、error、extraction method、原始结果、schema 和完成标准。证据见[本地补丁与兼容门](evidence/workflow-use-local-patches-2026-09-15/README.md)。本地产品接线已经由上节验证；Windows 与 AGPL 分发决策仍是交付门。
+
+## 2026-09-15 browser-use / workflow-use 原样上游验证（历史阻塞）
+
+原始验证停止在阶段 4：真实 Agent history 的 success/judge 通过，公开 `HealingService.create_workflow_definition` 却在 service.py:296 的 prompt.format 处抛 `KeyError: variable`；没有调用生成模型，也没有 workflow candidate。已保存[同 history 证据与独立最小复现](evidence/workflow-use-2026-09-15/README.md)。该结论由上节获授权的本地补丁验证取代，仍保留作未打补丁版本的基线。
+
+固定 browser-use 0.13.10 的 `mcp==2.1.1` 与固定 workflow-use 源码 `mcp>=1.28.1,<2` 构成最小不可满足集合，uv 0.10.9 离线解析直接拒绝。当前 workflow-use main 仍为 5d2d19fe8835cc86f1bf3e04302a5000d590f249，没有看到更新提交；PyPI 0.2.11 的依赖元数据和该提交不同，不能冒充同一制品。
+
+上游 `workflows/uv.lock` 原样保存 browser-use 0.13.8 / MCP 1.29.1，且自带 override。使用该配置而非自拟覆盖，`uv sync --locked --no-dev` 成功安装 144 包；macOS arm64 / Python 3.12.13 的 Agent/Browser、history schema、Workflow 公共入口均可导入。默认配置目录写入受沙箱限制后，使用官方 BROWSER_USE_CONFIG_DIR 指向受控目录恢复。该结果不是 0.13.10 兼容证明。
+
+薄模型桥复用 Fastify、Node 子进程及 aiohttp/Pydantic；只有消息形状映射，没有 Agent/DOM/workflow 执行逻辑。现有 AI Connect 0.3.2 packed artifact 的公共 `generate/generateObject` 接受消息列表及图像；`prepareInvocation` 实现仅适用 managed profile，普通账号不能走此入口。通过固定 selection 的通用 generate 接口，真实 Terra medium 单次识图/多轮记忆/结构输出通过（195 input + 31 output），usage 与 agent 用途独立保留，Python 无供应商凭据。
+
+许可证：browser-use MIT，workflow-use AGPL-3.0。原样本地评估与最终分发必须分开；未来分发需要确定版权告知、对应源码及第 13 条网络交互义务适用范围，独立进程不自动豁免。Windows 仍待实际验证。版本、处置和未冻结决定见 [替换记录](BROWSER_USE_REPLACEMENT.md) 与 [ADR 0004](../adr/0004-browser-use-workflow-use-replacement.md)。
+
+来源：[browser-use 固定依赖](https://github.com/browser-use/browser-use/blob/5c892e013a73e6622e6f50336e1eb0aa2c4405f2/pyproject.toml)、[workflow-use 固定声明](https://github.com/browser-use/workflow-use/blob/5d2d19fe8835cc86f1bf3e04302a5000d590f249/workflows/pyproject.toml)、[官方 lock](https://github.com/browser-use/workflow-use/blob/5d2d19fe8835cc86f1bf3e04302a5000d590f249/workflows/uv.lock)、[AGPL 正文](https://github.com/browser-use/workflow-use/blob/5d2d19fe8835cc86f1bf3e04302a5000d590f249/LICENSE)。完整日志仅存忽略的 `work/upstream-replacement-2026-09-15/`。
+
 ## 2026-09-15 browser-use / workflow-use 临时预执行复用核验
 
 当前失败点位于真实浏览器操作之后的业务结果提交：Pi 已通过 BrowserSkill 产生工具轨迹，但 `complete_step` 要求模型一次填写业务结果、步骤元数据、聚合语义和逐字段 provenance；校验失败主要以 throw 或粗粒度“尚未完成”反馈结束，不能形成可靠的同会话修复循环。临时验证保留 TypeScript、AI Connect、Pi AgentSession、BrowserSkill、BrowserService、Zod、SQLite 和现有 TaskChain/LangGraph，只 clean-room 复刻 browser-use/workflow-use 的有界 Agent loop、结构化错误回传、增量业务输出、最终宿主验收和执行历史。不引入 Python sidecar，不复制 AGPL 源码，不在 E1 通过前编译或复跑链路。

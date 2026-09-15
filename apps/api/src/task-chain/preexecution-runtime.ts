@@ -1,8 +1,8 @@
-import { BrowserError, type BrowserCommand, type BrowserFailure, type BrowserGrant,
+import { BrowserError, browserGrantLimits, type BrowserCommand, type BrowserFailure, type BrowserGrant,
   type BrowserHelpState, type BrowserSession } from "@browser-capture/browser"
 import type { AIEvent } from "@browser-capture/contracts/ai"
 import { jsonValueSchema, type JsonValue, type TaskBudget, type TaskDataContract } from "@browser-capture/contracts"
-import { digestJson, RuntimeBudgetExceededError } from "@browser-capture/runtime"
+import { digestJson, RuntimeBudgetExceededError, stableUuid } from "@browser-capture/runtime"
 import type { PreparedMainAIModel } from "../ai/model.js"
 import type { BrowserService } from "../browser/service.js"
 import { runBusinessPreexecutionAgent, type BusinessPreexecutionAgentInput } from "./exploration-agent.js"
@@ -24,10 +24,33 @@ export type BusinessPreexecutionRequest = Readonly<{
   requirementVersion: number
   goal: string
   startUrl: string
+  context?: JsonValue
   outputContract: TaskDataContract
   budget: TaskBudget
   signal: AbortSignal
   onArtifact?(artifact: PreexecutionArtifact): void
+  onHumanWait?(waitpoint: BrowserHelpState): void
+}>
+
+export type PlannedPreexecutionStep = Readonly<{
+  id: string
+  goal: string
+  outputContract: TaskDataContract
+  budget: TaskBudget
+  resolve(): { input: JsonValue; startUrl: string; context?: JsonValue }
+}>
+
+export type PlannedPreexecutionRequest = Readonly<{
+  taskId: string
+  authorizationId: string
+  browserRunId: string
+  requirementVersion: number
+  startUrl: string
+  budget: TaskBudget
+  signal: AbortSignal
+  steps: readonly PlannedPreexecutionStep[]
+  onArtifact?(stepId: string, artifact: PreexecutionArtifact): void
+  onStepCompleted(stepId: string, input: JsonValue, artifact: PreexecutionArtifact): void
   onHumanWait?(waitpoint: BrowserHelpState): void
 }>
 
@@ -39,18 +62,18 @@ type Dependencies = Readonly<{
   releaseGrant(grant: BrowserGrant): void
 }>
 
+type PlannedDependencies = Omit<Dependencies, "model"> & Readonly<{
+  modelForStep(stepId: string): Promise<PreparedMainAIModel>
+}>
+
 const wallTimeoutMs = 180_000
 const repairableFailureLimit = 5
 
 export async function runBusinessPreexecution(input: BusinessPreexecutionRequest,
   dependencies: Dependencies): Promise<PreexecutionArtifact> {
   const startUrl = new URL(input.startUrl).href
-  const artifact: PreexecutionArtifact = { runId: input.authorizationId, status: "running",
-    input: jsonValueSchema.parse(JSON.parse(JSON.stringify({ goal: input.goal, startUrl, outputContract: input.outputContract }))),
-    browserEvents: [], outputWrites: [],
-    feedback: [], finishAccepted: false, modelRuns: [], browserRunId: input.browserRunId, closed: false }
+  const artifact = newArtifact(input, input.authorizationId, startUrl)
   const journal = new PreexecutionJournal(artifact, input.outputContract, input.onArtifact)
-  let agentStarted = false
   try {
     assertBudget(input.budget)
     const grant = preexecutionGrant(input, startUrl)
@@ -58,22 +81,87 @@ export async function runBusinessPreexecution(input: BusinessPreexecutionRequest
     try {
       await dependencies.browser.run(grant, async (session, lifetime) => {
         const signal = AbortSignal.any([input.signal, lifetime])
-        const browser = browserExecution(session, signal, input.budget, startUrl, journal)
-        await browser.initialObservation()
-        agentStarted = true
-        await runBusinessPreexecutionAgent(dependencies.model, agentInput(input, signal, browser.execute,
-          journal, dependencies.onEvent))
+        await runInSession(input, session, signal, dependencies.model, journal, dependencies.onEvent)
       }, input.signal, (state) => { journal.humanWait(state); input.onHumanWait?.(state) })
     } finally { dependencies.releaseGrant(grant) }
   } catch (error) {
     if (journal.state().status === "running") journal.terminal(terminalFailure(error), "agent", null, null)
   } finally {
-    if (!agentStarted) await dependencies.model.close().catch((error) => {
-      journal.terminal(terminalFailure(error, "model_cleanup_failed"), "agent", null, null)
-    })
     await settleBrowserCleanup(input, dependencies.browser, journal)
   }
   return clonePreexecutionArtifact(artifact)
+}
+
+export async function runPlannedPreexecution(input: PlannedPreexecutionRequest,
+  dependencies: PlannedDependencies): Promise<Array<{ stepId: string; input: JsonValue; artifact: PreexecutionArtifact }>> {
+  if (!input.steps.length) throw new Error("preexecution_plan_step_required")
+  assertBudget(input.budget)
+  const grantInput: BusinessPreexecutionRequest = { taskId: input.taskId, authorizationId: input.authorizationId,
+    browserRunId: input.browserRunId, requirementVersion: input.requirementVersion, goal: "计划预执行",
+    startUrl: input.startUrl, outputContract: input.steps[0]!.outputContract, budget: input.budget, signal: input.signal }
+  const grant = preexecutionGrant(grantInput, new URL(input.startUrl).href)
+  const completed: Array<{ stepId: string; input: JsonValue; artifact: PreexecutionArtifact }> = []
+  const journals: PreexecutionJournal[] = []
+  dependencies.registerGrant(grant)
+  try {
+    await dependencies.browser.run(grant, async (session, lifetime) => {
+      const signal = AbortSignal.any([input.signal, lifetime])
+      for (const step of input.steps) {
+        signal.throwIfAborted()
+        const resolved = step.resolve(), startUrl = new URL(resolved.startUrl).href
+        const request: BusinessPreexecutionRequest = { taskId: input.taskId,
+          authorizationId: stableUuid(input.authorizationId, step.id), browserRunId: input.browserRunId,
+          requirementVersion: input.requirementVersion, goal: step.goal, startUrl,
+          context: resolved.context ?? resolved.input, outputContract: step.outputContract, budget: step.budget, signal }
+        const artifact = newArtifact(request, request.authorizationId, startUrl)
+        const journal = new PreexecutionJournal(artifact, step.outputContract,
+          (value) => input.onArtifact?.(step.id, value))
+        journals.push(journal)
+        const model = await dependencies.modelForStep(step.id)
+        try { await runInSession(request, session, signal, model, journal, dependencies.onEvent) }
+        catch (error) {
+          if (journal.state().status === "running") journal.terminal(terminalFailure(error), "agent", null, null)
+          throw error
+        }
+        if (artifact.status !== "completed" || !artifact.finishAccepted) break
+        completed.push({ stepId: step.id, input: resolved.input, artifact })
+        input.onStepCompleted(step.id, resolved.input, clonePreexecutionArtifact(artifact))
+      }
+    }, input.signal, (state) => { journals.at(-1)?.humanWait(state); input.onHumanWait?.(state) })
+  } catch (error) {
+    const current = journals.at(-1)
+    if (current?.state().status === "running") current.terminal(terminalFailure(error), "agent", null, null)
+  } finally {
+    dependencies.releaseGrant(grant)
+    const closed = await browserClosed(input.taskId, dependencies.browser)
+    for (const journal of journals) {
+      journal.markClosed(closed)
+      if (!closed) journal.cleanupFailed()
+    }
+  }
+  return completed.map((item) => ({ ...item, artifact: clonePreexecutionArtifact(item.artifact) }))
+}
+
+async function runInSession(input: BusinessPreexecutionRequest, session: ManagedSession, signal: AbortSignal,
+  model: PreparedMainAIModel, journal: PreexecutionJournal, onEvent: (event: AIEvent) => void) {
+  let agentStarted = false
+  try {
+    const browser = browserExecution(session, signal, input.budget, input.startUrl, input.context, journal)
+    await browser.initialObservation()
+    agentStarted = true
+    await runBusinessPreexecutionAgent(model, agentInput(input, signal, browser.execute, journal, onEvent))
+  } finally {
+    if (!agentStarted) await model.close().catch((error) => {
+      journal.terminal(terminalFailure(error, "model_cleanup_failed"), "agent", null, null)
+    })
+  }
+}
+
+function newArtifact(input: BusinessPreexecutionRequest, runId: string, startUrl: string): PreexecutionArtifact {
+  const artifactInput = input.context ?? { goal: input.goal, startUrl, outputContract: input.outputContract }
+  return { runId, status: "running", input: jsonValueSchema.parse(JSON.parse(JSON.stringify(artifactInput))),
+    browserEvents: [], outputWrites: [], feedback: [], finishAccepted: false, modelRuns: [],
+    browserRunId: input.browserRunId, closed: false }
 }
 
 class PreexecutionJournal {
@@ -225,6 +313,7 @@ function agentInput(input: BusinessPreexecutionRequest, signal: AbortSignal,
   execute: BusinessPreexecutionAgentInput["execute"], journal: PreexecutionJournal,
   onEvent: (event: AIEvent) => void): BusinessPreexecutionAgentInput {
   return { jobId: input.authorizationId, goal: input.goal, startUrl: input.startUrl,
+    ...(input.context === undefined ? {} : { context: input.context }),
     outputContract: input.outputContract, signal, onEvent, execute,
     recordOutput: (raw, callId, modelRunId) => journal.recordOutput(raw, callId, modelRunId, journal.currentUrl()),
     finish: (raw, callId, modelRunId) => journal.finish(raw, callId, modelRunId),
@@ -236,10 +325,10 @@ function agentInput(input: BusinessPreexecutionRequest, signal: AbortSignal,
 }
 
 function browserExecution(session: ManagedSession, signal: AbortSignal, budget: TaskBudget, startUrl: string,
-  journal: PreexecutionJournal) {
+  context: JsonValue | undefined, journal: PreexecutionJournal) {
   let browserActiveMs = 0, accessCircuit: BrowserError | null = null
   let executionQueue: Promise<void> = Promise.resolve()
-  const allowedNavigate = new Set([startUrl])
+  const allowedNavigate = new Set(collectUrls([startUrl, context]))
   const command = async (value: BrowserCommand, commandSignal = signal) => {
     if (journal.state().status === "failed" || journal.state().status === "completed") throw new Error("preexecution_stopped")
     if (journal.state().status === "waiting_for_human" && value.type !== "request_help") throw new Error("preexecution_waiting_for_human")
@@ -247,7 +336,8 @@ function browserExecution(session: ManagedSession, signal: AbortSignal, budget: 
     if (value.type === "navigate" && !allowedNavigate.has(new URL(value.url).href)) throw new BrowserError("permission_denied")
     const remainingMs = budget.maxActiveMs - browserActiveMs
     if (remainingMs <= 0) throw new RuntimeBudgetExceededError("预执行浏览器活动时间预算已用尽。")
-    session.beginStep(Math.min(3850, budget.maxBrowserCommands), Math.min(wallTimeoutMs, remainingMs), commandSignal, () => {})
+    session.beginStep(Math.min(browserGrantLimits.maxCommands, budget.maxBrowserCommands),
+      Math.min(wallTimeoutMs, remainingMs), commandSignal, () => {})
     const startedAt = Date.now()
     try {
       const result = await session.command(value, commandSignal)
@@ -347,8 +437,8 @@ function preexecutionGrant(input: BusinessPreexecutionRequest, startUrl: string)
   return { taskId: input.taskId, runId: input.browserRunId, ownerId: input.authorizationId,
     ...(process.env.BROWSER_SKILL_BROWSER ? { browserInstanceId: process.env.BROWSER_SKILL_BROWSER } : {}),
     requirementVersion: input.requirementVersion, purpose: "exploration", allowedOrigins: [new URL(startUrl).origin],
-    actions: explorationCapabilities, maxCommands: Math.min(3850, input.budget.maxBrowserCommands),
-    timeoutMs: Math.min(1_440_000, Math.max(wallTimeoutMs, input.budget.maxActiveMs)) }
+    actions: explorationCapabilities, maxCommands: Math.min(browserGrantLimits.maxCommands, input.budget.maxBrowserCommands),
+    timeoutMs: Math.min(browserGrantLimits.timeoutMs, Math.max(wallTimeoutMs, input.budget.maxActiveMs)) }
 }
 
 function assertBudget(budget: TaskBudget) {
@@ -358,10 +448,14 @@ function assertBudget(budget: TaskBudget) {
 
 async function settleBrowserCleanup(input: BusinessPreexecutionRequest, browser: BrowserService,
   journal: PreexecutionJournal) {
-  const state = await browser.snapshot(input.taskId).catch(() => null)
-  const closed = state !== null && !state.cleanupRequired && state.record?.status !== "cleanup_required"
+  const closed = await browserClosed(input.taskId, browser)
   journal.markClosed(closed)
   if (!closed) journal.cleanupFailed()
+}
+
+async function browserClosed(taskId: string, browser: BrowserService) {
+  const state = await browser.snapshot(taskId).catch(() => null)
+  return state !== null && !state.cleanupRequired && state.record?.status !== "cleanup_required"
 }
 
 function feedbackPayload(feedback: PreexecutionFeedback): OutputFailure {

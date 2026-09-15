@@ -1,0 +1,52 @@
+From: B-A-T local integration
+Subject: [PATCH] Fix workflow prompt variable placeholder formatting
+
+The workflow creation prompt is rendered with str.format(), but two prose
+examples used an unescaped {variable} placeholder. Rendering therefore raised
+KeyError before history conversion or model invocation. Escape those examples
+and cover the rendered prompt with an offline regression test.
+
+---
+ workflows/workflow_use/healing/prompts/workflow_creation_prompt.md | 4 ++--
+ workflows/workflow_use/healing/tests/test_workflow_creation_prompt.py | 18 ++++++++++++++++++
+ 2 files changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/workflows/workflow_use/healing/prompts/workflow_creation_prompt.md b/workflows/workflow_use/healing/prompts/workflow_creation_prompt.md
+--- a/workflows/workflow_use/healing/prompts/workflow_creation_prompt.md
++++ b/workflows/workflow_use/healing/prompts/workflow_creation_prompt.md
+@@ -23,10 +23,10 @@
+    - Use `{{variable}}` syntax (one pair of curly braces) in `target_text` for dynamic values
+    - Example: `{{"type": "click", "target_text": "{{repo_name}}"}}`
+ 
+-4. **Variables MUST use {variable} syntax (one pair of curly braces)**
++4. **Variables MUST use {{variable}} syntax (one pair of curly braces)**
+    - ✅ CORRECT: `"value": "{{email}}"` or `"target_text": "{{repo_name}}"`
+    - ❌ WRONG: `"value": "{{{{email}}}}"` or `"value": "email"`
+-   - Python's str.format() substitutes {variable} with actual values at runtime
++   - Python's str.format() substitutes {{variable}} with actual values at runtime
+ 
+ 5. **Prefer direct navigation over search engines!**
+    - If task involves "search GitHub" → Navigate directly to https://github.com
+diff --git a/workflows/workflow_use/healing/tests/test_workflow_creation_prompt.py b/workflows/workflow_use/healing/tests/test_workflow_creation_prompt.py
+new file mode 100644
+--- /dev/null
++++ b/workflows/workflow_use/healing/tests/test_workflow_creation_prompt.py
+@@ -0,0 +1,18 @@
++import unittest
++from pathlib import Path
++
++PROMPTS_DIR = Path(__file__).parents[1] / 'prompts'
++
++
++class WorkflowCreationPromptTests(unittest.TestCase):
++	def test_variable_examples_survive_prompt_formatting(self):
++		prompt_template = (PROMPTS_DIR / 'workflow_creation_prompt.md').read_text(encoding='utf-8')
++
++		rendered_prompt = prompt_template.format(goal='Read a local fixture', actions='- navigate')
++
++		self.assertIn('Variables MUST use {variable} syntax', rendered_prompt)
++		self.assertIn("Python's str.format() substitutes {variable}", rendered_prompt)
++
++
++if __name__ == '__main__':
++	unittest.main()

@@ -33,7 +33,12 @@ export class TaskPlanExecutor {
         } },
       async (execute) => this.runSteps(record, plan, chains, execute, signal, resume))
     } catch (error) {
-      if (signal.aborted) this.finish(record, "paused", "运行已中断，已完成步骤和检查点保留。")
+      if (signal.aborted) {
+        const current = this.repository.execution(record.taskId, record.id)
+        // WHY：取消命令已经持久化 cancelled 时，异步执行栈晚到的 abort 不能把它降级覆盖成 paused。
+        if (current.status === "cancelled") return current
+        this.finish(record, "paused", "运行已中断，已完成步骤和检查点保留。")
+      }
       else if (error instanceof Error && error.message === "authorized_chain_unavailable") {
         this.finish(record, "blocked", "授权时固定的链路版本不再可用；原授权不会切换到其他版本。")
       } else if (error instanceof RuntimeBudgetExceededError || error instanceof Error && error.message === "plan_item_limit_exceeded") {

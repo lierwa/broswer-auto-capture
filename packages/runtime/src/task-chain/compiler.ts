@@ -245,7 +245,7 @@ function assertBindingDominance(chain: TaskChain, nodes: ReadonlyMap<string, Cha
     for (const binding of nodeBindings(node)) {
       if (binding.source === "node" && !deferredLoopBinding(node, binding, dominators)
         && (binding.nodeId === node.id || !dominators.get(node.id)!.has(binding.nodeId))) {
-        throw new Error("binding_node_not_dominating")
+        throw new Error(`binding_node_not_dominating:${node.id}:${binding.nodeId}`)
       }
     }
   }

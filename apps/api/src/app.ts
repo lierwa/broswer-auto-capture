@@ -18,11 +18,12 @@ import { createAIModelProvider, requireAgentSessionSelection, type AIModelProvid
 import { TaskChainService } from "./task-chain/service.js"
 import type { RuntimeCapabilityFactory } from "./task-chain/runtime-host.js"
 import { OriginAccessGate } from "./browser/origin-access-gate.js"
+import { PythonUpstreamBrowserRuntime, type UpstreamBrowserRuntime } from "./upstream-browser/service.js"
 
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
 export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider;
   taskChainCapabilities?: RuntimeCapabilityFactory; browserExecutor?: CommandExecutor; serveUi?: boolean;
-  originAccessGate?: OriginAccessGate }
+  originAccessGate?: OriginAccessGate; upstreamBrowserRuntime?: UpstreamBrowserRuntime }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
@@ -43,7 +44,9 @@ export async function createApplication(options: AppOptions) {
   catch (error) { ai.close(); await store.close(); throw error }
   let taskChain: TaskChainService
   try {
-    taskChain = new TaskChainService(store, browser, aiModel, options.taskChainCapabilities)
+    const upstream = options.upstreamBrowserRuntime ?? new PythonUpstreamBrowserRuntime({ root: options.root,
+      directory: options.directory, subject: ai.forSubject(SHARED_AI_SUBJECT) })
+    taskChain = new TaskChainService(store, browser, aiModel, upstream, options.taskChainCapabilities)
   }
   catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })

@@ -2,7 +2,7 @@ import { z } from "zod"
 import { artifactReferenceSchema, budgetSchema, consumptionSchema, contractVersionSchema, digestSchema,
   identitySchema, keySchema, taskIdentitySchema, textSchema, versionReferenceSchema } from "./common.js"
 import { observationConditionSchema } from "./binding.js"
-import { nodeOutcomeSchema, terminalStatusSchema } from "./node.js"
+import { modelCallPurposeSchema, nodeOutcomeSchema, terminalStatusSchema } from "./node.js"
 import { jsonValueSchema, taskOutputSchema } from "./value.js"
 
 export const runBindingSchema = z.object({
@@ -37,6 +37,7 @@ export const nodeCapabilityResultSchema = z.object({
   "external_failure_requires_failure_outcome")
 export const llmNodeCapabilityResultSchema = nodeCapabilityResultSchema.safeExtend({
   reportedInvocations: z.number().int().nonnegative().nullable(),
+  reportedBrowserCommands: z.number().int().nonnegative().optional(),
 }).strict()
 export const nodeExecutionEventSchema = z.object({
   sequence: z.number().int().nonnegative(), at: z.string().datetime(), invocationId: identitySchema,
@@ -44,7 +45,7 @@ export const nodeExecutionEventSchema = z.object({
   outcome: nodeOutcomeSchema.nullable(), idempotencyKey: textSchema, stableKey: textSchema.nullable(),
 }).strict().refine((event) => (event.status === "finished") === (event.outcome !== null), "只有完成事件携带出口")
 export const modelCallAuditSchema = z.object({
-  callId: identitySchema, invocationId: identitySchema, nodeId: keySchema, purpose: z.literal("explicit_llm"),
+  callId: identitySchema, invocationId: identitySchema, nodeId: keySchema, purpose: modelCallPurposeSchema,
   model: textSchema, intendedAt: z.string().datetime(), status: z.enum(["intended", "completed", "failed", "interrupted"]),
   reportedInvocations: z.number().int().nonnegative().nullable(),
 }).strict().refine((audit) => audit.status !== "intended" || audit.reportedInvocations === null, "意图不能伪造已回报调用数")

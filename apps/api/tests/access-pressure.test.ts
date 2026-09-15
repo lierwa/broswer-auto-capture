@@ -24,6 +24,27 @@ test("计划 each 在调度前去重；外部访问中断覆盖 continue 并熔�
   assert.match(interrupted.record.reason, /rate_limited.*HTTP 429/)
 })
 
+test("取消状态不会被异步执行栈晚到的 abort 覆盖成暂停", async () => {
+  const current = fixture(false), controller = new AbortController()
+  let persisted = structuredClone(current.record)
+  current.repository.execution = () => structuredClone(persisted)
+  current.repository.saveExecution = (value) => {
+    const parsed = value as TaskExecution
+    persisted = structuredClone(parsed)
+    return parsed
+  }
+  current.host.group = async () => {
+    persisted.status = "cancelled"; persisted.reason = "运行已取消；已有运行和产物记录保留。"
+    persisted.sequence++; controller.abort()
+    throw new Error("aborted_after_cancel_persisted")
+  }
+
+  const result = await current.executor.execute(current.record, controller.signal)
+
+  assert.equal(result.status, "cancelled")
+  assert.equal(current.repository.execution(current.record.taskId, current.record.id).status, "cancelled")
+})
+
 function fixture(failFirst: boolean) {
   const taskId = "access-pressure-task", now = "2026-09-13T00:00:00.000Z"
   const item = { id: "item", version: 1, dialect: "bat-value-schema/v1" as const, schema: { type: "object" as const,
@@ -73,7 +94,7 @@ function fixture(failFirst: boolean) {
       : completedRun(selected, request as never, value)
     runs.push(run); return run
   }) } as unknown as TaskRuntimeHost
-  return { executor: new TaskPlanExecutor(store, repository, host), record, inputs }
+  return { executor: new TaskPlanExecutor(store, repository, host), record, inputs, repository, host }
 }
 
 function completedRun(chain: TaskChain, request: { binding: TaskRun["binding"]; input: JsonValue; mode: TaskRun["mode"] }, value: JsonValue): TaskRun {

@@ -6,6 +6,7 @@ import { BrowserSession } from "./session.js"
 import { CommandLaunchError } from "./transport.js"
 export { BrowserError, grantSchema, commandSchema, browserInspectionSchema, type BrowserGrant, type BrowserAudit,
   type BrowserCommand, type BrowserFailure, type BrowserHelpObserver, type BrowserHelpState, type BrowserInspection, type CommandExecutor } from "./contracts.js"
+export { browserGrantLimits } from "./contracts.js"
 export { bskExecutor } from "./transport.js"
 export { BrowserSession } from "./session.js"
 export * from "./task-chain-adapter.js"

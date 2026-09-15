@@ -1,34 +1,28 @@
-import { randomUUID } from "node:crypto"
 import {
   CONTRACT_VERSION, parseTaskValue, taskChainCommandSchema, taskChainStateSchema, taskPlanExecutionIssues,
   type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskChainCommand, type TaskExecution,
   type TaskPlan, type TaskRun,
 } from "@browser-capture/contracts"
-import type { AIEvent } from "@browser-capture/contracts/ai"
 import type { TaskSummary } from "@browser-capture/contracts/task"
 import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
 import type { AIModelProvider } from "../ai/model.js"
 import type { BrowserService } from "../browser/service.js"
 import type { ProductStore } from "../database/store.js"
 import { conflict } from "../errors.js"
-import { TaskChainAuthoring } from "./authoring.js"
+import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
+import { semanticPlanSchema, TaskChainAuthoring } from "./authoring.js"
 import { reusablePlanCandidate } from "./authoring-recovery.js"
 import { planPrompt } from "./authoring-prompts.js"
 import { TaskPlanExecutor } from "./plan-executor.js"
 import { TaskContractRepository } from "./repository.js"
 import { syncConfirmedRequirement } from "./requirement.js"
 import { TaskRuntimeHost, type RuntimeCapabilityFactory } from "./runtime-host.js"
-import { explorationTraceSchema, type ExplorationTrace } from "./exploration-trace.js"
-import { reusableExploration, reusableTaskExploration, reusableTaskAnnotations } from "./exploration-reuse.js"
 import { matchingPlanValidations, planValidationPassed, queuedPlanValidation, recordChainValidation, recordPlanValidation } from "./plan-validation.js"
 import { queuedValidationRun, validationRequest, queuedExecution } from "./queued-runs.js"
-import type { BusinessPreexecutionRequest } from "./preexecution-runtime.js"
-import type { PreexecutionArtifact } from "./preexecution-trace.js"
 export { reusableExploration, reusableTaskExploration, reusableTaskAnnotations } from "./exploration-reuse.js"
 
 type QueueItem = { type: "execution"; taskId: string; id: string; resume: boolean }
-  | { type: "validation"; taskId: string; runId: string; resume?: boolean; repairAttempt?: number;
-    followUp?: { mode: "sample" | "verification"; input: JsonValue } }
+  | { type: "validation"; taskId: string; runId: string; resume?: boolean }
 
 export class TaskChainService {
   readonly repository: TaskContractRepository
@@ -43,10 +37,10 @@ export class TaskChainService {
   private closing = false
 
   constructor(private readonly store: ProductStore, browser: BrowserService, private readonly ai: AIModelProvider,
-    capabilityFactory?: RuntimeCapabilityFactory) {
+    upstream: UpstreamBrowserRuntime, capabilityFactory?: RuntimeCapabilityFactory) {
     this.repository = new TaskContractRepository(store)
-    this.host = new TaskRuntimeHost(this.repository, browser, ai, capabilityFactory)
-    this.authoring = new TaskChainAuthoring(this.repository, ai, this.host)
+    this.host = new TaskRuntimeHost(this.repository, browser, ai, capabilityFactory, upstream)
+    this.authoring = new TaskChainAuthoring(this.repository, ai, upstream)
     this.executor = new TaskPlanExecutor(store, this.repository, this.host)
   }
 
@@ -96,14 +90,6 @@ export class TaskChainService {
   isActive(taskId: string) { return [...this.controllers.keys()].some((key) => key.startsWith(`${taskId}:`))
     || this.queue.some((item) => item.taskId === taskId) }
 
-  async preexecuteBusinessOnly(input: Omit<BusinessPreexecutionRequest, "authorizationId" | "browserRunId">,
-    onEvent: (event: AIEvent) => void = () => {}): Promise<PreexecutionArtifact> {
-    this.store.task(input.taskId)
-    const selection = this.ai.selection()
-    const model = await this.ai.prepareMain(selection, "exploration")
-    return this.host.preexecuteBusinessOnly({ ...input, authorizationId: randomUUID(), browserRunId: randomUUID() }, model, onEvent)
-  }
-
   legacyOriginal(taskId: string, source: "plans" | "chains" | "executions", id: string) {
     return this.repository.legacyOriginal(taskId, source, id)
   }
@@ -129,27 +115,18 @@ export class TaskChainService {
     if (!requirement || requirement.version !== command.requirementVersion) conflict("只能为当前已确认需求执行预执行。")
     const input = command.input
     // WHY：恢复候选必须绑定实际规划规则；prompt 改变后不能把旧语义计划带进新的浏览器探索。
-    const key = `${requirement.id}:${requirement.version}:task-authoring:${digestJson(planPrompt(requirement, input))}:${digestJson(input)}`
+    const key = `${requirement.id}:${requirement.version}:task-authoring:workflow-use-v1:${digestJson(planPrompt(requirement, input))}:${digestJson(input)}`
     const jobs = this.repository.jobs(taskId)
-    const reusableCandidate = reusablePlanCandidate(jobs, key)
-    const prior = jobs.findLast((item) => item.key === key && item.status === "completed" && item.resultId
-      && item.authoring?.exploration && item.authoring.annotations)
-    const reusablePlan = prior ? this.repository.plans(taskId).findLast((plan) => plan.id === prior.resultId
-      && planMatchesRequirement(plan, requirement)) : undefined
-    const stepIds = reusablePlan?.steps.map((step) => step.id) ?? []
-    const reusable = reusablePlan ? reusableTaskExploration(jobs, key, input, stepIds) : undefined
-    const reusableAnnotations = reusablePlan ? reusableTaskAnnotations(jobs, key, reusable, stepIds) : undefined
+    const fromAudit = reusablePlanCandidate(jobs, key, (candidate) => semanticPlanSchema.safeParse(candidate).success)
     const job = this.newJob(taskId, command.requestId, "chain", key)
     this.store.recordOperation("task-chain:author-task", command.requestId, command, job.id)
     this.startAuthoring(taskId, job, async (signal) => {
-      const { chains, exploration } = reusablePlan && reusable
-        ? await this.authoring.task(job, requirement, reusablePlan, input, signal, reusable, reusableAnnotations)
-        : await this.authoring.preexecute(job, requirement, input, signal, reusableCandidate)
+      const { chains, samples } = await this.authoring.preexecute(job, requirement, input, signal, fromAudit)
       if (chains.length === 1) {
-        const sample = exploration.stepResults?.find((result) => result.stepId === chains[0]!.stepId)?.input
+        const sample = samples[chains[0]!.stepId]
         if (sample === undefined) throw new Error(`exploration_step_result_missing:${chains[0]!.stepId}`)
         this.enqueueValidation(taskId, chains[0]!, "sample", sample,
-          stableUuid(command.requestId, "sample-validation", chains[0]!.stepId), 0)
+          stableUuid(command.requestId, "sample-validation", chains[0]!.stepId))
       } else {
         const plan = this.repository.plan(taskId, chains[0]!.plan.id, chains[0]!.plan.version, chains[0]!.plan.digest)
         this.enqueuePlanValidation(taskId, stableUuid(command.requestId, "sample-plan"), plan, chains, input, "sample")
@@ -169,10 +146,9 @@ export class TaskChainService {
     if (!step) conflict("计划步骤不存在。")
     const input = parseTaskValue(step.inputContract, command.input)
     const key = `${plan.id}:${plan.version}:${command.stepId}:${digestJson(input)}`
-    const reusable = reusableExploration(this.repository.jobs(taskId), key, input)
     const job = this.newJob(taskId, command.requestId, "chain", key)
     this.store.recordOperation("task-chain:chain", command.requestId, command, job.id)
-    this.startAuthoring(taskId, job, (signal) => this.authoring.chain(job, requirement, plan, command.stepId, input, signal, reusable))
+    this.startAuthoring(taskId, job, (signal) => this.authoring.chain(job, requirement, plan, command.stepId, input, signal))
   }
 
   private generateTaskChains(taskId: string, command: Extract<TaskChainCommand, { type: "generate_task_chains" }>) {
@@ -183,13 +159,10 @@ export class TaskChainService {
     if (!requirement || !planMatchesRequirement(plan, requirement)) conflict("计划已被新的需求版本替代。")
     const input = parseTaskValue(plan.inputContract, command.input)
     const key = `${plan.id}:${plan.version}:task:${digestJson(input)}`
-    const jobs = this.repository.jobs(taskId), stepIds = plan.steps.map((step) => step.id)
-    const reusable = reusableTaskExploration(jobs, key, input, stepIds)
-    const reusableAnnotations = reusableTaskAnnotations(jobs, key, reusable, stepIds)
     const job = this.newJob(taskId, command.requestId, "chain", key)
     this.store.recordOperation("task-chain:task-authoring", command.requestId, command, job.id)
     this.startAuthoring(taskId, job, async (signal) => {
-      const { chains } = await this.authoring.task(job, requirement, plan, input, signal, reusable, reusableAnnotations)
+      const { chains } = await this.authoring.task(job, requirement, plan, input, signal)
       this.enqueuePlanValidation(taskId, stableUuid(command.requestId, "sample-plan"), plan, chains, input, "sample")
       this.scheduleDrain()
     })
@@ -328,17 +301,14 @@ export class TaskChainService {
             const record = this.repository.execution(taskId, item.id)
             await this.executor.execute(record, controller.signal, item.resume)
             recordPlanValidation(this.repository, record)
-            await this.repairPlanValidation(record, controller.signal)
           }
-          else await this.runValidation(item.taskId, item.runId, controller.signal, item.resume,
-            item.repairAttempt ?? 0, item.followUp)
+          else await this.runValidation(item.taskId, item.runId, controller.signal, item.resume)
         } finally { this.controllers.delete(`${taskId}:${key}`) }
       }
     } finally { this.draining = false }
   }
 
-  private async runValidation(taskId: string, runId: string, signal: AbortSignal, resume = false, repairAttempt = 0,
-    followUp?: { mode: "sample" | "verification"; input: JsonValue }) {
+  private async runValidation(taskId: string, runId: string, signal: AbortSignal, resume = false) {
     const queued = this.repository.run(taskId, runId)
     const chain = this.repository.chain(taskId, queued.binding.chain.id, queued.binding.chain.version, queued.binding.chain.digest)
     let completed: TaskRun
@@ -364,95 +334,15 @@ export class TaskChainService {
       this.repository.saveRun(failed)
       return
     }
-    const passed = recordChainValidation(this.repository, chain, completed)
-    if (passed && followUp) {
-      this.enqueueValidation(taskId, chain, followUp.mode, followUp.input,
-        stableUuid(completed.binding.runId, "follow-up"), repairAttempt)
-      return
-    }
-    if (!passed) {
-      const validated = this.repository.chain(taskId, chain.id, chain.version)
-      await this.repairValidation(taskId, validated, completed, repairAttempt, followUp, signal)
-    }
-  }
-
-  private async repairPlanValidation(record: TaskExecution, signal: AbortSignal) {
-    if (!record.mode || record.mode === "replay" || signal.aborted) return
-    const taskId = record.taskId, plan = this.repository.plan(taskId, record.plan.id, record.plan.version, record.plan.digest)
-    const chains = record.steps.map((step) => this.repository.chain(taskId, step.chain.id, step.chain.version, step.chain.digest))
-    const followUp = record.validationRecovery?.verificationInput
-    if (record.status === "completed" && record.mode === "sample" && followUp !== undefined) {
-      const next = this.enqueuePlanValidation(taskId, stableUuid(record.id, "verification"), plan, chains, followUp, "verification")
-      next.validationRecovery = { parentExecutionId: record.id, attempt: 1 }; this.repository.saveExecution(next)
-      return
-    }
-    if (record.validationRecovery || !record.currentRunId || !["failed", "partial", "blocked"].includes(record.status)) return
-    const run = this.repository.runs(taskId).find((item) => item.binding.runId === record.currentRunId)
-    if (!run || run.externalFailure || !["failed", "partial", "blocked"].includes(run.status)) return
-    const chain = chains.find((item) => item.id === run.binding.chain.id && item.version === run.binding.chain.version)
-    if (!chain) return
-    const trace = repairTrace(this.repository.jobs(taskId), chain)
-    if (!trace) return
-    const sample = record.mode === "verification" ? matchingPlanValidations(this.repository, plan, chains)
-      .findLast((item) => item.mode === "sample") : undefined
-    if (record.mode === "verification" && !sample) return
-    const requestId = stableUuid(record.id, "repair"), job = this.newJob(taskId, requestId, "chain",
-      `repair:${chain.id}:${chain.version}:${run.binding.runId}`)
-    let repaired: TaskChain
-    try { repaired = await this.authoring.repair(job, plan, chain, run, trace, signal) }
-    catch { return }
-    // WHY：新版本必须从计划入口重新建立上游现场；禁止把失败的下游链扔进孤立的新会话重跑。
-    const next = this.enqueuePlanValidation(taskId, stableUuid(requestId, "sample-plan"), plan,
-      chains.map((item) => item.id === chain.id ? repaired : item), sample ? sample.input : record.input, "sample")
-    next.validationRecovery = { parentExecutionId: record.id, attempt: 1,
-      ...(sample ? { verificationInput: record.input } : {}) }
-    this.repository.saveExecution(next)
-  }
-
-  private async repairValidation(taskId: string, chain: TaskChain, run: TaskRun, repairAttempt: number,
-    followUp: { mode: "sample" | "verification"; input: JsonValue } | undefined, signal: AbortSignal) {
-    if (repairAttempt >= 1 || run.externalFailure || !["sample", "verification"].includes(run.mode)
-      || !["failed", "partial", "blocked"].includes(run.status)) return
-    const trace = repairTrace(this.repository.jobs(taskId), chain)
-    if (!trace) return
-    const plan = this.repository.plan(taskId, chain.plan.id, chain.plan.version, chain.plan.digest)
-    const attempt = repairAttempt + 1, requestId = stableUuid(run.binding.runId, "repair", String(attempt))
-    const job = this.newJob(taskId, requestId, "chain", `repair:${chain.id}:${chain.version}:${run.binding.runId}`)
-    let repaired: TaskChain
-    try { repaired = await this.authoring.repair(job, plan, chain, run, trace, signal) }
-    catch { return }
-    if (run.mode === "verification") {
-      const sample = chain.validation.evidence.findLast((item) => item.phase === "sample" && item.passed)
-      if (!sample) return
-      const sampleRun = this.repository.run(taskId, sample.runId)
-      this.enqueueValidation(taskId, repaired, "sample", sampleRun.input, stableUuid(requestId, "sample"), attempt,
-        { mode: "verification", input: run.input })
-      return
-    }
-    this.enqueueValidation(taskId, repaired, run.mode as "sample" | "verification", run.input,
-      stableUuid(requestId, "retry"), attempt, followUp)
+    recordChainValidation(this.repository, chain, completed)
   }
 
   private enqueueValidation(taskId: string, chain: TaskChain, mode: "sample" | "verification", input: JsonValue,
-    requestId: string, repairAttempt: number, followUp?: { mode: "sample" | "verification"; input: JsonValue }) {
+    requestId: string) {
     const queued = queuedValidationRun(taskId, requestId, chain, input, mode)
     this.repository.saveRun(queued)
-    this.queue.push({ type: "validation", taskId, runId: queued.binding.runId, repairAttempt,
-      ...(followUp ? { followUp } : {}) })
+    this.queue.push({ type: "validation", taskId, runId: queued.binding.runId })
   }
-}
-
-function repairTrace(jobs: TaskAuthoringJob[], chain: TaskChain): ExplorationTrace | null {
-  const source = jobs.findLast((job) => job.type === "chain" && job.authoring?.exploration
-    && [job.authoring.compiledChain, ...(job.authoring.compiledChains ?? [])].some((reference) => reference?.id === chain.id
-      && reference.version === chain.version))
-  if (!source?.authoring?.exploration) return null
-  const parsed = explorationTraceSchema.safeParse(source.authoring.exploration)
-  if (!parsed.success || !parsed.data.closed) return null
-  const step = parsed.data.stepResults?.find((item) => item.stepId === chain.stepId)
-  if (!step) return parsed.data.result ? parsed.data : null
-  const { stepResults: _stepResults, ...base } = parsed.data
-  return { ...base, input: step.input, result: step.result }
 }
 
 function requireExecutablePlan(plan: TaskPlan) {

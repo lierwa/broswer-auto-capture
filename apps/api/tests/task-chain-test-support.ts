@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto"
 import type { JsonValue, TaskChainCommand, TaskDataContract } from "@browser-capture/contracts"
 import type { AIModelProvider } from "../src/ai/model.js"
 import type { ProductStore } from "../src/database/store.js"
+import type { UpstreamBrowserRuntime } from "../src/upstream-browser/service.js"
+import type { ModelCallReport } from "@browser-capture/runtime"
 
 const openContract: TaskDataContract = { id: "task-value", version: 1, dialect: "bat-value-schema/v1",
   schema: { type: "object", properties: {}, required: [], additionalProperties: true } }
@@ -27,6 +29,22 @@ export function planCandidate() {
     dependsOn: [], inputContract: openContract, outputContract: { ...openContract, id: "task-output" }, input,
     invocation: { mode: "once" as const }, completion: [completion], risks: ["需要人工确认"] }],
     output: completion.predicate.value, completion: [completion], authorizationScope: "仅限本次已确认任务" }
+}
+
+export function historyPlanCandidate() {
+  const inputContract: TaskDataContract = { id: "history-task-input", version: 1, dialect: "bat-value-schema/v1",
+    schema: { type: "object", properties: { startUrl: { type: "string", minLength: 1 }, value: { type: "string" } },
+      required: ["startUrl", "value"], additionalProperties: false } }
+  const outputContract: TaskDataContract = { id: "history-task-output", version: 1, dialect: "bat-value-schema/v1",
+    schema: { type: "object", properties: { title: { type: "string", minLength: 1 } },
+      required: ["title"], additionalProperties: false } }
+  const completion = { id: "done", description: "页面标题已保存", predicate: { operator: "exists" as const,
+    value: { source: "node" as const, nodeId: "perform", path: ["title"] } } }
+  return { summary: "读取目标页标题", inputContract, outputContract, steps: [{ id: "perform", title: "读取标题",
+    goal: "打开输入中的目标页并返回页面标题", dependsOn: [], inputContract, outputContract,
+    input: { source: "input" as const, path: [] }, invocation: { mode: "once" as const },
+    completion: [completion], risks: [] }], output: { source: "node" as const, nodeId: "perform", path: [] },
+    completion: [completion], authorizationScope: "仅访问输入中的公开页面" }
 }
 
 export function annotations() {
@@ -117,64 +135,32 @@ export function queuedModel(responses: unknown[]): AIModelProvider {
   } } } }
 }
 
-export function preexecutionModel(order: string[]): AIModelProvider {
+export function preexecutionModel(order: string[], correctMalformed = false): AIModelProvider {
   const selection = { connectionId: randomUUID(), modelId: "fixture-model", reasoningEffort: "high" as const }
-  const responses = [planCandidate(), (({ outputMappings: _, ...value }) => value)(annotations())]
+  const responses = correctMalformed ? [malformedHistoryPlanCandidate(), historyPlanCandidate()] : [historyPlanCandidate()]
   return { selection: () => selection, async prepare() { return { selection, async generateObject(input) {
-    order.push(order.includes("plan") ? "compile-chain" : "plan")
+    order.push("plan")
     const value = responses.shift(); if (!value) throw new Error("fixture_response_missing"); return input.parse(value)
   } } }, async prepareMain() { return { selection, async close() {}, async run(input) {
-    order.push("explore")
-    assert.match(JSON.stringify(input.messages), /requirement/)
-    assert.equal(input.tools!.some((tool) => tool.name === "complete_step"), true)
+    order.push("preexecute")
     const browser = input.tools!.find((tool) => tool.name === "browser")!
-    const completeStep = input.tools!.find((tool) => tool.name === "complete_step")!
-    const complete = input.tools!.find((tool) => tool.name === "complete")!
+    const record = input.tools!.find((tool) => tool.name === "record_output")!
+    const finish = input.tools!.find((tool) => tool.name === "finish")!
+    await browser.execute("navigate", { command: { type: "navigate", url: "https://example.com/" } }, input.signal)
     await browser.execute("page", { command: { type: "page" } }, input.signal)
-    const result = { result: { title: "Confirmed" }, provenance: annotations().outputMappings }
-    await completeStep.execute("complete-step", { stepId: "perform", representativeInput: { value: "explore" }, ...result }, input.signal)
-    await complete.execute("complete", result, input.signal)
+    await record.execute("record", { op: "set", path: [], value: { title: "Confirmed" } }, input.signal)
+    await finish.execute("finish", {}, input.signal)
     return { outputText: "Confirmed" }
   } } } }
 }
 
-export function escalationModel(): AIModelProvider {
-  const connectionId = randomUUID(), weak = { connectionId, modelId: "weak-model", reasoningEffort: "medium" as const }
-  const strong = { connectionId, modelId: "strong-model", reasoningEffort: "high" as const }
-  const responses = [planCandidate(), (({ outputMappings: _, ...value }) => value)(annotations())]
-  return { selection: () => weak, async strongerSelection() { return strong }, async prepare() { return { selection: weak,
-    async generateObject(input) { const value = responses.shift(); if (!value) throw new Error("fixture_response_missing"); return input.parse(value) } } },
-  async prepareMain(selection) { return { selection, async close() {}, async run(input) {
-    if (selection.modelId === "weak-model") return { outputText: "未提交" }
-    const browser = input.tools!.find((tool) => tool.name === "browser")!
-    const completeStep = input.tools!.find((tool) => tool.name === "complete_step")!
-    const complete = input.tools!.find((tool) => tool.name === "complete")!
-    await browser.execute("page", { command: { type: "page" } }, input.signal)
-    const result = { result: { title: "Confirmed" }, provenance: annotations().outputMappings }
-    await completeStep.execute("complete-step", { stepId: "perform", representativeInput: { value: "explore" }, ...result }, input.signal)
-    await complete.execute("complete", result, input.signal)
-    return { outputText: "Confirmed" }
-  } } } }
-}
-
-export function repairLoopModel(order: string[]): AIModelProvider {
-  const selection = { connectionId: randomUUID(), modelId: "fixture-model", reasoningEffort: "high" as const }
-  const responses = [planCandidate(), (({ outputMappings: _, ...value }) => value)(annotations()),
-    (({ outputMappings: _, ...value }) => value)(annotations())]
-  return { selection: () => selection, async prepare() { return { selection, async generateObject(input) {
-    order.push(["plan", "compile-chain", "repair-chain"][3 - responses.length]!)
-    const value = responses.shift(); if (!value) throw new Error("fixture_response_missing"); return input.parse(value)
-  } } }, async prepareMain() { return { selection, async close() {}, async run(input) {
-    order.push("explore")
-    const browser = input.tools!.find((tool) => tool.name === "browser")!
-    const completeStep = input.tools!.find((tool) => tool.name === "complete_step")!
-    const complete = input.tools!.find((tool) => tool.name === "complete")!
-    await browser.execute("page", { command: { type: "page" } }, input.signal)
-    const result = { result: { title: "Confirmed" }, provenance: annotations().outputMappings }
-    await completeStep.execute("complete-step", { stepId: "perform", representativeInput: { value: "explore" }, ...result }, input.signal)
-    await complete.execute("complete", result, input.signal)
-    return { outputText: "Confirmed" }
-  } } } }
+function malformedHistoryPlanCandidate() {
+  const candidate = structuredClone(historyPlanCandidate()) as Record<string, any>
+  const schema = { type: "object", properties: { title: { type: "string" }, required: ["title"],
+    additionalProperties: false } }
+  candidate.outputContract.schema = schema
+  candidate.steps[0].outputContract.schema = structuredClone(schema)
+  return candidate
 }
 
 export function successfulObservation() {
@@ -189,6 +175,51 @@ export async function waitFor(condition: () => boolean, timeoutMs = 3000) {
     if (Date.now() - started > timeoutMs) throw new Error("fixture_timeout")
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
+}
+
+export function fakeUpstreamRuntime(log: { tasks: string[]; sessions: number; closed: number; replays: number },
+  options: { returnAfterAbort?: boolean } = {}): UpstreamBrowserRuntime {
+  return { async withSession(input, work) {
+    log.sessions++
+    const browser = { sessionId: `fixture-${log.sessions}`, tabId: "current", url: "https://example.com/",
+      observationDigest: "a".repeat(64), observedAt: "2026-09-15T00:00:00.000Z" }
+    try {
+      return await work({
+        async author(request) {
+          log.tasks.push(request.task)
+          const calls = ["agent", "judge", "workflow_generation"].flatMap((purpose) => modelReports(purpose as ModelCallReport["purpose"]))
+          const stepTypes = ["navigation", "input", "extract_page_content"]
+          const definition = { name: "fixture", description: "fixture", version: "1.0", default_wait_time: 0.1,
+            steps: [{ type: "navigation", url: `{${request.workflowInputs.startUrl}}` },
+              { type: "input", value: `{${request.workflowInputs.value}}`, target_text: "Fixture" },
+              { type: "extract_page_content", goal: "Return the requested output" }],
+            input_schema: Object.values(request.workflowInputs).map((name) => ({ name, type: "string", required: true })) }
+          const value = request.input as { value?: string }
+          return { id: randomUUID(), sourceSuccess: true as const, sourceValidated: true as const,
+            output: { title: value.value ?? "Confirmed" }, definition, stepTypes, workflowInputs: request.workflowInputs,
+            browserCommands: 2, history: { localRef: "history.json", digest: "b".repeat(64) },
+            rawResult: { localRef: "author.json", digest: "c".repeat(64) }, browser, modelCalls: calls }
+        },
+        async replay(request) {
+          log.replays++
+          for (const purpose of ["extract", "output_conversion"] as const) {
+            for (const report of modelReports(purpose)) await request.onModelCall?.(report)
+          }
+          if (!options.returnAfterAbort) input.signal.throwIfAborted()
+          const value = Object.values(request.inputs).find((item) => item !== "https://example.com/")
+          return { id: randomUUID(), output: { title: String(value ?? "Confirmed") }, stepCount: 3,
+            browserCommands: 3, rawResult: { localRef: `replay-${log.replays}.json`, digest: "d".repeat(64) }, browser,
+            modelCalls: ["extract", "output_conversion"].flatMap((purpose) => modelReports(purpose as ModelCallReport["purpose"])) }
+        },
+      })
+    } finally { log.closed++ }
+  } }
+}
+
+function modelReports(purpose: ModelCallReport["purpose"]): ModelCallReport[] {
+  const callId = randomUUID(), intendedAt = "2026-09-15T00:00:00.000Z", base = { callId, purpose, model: "fixture-model", intendedAt }
+  return [{ ...base, status: "intended", reportedInvocations: null },
+    { ...base, status: "completed", reportedInvocations: 1 }]
 }
 
 export async function fakeBrowserExecutor(args: readonly string[]) {

@@ -63,7 +63,8 @@ export const taskChainSchema = z.union([stableTaskChainSchema, legacyTaskChainSc
     }
   }
   const browserNodes = chain.nodes.some((node) => node.kind === "browser" || node.kind === "observe" || node.kind === "human"
-    || node.kind === "capability" && node.capability.name.startsWith("browser."))
+    || node.kind === "capability" && node.capability.name.startsWith("browser.")
+    || node.kind === "llm" && "delegate" in node && node.delegate?.maxBrowserCommands)
   if (browserNodes && (chain.budget.maxBrowserCommands < 1 || chain.budget.maxActiveMs < 1000)) issue("chain_browser_budget_required")
   const bindings = [...chain.nodes.flatMap((node) => nodeBindings(node)),
     ...chain.completion.flatMap((condition) => predicateBindings(condition.predicate))]

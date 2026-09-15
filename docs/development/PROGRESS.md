@@ -1,5 +1,35 @@
 # 开发进度
 
+## browser-use / workflow-use 替换阶段门（2026-09-15，阶段 1–7 通过）
+
+本节覆盖下方旧预执行方案的当前状态；旧“已接入/通过”只作为历史记录。新路径已经接入产品本地入口，京东、Windows 和分发仍是独立后续门。
+
+- 阶段 0 已完成：实时远端及本地 master 均为 c13aa641031d4f44ec3d9b32aeea2b3dcd65268f；21 个初始 dirty 文件已逐项分类并保护。
+- 阶段 1：browser-use 0.13.10 + 固定 workflow-use 源码的 MCP 约束冲突已复现。改为评估上游原样 uv.lock：browser-use 0.13.8、workflow-use 0.2.11 @ 5d2d19f、MCP 1.29.1；隔离安装及 macOS Python 3.12.13 import/schema 已通过，未修改上游源码或 lock。
+- 阶段 2：独立 HTTP 模型桥的 Python 六用途/多消息/图像/schema/usage/取消/正文日志隔离定点测试通过（2 项）。同一 Terra medium 账号真实一次请求返回先前消息中的 LARCH 和图片中的 red，共 226 tokens；未经过 Pi Agent loop，未把凭据给 Python。
+- 阶段 3 已通过：两个 Agent 的 success/judge 均为 true，实际返回 Aster/7.4，session id/CDP 相同；4 次 Agent、2 次 judge 调用，最终 Browser 关闭且 CDP 不可连接。
+- 阶段 4 已通过：用户明确授权本地上游补丁后，维护两份可独立提交 PR 的 patch，分别修复 prompt 未转义 `{variable}` 和 `PageExtractionStep` 未分派。公开生成入口产出 `navigation -> click -> extract_page_content`；同一 Browser 用不同 URL 复跑得到 Aster/7.4 与 Beryl/8.2，原始 extraction 均无 fallback/error。
+- 阶段 5 已通过：本地“填写并预览、禁止提交”任务的 browser-use success/judge 均为 true；生成 `navigation -> input -> click -> extract_page_content`，同一 Browser 用两个草稿输入复跑，结果同步变化且均 `submitted=false`。
+- 两份补丁从固定 commit 的全新副本完成 apply-check、apply、离线回归、Ruff check/format 和 reverse-check。`npm run upstream:setup` 可以从固定 tarball 和官方 `uv.lock` 复现安装，并在重复运行时核对版本、补丁 hash 和 reverse-check。完整上游证据见[本地补丁与兼容门](evidence/workflow-use-local-patches-2026-09-15/README.md)；原始失败保留为历史证据。
+- 阶段 6 已通过：产品 authoring 使用 browser-use Agent/Browser 生成私有 workflow artifact，旧 BrowserSkill executor 在真实验收中被设置为调用即失败；旧自研 adapter 和真实 POC 入口已删除，新产品路径没有自写 converter/executor。
+- 阶段 7 已通过本机产品入口：正式 `author_task -> sample -> different-input verification -> authorize_plan replay` 依次得到 Aster/7.4、Beryl/8.2、Aster/7.4；链最终 `verified`，正式执行 completed。三次 workflow 运行均分别记录 1 次 `extract` 和 1 次 `output_conversion`，审计完整且应用最终关闭。证据见[产品接线验收](evidence/workflow-use-product-2026-09-15/README.md)。
+- 接线时另外修复了 B-A-T 自身的 UTC 时间格式、模型事件身份/漏报/超预算拒绝、取消终态覆盖竞态和 run artifact 阶段标识。这些不归因于 workflow-use；上游补丁仍只覆盖 prompt 占位符和 extraction step 分派。
+- 当前本地链状态已到产品 `verified`。没有真实京东运行或历史数据删除；阶段 8 必须等待用户确认新的京东需求版本。Windows 进程/安装与 AGPL 分发义务仍未验收。
+- 当前本地验证无 Chrome 残留；没有创建分支/worktree、提交或推送。逐文件处置见 [替换记录](BROWSER_USE_REPLACEMENT.md)，本地集成边界由 [ADR 0004](../adr/0004-browser-use-workflow-use-replacement.md) 约束。
+
+## 预执行历史正式编译与复跑接入（2026-09-15）
+
+Product Alignment:
+- natural-language task: 将任意自然语言浏览器任务的代表预执行历史编译为可验证、可复跑的参数化链路
+- reusable chain boundary: 每个 TaskPlan 步骤消费一条已完成并关闭的真实历史；batch 只保留一份循环体
+- runtime inputs: 计划输入合同、步骤动态输入、batch 集合与动态停止数量
+- dynamic task outputs: 步骤输出合同声明的任意字段、集合聚合结果与计划最终结果
+- generic platform capability used: TaskPlan、PreexecutionArtifact、BrowserSkill、稳定图编译、LangGraph loop、预算与运行审计
+- replay model calls: 只有编译后显式 `llm` 节点可调用模型；输入投影、聚合计数与控制节点为 0
+- site/task-specific code added: no
+
+正式 `author_task` 已使用同一个 BrowserSkill 会话依次完成计划步骤，持久化完整动作、结果写入、失败和来源页恢复历史，再确定性编译为稳定链路。编译阶段失败的新请求只复用 `completed + finishAccepted + closed` 的历史，并重新核对步骤顺序和输入摘要，不重复启动预执行浏览器。当前真实样本首次到达普通执行器，暴露出编译器按高层动作低估 BrowserSkill 底层命令预算；修复和复跑证据待本节继续更新。
+
 ## 临时预执行闭环已通过（2026-09-15）
 
 Product Alignment:

@@ -104,6 +104,8 @@ for (const interactive of [false, true]) test(`${interactive ? "交互" : "读�
     assert.ok(action.outputContract.schema.required.includes("observedAt"))
     assert.deepEqual(action.config && typeof action.config === "object" && !Array.isArray(action.config)
       ? action.config.capture : null, { scope: "page" })
+    assert.equal(chain.budget.maxBrowserCommands, plan.steps[0]!.budget.maxBrowserCommands,
+      "底层命令由 BrowserSkill 记账，编译器必须继承步骤授权上限")
   }
   assert.equal(run.consumed.llmCalls, 0)
 })

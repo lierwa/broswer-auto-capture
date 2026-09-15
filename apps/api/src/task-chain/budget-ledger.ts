@@ -28,7 +28,7 @@ export class TaskBudgetLedger {
       throw new RuntimeBudgetExceededError("显式模型调用数未知，不能继续授权模型调用。")
     }
     if (mode === "claim") this.assertWithin(scope)
-    const nextTotal = apply(this.total, delta), nextScope = apply(scope.consumed, delta)
+    const nextTotal = apply(this.total, delta, mode), nextScope = apply(scope.consumed, delta, mode)
     if (mode === "claim") this.assertWithin({ budget: this.budget, consumed: nextTotal }, { budget: scope.budget, consumed: nextScope })
     if (same(this.total, nextTotal) && same(scope.consumed, nextScope)) return
     this.total = nextTotal; scope.consumed = nextScope
@@ -79,12 +79,14 @@ export function emptyConsumption(): TaskConsumption {
 function clone(value: TaskConsumption): TaskConsumption { return { ...value } }
 function same(left: TaskConsumption, right: TaskConsumption) { return JSON.stringify(left) === JSON.stringify(right) }
 function numeric(value: TaskConsumption[keyof TaskConsumption]) { return value ?? Number.POSITIVE_INFINITY }
-function apply(current: TaskConsumption, delta: Partial<TaskConsumption>): TaskConsumption {
+function apply(current: TaskConsumption, delta: Partial<TaskConsumption>, mode: "claim" | "settle"): TaskConsumption {
   const next = clone(current)
   for (const key of numericKeys) {
     const change = delta[key]
     if (change === undefined) continue
-    if (!Number.isInteger(change) || change < 0) throw new Error("task_budget_delta_invalid")
+    if (!Number.isInteger(change) || mode === "claim" && change < 0 || next[key] + change < 0) {
+      throw new Error("task_budget_delta_invalid")
+    }
     next[key] += change
   }
   if (delta.llmCalls === null) next.llmCalls = null

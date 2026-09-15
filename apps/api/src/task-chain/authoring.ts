@@ -4,22 +4,23 @@ import {
   type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskDataContract, type TaskPlan, type TaskRequirement,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest, readPath, resolveBinding, stableUuid, type BindingContext } from "@browser-capture/runtime"
-import type { BrowserHelpState } from "@browser-capture/browser"
+import { browserGrantLimits } from "@browser-capture/browser"
 import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
+import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
+import { browserUseTask } from "../upstream-browser/task-request.js"
+import { completedModelInvocations, compileWorkflowChain, createWorkflowArtifact, workflowArtifactMediaType,
+  workflowInputs } from "../upstream-browser/workflow-artifact.js"
 import type { TaskContractRepository } from "./repository.js"
-import type { TaskRuntimeHost } from "./runtime-host.js"
-import type { ExplorationStepResult, ExplorationTrace } from "./exploration-trace.js"
-import { compilationModelAnnotationsSchema, validateAnnotations } from "./compilation-annotations.js"
-import { compileExplorationTrace } from "./trace-compiler.js"
-import { annotationPrompt, planPrompt, repairAnnotationPrompt } from "./authoring-prompts.js"
-export { compactTraceForModel } from "./authoring-prompts.js"
+import { planCorrectionPrompt, planPrompt } from "./authoring-prompts.js"
 
+const semanticPlanStepSchema = taskPlanStepSchema.omit({ chain: true, budget: true })
+  .refine((step) => step.invocation.mode !== "batch", "workflow_batch_input_unsupported")
 export const semanticPlanSchema = taskPlanSchema.omit({ contractVersion: true, kind: true, id: true, taskId: true,
   version: true, requirement: true, evidence: true, steps: true, budget: true })
-  .extend({ steps: z.array(taskPlanStepSchema.omit({ chain: true, budget: true })).min(1).max(6) }).strict()
+  .extend({ steps: z.array(semanticPlanStepSchema).min(1).max(6) }).strict()
 export class TaskChainAuthoring {
   constructor(private readonly repository: TaskContractRepository, private readonly ai: AIModelProvider,
-    private readonly host: TaskRuntimeHost) {}
+    private readonly upstream: UpstreamBrowserRuntime) {}
 
   async plan(job: TaskAuthoringJob, requirement: TaskRequirement, signal: AbortSignal) {
     try {
@@ -29,8 +30,9 @@ export class TaskChainAuthoring {
         job.audit!.events.push(event); this.save(job)
       }
       const candidate = await generateJson(model, semanticPlanSchema, prompt, signal, onEvent)
-      const plan = parsePlanCandidate(candidate, requirement, id, version)
-      this.complete(job, this.repository.savePlan(plan).id, 1)
+      const { plan, calls } = await parsePlanWithCorrection(candidate, requirement, id, version, undefined,
+        model, signal, onEvent, 1)
+      this.complete(job, this.repository.savePlan(plan).id, calls)
       return plan
     } catch (error) { this.fail(job, signal, error); throw error }
   }
@@ -39,169 +41,82 @@ export class TaskChainAuthoring {
     reusablePlanCandidate?: JsonValue) {
     try {
       const model = await this.begin(job, "chain_exploration_and_compilation", signal)
-      const planningCalls = reusablePlanCandidate === undefined ? 1 : 0
+      let planningCalls = reusablePlanCandidate === undefined ? 1 : 0
       job.authoring = { stage: "planning", level: "E0", failureLayer: null, exploration: null, annotations: null,
         consumption: { explorationToolCalls: 0, explorationSessions: 0, compilationCalls: planningCalls, providerInvocations: null } }
       this.save(job)
       const value = reusablePlanCandidate ?? await generateJson(model, semanticPlanSchema, planPrompt(requirement, input), signal,
         (event) => { job.audit!.events.push(event); this.save(job) })
-      const plan = parsePlanCandidate(value, requirement, stableUuid(requirement.taskId, "plan"),
-        this.repository.nextPlanVersion(requirement.taskId))
+      const parsed = await parsePlanWithCorrection(value, requirement, stableUuid(requirement.taskId, "plan"),
+        this.repository.nextPlanVersion(requirement.taskId), input, model, signal,
+        (event) => { job.audit!.events.push(event); this.save(job) }, planningCalls)
+      planningCalls = parsed.calls
+      job.authoring.consumption.compilationCalls = planningCalls; this.save(job)
+      const plan = parsed.plan
       parseTaskValue(plan.inputContract, input)
       this.repository.savePlan(plan)
-      const compiled = await this.taskWithModel(job, requirement, plan, input, signal, model, undefined, undefined, planningCalls)
+      const compiled = await this.taskWithModel(job, requirement, plan, input, signal, model, planningCalls)
       return { plan, ...compiled }
     } catch (error) { this.fail(job, signal, error); throw error }
   }
 
-  async repair(job: TaskAuthoringJob, plan: TaskPlan, chain: TaskChain, failedRun: {
-    status: string; outcome: unknown; input: JsonValue; binding: { runId: string }
-  }, trace: ExplorationTrace, signal: AbortSignal) {
-    try {
-      const model = await this.begin(job, "chain_exploration_and_compilation", signal)
-      job.authoring = { stage: "compiling", level: "E2", failureLayer: "链路验证", exploration: z.json().parse(trace),
-        annotations: null, consumption: { explorationToolCalls: 0, explorationSessions: 0,
-          compilationCalls: 1, providerInvocations: null } }
-      job.browserRunId = trace.browserRunId; this.save(job)
-      const raw = await generateJson(model, compilationModelAnnotationsSchema,
-        repairAnnotationPrompt(trace, chain, failedRun), signal,
-        (event) => { job.audit!.events.push(event); this.save(job) })
-      const annotations = validateAnnotations({ ...compilationModelAnnotationsSchema.parse(raw),
-        outputMappings: trace.result!.provenance }, trace)
-      const repaired = compileExplorationTrace(trace, annotations, plan, chain.stepId,
-        this.repository.nextChainVersion(plan.taskId, chain.id), model.selection.modelId)
-      requirePlannedChainShape(plan.steps.find((item) => item.id === chain.stepId)!, repaired)
-      this.repository.saveChain(repaired)
-      const reference = { id: repaired.id, version: repaired.version, digest: executableChainDigest(repaired) }
-      job.authoring.annotations = z.json().parse(annotations); job.authoring.compiledChain = reference
-      job.authoring.compiledChains = [reference]; job.authoring.stage = "compiled"; job.authoring.level = "E2"
-      this.complete(job, repaired.id, 1)
-      return repaired
-    } catch (error) { this.fail(job, signal, error); throw error }
-  }
-
   async chain(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, stepId: string,
-    input: JsonValue, signal: AbortSignal, reusableExploration?: ExplorationTrace) {
-    const step = plan.steps.find((item) => item.id === stepId)
-    if (!step) throw new Error("plan_step_not_found")
-    try {
-      const model = await this.begin(job, "chain_exploration_and_compilation", signal)
-      job.authoring = { stage: reusableExploration ? "explored" : "exploring", level: reusableExploration ? "E1" : "E0",
-        failureLayer: null, exploration: reusableExploration ? z.json().parse(reusableExploration) : null, annotations: null,
-        consumption: { explorationToolCalls: 0, explorationSessions: reusableExploration ? 0 : 1,
-          compilationCalls: 0, providerInvocations: null } }
-      job.browserRunId = reusableExploration?.browserRunId ?? stableUuid(job.id, "exploration-browser"); this.save(job)
-      const exploration = reusableExploration ?? await this.host.explore({ taskId: plan.taskId, authorizationId: job.id,
-        browserRunId: job.browserRunId, requirementVersion: requirement.version,
-        budget: step.budget, outputContract: step.outputContract, representativeInput: input, context: z.json().parse(JSON.parse(JSON.stringify({
-          requirement: requirement.definition.body, plan: plan.summary, step, input,
-        }))), signal, onModelEscalation: (selection, reason) => {
-          job.audit!.escalations.push({ model: selection.modelId, effort: selection.reasoningEffort, reason }); this.save(job)
-        }, onTrace: (trace) => {
-          job.authoring!.exploration = z.json().parse(trace)
-          job.authoring!.consumption.explorationToolCalls = trace.events.filter((event) => event.id !== "initial").length
-          if (trace.result) { job.authoring!.stage = "explored"; job.authoring!.level = "E1" }
-          this.save(job)
-        }, onHumanWait: (waitpoint) => this.humanWait(job, waitpoint) },
-      await this.ai.prepareMain(model.selection, "exploration"), (event) => { job.audit!.events.push(event); this.save(job) })
-      const version = this.repository.nextChainVersion(plan.taskId, step.chain.id)
-      job.authoring.stage = "compiling"; job.authoring.consumption.compilationCalls = 1; this.save(job)
-      const onEvent: Parameters<PreparedAIModel["generateObject"]>[0]["onEvent"] = (event) => {
-        job.audit!.events.push(event); this.save(job)
-      }
-      const raw = await generateJson(model, compilationModelAnnotationsSchema,
-        annotationPrompt(exploration), signal, onEvent)
-      const annotations = validateAnnotations({ ...compilationModelAnnotationsSchema.parse(raw), outputMappings: exploration.result!.provenance }, exploration)
-      job.authoring.annotations = z.json().parse(annotations); this.save(job)
-      const chain = compileExplorationTrace(exploration, annotations, plan, stepId, version, model.selection.modelId)
-      requirePlannedChainShape(step, chain)
-      job.authoring.stage = "compiled"; job.authoring.level = "E2"
-      job.authoring.compiledChain = { id: chain.id, version: chain.version, digest: executableChainDigest(chain) }
-      // WHY：Pi bridge 的 generation 是会话边界，不等于内部 Provider 请求次数，未知总数保持 null。
-      this.complete(job, this.repository.saveChain(chain).id, null)
-      return chain
-    } catch (error) { this.fail(job, signal, error); throw error }
+    input: JsonValue, signal: AbortSignal) {
+    if (plan.steps.length !== 1 || plan.steps[0]?.id !== stepId) throw new Error("single_step_plan_required")
+    const result = await this.task(job, requirement, plan, input, signal)
+    return result.chains[0]!
   }
 
-  async task(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, input: JsonValue, signal: AbortSignal,
-    reusableExploration?: ExplorationTrace, reusableAnnotations?: JsonValue) {
+  async task(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, input: JsonValue, signal: AbortSignal) {
     try {
       const model = await this.begin(job, "chain_exploration_and_compilation", signal)
-      const result = await this.taskWithModel(job, requirement, plan, input, signal, model,
-        reusableExploration, reusableAnnotations)
+      const result = await this.taskWithModel(job, requirement, plan, input, signal, model)
       return result
     } catch (error) { this.fail(job, signal, error); throw error }
   }
 
   private async taskWithModel(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, input: JsonValue,
-    signal: AbortSignal, model: PreparedAIModel, reusableExploration?: ExplorationTrace,
-    reusableAnnotations?: JsonValue, priorCompilationCalls = 0) {
-      job.authoring = { stage: reusableExploration ? "explored" : "exploring", level: reusableExploration ? "E1" : "E0",
-        failureLayer: null, exploration: reusableExploration ? z.json().parse(reusableExploration) : null, annotations: null,
-        consumption: { explorationToolCalls: 0, explorationSessions: reusableExploration ? 0 : 1,
-          compilationCalls: priorCompilationCalls, providerInvocations: null } }
-      job.browserRunId = reusableExploration?.browserRunId ?? stableUuid(job.id, "task-exploration-browser"); this.save(job)
-      const progression = taskProgression(plan, input)
-      const exploration = reusableExploration ?? await this.host.explore({ taskId: plan.taskId, authorizationId: job.id,
-        browserRunId: job.browserRunId, requirementVersion: requirement.version, budget: plan.budget,
-        outputContract: plan.outputContract, representativeInput: input,
-        stepContracts: plan.steps.map((step) => ({ id: step.id, inputContract: step.inputContract,
-          outputContract: step.outputContract, invocation: step.invocation })),
-        acceptStepResult: progression.accept,
-        context: z.json().parse(JSON.parse(JSON.stringify({ requirement: requirement.definition.body, plan, input }))), signal,
-        onModelEscalation: (selection, reason) => {
-          job.audit!.escalations.push({ model: selection.modelId, effort: selection.reasoningEffort, reason }); this.save(job)
-        },
-        onTrace: (trace) => {
-          job.authoring!.exploration = z.json().parse(trace)
-          job.authoring!.consumption.explorationToolCalls = trace.events.filter((event) => event.id !== "initial").length
-          if (trace.result) { job.authoring!.stage = "explored"; job.authoring!.level = "E1" }
-          this.save(job)
-        }, onHumanWait: (waitpoint) => this.humanWait(job, waitpoint) },
-      await this.ai.prepareMain(model.selection, "exploration"), (event) => { job.audit!.events.push(event); this.save(job) })
-      if (reusableExploration) {
-        for (const stepResult of exploration.stepResults ?? []) progression.accept(stepResult)
-      }
-      const results = new Map((exploration.stepResults ?? []).map((item) => [item.stepId, item]))
-      if (results.size !== plan.steps.length) throw new Error("exploration_step_result_missing")
-      progression.finish(exploration)
-      job.authoring.exploration = z.json().parse(exploration)
-      job.authoring.stage = "explored"; job.authoring.level = "E1"; this.save(job)
-      job.authoring.stage = "compiling"; this.save(job)
-      const savedAnnotations = reusableAnnotations ? taskCompilationAnnotationsSchema.parse(reusableAnnotations).steps : null
-      const compiled: Array<{ chain: TaskChain; annotations: JsonValue }> = []
+    signal: AbortSignal, model: PreparedAIModel, priorCompilationCalls = 0) {
+    if (plan.steps.some((step) => step.invocation.mode === "batch")) throw new Error("workflow_batch_input_unsupported")
+    job.authoring = { stage: "exploring", level: "E0", failureLayer: null, exploration: null, annotations: null,
+      consumption: { explorationToolCalls: 0, explorationSessions: 1,
+        compilationCalls: priorCompilationCalls, providerInvocations: null } }
+    job.browserRunId = stableUuid(job.id, "upstream-browser"); this.save(job)
+    const progression = plannedProgression(plan, input), compiled: TaskChain[] = [], samples: Record<string, JsonValue> = {}
+    const artifactSummaries: JsonValue[] = []
+    let providerInvocations = 0
+    await this.upstream.withSession({ selection: model.selection, signal, ownerId: job.browserRunId }, async (session) => {
       for (const step of plan.steps) {
-        const stepResult = results.get(step.id)
-        if (!stepResult) throw new Error(`exploration_step_result_missing:${step.id}`)
-        const { stepResults: _stepResults, ...baseTrace } = exploration
-        const trace: ExplorationTrace = { ...baseTrace, input: stepResult.input, result: stepResult.result }
-        const saved = savedAnnotations?.find((item) => item.stepId === step.id)?.annotations
-        let annotations
-        if (saved) annotations = validateAnnotations(saved, trace)
-        else {
-          job.authoring.consumption.compilationCalls++; this.save(job)
-          const onEvent: Parameters<PreparedAIModel["generateObject"]>[0]["onEvent"] = (event) => {
-            job.audit!.events.push(event); this.save(job)
-          }
-          const raw = await generateJson(model, compilationModelAnnotationsSchema,
-            annotationPrompt(trace, step.invocation), signal, onEvent)
-          annotations = validateAnnotations({ ...compilationModelAnnotationsSchema.parse(raw),
-            outputMappings: trace.result!.provenance }, trace)
-        }
-        const version = this.repository.nextChainVersion(plan.taskId, step.chain.id)
-        const chain = compileExplorationTrace(trace, annotations, plan, step.id, version, model.selection.modelId)
-        requirePlannedChainShape(step, chain)
-        compiled.push({ chain, annotations: z.json().parse(annotations) })
+        signal.throwIfAborted()
+        const stepInput = progression.resolve(step), inputBindings = workflowInputs(step.inputContract.schema, stepInput)
+        const result = await session.author({ task: browserUseTask({ requirement, plan, step, resolvedInput: stepInput,
+          workflowInputs: inputBindings }), input: stepInput, inputSchema: step.inputContract.schema,
+          outputSchema: step.outputContract.schema, workflowInputs: inputBindings,
+          artifactKey: `${job.id}-${step.id}`, maxSteps: Math.min(100, Math.max(1, step.budget.maxBrowserCommands)) })
+        progression.accept(step.id, stepInput, result.output)
+        providerInvocations += completedModelInvocations(result.modelCalls)
+        job.authoring!.consumption.explorationToolCalls += result.browserCommands
+        const artifact = createWorkflowArtifact({ requirement, plan, step, stepInput, result })
+        const reference = this.repository.saveArtifact(plan.taskId, job.id, workflowArtifactMediaType, z.json().parse(artifact))
+        const chain = compileWorkflowChain(plan, step, this.repository.nextChainVersion(plan.taskId, step.chain.id),
+          model.selection.modelId, artifact, reference)
+        this.repository.saveChain(chain); compiled.push(chain); samples[step.id] = stepInput
+        artifactSummaries.push(z.json().parse({ stepId: step.id, artifact: reference, definitionDigest: artifact.definitionDigest,
+          sourceSuccess: true, sourceValidated: true, inputBindings: artifact.inputBindings,
+          modelPurposes: [...new Set(result.modelCalls.map((call) => call.purpose))] }))
+        job.authoring!.exploration = z.json().parse({ mode: "workflow-use-authoring/v1", artifacts: artifactSummaries })
+        job.authoring!.stage = "explored"; job.authoring!.level = "E1"; this.save(job)
       }
-      for (const item of compiled) this.repository.saveChain(item.chain)
-      const references = compiled.map(({ chain }) => ({ id: chain.id, version: chain.version,
-        digest: executableChainDigest(chain) }))
-      job.authoring.annotations = z.json().parse({ mode: "task", steps: compiled.map((item, index) => ({
-        stepId: item.chain.stepId, chain: references[index]!, annotations: item.annotations })) })
-      job.authoring.stage = "compiled"; job.authoring.level = "E2"
-      job.authoring.compiledChain = references[0]!; job.authoring.compiledChains = references
-      this.complete(job, plan.id, null)
-      return { references, chains: compiled.map((item) => item.chain), exploration }
+    })
+    progression.finish()
+    const references = compiled.map((chain) => ({ id: chain.id, version: chain.version, digest: executableChainDigest(chain) }))
+    job.authoring.stage = "compiled"; job.authoring.level = "E2"
+    job.authoring.annotations = z.json().parse({ mode: "workflow-use/v1", steps: compiled.map((chain, index) => ({
+      stepId: chain.stepId, chain: references[index] })) })
+    job.authoring.compiledChain = references[0]!; job.authoring.compiledChains = references
+    job.authoring.consumption.providerInvocations = providerInvocations
+    this.complete(job, plan.id, priorCompilationCalls + providerInvocations)
+    return { references, chains: compiled, samples }
   }
 
   private async begin(job: TaskAuthoringJob, purpose: "plan_creation" | "chain_exploration_and_compilation", signal: AbortSignal) {
@@ -211,17 +126,6 @@ export class TaskChainAuthoring {
       status: "intended", reportedInvocations: null, events: [], escalations: [] }
     this.save(job)
     return this.ai.prepare(selection, signal)
-  }
-  private humanWait(job: TaskAuthoringJob, state: BrowserHelpState) {
-    job.waitpoint = { ...state, owner: "authoring_job", ownerId: job.id, stepId: null }
-    if (state.status === "waiting") {
-      job.status = "waiting_for_human"
-      job.reason = "浏览器现场等待人工处理；完成后在 Agent Window 点击 Done 继续同一探索。"
-    } else if (state.status === "completed") {
-      job.status = "running"
-      job.reason = null
-    }
-    job.sequence++; job.updatedAt = new Date().toISOString(); this.save(job)
   }
   private complete(job: TaskAuthoringJob, resultId: string, reportedInvocations: number | null) {
     job.status = "completed"; job.resultId = resultId; job.reason = null; job.sequence++; job.updatedAt = new Date().toISOString()
@@ -242,56 +146,35 @@ export class TaskChainAuthoring {
   private save(job: TaskAuthoringJob) { this.repository.saveJob(job) }
 }
 
-const taskCompilationAnnotationsSchema = z.object({ mode: z.literal("task"), steps: z.array(z.object({
-  stepId: z.string().min(1), chain: z.unknown(), annotations: z.json(),
-}).passthrough()) }).passthrough()
-
-function taskProgression(plan: TaskPlan, input: JsonValue) {
+function plannedProgression(plan: TaskPlan, input: JsonValue) {
   const context: BindingContext = { input, nodeOutputs: {}, variables: {} }
   let position = 0
-  const accept = (submitted: ExplorationStepResult) => {
+  const resolved = new Map<string, JsonValue>()
+  const resolve = (step: TaskPlan["steps"][number]) => {
+    if (plan.steps[position]?.id !== step.id) throw new Error(`preexecution_step_order_invalid:${step.id}`)
+    if (step.invocation.mode === "batch") throw new Error("workflow_batch_input_unsupported")
+    const value = step.invocation.mode === "each" ? eachInputs(step, context)[0]
+      : parseTaskValue(step.inputContract, resolveBinding(step.input, context))
+    if (value === undefined) throw new Error(`preexecution_step_representative_missing:${step.id}`)
+    resolved.set(step.id, value)
+    return value
+  }
+  const accept = (stepId: string, stepInput: JsonValue, raw: JsonValue | undefined) => {
     const step = plan.steps[position]
-    if (!step || submitted.stepId !== step.id) throw new Error(`exploration_step_order_invalid:${submitted.stepId}`)
-    let expected: JsonValue
-    if (step.invocation.mode !== "each") expected = parseTaskValue(step.inputContract, resolveBinding(step.input, context))
-    else {
-      const inputs = eachInputs(step, context)
-      if (!inputs.length) throw new Error(`exploration_step_representative_missing:${step.id}`)
-      expected = inputs[0]!
-      const aggregate = submitted.runtimeResult.result
-      // WHY：authoring 只探索一条 each 代表路线；完整集合必须由验证后的普通执行器复跑，不能让 Pi 逐项找路或补造结果。
-      if (!Array.isArray(aggregate) || aggregate.length !== 1) throw new Error(`exploration_step_representative_aggregate_invalid:${step.id}`)
-      if (digestJson(aggregate[0]) !== digestJson(submitted.result.result)) {
-        throw new Error(`exploration_step_representative_result_mismatch:${step.id}`)
-      }
+    if (!step || stepId !== step.id) throw new Error(`preexecution_step_order_invalid:${stepId}`)
+    const expected = resolved.get(step.id)
+    if (expected === undefined || digestJson(expected) !== digestJson(stepInput)) {
+      throw new Error(`preexecution_step_input_mismatch:${step.id}`)
     }
-    if (step.invocation.mode !== "each") {
-      if (digestJson(expected) !== digestJson(submitted.input)) throw new Error(`exploration_step_input_mismatch:${step.id}`)
-    } else {
-      const expectedKey = readPath(expected, step.invocation.stableKeyPath)
-      const submittedKey = readPath(submitted.input, step.invocation.stableKeyPath)
-      if (digestJson(expectedKey) !== digestJson(submittedKey)) throw new Error(`exploration_step_input_mismatch:${step.id}`)
-      // WHY：each 的代表项由计划绑定产生；模型只能提交该稳定键对应的结果，不能改写其他输入字段并成为新事实。
-      submitted.input = expected
-    }
-    context.nodeOutputs[step.id] = submitted.runtimeResult.result
+    const output = parseTaskValue(step.outputContract, raw)
+    context.nodeOutputs[step.id] = step.invocation.mode === "each" ? [output] : output
     position++
-    return submitted
   }
-  const finish = (trace: ExplorationTrace) => {
-    if (position !== plan.steps.length) throw new Error("exploration_step_result_missing")
-    const expectedOutput = parseTaskValue(plan.outputContract, resolveBinding(plan.output, context))
-    if (!trace.result) {
-      const finalStepResult = trace.stepResults?.at(-1)?.runtimeResult
-      // WHY：计划输出等于末步骤已验收 aggregate 时，宿主可确定派生；让模型再抄一遍只会制造遗漏或漂移。
-      if (!finalStepResult || digestJson(expectedOutput) !== digestJson(finalStepResult.result)) {
-        throw new Error("exploration_business_result_missing")
-      }
-      trace.result = { ...structuredClone(finalStepResult), result: expectedOutput }
-    }
-    if (digestJson(expectedOutput) !== digestJson(trace.result.result)) throw new Error("exploration_task_output_mismatch")
+  const finish = () => {
+    if (position !== plan.steps.length) throw new Error("preexecution_step_result_missing")
+    parseTaskValue(plan.outputContract, resolveBinding(plan.output, context))
   }
-  return { accept, finish }
+  return { resolve, accept, finish }
 }
 
 function eachInputs(step: TaskPlan["steps"][number], context: BindingContext) {
@@ -313,12 +196,12 @@ function eachInputs(step: TaskPlan["steps"][number], context: BindingContext) {
 
 function failureLayer(error: unknown, stage: string) {
   const message = error instanceof Error ? error.message : "unknown"
-  if (stage === "compiling") return "Trace-to-Graph 编译"
+  if (/workflow_.*input/.test(message)) return "workflow-use 输入合同"
+  if (/workflow_.*action|upstream_author/.test(message)) return "workflow-use 候选准入"
+  if (/upstream_start|runner|protocol/.test(message)) return "上游进程生命周期"
   if (/model_account|ai_|provider/i.test(message)) return "AI Connect/Provider"
-  if (/pi_agent/i.test(message)) return "Pi AgentSession"
-  if (/provenance|business_result/.test(message)) return "结果/provenance"
-  if (/浏览器|browser|origin|target/.test(message)) return "BrowserSkill/工具桥"
-  return "探索会话"
+  if (/browser|captcha|login|verification/.test(message)) return "browser-use/人工边界"
+  return stage === "compiling" ? "workflow-use definition" : "browser-use 探索"
 }
 
 async function generateJson<T>(model: PreparedAIModel, schema: z.ZodType<T>, prompt: string, signal: AbortSignal,
@@ -347,6 +230,20 @@ function parsePlanCandidate(value: JsonValue, requirement: TaskRequirement, id: 
   const issues = taskPlanExecutionIssues(plan)
   if (issues.length) throw new Error(issues.join(","))
   return plan
+}
+
+async function parsePlanWithCorrection(candidate: JsonValue, requirement: TaskRequirement, id: string, version: number,
+  representativeInput: JsonValue | undefined, model: PreparedAIModel, signal: AbortSignal,
+  onEvent: Parameters<PreparedAIModel["generateObject"]>[0]["onEvent"], initialCalls: number) {
+  try { return { plan: parsePlanCandidate(candidate, requirement, id, version), calls: initialCalls } }
+  catch (error) {
+    const issues = z.json().parse(error instanceof z.ZodError ? error.issues.map((issue) => ({
+      path: issue.path, code: issue.code, message: issue.message,
+    })) : [{ path: [], code: "plan_candidate_invalid", message: error instanceof Error ? error.message : "invalid" }])
+    const corrected = await generateJson(model, semanticPlanSchema,
+      planCorrectionPrompt(requirement, representativeInput, candidate, issues), signal, onEvent)
+    return { plan: parsePlanCandidate(corrected, requirement, id, version), calls: initialCalls + 1 }
+  }
 }
 
 export function normalizeBoundStepContracts(candidate: PlanCandidate): PlanCandidate {
@@ -428,7 +325,8 @@ function aggregatePlanBudget(steps: TaskPlan["steps"]) {
 
 function planningEnvelope(invocations: number) {
   // WHY：计划阶段尚无图，保存宿主能力上界以兼容唯一计划合同；执行预算由 P4 的实际图推导，模型不能填写。
-  return { maxTransitions: 500 * invocations, maxBrowserCommands: 3850 * invocations, maxActiveMs: 1_440_000 * invocations,
+  return { maxTransitions: 500 * invocations, maxBrowserCommands: browserGrantLimits.maxCommands * invocations,
+    maxActiveMs: browserGrantLimits.timeoutMs * invocations,
     maxLlmCalls: 500 * invocations, maxInvocations: invocations, maxDepth: 16 }
 }
 

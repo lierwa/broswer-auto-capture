@@ -8,6 +8,8 @@ export const provenanceSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("tool"), outputPath: path, eventId: z.string(), resultPath: path }).strict(),
   z.object({ source: z.literal("inference"), outputPath: path, eventIds: z.array(z.string()).min(1), instruction: z.string().min(1).max(2000)
     .describe("可用于不同输入复跑的推导方法。引用当前 runtimeInput 和工具结果，不把本次样本文本或结果写成固定答案。") }).strict(),
+  z.object({ source: z.literal("input"), outputPath: path, inputPath: path }).strict(),
+  z.object({ source: z.literal("aggregate_count"), outputPath: path, aggregateOutputPath: path }).strict(),
 ])
 export const explorationResultSchema = z.object({ result: z.json(), provenance: z.array(provenanceSchema).min(1).max(1000) }).strict()
 export const explorationStepSubmissionSchema = z.object({ stepId: keySchema, representativeInput: z.json(),
@@ -27,7 +29,8 @@ export const explorationTraceSchema = z.object({ jobId: z.string(), browserRunId
   conclusion: z.string(), closed: z.boolean(), stepResults: z.array(explorationStepResultSchema).optional() }).strict()
 export type ExplorationTrace = z.infer<typeof explorationTraceSchema>
 
-export function validateExplorationResult(raw: unknown, contract: TaskDataContract, events: ExplorationEvent[]) {
+export function validateExplorationResult(raw: unknown, contract: TaskDataContract, events: ExplorationEvent[],
+  traceInput?: JsonValue) {
   const value = explorationResultSchema.parse(raw)
   const indexed = new Map(events.map((event) => [event.id, event]))
   const paths = new Set<string>()
@@ -36,6 +39,17 @@ export function validateExplorationResult(raw: unknown, contract: TaskDataContra
     const key = JSON.stringify(provenance.outputPath)
     if (paths.has(key)) throw new Error("provenance_duplicate_path")
     paths.add(key)
+    if (provenance.source === "input") {
+      if (traceInput === undefined) throw new Error("provenance_input_missing")
+      result = writeResultPath(result, provenance.outputPath, readPath(traceInput, provenance.inputPath))
+      continue
+    }
+    if (provenance.source === "aggregate_count") {
+      const aggregate = readPath(result, provenance.aggregateOutputPath)
+      if (!Array.isArray(aggregate)) throw new Error("provenance_aggregate_required")
+      result = writeResultPath(result, provenance.outputPath, aggregate.length)
+      continue
+    }
     if (provenance.source === "inference") {
       const evidence = provenance.eventIds.map((id) => indexed.get(id))
       if (evidence.some((event) => event?.status !== "completed")) throw new Error("provenance_event_missing")

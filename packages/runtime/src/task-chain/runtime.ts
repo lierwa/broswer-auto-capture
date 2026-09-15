@@ -9,11 +9,13 @@ import { applyWrites, evaluatePredicate, readObservation, readPath, resolveBindi
 import { withBrowserCommandAccounting } from "./browser-consumption.js"
 import { compileTaskChain, type CompiledTaskChain } from "./compiler.js"
 import { executeDataOperation } from "./data.js"
+import { executeDelegatedLlm } from "./delegated-llm.js"
 import { executeBuiltinCapability } from "./capabilities.js"
 import { driveTaskChain } from "./engine.js"
 import { digestJson, executableChainDigest, stableUuid } from "./hash.js"
 import { executeLoop } from "./loop.js"
-import { RuntimeBudgetExceededError, type NodeCapabilityResult, type TaskChainCapabilities, type TaskChainRuntimeInput } from "./types.js"
+import { RuntimeBudgetExceededError, type NodeCapabilityResult, type TaskChainCapabilities,
+  type TaskChainRuntimeInput } from "./types.js"
 import { BudgetError, UncertainEffectError, activeNow, assertBudget, executionStableKey, modelCount, now } from "./runtime-support.js"
 import { beginEffect, completeEffect, failRun, finishTerminal, invokedOutput, markEffectUncertain,
   pauseRun, persistRun, recordEvent, syncCheckpoint } from "./run-state.js"
@@ -353,13 +355,14 @@ async function executeHuman(state: RuntimeState, node: Extract<ChainNode, { kind
 }
 async function executeLlm(state: RuntimeState, node: Extract<ChainNode, { kind: "llm" }>): Promise<NodeCapabilityResult> {
   if (!state.capabilities.llm) throw new Error("explicit_llm_not_authorized")
+  if ("delegate" in node && node.delegate) return executeDelegatedLlm(state, node)
   state.capabilities.accountConsumption?.({ llmCalls: 1 })
   const callId = randomUUID(), audit = modelCallAuditSchema.parse({ callId, invocationId: state.run.binding.invocationId,
     nodeId: node.id, purpose: "explicit_llm", model: node.model, intendedAt: now(state).toISOString(), status: "intended", reportedInvocations: null })
   state.run.modelCalls.push(audit); state.run.auditComplete = false; state.run.consumed.llmCalls = null
   await beginEffect(state, "llm", node.id, executionStableKey(state), callId)
   try {
-    const result = llmNodeCapabilityResultSchema.parse(await state.capabilities.llm({ binding: state.run.binding, node,
+    const result = llmNodeCapabilityResultSchema.parse(await state.capabilities.llm({ binding: state.run.binding, mode: state.run.mode, node,
       input: resolveBinding(node.input, state.context), callId, signal: state.signal }))
     audit.status = result.outcome === "success" ? "completed" : result.outcome === "cancelled" ? "interrupted" : "failed"
     audit.reportedInvocations = result.reportedInvocations
@@ -378,6 +381,7 @@ async function executeLlm(state: RuntimeState, node: Extract<ChainNode, { kind: 
     throw new UncertainEffectError(error instanceof Error ? error.message : "llm_effect_uncertain")
   }
 }
+
 async function executeInvoke(state: RuntimeState, node: Extract<ChainNode, { kind: "invoke" }>, idempotencyKey: string): Promise<NodeCapabilityResult> {
   if (!state.capabilities.invoke) throw new Error("invoke_capability_unavailable")
   const rawInput = node.iteration.mode === "once" ? resolveBinding(node.input, state.context) : null

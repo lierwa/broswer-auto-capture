@@ -5,9 +5,13 @@ import { invocationModeSchema, predicateBindings } from "./node.js"
 import { requirementReferenceSchema } from "./requirement.js"
 import { parseTaskValue, taskDataContractSchema, type TaskDataContract, type ValueSchema } from "./value.js"
 
+const taskPlanBatchAggregateSchema = z.object({
+  outputPath: valuePathSchema, stableKeyPath: valuePathSchema.optional(),
+  stopAfterInputPath: valuePathSchema.optional(),
+}).strict()
 const taskPlanInvocationSchema = z.union([invocationModeSchema, z.object({ mode: z.literal("batch"),
   collection: valueBindingSchema, itemVariable: keySchema, stableKeyPath: valuePathSchema,
-  maxItems: z.number().int().positive() }).strict()])
+  maxItems: z.number().int().positive(), aggregates: z.array(taskPlanBatchAggregateSchema).min(1) }).strict()])
 
 export const taskPlanStepSchema = z.object({
   id: keySchema, title: textSchema, goal: textSchema, dependsOn: z.array(keySchema),
@@ -64,6 +68,26 @@ export const taskPlanSchema = z.object({
     }
     if (step.invocation.mode === "each" && step.invocation.maxItems > step.budget.maxInvocations) {
       issue("plan_step_invocation_budget_exceeded")
+    }
+    if (step.invocation.mode === "batch") {
+      const outputs = new Set<string>(), stopped = step.invocation.aggregates.filter((item) => item.stopAfterInputPath)
+      if (stopped.length > 1) issue("plan_batch_stop_aggregate_ambiguous")
+      for (const aggregate of step.invocation.aggregates) {
+        const key = JSON.stringify(aggregate.outputPath), schema = schemaAtPath(step.outputContract.schema, aggregate.outputPath)
+        if (outputs.has(key)) issue("plan_batch_aggregate_duplicate")
+        outputs.add(key)
+        if (!schema || schema.type !== "array") { issue("plan_batch_aggregate_array_required"); continue }
+        if (aggregate.stableKeyPath) {
+          const stableKey = schemaAtPath(schema.items, aggregate.stableKeyPath)
+          if (!stableKey || !["string", "number", "integer", "boolean"].includes(stableKey.type)) {
+            issue("plan_batch_aggregate_stable_key_required")
+          }
+        }
+        if (aggregate.stopAfterInputPath) {
+          const stop = schemaAtPath(step.inputContract.schema, aggregate.stopAfterInputPath)
+          if (!stop || !["number", "integer"].includes(stop.type)) issue("plan_batch_stop_input_required")
+        }
+      }
     }
     seen.add(step.id); outputs.set(step.id, runtimeOutputSchema)
   }

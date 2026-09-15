@@ -93,6 +93,7 @@ export type BusinessPreexecutionAgentInput = Readonly<{
   jobId: string
   goal: string
   startUrl: string
+  context?: JsonValue
   outputContract: TaskDataContract
   signal: AbortSignal
   onEvent(event: AIEvent): void
@@ -123,6 +124,7 @@ export async function runBusinessPreexecutionAgent(model: PreparedMainAIModel, i
     "permission_denied、target_missing、target_ambiguous 和参数错误属于本地工具反馈，应在当前会话修正。"
   let messages = [{ role: "user" as const, content: [{ type: "text" as const, text: JSON.stringify({
     goal: input.goal, startUrl: input.startUrl, outputContract: input.outputContract,
+    ...(input.context === undefined ? {} : { context: input.context }),
   }) }] }]
   let result: Awaited<ReturnType<PreparedMainAIModel["run"]>> | undefined
   try {

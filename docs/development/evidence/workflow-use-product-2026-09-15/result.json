@@ -1,0 +1,115 @@
+{
+  "date": "2026-09-15",
+  "mode": "real-upstream-product/v1",
+  "selection": {
+    "model_id": "gpt-5.6-terra",
+    "reasoning_effort": "medium",
+    "connection_id_recorded": false
+  },
+  "upstream": {
+    "workflow_use_version": "0.2.11",
+    "workflow_use_commit": "5d2d19fe8835cc86f1bf3e04302a5000d590f249",
+    "browser_use_version": "0.13.8",
+    "mcp_version": "1.29.1",
+    "patch_sha256": [
+      "b41b21da09efbe13e1082f8a722f10446ccbe4d4575349e9e65b38e24178fd06",
+      "a196162065e6c80fca300bb1952caf3c44591f1c177151e41c3d77028158c585"
+    ]
+  },
+  "setup": {
+    "fresh_install": "passed",
+    "idempotent_verify": "passed",
+    "upstream_focused_tests": 2,
+    "ruff_check": "passed"
+  },
+  "authoring": {
+    "status": "workflow_candidate",
+    "source_success": true,
+    "source_validated": true,
+    "step_types": [
+      "navigation",
+      "click",
+      "extract_page_content"
+    ],
+    "input_bindings": {
+      "startUrl": "start_url"
+    },
+    "definition_sha256": "84bb10adb746e1a6a2d81f34270a75a58b66304dab8c153b7441f04a46b6dfb8",
+    "artifact_sha256": "b08d1e60711e31a9c9520a914d9e50f2eccaa423abc67dc27065bb8960df9140",
+    "model_calls": {
+      "agent": 2,
+      "judge": 1,
+      "workflow_generation": 1
+    }
+  },
+  "runs": [
+    {
+      "mode": "sample",
+      "stage": "sample_replayed",
+      "status": "completed",
+      "output": {
+        "name": "Aster",
+        "release": "7.4"
+      },
+      "browser_commands": 3,
+      "model_calls": {
+        "extract": 1,
+        "output_conversion": 1
+      },
+      "audit_complete": true
+    },
+    {
+      "mode": "verification",
+      "stage": "input_verified",
+      "status": "completed",
+      "output": {
+        "name": "Beryl",
+        "release": "8.2"
+      },
+      "browser_commands": 3,
+      "model_calls": {
+        "extract": 1,
+        "output_conversion": 1
+      },
+      "audit_complete": true
+    },
+    {
+      "mode": "replay",
+      "stage": "authorized_replay",
+      "status": "completed",
+      "output": {
+        "name": "Aster",
+        "release": "7.4"
+      },
+      "browser_commands": 3,
+      "model_calls": {
+        "extract": 1,
+        "output_conversion": 1
+      },
+      "audit_complete": true
+    }
+  ],
+  "product": {
+    "plan_steps": 1,
+    "chain_status": "verified",
+    "execution_status": "completed",
+    "legacy_browser_runtime_calls": 0,
+    "closed": true
+  },
+  "focused_validation": {
+    "typescript_workspace_checks": [
+      "@browser-capture/contracts",
+      "@browser-capture/runtime",
+      "@browser-capture/api"
+    ],
+    "contracts_tests": 8,
+    "runtime_delegated_llm_tests": 5,
+    "api_task_chain_and_cancellation_tests": 5,
+    "python_model_bridge_tests": 2,
+    "python_compile": "passed",
+    "root_or_full_tests_run": false
+  },
+  "windows": "not_tested",
+  "distribution": "blocked_pending_agpl_decision",
+  "jd": "blocked_pending_new_requirement_confirmation"
+}
