@@ -55,8 +55,9 @@ def register_field_read_tool(tools, *, output_schema):
         'Read one real final output-contract path from a scoped DOM container, not an arbitrary temporary variable. '
         'Provide only outputPath, container, and fields; each field contains selector and optional attribute. Object '
         'and object-array targets need every required field; scalar and scalar-array targets use the field name value. '
-        'The container scope must fit contract maxItems; excess matches fail instead of being truncated. Output schema, '
-        'types, cardinality, budgets, and read path are derived.',
+        'When the container matches more records than contract maxItems, its DOM-order prefix is selected. Output schema, '
+        'types, cardinality, budgets, and read path are derived. A zero-match collection cannot validate an authoring '
+        'sample and fails even when the output contract allows an empty runtime result.',
         param_model=FieldReadToolParams,
     )
     async def bat_read_fields(params: FieldReadToolParams, browser_session: BrowserSession) -> ActionResult:
@@ -76,6 +77,7 @@ def register_field_read_tool(tools, *, output_schema):
             output, container_digest = await read_fields_with_proof(
                 browser_session, mapping.specification, identity)
             actual = value_at_path(output, mapping.readPath)
+            require_authoring_sample(actual, target_schema)
             Draft202012Validator(target_schema).validate(actual)
             record = FieldReadRecord(
                 parameters=params,
@@ -97,6 +99,12 @@ def register_field_read_tool(tools, *, output_schema):
     return successful
 
 
+def require_authoring_sample(actual, target_schema):
+    # WHY：minItems=0 只表示复跑结果允许为空；首次探索没有真实样本就无法证明 selector 可复跑。
+    if isinstance(target_schema, dict) and target_schema.get('type') == 'array' and actual == []:
+        raise NaturalReadFailure('natural_read_empty_sample_unproven')
+
+
 _READ_ERRORS = frozenset({
     'ambiguous_or_missing_read_field',
     'read_boolean_invalid',
@@ -107,7 +115,6 @@ _READ_ERRORS = frozenset({
     'read_field_native_projection_failed',
     'read_container_resolution_failed',
     'read_input_limit',
-    'read_item_limit',
     'read_number_not_finite',
     'read_single_object_required',
     'natural_read_schema_mismatch',
@@ -135,10 +142,6 @@ def _fixed_read_error(error, target_schema=None):
             details.append('field=' + json.dumps(error.field_name, ensure_ascii=False, separators=(',', ':')))
         if error.match_count is not None:
             details.append('matchCount=' + str(error.match_count))
-        if reason == 'read_item_limit':
-            maximum = _contract_max_items(target_schema)
-            if maximum is not None:
-                details.append('contractMaxItems=' + str(maximum))
         if error.reason is not None:
             details.append('reason=' + error.reason)
         return reason + (': ' + '; '.join(details) if details else '')
@@ -152,18 +155,3 @@ def _fixed_read_error(error, target_schema=None):
                 + ' and use only allowed='
                 + json.dumps(allowed, ensure_ascii=False, separators=(',', ':')))
     return reason
-
-
-def _contract_max_items(target_schema):
-    if not isinstance(target_schema, dict):
-        return None
-    kind = target_schema.get('type')
-    if kind != 'array':
-        return 1 if kind in ('object', 'string', 'number', 'integer', 'boolean') else None
-    items = target_schema.get('items')
-    if not isinstance(items, dict):
-        return None
-    if items.get('type') != 'object':
-        return 1 if items.get('type') in ('string', 'number', 'integer', 'boolean') else None
-    maximum = target_schema.get('maxItems')
-    return maximum if type(maximum) is int and 0 < maximum <= 300 else None

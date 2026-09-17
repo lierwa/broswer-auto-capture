@@ -5,7 +5,8 @@ from .action_dispatch import not_dispatched_coverage
 from .bindings import classify_binding
 from .capability import TARGET_ACTIONS
 from .causal import delayed_post_for_conditions, supporting_wait
-from .coverage import failed_native_dom_lookup_coverage, search_page_coverage, validate_coverage
+from .coverage import (failed_native_dom_lookup_coverage, native_extraction_coverage,
+                       search_page_coverage, validate_coverage)
 from .evidence import ActionCoverage, EvidenceRef, digest, gap
 from .natural_facts import IGNORED_TECHNICAL_PARAMETERS, NaturalBindingFact, is_native_parameter
 from .natural_output import compile_natural_output_assembly
@@ -72,6 +73,10 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
         text_lookup = search_page_coverage(registry, action, pre, post)
         if text_lookup is not None:
             ledger.append(text_lookup)
+            continue
+        extraction = native_extraction_coverage(registry, action, pre, post)
+        if extraction is not None:
+            ledger.append(extraction)
             continue
         lookup = natural_dom_lookup_coverage(registry, action, pre, post)
         if lookup is not None:

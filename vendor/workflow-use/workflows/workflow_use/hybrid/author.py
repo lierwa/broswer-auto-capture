@@ -1,4 +1,5 @@
 """Natural task entry over the native Agent and its public callbacks."""
+import re
 from copy import deepcopy
 from tempfile import TemporaryDirectory
 from typing import Callable, Literal
@@ -78,6 +79,8 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
     async def before_action(summary, model_output, step):
         try:
             actions = model_output.action
+            for action in actions:
+                normalize_author_action(action)
             raw_action = actions[0].model_dump(exclude_unset=True) if len(actions) == 1 else None
         except Exception:
             raw_action = None
@@ -88,8 +91,15 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
             lambda: collector.before_action(summary, model_output, step), metadata)
     async def after_step(agent):
         metadata = dict(current_action)
+        async def collect():
+            result = await collector.after_step(agent)
+            if metadata.get('actionName') == 'find_elements':
+                metadata.update(find_elements_outcome(agent))
+            if metadata.get('actionName') == 'bat_read_fields':
+                metadata.update(field_read_outcome(agent))
+            return result
         try:
-            return await observe_lifecycle(diagnostic, 'after_step', lambda: collector.after_step(agent), metadata)
+            return await observe_lifecycle(diagnostic, 'after_step', collect, metadata)
         finally:
             current_action.clear()
     with TemporaryDirectory(prefix='bat-hybrid-agent-') as directory:
@@ -154,20 +164,86 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
             'browserCommands': sum(action.name not in ('done', 'bat_summarize') for action in trace.actions)}
 
 
+def find_elements_outcome(agent):
+    try:
+        results = agent.history.history[-1].result
+        if len(results) != 1:
+            return {'queryOutcome': 'unavailable'}
+        result = results[0]
+        if result.error:
+            return {'queryOutcome': 'invalid_selector' if 'Invalid CSS selector' in result.error else 'error'}
+        matched = re.match(r'^Found ([0-9]+) elements? matching ', result.long_term_memory or '')
+        if matched is None:
+            return {'queryOutcome': 'unavailable'}
+        count = int(matched.group(1))
+        return {'queryOutcome': 'matched' if count else 'no_match', 'matchCount': count}
+    except Exception:
+        return {'queryOutcome': 'unavailable'}
+
+
+def field_read_outcome(agent):
+    try:
+        results = agent.history.history[-1].result
+        if len(results) != 1:
+            return {'readOutcome': 'unavailable'}
+        result = results[0]
+        if not result.error:
+            return {'readOutcome': 'succeeded'}
+        error = result.error
+        allowed = ('ambiguous_or_missing_read_field', 'read_', 'natural_read_', 'bat_read_fields_failed')
+        if not isinstance(error, str) or not error.startswith(allowed) or len(error) > 2000:
+            return {'readOutcome': 'unavailable'}
+        return {'readOutcome': 'failed', 'readError': error}
+    except Exception:
+        return {'readOutcome': 'unavailable'}
+
+
+FIND_ELEMENTS_DEFAULT_ATTRIBUTES = ['data-testid', 'class', 'role', 'aria-label', 'href', 'datetime']
+
+
+def normalize_author_action(action):
+    """Fill Browser-Use's optional DOM attributes before capture and dispatch."""
+    params = getattr(action, 'find_elements', None)
+    if params is not None and getattr(params, 'attributes', None) is None:
+        # WHY：B-A-T 后续要编译相对字段 selector；只有数量和文本不足以证明真实 DOM 属性，
+        # 因此在适配边界复用 Browser-Use 公开 attributes 参数，而不是让模型反复猜 selector。
+        params.attributes = list(FIND_ELEMENTS_DEFAULT_ATTRIBUTES)
+
+
 NATURAL_AGENT_GUIDANCE = (
-    'Use bat_read_fields for page-derived output fields and complete the read before navigating away. Its outputPath must '
+    'Complete the required browser business traversal; selector investigation must not block reaching later pages or '
+    'required detail views. Native extract may first inspect the current page and retain the source business values. '
+    'Use bat_read_fields for replayable page-derived output evidence, and when possible complete that read before '
+    'navigating away. If selector evidence is not yet proven, continue the business traversal with native extract and '
+    'revisit only the required pages later to add replay evidence before done. Its outputPath must '
     'be a path in the final output contract, never a temporary or scratch name. Give bat_read_fields only outputPath, '
     'container, and fields; each field contains selector and an optional attribute. For an object or array of objects, '
     'include every required field from that contract. For a scalar value, use fields.value. Never supply schema, types, '
-    'cardinality, budgets, or readPath. You may use find_elements to discover a local CSS scope. If bat_read_fields reports '
-    'an error, use its field name, match count, and fixed reason to correct that selector at the same final output path. '
+    'cardinality, budgets, or readPath. The container may match the complete ordered collection; bat_read_fields '
+    'deterministically keeps the DOM-order prefix allowed by contract maxItems, so do not encode that prefix with '
+    'nth-child. Use find_elements to discover both the container and each field selector. When a '
+    'field selector is unknown, query inside one known container with include_text=true and request relevant stable '
+    'attributes such as class, data-testid, aria-label, href, and datetime; a count without those values is not enough to '
+    'derive the field selector. Its result includes bounded ancestor chains aligned to each matching result index; use '
+    'those real per-element parent relationships '
+    'instead of guessing with first-child or first-of-type. If bat_read_fields reports an error, use its field name, match '
+    'count, and fixed reason to '
+    'correct that selector at the same final output path. Do not retry the same failed field selector unchanged; inspect '
+    'that field inside one known container before retrying. '
     'Browser-use element indexes are not DOM ids, and its rendered tree is not proof of actual DOM parent-child structure. '
     'Do not invent DOM relationships or selectors. Do not embed sample '
-    'values from the current input, such as one title or URL, or use generated runtime element IDs. Do not fall '
-    'back to a non-replayable '
-    'extraction. Native extract remains available for other exploration, but it does not prove a deterministic field read '
-    'and its text must not be manually assembled into page-derived fields passed to done. Every page-derived field passed '
-    'to done must come unchanged from a validated bat_read_fields result; find_elements or search text is not a substitute. '
+    'values from the current input, such as one title or URL, or use generated runtime element IDs. Native extract is '
+    'allowed to produce the first-exploration business result. Missing replay selectors are a separate compilation '
+    'gap: they must be reported by the compiler and must not block the required browser traversal or final done action. '
+    'A bat_read_fields result is replay evidence when available; do not pretend extract or find_elements is that evidence. '
+    'When bat_read_fields succeeds for an outputPath, pass that returned value unchanged at the same path in done instead '
+    'of an earlier extracted or summarized value. Missing replay evidence alone is not a business limitation and must not '
+    'downgrade an otherwise completed business result to partial; compilation reports replay gaps separately. '
+    'For page-derived output strings, preserve the complete visible source text allowed by the output schema; do not '
+    'replace source text, code, lists, or details with a summary merely because they are long. '
+    'When the task requires filters or ordering, verify the applied state from current-page evidence before reading '
+    'results. A guessed query parameter or navigation URL alone does not prove that a filter or sort was accepted; use '
+    'the site controls or its visible query/state and do not claim completion from an unverified URL convention. '
     'For a known target, including pagination, first '
     'discover a local CSS selector and use bat_scroll_to. If a clickable index is already available, native click may be '
     'used directly. Do not search for a known target by scrolling an arbitrary number of pages. bat_scroll_to does not '

@@ -9,7 +9,19 @@ def action_metadata(registry, raw_action, step_number):
     name = next(iter(raw_action))
     if not isinstance(name, str) or name not in registry.names:
         return {}
-    return {'actionName': name, 'stepNumber': step_number}
+    metadata = {'actionName': name, 'stepNumber': step_number}
+    arguments = raw_action.get(name)
+    selector = arguments.get('selector') if name == 'find_elements' and isinstance(arguments, dict) else None
+    if isinstance(selector, str) and 0 < len(selector) <= 2000:
+        metadata['selector'] = selector
+    if name == 'bat_read_fields' and isinstance(arguments, dict):
+        output_path, container = arguments.get('outputPath'), arguments.get('container')
+        if (isinstance(output_path, list) and len(output_path) <= 32
+                and all(isinstance(item, (str, int)) and not isinstance(item, bool) for item in output_path)):
+            metadata['outputPath'] = output_path
+        if isinstance(container, str) and 0 < len(container) <= 2000:
+            metadata['container'] = container
+    return metadata
 
 
 def emit_lifecycle(diagnostic, phase, status, metadata=None):

@@ -1,7 +1,8 @@
 import { z } from "zod"
 import {
   CONTRACT_VERSION, parseTaskValue, taskPlanExecutionIssues, taskPlanSchema, taskPlanStepSchema,
-  type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskDataContract, type TaskPlan, type TaskRequirement,
+  type AuthoringProgressEvent, type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskDataContract,
+  type TaskPlan, type TaskRequirement,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest, readPath, resolveBinding, stableUuid, type BindingContext } from "@browser-capture/runtime"
 import { browserGrantLimits } from "@browser-capture/browser"
@@ -10,7 +11,7 @@ import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
 import { browserUseTask, naturalRequirementText } from "../upstream-browser/task-request.js"
 import { completedModelInvocations } from "../upstream-browser/workflow-artifact.js"
 import { createHybridArtifact, createHybridSourceArtifact, hybridArtifactMediaType, hybridSourceMediaType } from "../upstream-browser/hybrid-artifact.js"
-import type { HybridSourceResult } from "../upstream-browser/hybrid-exploration.js"
+import type { HybridAuthoringProgress, HybridSourceResult } from "../upstream-browser/hybrid-exploration.js"
 import { hybridNaturalRequestSchema } from "../upstream-browser/hybrid-schema.js"
 import { collectOrigins } from "./exploration-browser-support.js"
 import type { TaskContractRepository } from "./repository.js"
@@ -31,7 +32,7 @@ export class TaskChainAuthoring {
       const model = await this.begin(job, "plan_creation", signal)
       const id = stableUuid(requirement.taskId, "plan"), version = this.repository.nextPlanVersion(requirement.taskId)
       const prompt = planPrompt(requirement), onEvent = (event: Parameters<PreparedAIModel["generateObject"]>[0]["onEvent"] extends (event: infer E) => void ? E : never) => {
-        job.audit!.events.push(event); this.save(job)
+        job.audit!.events.push(event); this.touch(job)
       }
       const candidate = await generateJson(model, semanticPlanSchema, prompt, signal, onEvent)
       const { plan, calls } = await parsePlanWithCorrection(candidate, requirement, id, version, undefined,
@@ -47,15 +48,16 @@ export class TaskChainAuthoring {
       const model = await this.begin(job, "chain_exploration_and_compilation", signal)
       let planningCalls = reusablePlanCandidate === undefined ? 1 : 0
       job.authoring = { stage: "planning", level: "E0", failureLayer: null, exploration: null, annotations: null,
+        progress: { events: [], actionsStarted: 0, modelCallsStarted: 0 },
         consumption: { explorationToolCalls: 0, explorationSessions: 0, compilationCalls: planningCalls, providerInvocations: null } }
-      this.save(job)
+      this.touch(job)
       const value = reusablePlanCandidate ?? await generateJson(model, semanticPlanSchema, planPrompt(requirement, input), signal,
-        (event) => { job.audit!.events.push(event); this.save(job) })
+        (event) => { job.audit!.events.push(event); this.touch(job) })
       const parsed = await parsePlanWithCorrection(value, requirement, stableUuid(requirement.taskId, "plan"),
         this.repository.nextPlanVersion(requirement.taskId), input, model, signal,
-        (event) => { job.audit!.events.push(event); this.save(job) }, planningCalls)
+        (event) => { job.audit!.events.push(event); this.touch(job) }, planningCalls)
       planningCalls = parsed.calls
-      job.authoring.consumption.compilationCalls = planningCalls; this.save(job)
+      job.authoring.consumption.compilationCalls = planningCalls; this.touch(job)
       const plan = parsed.plan
       parseTaskValue(plan.inputContract, input)
       this.repository.savePlan(plan)
@@ -85,9 +87,10 @@ export class TaskChainAuthoring {
     const childContexts: Record<string, never[]> = Object.fromEntries(plan.steps.map((step) => [step.id, []]))
     if (plan.steps.some((step) => step.invocation.mode === "batch")) throw new Error("hybrid_batch_source_unsupported")
     job.authoring = { stage: "exploring", level: "E0", failureLayer: null, exploration: null, annotations: null,
+      progress: { events: [], actionsStarted: 0, modelCallsStarted: 0 },
       consumption: { explorationToolCalls: 0, explorationSessions: 1,
         compilationCalls: priorCompilationCalls, providerInvocations: null } }
-    job.browserRunId = stableUuid(job.id, "upstream-browser"); this.save(job)
+    job.browserRunId = stableUuid(job.id, "upstream-browser"); this.touch(job)
     const reusable = this.upstream.recompile
       ? reusableHybridSources(this.repository, job, requirement, plan, plannedProgression(plan, input)) : undefined
     // WHY：历史 v1 来源只读保留；自然任务生产入口不得把旧 authority 请求送入新编译器。
@@ -96,12 +99,13 @@ export class TaskChainAuthoring {
     const sources = reused ? reused.sources
       : await this.explorePlan(job, requirement, plan, input, signal, model, childContexts)
     // WHY：先确认唯一 Browser 已关闭并校验所有步骤，再写候选；后一步 gap 不能留下半套可用链。
-    job.authoring.stage = "compiling"; this.save(job)
+    job.authoring.stage = "compiling"; this.touch(job)
     if (reused) {
       job.authoring.exploration = z.json().parse(reused.exploration)
+      job.authoring.level = "E1"
       job.authoring.consumption.explorationSessions = 0
       job.authoring.consumption.providerInvocations = 0
-      this.save(job)
+      this.touch(job)
       for (const source of sources) {
         const compiled = await this.upstream.recompile!({ request: source.result.request,
           sourceResponse: source.result.response, outputSchema: source.step.outputContract.schema,
@@ -140,7 +144,8 @@ export class TaskChainAuthoring {
     try {
       const requirementText = naturalRequirementText(requirement).text
       await this.upstream.withAuthoring!({ selection: model.selection, signal, ownerId: job.browserRunId,
-      allowedOrigins: collectOrigins([input, requirementText]) }, async (session) => {
+      allowedOrigins: collectOrigins([input, requirementText]),
+      onProgress: (event) => this.recordProgress(job, event) }, async (session) => {
       try { for (const step of plan.steps) {
         signal.throwIfAborted()
         const stepInput = progression.resolve(step)
@@ -159,7 +164,7 @@ export class TaskChainAuthoring {
         job.authoring!.exploration = z.json().parse({ mode: "workflow-use-authoring/v2", sources: sources.map(({ step, result }) => ({
           stepId: step.id, history: result.history, canonicalDigest: result.response.compilation.canonicalDigest,
           gaps: result.response.compilation.gaps })) })
-        job.authoring!.stage = "explored"; job.authoring!.level = "E1"; this.save(job)
+        job.authoring!.stage = "explored"; job.authoring!.level = "E1"; this.touch(job)
       } } catch (error) { explorationError = error }
       })
       closed = true
@@ -172,7 +177,7 @@ export class TaskChainAuthoring {
     job.authoring.exploration = z.json().parse({ mode: "workflow-use-authoring/v2", sources: sourceArtifacts })
     job.authoring.consumption.providerInvocations = explorationError ? null
       : sources.reduce((sum, source) => sum + completedModelInvocations(source.result.modelCalls), 0)
-    this.save(job)
+    this.touch(job)
     if (explorationError) throw explorationError
     signal.throwIfAborted()
     progression.finish()
@@ -203,6 +208,19 @@ export class TaskChainAuthoring {
       job.authoring.failureLayer = failureLayer(error, job.authoring.stage)
     }
     this.save(job)
+  }
+  private recordProgress(job: TaskAuthoringJob, event: HybridAuthoringProgress) {
+    if (job.status !== "running" || !job.authoring) return
+    const progress = job.authoring.progress ?? { events: [], actionsStarted: 0, modelCallsStarted: 0 }
+    const observed: AuthoringProgressEvent = { ...event, sequence: job.sequence + 1 }
+    progress.events = [...progress.events, observed].slice(-50)
+    if (event.source === "browser" && event.phase === "dispatch" && event.status === "started") progress.actionsStarted++
+    if (event.source === "model" && event.status === "started") progress.modelCallsStarted++
+    job.authoring.progress = progress
+    this.touch(job)
+  }
+  private touch(job: TaskAuthoringJob) {
+    job.sequence++; job.updatedAt = new Date().toISOString(); this.save(job)
   }
   private save(job: TaskAuthoringJob) { this.repository.saveJob(job) }
 }

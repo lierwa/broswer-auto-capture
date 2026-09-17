@@ -1,4 +1,5 @@
 """Thin audit adapter for the native ``Tools.act`` entry boundary."""
+import json
 from functools import wraps
 
 from .action_capture_policy import action_capture_policy
@@ -130,6 +131,9 @@ def bind_tools_act(tools, audit, diagnostic=None, registry_provider=None, settle
                 except BaseException as settle_error:
                     raise settle_error from dispatch_error
                 raise
+            browser_session = (kwargs.get('browser_session') if 'browser_session' in kwargs
+                               else (args[1] if len(args) > 1 else None))
+            metadata.update(await enrich_find_elements_result(raw, browser_session, result))
             if settle_dispatch is not None:
                 await settle_dispatch()
             await audit.complete(result)
@@ -144,6 +148,69 @@ def bind_tools_act(tools, audit, diagnostic=None, registry_provider=None, settle
             tools.act = original
 
     return restore
+
+
+async def enrich_find_elements_result(raw_action, browser_session, result):
+    """Append index-aligned bounded DOM ancestry to Browser-Use's existing result."""
+    try:
+        arguments = raw_action.get('find_elements') if isinstance(raw_action, dict) else None
+        selector = arguments.get('selector') if isinstance(arguments, dict) else None
+        extracted = getattr(result, 'extracted_content', None)
+        if (not isinstance(selector, str) or not 0 < len(selector) <= 2000 or browser_session is None
+                or getattr(result, 'error', None) or not isinstance(extracted, str)):
+            return ({'contextOutcome': 'failed'} if isinstance(arguments, dict) else {})
+        script = """(() => {
+          const selector = %s;
+          const names = ['data-testid', 'role', 'aria-label', 'data-component', 'name', 'href', 'datetime'];
+          const nodes = Array.from(document.querySelectorAll(selector));
+          const contexts = [];
+          const targets = [];
+          for (let index = 0; index < Math.min(nodes.length, 20); index += 1) {
+            const node = nodes[index];
+            const chain = [];
+            let current = node;
+            for (let depth = 0; current && depth < 6; depth += 1, current = current.parentElement) {
+              const attrs = {};
+              for (const name of names) {
+                const value = current.getAttribute(name);
+                if (value) attrs[name] = value.slice(0, 240);
+              }
+              chain.push({tag: current.tagName.toLowerCase(), attrs});
+            }
+            contexts.push({index, ancestors: chain});
+            if (index < 5) {
+              const text = (node.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 160);
+              targets.push({index, tag: node.tagName.toLowerCase(), text, attrs: chain[0].attrs});
+            }
+          }
+          return {matchCount: nodes.length, contexts, targets};
+        })()""" % json.dumps(selector)
+        session = await browser_session.get_or_create_cdp_session()
+        evaluated = await session.cdp_client.send.Runtime.evaluate(
+            params={'expression': script, 'returnByValue': True, 'awaitPromise': True},
+            session_id=session.session_id)
+        structure = evaluated.get('result', {}).get('value')
+        if not isinstance(structure, dict) or not isinstance(structure.get('contexts'), list):
+            return {'contextOutcome': 'failed'}
+        # WHY：Browser-Use 的公开 find_elements 只有扁平结果；逐索引祖先链保留真实字段归属，
+        # 不能去重成几种结构后再让模型猜哪条上下文属于哪个命中节点。
+        result.extracted_content = (extracted + '\nDOM contexts by matching result index (matched node first):\n'
+                                    + json.dumps(structure, ensure_ascii=False, separators=(',', ':')))
+        targets = structure.get('targets')
+        if isinstance(targets, list) and targets:
+            # WHY：上游 find_elements 的详细属性只在下一步可见，长期记忆只留命中数量；
+            # 后续动作因此拿不到刚发现的 href/属性并反复查询。只持久化前五个有界目标摘要，
+            # 同时明确查询序号不是 Browser-Use 点击序号，避免把两套索引混用。
+            retained = {'selector': selector, 'matchCount': structure.get('matchCount'), 'targets': targets}
+            guidance = (' Retained DOM targets (query indexes are not Browser-Use click indexes; use a current '
+                        'clickable index, or navigate a returned href, or form the next CSS query from attributes): '
+                        + json.dumps(retained, ensure_ascii=False, separators=(',', ':')))
+            memory = getattr(result, 'long_term_memory', None)
+            result.long_term_memory = (memory if isinstance(memory, str) else '') + guidance
+        return {'contextOutcome': 'enriched', 'contextCount': len(structure['contexts'])}
+    except Exception:
+        # 结构补充只是观察增强；失败时保留成熟组件的原始结果与行为，并暴露固定失败状态。
+        return {'contextOutcome': 'failed'}
 
 
 def not_dispatched_coverage(trace, action):

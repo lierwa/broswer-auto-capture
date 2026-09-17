@@ -231,3 +231,18 @@ Python 私有方法，也不根据采集结果反算期望值。动作决策器�
   API health 和既有模型选择可正常读取。shell 中残留的 `http_proxy/https_proxy=127.0.0.1:7890` 只会污染命令行诊断，
   以 `--noproxy` 已排除本机 API；ai-connect/Pi AgentSession 和本仓库都没有 VPN 模式分支或代理环境改写。当前阻塞仍是
   进程网络到 provider 的传输，没有证据指向 auth，也不得在 B-A-T 内增加 TUN/代理特判。
+
+### 2026-09-18 · 实际任务页运行 2 · A 通过
+
+- 从同一 `generate_chain` 产品入口运行任务 `072ad8cb-b240-4023-b3b8-c929da4e85b7`，来源 job
+  `5d5ed542-5850-4c6b-8639-af64b688ac7c` 在一个 Browser 会话中完成 26 个浏览器动作。33 次 provider 调用中
+  31 次完成、2 次失败后在同一会话重试；任务没有通过重开浏览器撞结果。
+- 来源结果和独立 judge 均通过：`sourceSuccess=true`、`sourceValidated=true`。第一页为
+  `#8408/#6731/#8616/#7848/#8559`，第二页为 `#6053/#7479/#5099/#7492/#6435`；第二页首条详情标题为
+  `Human-in-the-loop is not working.`，来源为 `https://github.com/langchain-ai/langgraph/issues/6053`，正文长度 3151。
+- 动作生命周期在运行中逐事件持久化；`find_elements` 的命中数量、局部 DOM 上下文和有界目标摘要均进入正式记录。
+  成功、取消和失败路径结束后均核对测试 Chrome 进程数为 0。
+- 修复旧编译器错误后，job `7dcec668-235a-4007-8424-cc0607e404cb` 复用同一已验证来源重新编译，
+  `explorationSessions=0`、`providerInvocations=0`、测试 Chrome 进程数为 0。当前编译只保留 10 个下游缺口：
+  5 个动作后置条件、3 个字段读取、1 个具体副作用和 1 个输出装配，分别属于 B/C/D 及组合阶段，不覆盖 A 的通过结论，
+  也不能被表述为已有可冻结 candidate。

@@ -131,13 +131,13 @@ def value_at_path(value, path):
 
 
 async def read_fields_with_proof(browser, specification, expected_identity):
-    before = await collection_identity(browser, specification.container)
+    before = await collection_identity(browser, specification.container, specification.maxItems)
     assert_identity(before['page'], expected_identity)
     first = await read_fields(browser, specification)
-    middle = await collection_identity(browser, specification.container)
+    middle = await collection_identity(browser, specification.container, specification.maxItems)
     assert_identity(middle['page'], expected_identity)
     second = await read_fields(browser, specification)
-    after = await collection_identity(browser, specification.container)
+    after = await collection_identity(browser, specification.container, specification.maxItems)
     assert_identity(after['page'], expected_identity)
     if before['ids'] != middle['ids'] or before['ids'] != after['ids']:
         raise NaturalReadFailure('natural_read_container_identity_changed')
@@ -146,10 +146,12 @@ async def read_fields_with_proof(browser, specification, expected_identity):
     return first, digest(before['ids'])
 
 
-async def collection_identity(browser, selector):
+async def collection_identity(browser, selector, max_items=None):
     page = await current_page(browser)
     identity = await page_identity(page)
     elements = await TargetResolver(browser).resolve_collection(selector)
+    if type(max_items) is int and max_items > 0:
+        elements = elements[:max_items]
     identifiers = [await backend_id(element) for element in elements]
     return {'page': identity, 'ids': identifiers}
 
@@ -189,20 +191,20 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
     facts = [fact for fact in post.facts if fact.kind == 'verified_natural_read'
              and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
     if not facts:
-        return None, [], [gap('missing_effect_proof', [action.id],
+        return None, None, [gap('missing_effect_proof', [action.id],
                               'natural_field_read_evidence_missing', 'collect_evidence')]
     if len(facts) != 1:
-        return None, [], [gap('invalid_source', [action.id],
+        return None, None, [gap('invalid_source', [action.id],
                               'multiple_verified_natural_reads', 'reject_trace')]
     if not isinstance(output_schema, dict) or digest(output_schema) != request.plan.outputSchemaDigest:
-        return None, [], [gap('missing_effect_proof', [action.id],
+        return None, None, [gap('missing_effect_proof', [action.id],
                               'natural_output_schema_required', 'collect_evidence')]
     fact = facts[0]
     try:
         value = VerifiedNaturalRead.model_validate(fact.value)
         validate_compiled_read(value, output_schema, action, pre, post, prior_paths)
     except Exception:
-        return None, [], [gap('invalid_source', [action.id],
+        return None, None, [gap('invalid_source', [action.id],
                               'verified_natural_read_invalid', 'reject_trace')]
     refs = unique_evidence([action.resultRef, *pre.sourceRefs, *post.sourceRefs, *fact.sourceRefs])
     specification = value.specification.model_dump(mode='json')

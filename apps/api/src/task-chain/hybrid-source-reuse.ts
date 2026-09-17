@@ -30,9 +30,8 @@ export function reusableHybridSources(repository: TaskContractRepository, job: T
     if (!artifact.closed || !artifact.result.sourceSuccess || !artifact.result.sourceValidated
       || artifact.requirementDigest !== digestJson(requirement) || artifact.planDigest !== digestJson(plan)
       || artifact.stepId !== step.id || artifact.inputDigest !== digestJson(stepInput)) return undefined
-    // Normalization/annotation failures carry information not recoverable from a request alone.
-    if (artifact.result.response.compilation.gaps.some((gap) => gap.code === "invalid_source"
-      || gap.reason === "semantic_annotation_failed")) return undefined
+    // WHY：编译 gap 是派生结果，可能来自已经修复的旧编译器；来源本身已通过身份、业务结果和 judge 校验时，
+    // 应交给当前编译器重新判定。预先信任旧 gap 会丢弃可恢复来源并无意义地再次启动浏览器。
     progression.accept(step.id, stepInput, artifact.result.output)
     sources.push({ step, stepInput, result: { ...artifact.result, modelCalls: artifact.modelCalls,
       forkSourceDigest: artifact.forkSourceDigest } })

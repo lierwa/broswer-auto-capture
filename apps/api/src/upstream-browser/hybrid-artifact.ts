@@ -81,9 +81,11 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
     const natural = assertNaturalSourceIdentity(
       request, input.requirement, input.plan, input.step, input.stepInput, input.source.history,
       naturalPayloadContext(envelope, request))
-    const hasNaturalReadProof = natural.trace.observations.some((observation) =>
-      observation.facts.some((fact) => fact.kind === "verified_natural_read"))
-    assertSourceModelAudit(input.modelCalls, hasNaturalReadProof)
+    const hasNaturalSummaryProof = natural.trace.observations.some((observation) =>
+      observation.facts.some((fact) => fact.kind === "verified_natural_summary"))
+    // WHY：verified_natural_read 是纯 DOM 读取，不会调用模型；只有 bat_summarize 的
+    // verified_natural_summary 才必须存在 semantic_annotation 调用审计。
+    assertSourceModelAudit(input.modelCalls, hasNaturalSummaryProof)
     const chain = materializeHybridChain({ response: envelope, request, plan: input.plan,
       step: input.step, version: input.version, model: input.model,
       ...(input.resolveChild ? { resolveChild: input.resolveChild } : {}) })

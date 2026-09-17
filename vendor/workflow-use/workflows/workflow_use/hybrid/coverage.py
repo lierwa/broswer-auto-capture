@@ -7,6 +7,7 @@ from .dom_evidence import DomQueryEvidence
 from .evidence import ActionCoverage, NormalizedTrace, gap
 
 NATIVE_TEXT_LOOKUP_RULE = 'native_text_lookup_observation/v1'
+NATIVE_EXTRACTION_RULE = 'native_extraction_observation/v1'
 FAILED_NATIVE_DOM_LOOKUP_RULE = 'failed_native_dom_lookup_observation/v1'
 URL_DIGEST = re.compile(r'^[a-f0-9]{64}$')
 
@@ -34,6 +35,39 @@ def search_page_coverage(registry, action, pre, post):
         refs[(ref.ref, ref.digest)] = ref
     return ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
                           exclusionRule=NATIVE_TEXT_LOOKUP_RULE, evidenceRefs=list(refs.values()))
+
+
+# WHY: 原生 extract 只帮助首次 Agent 理解页面和继续业务导航；最终输出仍由 verified read/summary
+# 独立装配，因此它不能成为复跑节点，也不能因为缺少 selector 证据反过来阻塞首次探索。
+def native_extraction_coverage(registry, action, pre, post):
+    if (registry is None or action.name != 'extract' or action.effect != 'read'
+            or action.status != 'succeeded' or action.resultRef is None
+            or pre is None or post is None
+            or pre.id != action.preObservationRef or post.id != action.postObservationRef
+            or not pre.tabId or pre.tabId != post.tabId or pre.url != post.url):
+        return None
+    try:
+        registry.validate_action(action.name, action.args)
+    except Exception:
+        return None
+    before = [fact for fact in pre.facts if fact.kind == 'url_digest']
+    after = [fact for fact in post.facts if fact.kind == 'url_digest']
+    facts = [fact for fact in post.facts if fact.kind == 'native_extraction']
+    if (len(before) != 1 or len(after) != 1 or len(facts) != 1
+            or not isinstance(before[0].value, str) or not URL_DIGEST.fullmatch(before[0].value)
+            or before[0].value != after[0].value):
+        return None
+    value = facts[0].value
+    if (not isinstance(value, dict)
+            or set(value) != {'actionRef', 'outputSchemaDigest', 'resultDigest', 'output'}
+            or value.get('actionRef') != action.id
+            or value.get('resultDigest') != action.resultRef.digest
+            or not isinstance(value.get('outputSchemaDigest'), str)
+            or not URL_DIGEST.fullmatch(value['outputSchemaDigest'])):
+        return None
+    refs = _unique_refs([action.resultRef, *pre.sourceRefs, *post.sourceRefs, *facts[0].sourceRefs])
+    return ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
+                          exclusionRule=NATIVE_EXTRACTION_RULE, evidenceRefs=refs)
 
 
 # WHY: 原生 DOM 查询失败只描述首次探索找路；完整同页 query 证据允许保留失败事实，但不能生成复跑动作。
@@ -102,12 +136,16 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
                 registry, action, observations.get(action.preObservationRef),
                 observations.get(action.postObservationRef))
             text_lookup = text_lookup is not None and row == text_lookup
+            extraction = native_extraction_coverage(
+                registry, action, observations.get(action.preObservationRef),
+                observations.get(action.postObservationRef))
+            extraction = extraction is not None and row == extraction
             dispatch = not_dispatched_coverage(trace, action)
             skipped = (row.exclusionRule == NOT_DISPATCHED_RULE and dispatch is not None
                        and row.evidenceRefs == dispatch.evidenceRefs)
             field_probe = failed_bat_field_read_probe(registry, action, row)
             wait_probe = failed_bat_wait_probe(registry, trace, action, row)
-            if (not done and not lookup and not failed_lookup and not text_lookup
+            if (not done and not lookup and not failed_lookup and not text_lookup and not extraction
                     and not skipped and not field_probe and not wait_probe):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'invalid_exclusion', 'reject_trace'))
         if row.disposition == 'supporting':

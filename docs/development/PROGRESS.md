@@ -7,18 +7,17 @@
 
 | 模块 | 状态 | 当前事实 |
 | --- | --- | --- |
-| [A 动作记录](replay-repair/A_ACTION_CONTEXT.md) | 进行中 | 受控正式入口已通过；实际任务页在首个浏览器动作前被模型 provider 的 `fetch failed` 阻塞 |
-| [B 定位与读取](replay-repair/B_DOM_TARGET_READ.md) | 未开始 | 等待 A 的实际页与变化状态验收 |
+| [A 动作记录](replay-repair/A_ACTION_CONTEXT.md) | 已通过 | 受控正式入口和真实 GitHub Issues 任务页均通过；来源业务结果及 judge 验证成功 |
+| [B 定位与读取](replay-repair/B_DOM_TARGET_READ.md) | 未开始 | A 已交付实际页动作和读取来源；当前编译仍诚实保留字段读取缺口 |
 | [C 交互执行](replay-repair/C_INTERACTION_ORDER.md) | 未开始 | 依赖 B 的稳定目标和字段读取 |
 | [D 显式 b-u 节点](replay-repair/D_EXPLICIT_BU_NODE.md) | 未开始 | 需要复用当前 Browser 会话、原生 Agent 与现有模型桥 |
 | [组合验收](replay-repair/E_INTEGRATION_ACCEPTANCE.md) | 未开始 | 依赖 A–D |
 
 A 的受控 Chromium 验收在一个 Browser 会话中覆盖 37 个动作、120 个真实 DOM 事件和 42 个业务副作用；
-dispatch/result、动作前后 observation 与保存加载均完成对账。该结果只证明受控边界，不代表实际任务页或完整链路通过。
-详细事实见 [A 验收记录](evidence/browser-replay-repair/A_ACCEPTANCE_CONFORMANCE.md)。
-
-实际任务页运行在 `browserCommands=0` 时因 provider 传输失败结束。账号连接和模型选择可读，现有证据不支持把原因归为
-账号失效；项目代码不得写入 TUN/VPN 绕行。见 [传输阻塞记录](evidence/browser-replay-repair/AI_CONNECT_TUN_TRANSPORT_BLOCKER.md)。
+dispatch/result、动作前后 observation 与保存加载均完成对账。真实 GitHub Issues 任务随后在同一个产品 Browser 会话内完成
+两页列表及第二页首条详情，`sourceSuccess=true`、`sourceValidated=true`，结束后测试 Chrome 进程数为 0。编译仍保留 10 个
+B/C/D 缺口，因此 A 通过不等于已有可冻结 TaskChain。详细事实见
+[A 验收记录](evidence/browser-replay-repair/A_ACCEPTANCE_CONFORMANCE.md)。
 
 ## 当前实现边界
 
@@ -38,5 +37,4 @@ dispatch/result、动作前后 observation 与保存加载均完成对账。该�
 
 ## 下一步
 
-先通过一次不启动浏览器的 provider 传输门，再完成实际任务页 A 和变化输入/状态 A。两项通过后按 B → C → D → 组合验收推进。
-每阶段只记录正式入口结果、模型/浏览器调用、失败边界和资源关闭状态。
+按 B → C → D → 组合验收推进。每阶段只记录正式入口结果、模型/浏览器调用、失败边界和资源关闭状态。

@@ -12,7 +12,7 @@
 - reused public surface: browser-use Browser、Agent、Tools、action schema、history、DOM/element 查询；
   workflow-use schema、executor、StepVerifier 和 Tenacity。
 - B-A-T-owned adapter and remaining gap: Requirement/TaskPlan 输入、证据规范化、TaskChain 物化、版本、审计和产品生命周期；
-  A 实际页仍受 provider 传输阻塞，B/C/D 与组合验收未完成。
+  A 的受控页和实际任务页已通过，B/C/D 与组合验收未完成。
 - license/runtime/platform fit: browser-use 为 MIT；workflow-use 为 AGPL-3.0。仓库保留许可证、固定 commit、archive digest、
   留存源码逐文件 digest 和本地变更 digest；来源校验以 LF 为规范字节，兼容 Windows checkout 的 CRLF。Windows 运行由当前 checkout 的正式验证决定。
 - browser/runtime/state ownership conflicts: 一个产品运行只占用一个 Browser 会话；借用节点不关闭外层会话；
@@ -31,7 +31,7 @@ fork 只保留 B-A-T 运行和主链回归需要的文件：生产 Python 包、
 首次探索可调用模型和浏览器；成功且业务结果完整后，程序依据 Requirement、TaskPlan、真实 trace 和 provenance 编译。
 固定输入与编译版本必须产生稳定 TaskChain。复跑只执行普通能力和显式声明的 LLM 节点，所有模型调用进入运行审计。
 
-选型尚未由完整业务验收冻结。A 实际页、B 的稳定读取、C 的异步顺序、D 的共享会话模型节点以及 E 的同链换输入仍须分别通过。
+选型尚未由完整业务验收冻结。A 已通过；B 的稳定读取、C 的异步顺序、D 的共享会话模型节点以及 E 的同链换输入仍须分别通过。
 
 ## 本地环境安装
 

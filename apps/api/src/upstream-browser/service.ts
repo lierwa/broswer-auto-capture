@@ -15,7 +15,8 @@ import { runnerAuthorRequestSchema, runnerAuthorResultSchema, runnerCloseRequest
   runnerReplayRequestSchema, runnerReplayResultSchema, runnerResponseSchema, runnerStartRequestSchema,
   type RunnerRequest } from "./protocol.js"
 import { hybridStartRequestSchema, type HybridRunnerRequest } from "./hybrid-protocol.js"
-import { withHybridAuthoring, recompileHybridSource, type HybridAuthorSession } from "./hybrid-exploration.js"
+import { withHybridAuthoring, recompileHybridSource, type HybridAuthoringProgress,
+  type HybridAuthorSession } from "./hybrid-exploration.js"
 
 export type UpstreamAuthorResult = ReturnType<typeof runnerAuthorResultSchema.parse> & { modelCalls: ModelCallReport[] }
 export type UpstreamReplayResult = ReturnType<typeof runnerReplayResultSchema.parse> & { modelCalls: ModelCallReport[] }
@@ -31,7 +32,8 @@ export interface UpstreamBrowserRuntime {
     work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T>
   withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean },
     work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T>
-  withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[] },
+  withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
+    onProgress?: (event: HybridAuthoringProgress) => void },
     work: (session: HybridAuthorSession) => Promise<T>): Promise<T>
 }
 
@@ -43,7 +45,8 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
     return recompileHybridSource({ ...input, root: this.options.root })
   }
 
-  withAuthoring<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[] },
+  withAuthoring<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
+    onProgress?: (event: HybridAuthoringProgress) => void },
     work: (session: HybridAuthorSession) => Promise<T>): Promise<T> {
     return withHybridAuthoring({ ...input, root: this.options.root, directory: this.options.directory,
       subject: this.options.subject }, work)
@@ -68,6 +71,7 @@ export class RunnerProcess {
   private readonly pending = new Map<string, { resolve(value: JsonValue): void; reject(error: Error): void }>()
   private lines: readline.Interface | null = null
   private diagnosticLines: readline.Interface | null = null
+  private termination: Promise<void> | null = null
   constructor(private readonly root: string, private readonly signal: AbortSignal,
     private readonly onDiagnostic?: (line: string) => void) {}
 
@@ -114,10 +118,9 @@ export class RunnerProcess {
     }
     child.once("error", (error) => this.rejectAll(error))
     child.once("close", (code) => this.rejectAll(new Error(`upstream_runner_closed:${code ?? "signal"}`)))
-    let forced: NodeJS.Timeout | undefined
-    const abort = () => { child.stdin?.end(); child.kill("SIGTERM"); forced = setTimeout(() => child.kill("SIGKILL"), 5_000); forced.unref() }
+    const abort = () => { child.stdin?.end(); void this.terminate(child) }
     this.signal.addEventListener("abort", abort, { once: true })
-    child.once("close", () => { if (forced) clearTimeout(forced); this.signal.removeEventListener("abort", abort) })
+    child.once("close", () => this.signal.removeEventListener("abort", abort))
   }
 
   async author(input: Omit<ReturnType<typeof runnerAuthorRequestSchema.parse>, "id" | "type">) {
@@ -139,16 +142,20 @@ export class RunnerProcess {
     }
     child.stdin?.end()
     if (child.exitCode === null && child.signalCode === null) {
-      await new Promise<void>((resolve) => {
-        const terminate = setTimeout(() => child.kill("SIGTERM"), 5_000)
-        const forced = setTimeout(() => child.kill("SIGKILL"), 10_000)
-        child.once("close", () => { clearTimeout(terminate); clearTimeout(forced); resolve() })
+      if (this.signal.aborted) await this.terminate(child)
+      else await new Promise<void>((resolve) => {
+        const terminate = setTimeout(() => { void this.terminate(child).finally(resolve) }, 5_000)
+        child.once("close", () => { clearTimeout(terminate); resolve() })
       })
     }
     this.lines?.close(); this.diagnosticLines?.close(); this.child = null
     this.lines = null; this.diagnosticLines = null
-    if (child.exitCode !== 0) throw new Error(`upstream_cleanup_unconfirmed:${child.exitCode ?? child.signalCode}`)
+    if (child.exitCode !== 0 && !this.signal.aborted) throw new Error(`upstream_cleanup_unconfirmed:${child.exitCode ?? child.signalCode}`)
     if (this.temporaryDirectory) { await rm(this.temporaryDirectory, { recursive: true, force: true }); this.temporaryDirectory = null }
+  }
+
+  private terminate(child: ChildProcess) {
+    return this.termination ??= terminateProcessTree(child)
   }
 
   request(request: RunnerRequest | HybridRunnerRequest): Promise<JsonValue> {
@@ -172,6 +179,25 @@ export class RunnerProcess {
     else pending.reject(new Error(response.data.code + (response.data.reason ? ":" + response.data.reason : "")))
   }
   private rejectAll(error: Error) { for (const pending of this.pending.values()) pending.reject(error); this.pending.clear() }
+}
+
+async function terminateProcessTree(child: ChildProcess) {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  if (process.platform === "win32" && child.pid) {
+    // WHY：Windows 的 child.kill 不会终止 Chrome 子树；取消 authoring 时必须按精确 runner PID
+    // 回收它创建的浏览器，不能遗留 tab/profile，也不能误杀用户自己的 Chrome。
+    await new Promise<void>((resolve) => {
+      const killer = spawn("taskkill.exe", ["/pid", String(child.pid), "/T", "/F"],
+        { stdio: "ignore", windowsHide: true })
+      killer.once("error", () => resolve())
+      killer.once("close", () => resolve())
+    })
+  } else child.kill("SIGTERM")
+  if (child.exitCode !== null || child.signalCode !== null) return
+  await new Promise<void>((resolve) => {
+    const forced = setTimeout(() => { child.kill("SIGKILL"); resolve() }, 5_000)
+    child.once("close", () => { clearTimeout(forced); resolve() })
+  })
 }
 
 export function modelReport(audit: ModelAudit, model: string, intendedAtByRequest: Map<string, string>): ModelCallReport {

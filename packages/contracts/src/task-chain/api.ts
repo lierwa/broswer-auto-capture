@@ -16,6 +16,61 @@ export const authoringAuditSchema = z.object({
   escalations: z.array(z.object({ model: textSchema, effort: textSchema, reason: textSchema }).strict()).default([]),
 }).strict()
 
+export const authoringProgressEventSchema = z.object({
+  sequence: z.number().int().positive(),
+  source: z.enum(["browser", "model"]),
+  phase: z.enum(["author", "before_action", "after_step", "dispatch", "model"]),
+  status: z.enum(["started", "completed", "failed", "cancelled"]),
+  occurredAt: z.string().datetime(),
+  actionName: textSchema.optional(), stepNumber: z.number().int().nonnegative().optional(),
+  selector: z.string().min(1).max(2000).optional(),
+  queryOutcome: z.enum(["matched", "no_match", "invalid_selector", "error", "unavailable"]).optional(),
+  matchCount: z.number().int().nonnegative().optional(),
+  contextOutcome: z.enum(["enriched", "failed"]).optional(),
+  contextCount: z.number().int().nonnegative().max(20).optional(),
+  outputPath: z.array(z.union([z.string().min(1).max(2000), z.number().int().nonnegative()])).max(32).optional(),
+  container: z.string().min(1).max(2000).optional(),
+  readOutcome: z.enum(["succeeded", "failed", "unavailable"]).optional(),
+  readError: z.string().min(1).max(2000).optional(),
+  callId: identitySchema.optional(), purpose: z.enum(["agent", "judge", "extract", "semantic_annotation"]).optional(),
+}).strict().superRefine((event, context) => {
+  if ((event.actionName === undefined) !== (event.stepNumber === undefined)) {
+    context.addIssue({ code: "custom", message: "action metadata must be complete" })
+  }
+  if (event.source === "browser" && (event.phase === "model" || event.callId || event.purpose)) {
+    context.addIssue({ code: "custom", message: "browser progress contains model metadata" })
+  }
+  if ((event.selector !== undefined || event.queryOutcome !== undefined || event.matchCount !== undefined
+    || event.contextOutcome !== undefined || event.contextCount !== undefined)
+    && event.actionName !== "find_elements") {
+    context.addIssue({ code: "custom", message: "query metadata belongs to find_elements" })
+  }
+  if (event.contextCount !== undefined && event.contextOutcome !== "enriched") {
+    context.addIssue({ code: "custom", message: "context count requires enriched outcome" })
+  }
+  if ((event.outputPath !== undefined || event.container !== undefined || event.readOutcome !== undefined
+    || event.readError !== undefined) && event.actionName !== "bat_read_fields") {
+    context.addIssue({ code: "custom", message: "read metadata belongs to bat_read_fields" })
+  }
+  if (event.readError !== undefined && event.readOutcome !== "failed") {
+    context.addIssue({ code: "custom", message: "read error requires failed outcome" })
+  }
+  if (event.queryOutcome === "no_match" && event.matchCount !== 0
+    || event.queryOutcome === "matched" && (!event.matchCount || event.matchCount < 1)) {
+    context.addIssue({ code: "custom", message: "query outcome and match count disagree" })
+  }
+  if (event.source === "model" && (event.phase !== "model" || !event.callId || !event.purpose
+    || event.actionName !== undefined || event.stepNumber !== undefined)) {
+    context.addIssue({ code: "custom", message: "model progress metadata is incomplete" })
+  }
+})
+
+export const authoringProgressSchema = z.object({
+  // WHY：只保留有界尾部，既让轮询不会漏掉瞬时阶段，也避免长探索无限放大 job 行。
+  events: z.array(authoringProgressEventSchema).max(50),
+  actionsStarted: z.number().int().nonnegative(), modelCallsStarted: z.number().int().nonnegative(),
+}).strict()
+
 export const taskAuthoringJobSchema = z.object({
   id: identitySchema, taskId: taskIdentitySchema, type: z.enum(["plan", "chain"]), key: textSchema,
   status: z.enum(["queued", "running", "waiting_for_human", "completed", "failed", "interrupted"]), sequence: z.number().int().nonnegative(),
@@ -28,6 +83,7 @@ export const taskAuthoringJobSchema = z.object({
     exploration: jsonValueSchema.nullable(), annotations: jsonValueSchema.nullable(),
     compiledChain: versionReferenceSchema.optional(),
     compiledChains: z.array(versionReferenceSchema).optional(),
+    progress: authoringProgressSchema.optional(),
     consumption: z.object({ explorationToolCalls: z.number().int().nonnegative(), explorationSessions: z.number().int().nonnegative(),
       compilationCalls: z.number().int().nonnegative(), providerInvocations: z.number().int().nonnegative().nullable() }).strict(),
   }).strict().optional(),
@@ -96,6 +152,8 @@ export const taskChainCommandSchema = z.discriminatedUnion("type", [
 ])
 
 export type AuthoringAudit = z.infer<typeof authoringAuditSchema>
+export type AuthoringProgressEvent = z.infer<typeof authoringProgressEventSchema>
+export type AuthoringProgress = z.infer<typeof authoringProgressSchema>
 export type TaskAuthoringJob = z.infer<typeof taskAuthoringJobSchema>
 export type TaskExecutionStep = z.infer<typeof taskExecutionStepSchema>
 export type TaskExecution = z.infer<typeof taskExecutionSchema>

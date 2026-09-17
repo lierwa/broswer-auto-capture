@@ -10,9 +10,10 @@ import { z } from "zod"
 import { validateHybridRequestSources, validateHybridResponse } from "./hybrid-materializer.js"
 import { jsonValueSchema } from "@browser-capture/contracts"
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
-import { SourceLifecycleDiagnostics } from "./source-lifecycle-diagnostics.js"
+import { SourceLifecycleDiagnostics, type SourceLifecycleProgress } from "./source-lifecycle-diagnostics.js"
 
 export type HybridSourceResult = z.infer<typeof hybridAuthorResultSchema> & { modelCalls: ModelCallReport[]; forkSourceDigest: string }
+export type HybridAuthoringProgress = SourceLifecycleProgress
 export interface HybridAuthorSession {
   author(source: z.infer<typeof hybridAuthorSourceSchema>): Promise<HybridSourceResult>
 }
@@ -45,13 +46,14 @@ export async function recompileHybridSource(input: Omit<z.infer<typeof hybridCom
 
 /** WHY：浏览器与模型桥共同退出后才返回来源；候选写入者不在仍打开的会话中冒充 closed。 */
 export async function withHybridAuthoring<T>(input: { root: string; subject: ReturnType<AI["forSubject"]>;
-  selection: ModelSelection; signal: AbortSignal; allowedOrigins: string[] }
+  selection: ModelSelection; signal: AbortSignal; allowedOrigins: string[];
+  onProgress?: (event: HybridAuthoringProgress) => void }
   & ({ directory: string; ownerId: string } | { directory?: never; ownerId?: never }),
   work: (session: HybridAuthorSession) => Promise<T>) {
   const fork = await verifyForkSource(input.root)
   const reports: ModelCallReport[] = [], intended = new Map<string, string>()
   const diagnostics = input.directory && input.ownerId
-    ? SourceLifecycleDiagnostics.open(input.directory, input.ownerId) : undefined
+    ? SourceLifecycleDiagnostics.open(input.directory, input.ownerId, input.onProgress) : undefined
   let bridge: Awaited<ReturnType<typeof openModelBridge>>
   try {
     bridge = await openModelBridge({ ...input, allowedPurposes: ["agent", "judge", "extract", "semantic_annotation"],

@@ -16,8 +16,8 @@ class FieldReadToolParams(Contract):
     outputPath: list[str | int] = Field(description=(
         'Real final location inside the confirmed output contract, not an arbitrary temporary variable.'))
     container: str = Field(min_length=1, max_length=2000, description=(
-        'CSS selector for the scoped record container. Its matched count must fit the contract maxItems; '
-        'excess matches fail instead of being truncated.'))
+        'CSS selector for the ordered record collection. When it matches more records than the output contract '
+        'maxItems, the DOM-order prefix is selected deterministically.'))
     fields: dict[str, FieldReadSelector] = Field(min_length=1, max_length=100, description=(
         'Object and object-array targets require every required contract field; scalar and scalar-array '
         'targets use the single field name value. Each field contains selector and optional attribute.'))

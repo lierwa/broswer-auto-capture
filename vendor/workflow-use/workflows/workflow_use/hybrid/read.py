@@ -100,9 +100,9 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None):
         # WHY：公开集合查询只证明容器无法定位，不能把 CDP 的泛化错误猜成 CSS 语法错误。
         raise FieldReadError('read_container_resolution_failed', field_name='container',
                              reason='container_not_resolved') from error
-    if len(elements) > specification.maxItems:
-        raise FieldReadError('read_item_limit', field_name='container', match_count=len(elements),
-                             reason='exceeded_contract_max_items')
+    # WHY：列表容器应描述完整稳定集合；输出合同的 maxItems 负责确定性选择 DOM 顺序前缀，
+    # 不应把“前 N 条”再次推给模型编码成依赖页面包装层的 nth-child selector。
+    elements = elements[:specification.maxItems]
     output, consumed, native_context = [], 0, {}
     for element in elements:
         fragments = await project_fields(browser, element, specification.fields, native_context)

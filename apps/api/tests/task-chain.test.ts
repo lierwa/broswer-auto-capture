@@ -27,6 +27,12 @@ async function harness() {
     log.sessions++
     try { return await work({ async author(source) {
       log.tasks.push(source.task); log.inputs.push(source.input)
+      const occurredAt = "2026-09-16T00:00:00.000Z", callId = randomUUID()
+      _input.onProgress?.({ source: "browser", phase: "author", status: "started", occurredAt })
+      _input.onProgress?.({ source: "model", phase: "model", status: "started", occurredAt,
+        callId, purpose: "agent" })
+      _input.onProgress?.({ source: "browser", phase: "dispatch", status: "started", occurredAt,
+        actionName: "navigate", stepNumber: 1 })
       const result = hybridFixture("nested", source)
       return { output: null, request: result.request, response: result.response,
         history: { localRef: result.request.trace.source.historyRef, digest: result.request.trace.digest },
@@ -73,6 +79,21 @@ test("完整确认需求和嵌套输入进入原生来源适配，正式 author_
     assert.equal(chain.validation.evidence[0]?.passed, true)
     assert.equal(h.repository.runs(h.taskId)[0]?.consumed.llmCalls, 0)
     assert.equal(h.log.sessions, h.log.closed)
+  } finally { await h.close() }
+})
+
+test("探索生命周期进度逐事件持久化并递增 job 序列", async () => {
+  const h = await harness()
+  try {
+    h.author()
+    await waitFor(() => (h.repository.jobs(h.taskId)[0]?.authoring?.progress?.events.length ?? 0) === 3, 5000)
+    const job = h.repository.jobs(h.taskId)[0]!
+    assert.equal(job.authoring?.progress?.actionsStarted, 1)
+    assert.equal(job.authoring?.progress?.modelCallsStarted, 1)
+    const sequences = job.authoring?.progress?.events.map((event) => event.sequence) ?? []
+    assert.equal(sequences.length, 3)
+    assert.ok(sequences.every((sequence, index) => index === 0 || sequence > sequences[index - 1]!))
+    await h.settled()
   } finally { await h.close() }
 })
 
