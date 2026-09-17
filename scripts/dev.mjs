@@ -20,8 +20,9 @@ export async function ensureDevPortsAvailable(options) {
   const initial = await inspect(options.ports)
   if (!initial.length) return
   options.onConflict?.(initial)
-  if (!options.interactive) throw new DevStartError("开发端口已被占用；非交互模式不会停止现有进程，也没有启动新服务。")
-  if (!await options.confirm(initial)) throw new DevStartError("已保留现有进程，没有启动新服务。")
+  const owned = options.canRestart?.(initial) === true
+  if (!owned && !options.interactive) throw new DevStartError("开发端口已被占用；非交互模式不会停止现有进程，也没有启动新服务。")
+  if (!owned && !await options.confirm(initial)) throw new DevStartError("已保留现有进程，没有启动新服务。")
 
   const current = await inspect(options.ports)
   assertOwnersUnchanged(initial, current)
@@ -34,7 +35,9 @@ export async function ensureDevPortsAvailable(options) {
 export async function launchDevServices({ root, ports, dataDirectory, outputStream = process.stdout, applicationOptions = {} }) {
   const directory = path.resolve(dataDirectory ?? process.env.BROWSER_CAPTURE_DATA_DIRECTORY
     ?? process.env.BROWSER_CAPTURE_INTERVIEW_DATA_DIRECTORY ?? path.join(root, "data"))
-  const application = await createApplication({ ...applicationOptions, root, directory, serveUi: false })
+  const developmentIdentity = { pid: process.pid, root, stop: undefined }
+  const application = await createApplication({ ...applicationOptions, root, directory, serveUi: false,
+    developmentIdentity })
   let vite
   let webServer
   try {
@@ -64,7 +67,7 @@ export async function launchDevServices({ root, ports, dataDirectory, outputStre
   let settle
   const result = new Promise((resolve, reject) => { settle = { resolve, reject } })
   let stopping = false
-  return {
+  const running = {
     result,
     async stop() {
       if (stopping) return result
@@ -73,6 +76,8 @@ export async function launchDevServices({ root, ports, dataDirectory, outputStre
       catch (error) { settle.reject(error); throw error }
     },
   }
+  developmentIdentity.stop = () => { void running.stop() }
+  return running
 }
 
 function listen(server, port) {
@@ -101,12 +106,36 @@ async function closeServices({ vite, webServer, app }) {
 export async function inspectDevPorts(ports, dependencies = {}) {
   const listenerPids = dependencies.listenerPids ?? tcpListenerPids
   const finder = dependencies.finder ?? findProcess
+  const development = dependencies.root
+    ? await (dependencies.developmentIdentity ?? readDevelopmentIdentity)(ports.api) : undefined
   const requested = [{ role: "Workbench", port: ports.web }, { role: "API", port: ports.api }]
   const groups = await Promise.all(requested.map(async ({ role, port }) => {
     const pids = await listenerPids(port)
-    return Promise.all(pids.map(async (pid) => normalizeOwner(role, port, await findPid(pid, finder))))
+    return Promise.all(pids.map(async (pid) => normalizeOwner(role, port, await findPid(pid, finder),
+      development?.pid === pid && sameDirectory(development.root, dependencies.root) ? dependencies.root : undefined)))
   }))
   return groups.flat()
+}
+
+async function readDevelopmentIdentity(port) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(500) })
+    if (!response.ok) return undefined
+    const value = await response.json()
+    const development = value?.service === "browser-capture-api" ? value.development : undefined
+    return Number.isSafeInteger(development?.pid) && development.pid > 1 && typeof development.root === "string"
+      ? development : undefined
+  } catch { return undefined }
+}
+
+async function requestDevelopmentShutdown(port, pid, root) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/dev/shutdown`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pid, root }), signal: AbortSignal.timeout(1_000),
+    })
+    return response.ok
+  } catch { return false }
 }
 
 async function tcpListenerPids(port) {
@@ -145,11 +174,11 @@ async function findPid(pid, finder) {
   return exact
 }
 
-function normalizeOwner(role, port, info) {
+function normalizeOwner(role, port, info, trustedDirectory) {
   const pid = Number(info.pid)
   const name = typeof info.name === "string" ? info.name.trim() : ""
   const command = typeof info.cmd === "string" ? info.cmd.trim() : ""
-  const directory = inferEntryDirectory(command, info.bin)
+  const directory = inferEntryDirectory(command, info.bin) ?? trustedDirectory
   if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid || !name || !command || !directory) {
     throw new DevStartError(`端口 ${port} 的占用进程身份不完整；为避免误停，已停止启动。`)
   }
@@ -205,6 +234,10 @@ async function waitForRelease(confirmed, ports, inspect) {
 }
 
 function identity(owner) { return `${owner.port}\0${owner.pid}\0${owner.ppid}\0${owner.name}\0${owner.command}\0${owner.directory}` }
+function sameDirectory(left, right) {
+  const normalize = (value) => path.resolve(value).replaceAll("\\", "/").toLowerCase()
+  return typeof left === "string" && typeof right === "string" && normalize(left) === normalize(right)
+}
 function terminateProcess(pid) { process.kill(pid, "SIGTERM") }
 function delay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)) }
 
@@ -246,8 +279,13 @@ async function main() {
   const ports = selectedPorts()
   await ensureDevPortsAvailable({
     ports,
+    inspect: (selected) => inspectDevPorts(selected, { root }),
     interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    canRestart: (owners) => owners.every((owner) => sameDirectory(owner.directory, root)),
     confirm: askForRestart,
+    terminate: async (pid) => {
+      if (!await requestDevelopmentShutdown(ports.api, pid, root)) terminateProcess(pid)
+    },
     onConflict: showConflicts,
     onStopping: (owners) => process.stderr.write(`正在停止已确认的 PID：${[...new Set(owners.map((owner) => owner.pid))].join(", ")}\n`),
   })

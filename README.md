@@ -47,14 +47,23 @@ B-A-T 把自然语言浏览器任务编译为参数化、版本化、可验证�
 
 ## 启动本地工作台（F1）
 
-项目要求 Node.js 24+ 与 npm 11+。使用 nvm 时以仓库的 `.nvmrc` 选择 Node 24：
+项目要求 Node.js 24+ 与 npm 11+。使用 nvm 时以仓库的 `.nvmrc` 选择 Node 24。首次 checkout 执行：
 
 ```powershell
 nvm install 24
 nvm use 24
-npm ci
+npm run setup
 npm run dev
 ```
+
+`npm run setup` 是完整依赖安装入口：先按根 `package-lock.json` 执行 `npm ci`，再把固定版本的 uv
+安装到 Git 忽略的 `work/tools/uv`，由 uv 准备项目专用 Python 3.12 和
+`work/upstream-browser-hybrid/.venv`，最后核验 browser-use、workflow-use、cdp-use、MCP 和 Tenacity 版本及 fork 来源。
+首次安装需要访问 npm、Astral/GitHub 和 Python 包源；不会修改用户的 PowerShell Profile 或全局 PATH。
+如果 Windows PowerShell 的执行策略拦截 `npm.ps1`，使用 `npm.cmd run setup` 执行同一个脚本。
+
+依赖已经安装后可执行 `npm run setup:check` 做离线式完整性检查。只需要重新同步 Python runner 时执行
+`npm run upstream:setup`；只修改前端/API 的 Node 依赖时仍可直接使用 `npm install`。
 
 打开 [本机工作台](http://127.0.0.1:4173/)。根目录一条命令同时启动 Vite 页面与 Fastify API（4175），无需预先构建；按 Ctrl+C 停止两者，一方退出时另一方也会停止。新建不调用模型，发送消息使用工作台保存的默认聊天模型和推理深度。数据库保存在忽略的 `data/workbench.sqlite`，任务、消息、轮次、问题、明确决策、草稿、确认及调用审计在同一事务内保存。
 

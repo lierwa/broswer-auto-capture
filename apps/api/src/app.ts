@@ -23,7 +23,8 @@ import { PythonUpstreamBrowserRuntime, type UpstreamBrowserRuntime } from "./ups
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
 export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider;
   taskChainCapabilities?: RuntimeCapabilityFactory; browserExecutor?: CommandExecutor; serveUi?: boolean;
-  originAccessGate?: OriginAccessGate; upstreamBrowserRuntime?: UpstreamBrowserRuntime }
+  originAccessGate?: OriginAccessGate; upstreamBrowserRuntime?: UpstreamBrowserRuntime;
+  developmentIdentity?: { pid: number; root: string; stop?: () => void } }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
@@ -67,7 +68,7 @@ export async function createApplication(options: AppOptions) {
     const status = publicStatus(error)
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
-  routes(app, coordinator, browser, taskChain, store, ai)
+  routes(app, coordinator, browser, taskChain, store, ai, options.developmentIdentity)
   await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
   app.addHook("preClose", async () => { await taskChain.close(); await browser.close(); await coordinator.close() })
   app.addHook("onClose", async () => { ai.close(); await store.close() })
@@ -89,8 +90,19 @@ function publicStatus(error: unknown) {
 }
 const taskQuery = z.object({ taskId: taskIdSchema })
 const eventsQuery = taskQuery.extend({ after: z.coerce.number().int().min(-1).default(-1) })
-function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, taskChain: TaskChainService, store: ProductStore, ai: AI) {
-  app.get("/api/health", () => ({ service: "browser-capture-api", version: 1 }))
+function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService, taskChain: TaskChainService, store: ProductStore, ai: AI,
+  developmentIdentity?: { pid: number; root: string; stop?: () => void }) {
+  app.get("/api/health", () => ({ service: "browser-capture-api", version: 1,
+    ...(developmentIdentity ? { development: { pid: developmentIdentity.pid, root: developmentIdentity.root } } : {}) }))
+  if (developmentIdentity) app.post("/api/dev/shutdown", (request) => {
+    const command = developmentShutdownSchema.parse(request.body)
+    if (command.pid !== developmentIdentity.pid || !samePath(command.root, developmentIdentity.root)) {
+      throw new DomainError("development_instance_changed", "开发服务身份已变化，拒绝停止。", 409)
+    }
+    const timer = setTimeout(() => developmentIdentity.stop?.(), 25)
+    timer.unref()
+    return { stopping: true }
+  })
   app.get("/api/model-settings", () => ({ selection: store.sharedModelSelection(SHARED_AI_SUBJECT) ?? null }))
   app.put("/api/model-settings", async (request) => {
     const body = modelSettingsBody.parse(request.body)
@@ -137,12 +149,17 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
   })
 }
 const modelSettingsBody = z.object({ selection: z.unknown() }).strict()
+const developmentShutdownSchema = z.object({ pid: z.number().int().positive(), root: z.string().min(1) }).strict()
 const legacyQuery = taskQuery.extend({ source: z.enum(["plans", "chains", "executions"]), id: z.string().min(1) })
 const artifactQuery = taskQuery.extend({ artifactId: z.string().uuid() })
 function sensitiveAIPath(method: string, url: string) {
   const pathName = url.split("?", 1)[0]
   return pathName === "/api/model-settings" || pathName === "/api/ai" || pathName?.startsWith("/api/ai/")
     || method === "POST" && pathName === "/api/task-chain"
+}
+function samePath(left: string, right: string) {
+  const normalize = (value: string) => path.resolve(value).replaceAll("\\", "/").toLowerCase()
+  return normalize(left) === normalize(right)
 }
 function stream(reply: FastifyReply, coordinator: InterviewCoordinator, id: string, after: number) {
   const controller = new AbortController()

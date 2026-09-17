@@ -23,9 +23,9 @@ supersedes: ADR 0004 中 workflow-use 直接接入、v1 workflow artifact 可执
 
 ### 1. 以干净上游为受管 fork 基线
 
-将 workflow-use commit `5d2d19fe8835cc86f1bf3e04302a5000d590f249` 的固定源码导入 `vendor/workflow-use/`，保留 AGPL-3.0 LICENSE、来源、commit、导入日期、原始 digest 和 B-A-T change log。
+将 workflow-use commit `5d2d19fe8835cc86f1bf3e04302a5000d590f249` 的运行源码子集导入 `vendor/workflow-use/`，保留 AGPL-3.0 LICENSE、来源、commit、导入日期、完整 archive digest、留存文件 digest 和 B-A-T change log。
 
-导入基线必须与上游一致，不包含 0001–0012。现有 patch 栈只作为诊断证据；有价值的行为必须依据新合同和通用不变量重新准入，不能复制补丁实现作为起点。
+留存的基线文件必须与上游一致，不包含 0001–0012。上游 UI、扩展、示例、CI、开发测试和样本 storage 不进入产品 checkout；有价值的行为必须依据新合同和通用不变量重新准入，不能复制旧补丁实现作为起点。
 
 fork 只承担 history 证据规范化和混合编译。它不复制 browser-use 浏览器驱动/Agent loop，不实现第二个 LangGraph、scheduler、checkpoint store 或产品数据库。
 
@@ -121,7 +121,7 @@ Reuse Assessment:
 
 - 开发顺序变为：证据/处置 → 旧执行退休 → 干净 fork → normalize/coverage → 混合分类 → TaskChain 物化 → 原子产品切换 → 一次真实验收。
 - 旧 `application/vnd.bat.workflow-use+json;version=1` 不再是可执行产品合同。
-- 0001–0012 不再由 setup 应用；它们在完成证据迁移前保留在 dirty 工作区。
+- 0001–0012 不再由 setup 应用；证据迁移完成后已从 checkout 删除。
 - 新编译器会诚实地产生 gap，因此并非每条成功 history 都能生成 candidate。
 - AGPL 分发、Windows 兼容和完整 UI 仍是后续独立决策，不影响先证明转换核心。
 
@@ -140,6 +140,6 @@ Reuse Assessment:
 
 ## 规范性文件
 
-- [编译合同、算法、正反例和验收](../development/WORKFLOW_USE_HYBRID_CONVERSION_SPEC.md)
-- [旧代码、补丁、数据和切换处置](../development/WORKFLOW_USE_LEGACY_DISPOSITION.md)
-- [分阶段开发与通过门](../development/WORKFLOW_USE_HYBRID_COMPILER_PLAN.md)
+- [自然语言浏览器任务链路架构基准](../development/TASK_CHAIN_ARCHITECTURE.md)
+- [浏览器任务链开发方案](../development/BROWSER_REPLAY_DEVELOPMENT_REPAIR_20260917.md)
+- [当前路线与通过门](../development/ROADMAP.md)

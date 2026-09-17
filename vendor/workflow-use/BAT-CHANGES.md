@@ -1,25 +1,25 @@
 # B-A-T fork changes
 
-2026-09-16: pristine baseline imported. No upstream file modified; no 0001–0012 applied. UPSTREAM.json records the archive and every imported file digest. Runtime integration is gated by H2 reuse assessment.
+基线为 workflow-use commit `5d2d19fe8835cc86f1bf3e04302a5000d590f249`。仓库保留 AGPL-3.0
+许可证、上游 archive SHA256、留存基线文件 digest 和本地变更 digest。
 
-## 2026-09-16 executor contract repair
+当前 checkout 只保留 B-A-T 运行所需的源码子集：
 
-- Modified `workflows/workflow_use/workflow/semantic_executor.py`: dispatch PageExtractionStep through the existing ExtractStep handler without losing metadata; reject unavailable ordinals and prevent selector/text fallbacks from changing the selected target. Positional clicks reuse the existing browser-use Element API and require one resolved element. No-position behavior is retained.
-- Added `workflows/tests/test_executor_contract.py`: 7 focused tests, actual fork imports, in-memory Browser/Element ports, no real browser/model. Red reproduced unsupported extraction and first-item fallback; green passes.
-- UPSTREAM.json remains the immutable 188-file import baseline. LOCAL-CHANGES.json records modified/added Python source digests separately. No historical patch stack applied; b-u and host runtime unchanged in this repair.
+- `workflows/workflow_use/` 生产包及其运行提示词；
+- `workflows/pyproject.toml`、`uv.lock` 和包 README；
+- `verify-source.mjs`、`UPSTREAM.json`、`LOCAL-CHANGES.json`；
+- 主链测试生成 fixture 所需的 `hybrid_fixture.py` 与 `test_hybrid_compiler.py`。
 
-## 2026-09-16 hybrid compiler development (not frozen)
+来源摘要以 LF 规范化后的文本字节计算，使同一固定源码在 Windows CRLF checkout 与其他平台得到一致结果。
 
-- Added `workflow_use/hybrid`: public-schema registry, history/observation capture, coverage, authority bindings, bounded semantic values, field reads, control compilation, canonical response. No driver, Agent loop, scheduler or checkpoint database.
-- Reused `Tools.act`, public Page/Element reads, ElementFinder matching, BeautifulSoup and StepVerifier. StepVerifier has a declared-check extension requiring every check to pass; unsupported old permissive checks are not selected by hybrid.
-- Added focused tests for source integrity, missing evidence, intent separation, bounded loops/LLM, capture, and an opt-in real local Browser fixture.
-- Source verification uses original UPSTREAM.json plus LOCAL-CHANGES.json. Two original modules are modified; 186 original files retain baseline bytes.
-- Added declared asynchronous completion via the frozen Tenacity 9.1.2 dependency. Only fact checks retry; browser side effects execute once. Pure source waits require bounded causal evidence and remain uniquely owned.
-- Native extraction accepts the pinned public structured metadata or exact URL/query/result envelope, then requires equality with independent field reads. Object results require exactly one declared container.
-- Source-backed clause loops, pure input branches, verified linear once child calls, typed output assembly, native authoring and v2 product artifacts are connected. Source normalization/annotation gaps are preserved; later-step/cleanup failure saves obtained sources without creating candidates.
-- Real local Chrome: asynchronous two-field form sample/different-input/disabled branch; native structured extraction and changed-page field results; readonly recovery, changed-page rejection and cancellation. Provider responses in source tests are scripted, not H7 provider/business acceptance.
-- H4/H5/H6 remain in development: complete scroll/cross-tab/nested control shapes, ordinary Markdown control confirmation remain open; H7 has not started.
+未保留上游扩展、独立 UI、示例、CI、开发测试、样本 storage 和重复文档。它们不由 B-A-T setup、
+运行时、来源编译或主链测试消费。
 
-- Added offline recompilation through the same current Tools registry, with exact source/schema/registry gates and no Agent, Browser or model. Formal failed-compilation retry reuses complete closed sources and preserves original audit.
-- Bounded repeated field values use the existing reader; unchanged scalar specifications keep identical canonical serialization. Prior-output bindings require independently proved values and can name output clauses before source action IDs exist.
-- Explicit changed completion captures this replay's declared pre-state before acting. Missing baseline prevents action; unchanged facts reject. Bounded waits use declared completion facts whether completion occurs before or after the action returns; unbounded waits retain the stricter unchanged-document rule. Real local asynchronous form with different titles passes both inputs, four commands and zero replay model calls each.
+本地生产变更包括：
+
+- 修复 semantic executor 的 page extraction 分派和显式 ordinal 边界；
+- 扩展 StepVerifier 的声明式检查；
+- 增加 `workflow_use.hybrid`，负责动作证据规范化、来源编译、字段读取、条件核验和有界显式语义区段；
+- 由 B-A-T 宿主继续持有 TaskChain 物化、LangGraph 运行、持久化、恢复和模型审计。
+
+普通复跑节点不调用模型。只有显式 LLM 区段可调用模型；首次探索、修复和运行时调用分别记账。

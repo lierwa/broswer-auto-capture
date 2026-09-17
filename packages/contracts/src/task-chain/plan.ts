@@ -11,7 +11,8 @@ const taskPlanBatchAggregateSchema = z.object({
 }).strict()
 const taskPlanInvocationSchema = z.union([invocationModeSchema, z.object({ mode: z.literal("batch"),
   collection: valueBindingSchema, itemVariable: keySchema, stableKeyPath: valuePathSchema,
-  maxItems: z.number().int().positive(), aggregates: z.array(taskPlanBatchAggregateSchema).min(1) }).strict()])
+  // WHY：同一协议版本的早期 batch 记录没有 aggregates；读取时补空数组以保留导出能力，执行门仍会拒绝复跑。
+  maxItems: z.number().int().positive(), aggregates: z.array(taskPlanBatchAggregateSchema).default([]) }).strict()])
 
 export const taskPlanStepSchema = z.object({
   id: keySchema, title: textSchema, goal: textSchema, dependsOn: z.array(keySchema),
@@ -108,6 +109,9 @@ export type TaskPlanStep = z.infer<typeof taskPlanStepSchema>
 export function taskPlanExecutionIssues(raw: unknown): string[] {
   const plan = taskPlanSchema.parse(raw), outputs = new Map<string, ValueSchema>(), issues: string[] = []
   for (const step of plan.steps) {
+    if (step.invocation.mode === "batch" && step.invocation.aggregates.length === 0) {
+      issues.push("plan_batch_aggregate_required")
+    }
     const collection = step.invocation.mode !== "once"
       ? bindingSchema(step.invocation.collection, plan.inputContract.schema, outputs, new Map()) : undefined
     const variables = step.invocation.mode === "each" && collection?.type === "array"

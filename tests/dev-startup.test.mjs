@@ -24,6 +24,32 @@ test("non-interactive port conflict refuses without stopping the owner", async (
   }
 })
 
+test("non-interactive startup restarts a verified instance from this checkout", async () => {
+  const owner = { role: "Workbench", port: 4173, pid: 8001, ppid: 8000, name: "node",
+    command: "node --import tsx scripts/dev.mjs", directory: root }
+  let inspections = 0
+  const terminated = []
+  await ensureDevPortsAvailable({
+    ports: { web: 4173, api: 4175 }, interactive: false,
+    inspect: async () => ++inspections <= 2 ? [owner] : [],
+    canRestart: (owners) => owners.every((item) => item.directory === root),
+    terminate: async (pid) => { terminated.push(pid) },
+  })
+  assert.deepEqual(terminated, [owner.pid])
+})
+
+test("dev health identity resolves a relative entry command to this checkout", async () => {
+  const pid = 8001
+  const owners = await inspectDevPorts({ web: 4173, api: 4175 }, {
+    root,
+    listenerPids: async () => [pid],
+    finder: async () => [{ pid, ppid: 8000, name: "node", cmd: "node --import tsx scripts/dev.mjs", bin: process.execPath }],
+    developmentIdentity: async () => ({ pid, root }),
+  })
+  assert.equal(owners.length, 2)
+  assert.ok(owners.every((owner) => owner.directory === root))
+})
+
 test("UDP-only ownership of the same port is not treated as a TCP listener", async () => {
   const socket = createSocket("udp4")
   await new Promise((resolve, reject) => { socket.once("error", reject); socket.bind(0, "127.0.0.1", resolve) })
@@ -140,7 +166,9 @@ test("free ports start the API and Workbench with the proxy bound to this API", 
   try {
     await waitForHttp(`http://127.0.0.1:${ports.api}/api/health`)
     const throughWorkbench = await waitForHttp(`http://127.0.0.1:${ports.web}/api/health`)
-    assert.deepEqual(await throughWorkbench.json(), { service: "browser-capture-api", version: 1 })
+    assert.deepEqual(await throughWorkbench.json(), {
+      service: "browser-capture-api", version: 1, development: { pid: process.pid, root },
+    })
     await assertViteHmr(ports.web)
   } finally {
     await running.stop()
@@ -208,7 +236,7 @@ test("a Workbench startup failure closes the API started by this run", async () 
   }
 })
 
-test("SIGTERM waits for the single dev host to release the data lock", async () => {
+test("verified dev shutdown waits for the single host to release the data lock", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "browser-capture-dev-signal-data-"))
   const fixtureDirectory = await mkdtemp(path.join(os.tmpdir(), "browser-capture-dev-signal-host-"))
   const ports = { web: await unusedPort(), api: await unusedPort() }
@@ -221,7 +249,11 @@ test("SIGTERM waits for the single dev host to release the data lock", async () 
       child.once("error", reject)
       child.once("exit", (code) => reject(new Error(`signal host exited before ready: ${code}`)))
     })
-    child.kill("SIGTERM")
+    const stopped = await fetch(`http://127.0.0.1:${ports.api}/api/dev/shutdown`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pid: child.pid, root }),
+    })
+    assert.equal(stopped.status, 200)
     const exitCode = await Promise.race([
       new Promise((resolve) => child.once("exit", resolve)),
       new Promise((_, reject) => setTimeout(() => reject(new Error("signal host did not exit within 5 seconds")), 5_000)),

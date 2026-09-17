@@ -158,6 +158,10 @@ test("组合计划逐项调用同一链路，拒绝未声明依赖和预算扩�
   const batchPlan = { ...plan, steps: [first, batch], output: nodeBinding(batch.id) }
   assert.equal(taskPlanSchema.safeParse(batchPlan).success, true)
   assert.deepEqual(taskPlanExecutionIssues(batchPlan), [])
+  const { aggregates: _aggregates, ...legacyBatchInvocation } = batch.invocation
+  const legacyBatchPlan = { ...batchPlan, steps: [first, { ...batch, invocation: legacyBatchInvocation }] }
+  assert.deepEqual(taskPlanSchema.parse(legacyBatchPlan).steps[1]!.invocation, { ...legacyBatchInvocation, aggregates: [] })
+  assert.deepEqual(taskPlanExecutionIssues(legacyBatchPlan), ["plan_batch_aggregate_required"])
 })
 
 test("包出口只暴露通用 IR，不再保留旧运行合同入口", async () => {

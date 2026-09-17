@@ -3,6 +3,12 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 
 export const pinnedCommit = "5d2d19fe8835cc86f1bf3e04302a5000d590f249"
+function digestSource(content) {
+  // WHY: Git may materialize the managed text-only source subset with CRLF on Windows.
+  // The manifest identifies upstream bytes canonically with LF so the same pinned source verifies on every host.
+  return createHash("sha256").update(content.toString("utf8").replace(/\r\n/g, "\n")).digest("hex")
+}
+
 export async function verifyForkSource(root) {
   const source = path.join(root, "vendor", "workflow-use")
   const baseline = JSON.parse(await readFile(path.join(source, "UPSTREAM.json"), "utf8"))
@@ -24,7 +30,7 @@ export async function verifyForkSource(root) {
       throw new Error("workflow_fork_invalid_manifest")
     }
     const content = await readFile(path.join(source, name))
-    if (createHash("sha256").update(content).digest("hex") !== hash) throw new Error(`workflow_fork_source_mismatch:${name}`)
+    if (digestSource(content) !== hash) throw new Error(`workflow_fork_source_mismatch:${name}`)
   }))
   return createHash("sha256").update(JSON.stringify([...expected].sort(([a], [b]) => a.localeCompare(b)))).digest("hex")
 }
