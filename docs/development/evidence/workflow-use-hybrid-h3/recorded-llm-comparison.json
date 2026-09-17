@@ -1,0 +1,230 @@
+{
+  "scope": "read-only analysis of previously recorded LLM definition; no new LLM call or execution",
+  "source": {
+    "definitionPath": "data/upstream-browser-artifacts/e76cc02e-4760-4901-8692-9579e02097d3/84974663-8e1b-4ef0-8c3a-a3910025cf99-collect-issues/definition.json",
+    "definitionDigest": "5799ce2ff11634b1def9363580d18c5262121ae0a3f0e6fe6127d61edcc8aad2",
+    "historyDigest": "9fbc88645c29c65155e2e235727d318f7a70e1e1accceda76eacda580197b69a"
+  },
+  "stepCount": 16,
+  "steps": [
+    {
+      "index": 0,
+      "type": "navigation",
+      "hasActionProvenance": false,
+      "target": {
+        "present": false,
+        "digest": null,
+        "hasInputTemplate": false,
+        "appearsInHistory": false,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 1,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "80fe81e1bb562fa0072acd96d541ca6280d9cff8854159e005eb4276d8e0d65d",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 2,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "f2966b9efcc05104c984337f5d7df50cbbf1d3022cd56c377d5ea992d10a107b",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 3,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "61538847fbe0d9de6b2411b260a45c95f57dbf03b5a5c47949d2a21e135087eb",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 4,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "49969723b32e2e0953f49e9e3cb8d1284dc6f297717e86f9d15bb65203f94ae9",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 5,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "61538847fbe0d9de6b2411b260a45c95f57dbf03b5a5c47949d2a21e135087eb",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 6,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "767230c0dccf85277900c7e08bfe8658295408d116f8affe9ef30964e450a3e7",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 7,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "05e9c251e5f4b3bfc10181c570afecef251c196ebc3f2775243c5e20f9db0463",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 8,
+      "type": "extract_page_content",
+      "hasActionProvenance": false,
+      "target": {
+        "present": false,
+        "digest": null,
+        "hasInputTemplate": false,
+        "appearsInHistory": false,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 9,
+      "type": "scroll",
+      "hasActionProvenance": false,
+      "target": {
+        "present": false,
+        "digest": null,
+        "hasInputTemplate": false,
+        "appearsInHistory": false,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 10,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "2b74b13720f1c62c40b3fc65da7d0f157306d1e4b38dad3f6b20fc631c7267ea",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 11,
+      "type": "scroll",
+      "hasActionProvenance": false,
+      "target": {
+        "present": false,
+        "digest": null,
+        "hasInputTemplate": false,
+        "appearsInHistory": false,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 12,
+      "type": "click",
+      "hasActionProvenance": false,
+      "target": {
+        "present": true,
+        "digest": "2bfdefa8fbf5b8e91e21dcb1c7f5a80a50afe96d5e7288be7ec87c3dee234f88",
+        "hasInputTemplate": false,
+        "appearsInHistory": true,
+        "positionHintPresent": true
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 13,
+      "type": "extract_page_content",
+      "hasActionProvenance": false,
+      "target": {
+        "present": false,
+        "digest": null,
+        "hasInputTemplate": false,
+        "appearsInHistory": false,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 14,
+      "type": "go_back",
+      "hasActionProvenance": false,
+      "target": {
+        "present": false,
+        "digest": null,
+        "hasInputTemplate": false,
+        "appearsInHistory": false,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    },
+    {
+      "index": 15,
+      "type": "extract_page_content",
+      "hasActionProvenance": false,
+      "target": {
+        "present": false,
+        "digest": null,
+        "hasInputTemplate": false,
+        "appearsInHistory": false,
+        "positionHintPresent": false
+      },
+      "verificationCheckCount": 0
+    }
+  ],
+  "recordedModelInvocations": null,
+  "newModelCalls": 0,
+  "inputParameterCount": 1,
+  "controlKinds": [],
+  "actionCoverage": "unrecoverable from definition: no stable action provenance; do not invent alignment",
+  "staticModelPath": {
+    "normal": "HealingService.create_workflow_definition calls llm.ainvoke for whole WorkflowDefinitionSchema",
+    "failure": "upstream attempts another raw ainvoke after structured generation failure"
+  },
+  "redaction": "all descriptions, targets, selectors, goals, inputs, outputs and page text omitted; target equality is digest/boolean only",
+  "candidate": false
+}

@@ -1,0 +1,30 @@
+{
+  "phase": "H2",
+  "status": "stopped",
+  "kind": "admission_assessment",
+  "isHybridCompilation": false,
+  "candidate": null,
+  "sourceDigests": [
+    "3f941f1dc9b95780dae7e2ca5fc9e8068b7c7c6334db7a29aabc69259e647577",
+    "9fbc88645c29c65155e2e235727d318f7a70e1e1accceda76eacda580197b69a"
+  ],
+  "gaps": [
+    {
+      "id": "h2-executor-admission",
+      "code": "unsupported_capability",
+      "actionRefs": [],
+      "clauseRefs": [],
+      "reason": "The selected semantic executor rejects converter page extraction and returns the first item for an unavailable ordinal; ordinary capability admission is not proven.",
+      "resolution": "add_capability"
+    },
+    {
+      "id": "h2-per-action-evidence",
+      "code": "missing_postcondition",
+      "actionRefs": [],
+      "clauseRefs": [],
+      "reason": "No action-level post-observation proof has been established from the registered histories; raw item state and overall judge success are insufficient to freeze deterministic segments.",
+      "resolution": "collect_evidence"
+    }
+  ],
+  "referenceLimit": "No NormalizedTrace IDs have been assigned. Empty actionRefs do not assert empty coverage; H3 normalization has not started."
+}

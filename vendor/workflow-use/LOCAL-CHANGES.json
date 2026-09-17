@@ -1,0 +1,337 @@
+{
+  "baselineCommit": "5d2d19fe8835cc86f1bf3e04302a5000d590f249",
+  "modified": [
+    {
+      "path": "workflows/workflow_use/workflow/semantic_executor.py",
+      "upstreamSha256": "231ad87480c83505c244e5862d9b458c6af474a6289eceb8bd1a4506347edb84",
+      "localSha256": "e6d2828fec9356bd504881cce6b3f04f62783374ab92864f85baec373e79bc64"
+    },
+    {
+      "path": "workflows/workflow_use/workflow/step_verifier.py",
+      "upstreamSha256": "bc5dcec65a5bf8ab0e0ff254627f3829122a4b06954328f3e2ca81a51cbab685",
+      "localSha256": "3b091f9b7e8c53859f535d746a6c56402ac0b385a2a721a97182291367ad40e2"
+    }
+  ],
+  "added": [
+    {
+      "path": "verify-source.d.mts",
+      "sha256": "4064193a2f19c518aea8ed5ba012c898b984e1cd192e1d88eee49711178b82d6"
+    },
+    {
+      "path": "verify-source.mjs",
+      "sha256": "d132d16d3c7ca3925c6941245769fbad22aa337c2169452da6f0cb27d6bfe8f8"
+    },
+    {
+      "path": "workflows/tests/hybrid_fixture.py",
+      "sha256": "c8a53f7f1fa29be725d626893f2ff43ffdcf11256b74a08f4785baca7e265c58"
+    },
+    {
+      "path": "workflows/tests/natural_author_fixture.py",
+      "sha256": "1e476fcf4fda6564d8640525acc6b3d058d278383f7b36af052c34e1b950f6fb"
+    },
+    {
+      "path": "workflows/tests/test_executor_contract.py",
+      "sha256": "808a00a433f102ebff0522bfa98b49157292c7ae232aa94db96cfa690548316e"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_action_context.py",
+      "sha256": "5b1cbb5ade98bc1cebf5a37c081f9262570d2faf875669120b5c1fe075f47ee3"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_action_identity.py",
+      "sha256": "008a8e8b7566a23da26722e41c2fe1aab936e0d7c5aef4f8627cf6d957f75b0b"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_annotations.py",
+      "sha256": "720eb2cae4eaa2609f61082819a3b40a1d59ebe6eee49836c85b2a1a12875f0c"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_author.py",
+      "sha256": "19a4bbe1de118775ade2e767978893cf843d2023bd85a1e8efc08d4e560e35ee"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_browser.py",
+      "sha256": "3b4253200635a0d214f8f783b430d8d17c1ed85c958397c70b1e18613b7474dc"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_capability.py",
+      "sha256": "dc8f3338cdacb09cde1ffd437e17ce62e0d7d786207065377e5a56267eb4c066"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_capture.py",
+      "sha256": "62966ee5a6f6e6c1c6d89515daf5353e657ecde056c50f897806cedf3099ec3d"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_causal.py",
+      "sha256": "72630aa090d367a86b4845d24090ba4971f90e99b676336a7b50095e1b0114d3"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_compiler.py",
+      "sha256": "fe88fff7dbec7777a9647443b50a8b0a1053edf0f6f18bdc02cdb0a8dfc5e1f8"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_completion.py",
+      "sha256": "2423f5f9740eae927b37e0b814e808f249f8beb75d313bdde9dced2ca8481c7a"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_dom_evidence.py",
+      "sha256": "2c3abc5a5c84d60606879a26232067a14dcc27f946c873fe6eb747d822d1380f"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_evidence.py",
+      "sha256": "4389c547ed2738521ed78f2695a8a157f04745dfa7b1471864f1e78e4bcab66d"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_extraction.py",
+      "sha256": "cedf88f50e62a5bfe2e243e650162f4ac8952c7a2ff338ca65fd2eb8afdc3b14"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_gates.py",
+      "sha256": "efe55f9200ae7ecc34860ec2be952e65f21c54f204921dde9d852def0467c4a3"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_input.py",
+      "sha256": "22242020b3b30d4369d253f08a4aff52b5e31ff04c4cbc1c9762b7467bc5d9c5"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_loop_alignment.py",
+      "sha256": "b2c9e8aec025ea85357f94068046d59e0e2faf7f6033d6319a67983504a3cc58"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_natural_author_fixture.py",
+      "sha256": "99b8bf180a2cc446071fda2840383b03446669569b8ac28c865da54bfd4b009f"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_natural_compile.py",
+      "sha256": "c47d2856a6e0cad5ef7fdb5d960019c71500e89dfbdfd5f287b73d9ca56d3dd8"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_natural_effects.py",
+      "sha256": "c57a844d11634326160ea7825500eb0145ca31723a6f43459af1a947805896a2"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_natural_output.py",
+      "sha256": "967e62dfd59db93703fe51c3f9b336c2dfdc96d0e9004053f7752b6fe42aab05"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_post_action_target.py",
+      "sha256": "db4d05ec08f76ab773b1776b5e5fb2945cb548a2222ccfefd458c61073bb6a6c"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_read.py",
+      "sha256": "6bb0c79ab3811564f0257440f68a75fb4ed86376f14b59e283b605c87470f0c9"
+    },
+    {
+      "path": "workflows/tests/test_hybrid_targets.py",
+      "sha256": "0c12c34c4212ed317988f7a94593679c8e24e8c89843105181b3680707113456"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/__init__.py",
+      "sha256": "e2e40cec8efe72b80167989bcd6fcb64ce2a1a6a0b9f3c58d7ec49349acbbf9f"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/__main__.py",
+      "sha256": "fdfff6ee716eafb8e8a35360bd962ec71dd04e6c3312c7550ae0590281080755"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/action_capture_policy.py",
+      "sha256": "43e1079cb93daf34cb610b27f25c55858f568349bfcc2926eb82e4593cfe26aa"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/action_dispatch.py",
+      "sha256": "6156dac3c7ce4ec02ac2b0150a5510ea971ce52673f090b5b1e35d74994716c9"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/action_identity.py",
+      "sha256": "cf70b6c490fe6feb757d2e6eee2a219141f16c4a09e8ee4d4ba75f7c0d7d59a7"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/alignment.py",
+      "sha256": "ce25b27685c371efe896da7bfa88152b98e73384d00571785a11be7b749a3b1e"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/annotations.py",
+      "sha256": "7f42047c51021d7c6b3b049ce0fb80080169322fc39a9ac0a3f3d4b6b7c312f3"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/audit.py",
+      "sha256": "579cf83b6f66c749ca99a19a2891f65a7333f691af3b206be007c8d9274281ad"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/author.py",
+      "sha256": "374647cc70b19314d664604277809de2b4f867b460c5e2bc849f88f2e8466e9e"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/bindings.py",
+      "sha256": "965d6663a3fc843b4b0797d8d69fbcc3a5dcc9066a10bbf1e0a74fc9849986f3"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/browser_context.py",
+      "sha256": "3acd591d31f1e7d38e39455f4cdc4b4f310db0821d0009becc9fa725db4e3951"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/capability.py",
+      "sha256": "3ffc2c772a45aac9cf973c2fa9091f0bd782e390d8f34762e41e1824d2eb6e6e"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/capture.py",
+      "sha256": "5522ec62e5b39dd13ada3dc2ef971f9a506c0ddc0d2e39857212835bf4f424b3"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/dialog_event_bridge.py",
+      "sha256": "020e62518fb4fd3134370af05e6bbb9cb671ce9b438eca41497b9cb07c4ea0eb"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/causal.py",
+      "sha256": "26d05ebc4666505edb32eb3904caaa6b67d773b5486a4dc7bd7868c62f4a97f2"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/compiler.py",
+      "sha256": "5dd72c25088daa4f8d6fc35b7417d1b871ef3a7b78279dad18fb873620053c4b"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/completion.py",
+      "sha256": "0f232aabdcbd32885ea42cf0054ef09b0ec9dfdce890bb83eb0ddff7f30c829e"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/controls.py",
+      "sha256": "03f81852fa5d3834a574ed3089e93b984145daf3f994d7f37d90fc8064a48445"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/coverage.py",
+      "sha256": "9555f852d804d54d7de4b27858eb0b020eadd6784c13b1cc481886a96ef43a0b"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/dom_evidence.py",
+      "sha256": "ca938a7b53b2e2481930613581983ff573fda3f406fa444752144b0e4e5fc397"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/evidence.py",
+      "sha256": "67154af85f94a0b00c1fce82fe894f34eb3792d582000fc52266c801e22d7d26"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/field_read_evidence.py",
+      "sha256": "d03d14ff0ef025ab09a0fc7b1b2dbb0ee97d2640ad34775b1462358f0e33728a"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/field_read_params.py",
+      "sha256": "1254c59f9abc3112a956b45e98d4357701d18fbd7ec59eb3e27c79ad52561019"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/field_read_tool.py",
+      "sha256": "6a1127d73f19826c0955deed36cdbe9631faf5f1a3deecb4f4e0a6c4a822f47a"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/history.py",
+      "sha256": "ac34cb974e4152d0e9f7116165568cb5f04c3cbb12ad21438c6083890cdf982c"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/invokes.py",
+      "sha256": "ae2db939a00b2cb44b17d4d816af76452dc9a40fc11d29947b4216d84cce0c65"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/lifecycle_diagnostics.py",
+      "sha256": "cfeecdd1e3959ca41ad7aa5b9c9b655dd65d2d26317f3f46a56a5cf5c7ceb152"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/natural_compile.py",
+      "sha256": "1fc3f04b6f896b46ac4796e9aa3f6c166ffb2753f490c1902ef5432f52ec85b2"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/natural_effects.py",
+      "sha256": "90cb9f173bb3a901211e5f0ca3cf18625aef14b9107d8cab333723862b3c429f"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/natural_facts.py",
+      "sha256": "d03bf59aa6eb26d74948d4557cdfc3620a699273e35b4515ab4680c3bff06d90"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/natural_output.py",
+      "sha256": "37bba409647e88a2c9277f88459e33ffba1246fedd7b88db38d205829a8802d1"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/natural_reads.py",
+      "sha256": "ab9ae02537f1b072b6eaf2885c97ee57f87a72c711e3b3fda0951e10f0258a70"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/natural_target_compile.py",
+      "sha256": "5b87235ac9f0e13818c9e4f9899425a79ad6c2b978e6239b7d9704a4aaefce06"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/native_event_capture.py",
+      "sha256": "5821cdee9cd1ceb26744a71f2861f0167818b97124bee983b35dad0cf5934a0c"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/normalize.py",
+      "sha256": "ccd79918bd1b4cba4fc8372c08a7b67915a887391ff81355005ff1fabf69e27b"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/output.py",
+      "sha256": "ca135066ab0da967fde8012dc2c1eee4c86981bf28d858ad8c4c261a6ce366e0"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/post_action_target.py",
+      "sha256": "84a4992c01f0322c6317d0a0d0abc9631349f7bb108e9e6f82b8bc6a804300ee"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/postconditions.py",
+      "sha256": "a5f0249463153cdd61be577ed2e43779f42e601e68561d5ceb78f976c02314e9"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/read.py",
+      "sha256": "88b33573be5839e42598cf939e2b1b3b618a5161ee596fd4e62e4265e5033df1"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/registry.py",
+      "sha256": "d6a12ff691c4419b2a46423ca0bd3fa2ec1aa98490de3f91fd5b169c3ddcc5e0"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/rendered_field_text.py",
+      "sha256": "1cd3b95bb666cd69eed45be243a7848645f6bcb79449b5d05f496b3c4eaa2d97"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/request.py",
+      "sha256": "0e00020a5389071c688173ee178b91110a3171af498a856407f4bc34e0b62a61"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/semantic.py",
+      "sha256": "f3129741038543b7f66c6d6af4312d19221907656990a0cc57a79b33d19fd8a3"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/snapshot_consistency.py",
+      "sha256": "1b95c7bd308b324a23454d67317ccddaafe6a684a757ba44e860d02874fccc72"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/summary_compile.py",
+      "sha256": "d8eeee48b3108fb4b2152bd53b1fd193fe3f31f795689733a0d435fa106b4e6b"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/summary_context.py",
+      "sha256": "90d794343319e2b55cb3d43448bdf50ca73149892464d68accd470fff7124bbb"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/summary_evidence.py",
+      "sha256": "6156c242407d309ba0f0972fcbcd447c336640c64a3b891420c4004329ff144b"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/summary_tool.py",
+      "sha256": "30bf38ce6e569e132c2d4e9bb374fd93300aa46f2cdf521adad524d9667e0b71"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/target_scroll.py",
+      "sha256": "34786d4da3c017f2f7023d378a61464b6ee28494b04a067ffc3cfe25cea7edf1"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/targets.py",
+      "sha256": "3dc8c78af762a7f07f7ceda57beabcfdf3e052a4474ac1944f706f5ac0fa51d9"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/visible_wait_compile.py",
+      "sha256": "19f9b3545557520d747517d6523e62e9f6bdefde0b8f88dcef77ddf4a2432375"
+    },
+    {
+      "path": "workflows/workflow_use/hybrid/visible_wait.py",
+      "sha256": "f3fe4dc59497c4b25cd49bc3f9e0438e21eabbe456ace1a85c9f84f969419996"
+    }
+  ]
+}

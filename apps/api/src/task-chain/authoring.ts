@@ -7,11 +7,15 @@ import { digestJson, executableChainDigest, readPath, resolveBinding, stableUuid
 import { browserGrantLimits } from "@browser-capture/browser"
 import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
 import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
-import { browserUseTask } from "../upstream-browser/task-request.js"
-import { completedModelInvocations, compileWorkflowChain, createWorkflowArtifact, workflowArtifactMediaType,
-  workflowInputs } from "../upstream-browser/workflow-artifact.js"
+import { browserUseTask, naturalRequirementText } from "../upstream-browser/task-request.js"
+import { completedModelInvocations } from "../upstream-browser/workflow-artifact.js"
+import { createHybridArtifact, createHybridSourceArtifact, hybridArtifactMediaType, hybridSourceMediaType } from "../upstream-browser/hybrid-artifact.js"
+import type { HybridSourceResult } from "../upstream-browser/hybrid-exploration.js"
+import { hybridNaturalRequestSchema } from "../upstream-browser/hybrid-schema.js"
+import { collectOrigins } from "./exploration-browser-support.js"
 import type { TaskContractRepository } from "./repository.js"
 import { planCorrectionPrompt, planPrompt } from "./authoring-prompts.js"
+import { reusableHybridSources } from "./hybrid-source-reuse.js"
 
 const semanticPlanStepSchema = taskPlanStepSchema.omit({ chain: true, budget: true })
   .refine((step) => step.invocation.mode !== "batch", "workflow_batch_input_unsupported")
@@ -77,46 +81,102 @@ export class TaskChainAuthoring {
 
   private async taskWithModel(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, input: JsonValue,
     signal: AbortSignal, model: PreparedAIModel, priorCompilationCalls = 0) {
-    if (plan.steps.some((step) => step.invocation.mode === "batch")) throw new Error("workflow_batch_input_unsupported")
+    if (!this.upstream.withAuthoring) throw new Error("hybrid_authoring_provider_unavailable")
+    const childContexts: Record<string, never[]> = Object.fromEntries(plan.steps.map((step) => [step.id, []]))
+    if (plan.steps.some((step) => step.invocation.mode === "batch")) throw new Error("hybrid_batch_source_unsupported")
     job.authoring = { stage: "exploring", level: "E0", failureLayer: null, exploration: null, annotations: null,
       consumption: { explorationToolCalls: 0, explorationSessions: 1,
         compilationCalls: priorCompilationCalls, providerInvocations: null } }
     job.browserRunId = stableUuid(job.id, "upstream-browser"); this.save(job)
-    const progression = plannedProgression(plan, input), compiled: TaskChain[] = [], samples: Record<string, JsonValue> = {}
-    const artifactSummaries: JsonValue[] = []
-    let providerInvocations = 0
-    await this.upstream.withSession({ selection: model.selection, signal, ownerId: job.browserRunId }, async (session) => {
-      for (const step of plan.steps) {
-        signal.throwIfAborted()
-        const stepInput = progression.resolve(step), inputBindings = workflowInputs(step.inputContract.schema, stepInput)
-        const result = await session.author({ task: browserUseTask({ requirement, plan, step, resolvedInput: stepInput,
-          workflowInputs: inputBindings }), input: stepInput, inputSchema: step.inputContract.schema,
-          outputSchema: step.outputContract.schema, workflowInputs: inputBindings,
-          artifactKey: `${job.id}-${step.id}`, maxSteps: Math.min(100, Math.max(1, step.budget.maxBrowserCommands)) })
-        progression.accept(step.id, stepInput, result.output)
-        providerInvocations += completedModelInvocations(result.modelCalls)
-        job.authoring!.consumption.explorationToolCalls += result.browserCommands
-        const artifact = createWorkflowArtifact({ requirement, plan, step, stepInput, result })
-        const reference = this.repository.saveArtifact(plan.taskId, job.id, workflowArtifactMediaType, z.json().parse(artifact))
-        const chain = compileWorkflowChain(plan, step, this.repository.nextChainVersion(plan.taskId, step.chain.id),
-          model.selection.modelId, artifact, reference)
-        this.repository.saveChain(chain); compiled.push(chain); samples[step.id] = stepInput
-        artifactSummaries.push(z.json().parse({ stepId: step.id, artifact: reference, definitionDigest: artifact.definitionDigest,
-          sourceSuccess: true, sourceValidated: true, inputBindings: artifact.inputBindings,
-          modelPurposes: [...new Set(result.modelCalls.map((call) => call.purpose))] }))
-        job.authoring!.exploration = z.json().parse({ mode: "workflow-use-authoring/v1", artifacts: artifactSummaries })
-        job.authoring!.stage = "explored"; job.authoring!.level = "E1"; this.save(job)
+    const reusable = this.upstream.recompile
+      ? reusableHybridSources(this.repository, job, requirement, plan, plannedProgression(plan, input)) : undefined
+    // WHY：历史 v1 来源只读保留；自然任务生产入口不得把旧 authority 请求送入新编译器。
+    const reused = reusable?.sources.every((source) => hybridNaturalRequestSchema.safeParse(source.result.request).success)
+      ? reusable : undefined
+    const sources = reused ? reused.sources
+      : await this.explorePlan(job, requirement, plan, input, signal, model, childContexts)
+    // WHY：先确认唯一 Browser 已关闭并校验所有步骤，再写候选；后一步 gap 不能留下半套可用链。
+    job.authoring.stage = "compiling"; this.save(job)
+    if (reused) {
+      job.authoring.exploration = z.json().parse(reused.exploration)
+      job.authoring.consumption.explorationSessions = 0
+      job.authoring.consumption.providerInvocations = 0
+      this.save(job)
+      for (const source of sources) {
+        const compiled = await this.upstream.recompile!({ request: source.result.request,
+          sourceResponse: source.result.response, outputSchema: source.step.outputContract.schema,
+          verifiedChildren: childContexts[source.step.id]!, signal })
+        source.result = { ...source.result, ...compiled }
       }
-    })
-    progression.finish()
+    }
+    const candidates = sources.map(({ step, stepInput, result }) => ({ stepInput,
+      ...createHybridArtifact({ requirement, plan, step, stepInput, request: result.request, response: result.response,
+        forkSourceDigest: result.forkSourceDigest, modelCalls: result.modelCalls, model: model.selection.modelId,
+        resolveChild: (reference) => this.repository.chain(plan.taskId, reference.id, reference.version, reference.digest),
+        version: this.repository.nextChainVersion(plan.taskId, step.chain.id),
+        source: { history: result.history, sourceSuccess: true, sourceValidated: true, closed: true } }) }))
+    const compiled: TaskChain[] = [], samples: Record<string, JsonValue> = {}, artifacts: JsonValue[] = []
+    for (const { artifact, chain, stepInput } of candidates) {
+      const reference = this.repository.saveArtifact(plan.taskId, job.id, hybridArtifactMediaType, z.json().parse(artifact))
+      this.repository.saveChain(chain); compiled.push(chain); samples[chain.stepId] = stepInput
+      artifacts.push(z.json().parse({ stepId: chain.stepId, artifact: reference }))
+    }
     const references = compiled.map((chain) => ({ id: chain.id, version: chain.version, digest: executableChainDigest(chain) }))
+    const providerInvocations = reused ? 0 : sources.reduce((sum, source) => sum + completedModelInvocations(source.result.modelCalls), 0)
     job.authoring.stage = "compiled"; job.authoring.level = "E2"
-    job.authoring.annotations = z.json().parse({ mode: "workflow-use/v1", steps: compiled.map((chain, index) => ({
-      stepId: chain.stepId, chain: references[index] })) })
+    job.authoring.annotations = z.json().parse({ mode: "workflow-use/v2", artifacts })
     job.authoring.compiledChain = references[0]!; job.authoring.compiledChains = references
     job.authoring.consumption.providerInvocations = providerInvocations
     this.complete(job, plan.id, priorCompilationCalls + providerInvocations)
     return { references, chains: compiled, samples }
+  }
+
+  private async explorePlan(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, input: JsonValue,
+    signal: AbortSignal, model: PreparedAIModel, childContexts: Record<string, never[]>) {
+    if (!job.authoring || !job.browserRunId) throw new Error("hybrid_authoring_context_missing")
+    const progression = plannedProgression(plan, input), sources: Array<{ step: TaskPlan["steps"][number];
+      stepInput: JsonValue; result: HybridSourceResult }> = []
+    let explorationError: unknown, closed = false
+    try {
+      const requirementText = naturalRequirementText(requirement).text
+      await this.upstream.withAuthoring!({ selection: model.selection, signal, ownerId: job.browserRunId,
+      allowedOrigins: collectOrigins([input, requirementText]) }, async (session) => {
+      try { for (const step of plan.steps) {
+        signal.throwIfAborted()
+        const stepInput = progression.resolve(step)
+        const task = browserUseTask({ requirement, plan, step, resolvedInput: stepInput })
+        const result = await session.author({ task, input: stepInput,
+          inputSchema: step.inputContract.schema, outputSchema: step.outputContract.schema,
+          requirementId: requirement.id, requirementVersion: requirement.version, planId: plan.id, planVersion: plan.version,
+          requirementText, requirementDigest: digestJson(requirement), planDigest: digestJson(plan),
+          stepId: step.id, callMode: step.invocation.mode,
+          verifiedChildren: childContexts[step.id]!,
+          maxSteps: Math.min(100, Math.max(1, step.budget.maxBrowserCommands)) })
+        sources.push({ step, stepInput, result })
+        if (!result.sourceSuccess || !result.sourceValidated) throw new Error("hybrid_successful_judged_source_required")
+        progression.accept(step.id, stepInput, result.output)
+        job.authoring!.consumption.explorationToolCalls += result.browserCommands
+        job.authoring!.exploration = z.json().parse({ mode: "workflow-use-authoring/v2", sources: sources.map(({ step, result }) => ({
+          stepId: step.id, history: result.history, canonicalDigest: result.response.compilation.canonicalDigest,
+          gaps: result.response.compilation.gaps })) })
+        job.authoring!.stage = "explored"; job.authoring!.level = "E1"; this.save(job)
+      } } catch (error) { explorationError = error }
+      })
+      closed = true
+    } catch (error) {
+      explorationError = explorationError ? new AggregateError([explorationError, error], "hybrid_source_and_cleanup_failed") : error
+    }
+    const sourceArtifacts = sources.map(({ step, stepInput, result }) => ({ stepId: step.id,
+      artifact: this.repository.saveArtifact(plan.taskId, job.id, hybridSourceMediaType,
+        z.json().parse(createHybridSourceArtifact(requirement, plan, step.id, stepInput, result, closed))) }))
+    job.authoring.exploration = z.json().parse({ mode: "workflow-use-authoring/v2", sources: sourceArtifacts })
+    job.authoring.consumption.providerInvocations = explorationError ? null
+      : sources.reduce((sum, source) => sum + completedModelInvocations(source.result.modelCalls), 0)
+    this.save(job)
+    if (explorationError) throw explorationError
+    signal.throwIfAborted()
+    progression.finish()
+    return sources
   }
 
   private async begin(job: TaskAuthoringJob, purpose: "plan_creation" | "chain_exploration_and_compilation", signal: AbortSignal) {
@@ -138,7 +198,8 @@ export class TaskChainAuthoring {
     if (job.audit?.status === "intended") job.audit.status = signal.aborted ? "interrupted" : "failed"
     if (job.audit) job.audit.reportedInvocations = settledGenerationCount(job.audit.events)
     if (job.authoring) {
-      job.audit!.reportedInvocations = null
+      job.audit!.reportedInvocations = job.authoring.consumption.providerInvocations === null ? null
+        : job.authoring.consumption.compilationCalls + job.authoring.consumption.providerInvocations
       job.authoring.failureLayer = failureLayer(error, job.authoring.stage)
     }
     this.save(job)

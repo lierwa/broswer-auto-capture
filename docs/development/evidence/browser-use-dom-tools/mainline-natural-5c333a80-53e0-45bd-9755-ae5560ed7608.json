@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "bat.mainline-natural/v1",
+  "validationScope": "source_probe",
+  "runId": "5c333a80-53e0-45bd-9755-ae5560ed7608",
+  "taskId": "79b4e6a3-b500-4d52-98c7-f9370638675e",
+  "source": {
+    "kind": "readonly_sqlite",
+    "requirementId": "3960924a-335c-4fe3-81b9-19f8add50473",
+    "requirementVersion": 2,
+    "requirementDigest": "976a22bf29613ce9891277a20e411c6f200dc10e86f35d1b6dff8b359548410b",
+    "planId": "e84c7660-21f6-44ac-87af-1826450c9e45",
+    "planVersion": 6,
+    "planDigest": "920ffa87030c9cc1533112cb37e4da15d7a42deebc26d5e38d34a5a38b4a783d",
+    "minimalInterviewSeed": {
+      "draftVersion": 2,
+      "draftCount": 1,
+      "confirmationCount": 1
+    },
+    "accountOrProfileCopied": false
+  },
+  "invocation": {
+    "command": "generate_task_chains",
+    "input": {
+      "startUrl": "https://github.com/langchain-ai/langgraph"
+    },
+    "httpStatus": 202,
+    "waitUpperBoundMs": 1440000
+  },
+  "model": {
+    "modelId": "gpt-5.6-terra",
+    "reasoningEffort": "medium"
+  },
+  "outcome": {
+    "jobStatus": "failed",
+    "jobStage": "exploring",
+    "failureLayer": "browser-use 探索",
+    "reasonCode": "生成未完成：hybrid_successful_judged_source_required",
+    "auditAvailable": true,
+    "acceptedSourceCount": 1,
+    "expectedSourceCount": 1,
+    "source_success": true,
+    "source_judged": false,
+    "source_closed": true,
+    "candidate": false,
+    "sample": false,
+    "sampleAttempts": 0,
+    "verification": false,
+    "verificationAttempts": 0,
+    "gaps": [
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "visible_overlays_change_not_completion_proof",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "invalid_source",
+        "reason": "successful_judged_business_result_required",
+        "resolution": "reject_trace"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_output_assembly_incomplete",
+        "resolution": "collect_evidence"
+      }
+    ],
+    "browserCommands": 29,
+    "modelCalls": [
+      {
+        "purpose": "agent",
+        "model": "gpt-5.6-terra",
+        "status": "intended",
+        "count": 31,
+        "reportedInvocations": 0
+      },
+      {
+        "purpose": "agent",
+        "model": "gpt-5.6-terra",
+        "status": "completed",
+        "count": 30,
+        "reportedInvocations": 30
+      },
+      {
+        "purpose": "agent",
+        "model": "gpt-5.6-terra",
+        "status": "failed",
+        "count": 1,
+        "reportedInvocations": 1
+      },
+      {
+        "purpose": "judge",
+        "model": "gpt-5.6-terra",
+        "status": "intended",
+        "count": 1,
+        "reportedInvocations": 0
+      },
+      {
+        "purpose": "judge",
+        "model": "gpt-5.6-terra",
+        "status": "completed",
+        "count": 1,
+        "reportedInvocations": 1
+      }
+    ]
+  },
+  "artifacts": {
+    "localResult": "work/natural-task-validation/5c333a80-53e0-45bd-9755-ae5560ed7608/source-result.json",
+    "sourceCount": 1
+  },
+  "cleanup": {
+    "applicationClosed": true,
+    "sourceContractsUnchanged": true
+  }
+}

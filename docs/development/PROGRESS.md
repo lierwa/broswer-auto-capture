@@ -1,5 +1,119 @@
 # 开发进度
 
+> 开发入口：[浏览器任务链开发方案](BROWSER_REPLAY_DEVELOPMENT_REPAIR_20260917.md)。模块状态与验收要求以该方案及其模块文档为准。
+
+## 2026-09-17 跨电脑交接：A 受控边界通过，实际页受传输阻塞
+
+- A 已改为按原生 `(StepMetadata.step_number, actionIndex)` 关联；删除 action-position fallback、参数相等搜索、
+  post-action XPath 身份猜测和活 DOM 引用跨动作保留。真实 `event.target`、`composedPath`、document/frame、原始参数、
+  公开 `ActionResult`、dispatch/result 缺失状态均保存并可加载。
+- 加严后的正式受控 Chromium 矩阵使用一个 Browser 会话完成 37 个动作，覆盖嵌套命中、重复同参、额外脚本事件、
+  缺失事件、导航/删除、open/closed shadow、同源/跨源 frame 与重建、input/Enter、页面及容器滚动、原生 select、
+  confirm/prompt、HTML modal、popup/tab 切换与关闭。独立 oracle 保存 120 个真实 DOM 事件和 42 个业务副作用；
+  37 组 dispatch/result、74 个 observation 全部对账，`fixtureFailures=[]`。
+- 最终真实 source 保存于 Git 忽略目录 `work/action-context-acceptance/latest-success.json`。另从该 6.3 MB 文件走产品
+  repository 保存、关闭、重开和加载复核，2/2 通过；新成功证据已补齐 `fixtureFailures` 字段。
+- vendor 定点 Python 合同 24/24 通过；固定来源 manifest 已同步并由 setup `--check` 通过。未运行根级/全量测试。
+- 编译仍保留 27 个明确 gap，其中包含故意缺失事件以及属于 B/C/D 的完成条件、跨 tab 状态、动态绑定和输出装配；
+  因此受控 A 通过不等于 candidate 或整个任务通过。
+- 实际 GitHub 页正式来源 `14280431-803c-45c7-82e5-7d57b6bc2058` 在首动作前因 provider `fetch failed`
+  结束，`browserCommands=0`。随后唯一无浏览器正式重试仍四次 `fetch failed`、0 token。auth connection 与模型选择
+  能正常读取，没有证据表明账号过期；TUN/VPN 模式不得进入项目逻辑。详见
+  [传输阻塞记录](evidence/browser-replay-repair/AI_CONNECT_TUN_TRANSPORT_BLOCKER.md) 与
+  [A 验收记录](evidence/browser-replay-repair/A_ACCEPTANCE_CONFORMANCE.md)。
+- 当前状态是 **A 未完成**：受控边界已通过，实际任务页和变化输入/状态尚未验收。B/C/D 均未开始；下一台电脑先执行
+  一次无浏览器传输门，通过后才重跑实际页，实际页 A 通过后再按依赖进入 B。
+
+## 2026-09-17 当前执行：原任务正式来源与样本验收
+
+前次 run `fb3775e0-7e17-40fa-bcff-6ed22cb07a19` 在成功点击后因 `observation_url_changed` 中断；原生新快照内URL早取、DOM异步构建的竞态已真实复现。最小修复只对动作后专用不一致有界重采，动作不重派、模型不重调，取消/tab变化立即失败。局部真实复验 navigate/click/done 各一次且后观察齐全，Browser已关闭。详见 [快照一致性修复](evidence/browser-use-dom-tools/POST_SNAPSHOT_COHERENCE.md)。新run已经通过审批并启动，由全新Sol/high执行agent负责，主agent验收。
+
+## 2026-09-16 当前执行：动作还原与可靠复跑六项修复
+
+用户已授权先落文档，再按文档逐项修复。唯一当前执行入口：[BROWSER_REPLAY_REPAIR_PLAN.md](BROWSER_REPLAY_REPAIR_PLAN.md)。先修 R1 动作身份与 R2 参数保全，再接目标滚动、异步完成、局部提取和失败归属。旧来源中的 21 项包含编号错位和连锁报错，不能再称为 21 类能力缺口；目前只有两个编译段，正式主线仍未通过。不新增测试代码，不以局部预设验证替代实际复跑。
+
+当前单项：R3b 目标滚动局部验收通过，R4b 条件等待已通过局部真实 Browser 主验收，R3c 本次运行页作用域已通过真实 TaskChainRuntime 的两组入口复跑，每次 5 个浏览器命令、0 次模型调用。R5c/R5d 最小接口与摘要联合真实验证通过：同一 TaskChainRuntime alpha/beta 输出随DOM变化，每跑 5 Browser命令、1次显式LLM审计；DOM/浏览器动作仍零模型。原GitHub正式主线待本轮验证。R1/R2 局部修复通过；R3a 已存在目标的滚入视口/点击及目标状态读取通过本地真实 Chromium；R4a 部分观察关联修复，真实运行时慢响应/超时/取消验收通过，自然源列表就绪仍未接通，两个旧弱滚动条件用例仍不通过。R6 未派发事实的局部验收通过，旧来源不倒填。R5a/R5b 局部字段工具及生产接线已由主 agent 验收：真实 localhost、脚本模型完成采集与编译；普通 Runner 读到变化值、模型调用为 0，旧读取 mock 仍有 2 failures/1 error。源码及证据见 [执行记录](evidence/browser-use-dom-tools/REPLAY_REPAIR_EXECUTION.md)。源滚动处理、真正列表就绪、复合报告、完整主线样本与同链换输入仍未完成。
+
+下方“本轮结束”是前一时点；当前实施已重新获授权，完成状态以新计划执行日志为准。
+
+## 2026-09-16 当前：自然语言任务直接进入 b-u，移除独立规则 JSON
+
+用户已明确需求对话只负责聊透需求并产出详细精准的执行任务列表，随后授权实施。此前“同源条款投影/再次确认”选项撤回，不再等待用户决定。生产 authoring 已移除 bat-compilation/v1/独立 authority 前置依赖，完整任务文字直接进入原生 Agent；编译消费实际来源，无法证明的部分保留具体 gap，不能以空规则假通过。
+
+最新原任务验收 `51ca80c2-9d7c-470e-935f-300dd2b0f8a4`：原 requirement v2 / plan v6 经正式入口完成探索，来源接受 1/1，success/judged/closed 均为 true，17 个浏览器命令，原合同摘要未变。编译仍有 21 个 gap：missing_effect_proof 12、missing_binding 4、missing_observation 4、invalid_source 1。三次读取均触发上下文上限，另有同快照目标、URL scope、后态、参数和输出装配证据缺口。候选未生成，样本与换输入尝试均为 0；主线未通过。
+
+本轮已修复返回字段、nullable 与数字来源往返的接线缺陷，实际 Python → TS 保存/加载 → Python 重编译的定点验证及 API 类型检查通过。用户指出耗时后，本轮收敛到最后一次实际验收并结束，未继续扩展其他能力。首轮及后续失败/更正记录均保留；不能用探针 exit=0 或浏览器探索成功代替完整主线通过。
+
+执行及复用边界见 [NATURAL_TASK_IMPLEMENTATION.md](evidence/browser-use-dom-tools/NATURAL_TASK_IMPLEMENTATION.md)。上一轮 DOM 工具通过证据继续有效，但不替代本次自然入口与真实主线验收。下面历史“规则来源待用户决定”只代表当时时点。
+
+
+## 2026-09-16 DOM 首批工具已验证，原主线在规则来源门受阻
+
+D0–D4 首批工具及相关旧实现收敛完成：动作前可读结构、摘要完整性、统一当前作用域/集合解析、后态观察、正式编译与持久化加载已接入。真实 Chrome 验证了重建列表、重复区域、包装层、item 根/内部标题区别、越界零动作；同一持久化 chain 改序号后输出 Fresh Alpha / Fresh Beta，每次 4 个浏览器命令、0 模型。真实表单回归也通过。探索提供方为 scripted fixture，不是实际 provider 或主线业务验收。
+
+M1 已用原 requirement v2 / plan v6 调用正式 HTTP 入口核验：返回 `409 missing_control_intent / structured_authority_missing`，停在探索前，模型/Browser/队列均未调用。原 Markdown 意图已明确，但现规范未允许其后生成投影直接成为执行 authority；[同源条款投影取舍](evidence/browser-use-dom-tools/MAINLINE_AUTHORITY_DECISION.md) 待用户决定。原 Issues 样本与同链不同输入均未通过；H7 不升级。
+
+实现、验证命令与未测范围见 [清理账本](evidence/browser-use-dom-tools/CLEANUP.md)，正式入口实证见 [mainline-entry.json](evidence/browser-use-dom-tools/mainline-entry.json)。旧 patch/archive 继续隔离保留，受检历史摘要未变；未创建分支/worktree、提交、推送、安装或运行全量测试。下方交接及阶段叙述保留历史时点含义。
+
+## 2026-09-16 当前：前置工具开发已授权，文档交接完成
+
+执行入口：[DOM 前置工具开发与主线回归计划](BROWSER_USE_DOM_TOOLS_IMPLEMENTATION.md)。先按数据充足程度实现首批动作的证据交付、结构定位、集合相对定位和前后态核验；24 类是覆盖账本，缺数据的暂缓。相关旧代码在替换时按保留/重写/删除收敛，保护已有 dirty 和历史数据。工具完成后继续原 Issues 任务及同链不同输入验证。
+
+当前会话只落文档与交接，未修改运行代码、未启动浏览器/模型、未执行测试或清理。下一会话已获实施授权，按 D0–D4 → M1 执行。H3–H6 仍未完成，H7 尚未开始；下方历史继续项不覆盖本节顺序。动作与源码证据见 [DOM 设计](BROWSER_USE_DOM_HANDOFF_DESIGN.md)。
+
+## 2026-09-16 混合编译与 v2 接线持续开发中
+
+**未完成，继续按 H0–H7 推进；H7 尚未开始。** 当前实现仍以受管 w-u fork 为主，宿主复用既有 TaskChain/LangGraph、版本、存储和审计。
+
+- H0/H1：原 dirty/历史保护与 v1 零副作用退役门保持。H2：干净 188 文件基线可追溯，原 executor 两个局部缺陷已修复。
+- H3：[同源离线对照与十三类问题](evidence/workflow-use-hybrid-h3/README.md) 已更新。8/38 个动作、14/59 个结构 gap 均保留；已记录 LLM definition 的 16 步不具备 action 来源，不算候选。
+- H4/H5：来源绑定、稳定目标、字段效果、有界语义、条款型循环、纯输入分支、已验证线性 once 子链和输出装配已接入。9 项跨语言物化检查通过，图推进仍由现有 LangGraph 执行。
+- H6 正式入口：author_task 支持既有嵌套输入合同，生成来源/候选并沿原队列做样本、换输入和授权复跑；相关正式入口及退役检查 6 项通过。原生 Agent、模型桥、脱敏 trace 与来源 artifact 已接通；旧 delegate replay 和 v1 writer/compiler 的实现已归档移出活动代码。
+- H6 实际 Chrome：异步两字段表单从原生探索到候选、样本、换输入均通过；每次启用运行 4 个动作、0 次模型，禁用分支 0 个动作；验证证据在 finally 关闭后发布。模型响应为本地合成 fixture，不属于实际 provider 或真实业务验收。
+- 恢复：真实只读来源恢复、页面变化拒绝、已取消恢复零动作与执行取消检查通过；表单/未决写入/人工等待不允许靠重新导航假装恢复。
+- 来源/模型边界：规范化 gap 保留完整脱敏来源，模型只允许探索、判定、提取和有界语义注解；普通节点与物化不调用模型。API TypeScript 检查通过；未运行根级/全量测试。
+
+当前继续项：完成滚动与未覆盖控制形态的准入，完成实际需求控制确认的产品衔接，收齐 H6 门后再进入 H7。未创建分支/worktree、提交、推送或清理用户历史。源码保护见 [H6 manifest](evidence/workflow-use-hybrid-h6/preserved-source.json)；实现分析见 [fork 记录](evidence/workflow-use-hybrid-h2/H3-IMPLEMENTATION.md)。
+
+- 本轮新增：显式有界等待复用 Tenacity；原生 extract 封装与单对象字段输出修复。真实提取同链换输入结果变化，两次复跑各 2 个动作、0 次模型；相关 Python 9 项通过。
+- 来源失败收尾：后续步骤失败或关闭失败保留已取得来源，closed 如实记录，零候选；正式来源/协议 5 项通过。API 类型检查通过，10 条源码归档摘要一致，本次 Chrome 专属进程残留为 0；见 [旧引用 allowlist](evidence/workflow-use-hybrid-h6/LEGACY-ALLOWLIST.md)。
+
+
+- 来源重编译已接通：正式生成在编译阶段失败后复用完整且已关闭的相同需求/计划/输入来源，实际 Python 离线重编译通过；新作业浏览器会话、动作和模型调用均为 0，原来源审计保留。原生来源关闭后重编译得到相同 canonical bytes。
+- 原生结构提取支持单对象及有界重复字段；旧单值 ReadSpec 的 canonical digest 保持兼容。后续动作可按输出条款引用实际已读取值，样本值不符或缺证据拒绝；两次运行消费各自动态值的跨语言验证通过。
+- 当次刷新验证已完成：changed 只比较本次明确字段/标题的前后值，缺前态零动作；Tenacity 只重查事实。真实异步表单发现并修复“动作已完成后 wait 无归属”的缺口，受影响真实 Chrome 回归通过（约 23 秒）；样本/换输入各 4 动作、0 模型，禁用分支 0 动作。最新清理核查本次专属 Chrome 残留为 0。
+- 普通自然语言入口仍未通过：当前 readHybridAuthority 只接受确认正文中的 bat-compilation/v1，而访谈输出普通 Markdown。是否扩展为“控制草稿随需求一起确认”已提出具体取舍，尚未改变规范或现有确认数据。H7 不冒充已开始。
+
+## 2026-09-16 H2 fork executor 已修复，恢复推进
+
+已按用户明确要求直接修改 w-u fork。`extract_page_content` 复用原有 extraction handler 并保留 goal/output/验证元数据；显式 ordinal 越界或非法时失败，selector/text fallback 不能绕过位置，点击前必须只命中一个元素。未指定位置保留上游行为。真实模块导入的 7 项 focused 回归通过，覆盖真实 wait/selector 方法到内存 Element.click；没有启动实际浏览器或调用模型。
+
+此前把两个可修复缺陷作为停止 fork 开发的理由已撤销。H2 的执行器局部修复已完成；H3–H7 和正式产品接线仍未完成。下一阶段继续在 w-u fork 内做 history 规范化与动作 coverage，缺证据的动作应进入明确 gap。详情及测试边界见 [fork 修复记录](evidence/workflow-use-hybrid-h2/FORK-REPAIR.md)。下方停止结论保留为被本节取代的历史记录。
+
+## 2026-09-16 H2 普通能力准入未通过，触发停止门
+
+**未完成。H0/H1 通过，H2 来源门通过但复用面未冻结；H3–H7 未开始。** `vendor/workflow-use/` 已导入指定 commit 的 188 个干净文件、LICENSE 和逐文件摘要，未应用 0001–0012。原样方法探针复现 schema/executor 不一致与越界 ordinal 返回首项；真实 history 成功标志虽为 true，却没有专用逐 action 后置观察。普通执行面和区段 effect/postcondition 尚不能证明，按 ADR 0005 硬停止条件 4 停止 compiler 实现，已重做 Reuse Assessment。详见 [H2 准入证据与停止理由](evidence/workflow-use-hybrid-h2/README.md)。
+
+保留通过的退役 gate、脱敏 fixture、干净 fork 和全部既有诊断/用户数据；不重跑网站、不续加补丁、不清理旧环境。没有把方法级探针称为包集成或真实运行通过，没有记录 H7 abandoned，因为 H7 尚未开始。下一步必须先解决 H2 普通能力与逐动作证据的成熟公开复用门，不能直接进入分类器。
+
+## 2026-09-16 H0/H1 已通过，H2 开始
+
+两份真实 history digest 匹配，25 个初始 dirty 文件已登记并保留。最小脱敏结构 fixture、处置与失败分析见 [H0/H1 证据](evidence/workflow-use-hybrid-h0/README.md)。v1 author/writer/compiler/replay/resume/queue/invoke 在模型准备、Python、Browser 和 capability factory 前退休；mixed 单独拒绝，v1 读取/导出保持。专用 `workflow-retirement.test.ts` 3/3 通过（内部覆盖 8 类 HTTP 命令、两种队列及子链）；API TypeScript 通过。没有运行根级/全量测试，没有真实浏览器运行、安装、提交或清理。旧 v1 正向测试与 runner/patch 仍隔离保留，H6 前不声称原子切换完成。
+
+H2 开始核对干净固定源码与普通 executor 准入；完整 history 存在 action/result 数量不匹配，尚未证明可规范化或生成 candidate。
+
+## 混合编译开发基线已完成文档修订（2026-09-16）
+
+真实 LangGraph Issues 任务证明此前 Aster/Beryl 和简单表单样例不足以冻结选型。当前 B-A-T 使用 `use_deterministic_conversion=False`，让模型根据完整 browser-use history 生成整份 workflow definition；上游 deterministic 则只是动作级机械翻译。补丁后纯执行曾到达详情页，但旧 definition 把“第 2 页第 1 条”固化为样本 Issue 标题，正式 B-A-T 最新验证也未完成，因此整体状态仍是 **未完成/不通过**。
+
+两次 gpt-6-astra 对抗审阅指出旧草案缺少精确输入合同、动作覆盖、需求对齐、binding、控制流、唯一物化、证明生命周期，以及旧 runner/artifact/setup/runtime/data 的实际处置。现已补齐：
+
+- [编译规范](WORKFLOW_USE_HYBRID_CONVERSION_SPEC.md)：定义 `CompilationRequest`、NormalizedTrace、coverage、BindingDecision、区段算法、固定分类、branch/loop/invoke、canonical digest、正反例和验收；
+- [旧路径处置规范](WORKFLOW_USE_LEGACY_DISPOSITION.md)：列出正式旧调用链、逐项 keep/rewrite/remove、v1 只读门、补丁证据、原子切换和删除条件；
+- [开发计划](WORKFLOW_USE_HYBRID_COMPILER_PLAN.md) 与 [ADR 0005](../adr/0005-workflow-use-fork-hybrid-compiler.md)：按 H0 证据保护、H1 旧入口退休、H2 干净 fork、H3–H6 编译/切换、H7 真实验收重排。
+
+当前 0003–0012、runner 和旧 artifact/setup 修改继续留在未提交工作区，只作为诊断现场。下一开发任务先完成 H0/H1，不能直接导入补丁、继续跑真实任务或把 v1 数据删除。最终真实验收任一硬门失败即记录 `abandoned`。
+
 ## browser-use / workflow-use 替换阶段门（2026-09-15，阶段 1–7 通过）
 
 本节覆盖下方旧预执行方案的当前状态；旧“已接入/通过”只作为历史记录。新路径已经接入产品本地入口，京东、Windows 和分发仍是独立后续门。
@@ -969,7 +1083,7 @@ B-A-T 已通过既有 `ai-connect:sync` 接入 `@agent-platform/ai-connect@0.3.2
 
 原始 red 命令：
 
-`PATH=/Users/guojunxi/.nvm/versions/node/v24.12.0/bin:/usr/bin:/bin npm exec --workspace @browser-capture/workbench -- tsx --test --test-name-pattern='正式采访决策题|补充文字|compound choice history' tests/chat-timeline.test.ts`
+使用 Node 24.12.0 执行：`npm exec --workspace @browser-capture/workbench -- tsx --test --test-name-pattern='正式采访决策题|补充文字|compound choice history' tests/chat-timeline.test.ts`
 
 结果为 3 项中 1 通过、2 失败：选择题 Surface 缺少 `data.inputs`；带补充的 decision 无法通过 label 反解恢复 answered interaction。最终同命令 3/3 通过。
 

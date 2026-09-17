@@ -1,9 +1,12 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-15
+superseded_by: ADR 0005
 ---
 
 # browser-use 探索与 workflow-use 复跑的本地集成决策
+
+> **2026-09-16 结论失效**：真实 LangGraph Issues 任务证明 workflow-use 0.2.11 的直接接入不能承担通用混合链路编译；B-A-T 还无依据地关闭 deterministic conversion，改用模型生成完整 definition。本文的 `verified` 和“选型冻结”仅保留为当时简单样例的历史记录。当前决策见 [ADR 0005](0005-workflow-use-fork-hybrid-compiler.md)，转换合同见[混合编译规范](../development/WORKFLOW_USE_HYBRID_CONVERSION_SPEC.md)，退出旧实现见[旧路径处置规范](../development/WORKFLOW_USE_LEGACY_DISPOSITION.md)。
 
 本决策替代 ADR 0002 的 Pi 探索、trace/annotation 编译和 ADR 0003 的相关预执行策略。阶段 1–7 已在本地通过，产品链已经完成样本、不同输入验证和授权复跑并标为 `verified`。京东、Windows 与分发仍是独立门。阶段决策和逐文件范围见 [替换记录](../development/BROWSER_USE_REPLACEMENT.md)。
 

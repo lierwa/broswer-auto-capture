@@ -1,0 +1,37 @@
+{
+  "sourcePath": "data/upstream-browser-artifacts/0d64348d-f4d1-44d0-8000-cbbc62241eee/874566da-bd4e-4485-8b1b-dcde7e7df248-collect-filtered-issues/history.json",
+  "sourceDigest": "3f941f1dc9b95780dae7e2ca5fc9e8068b7c7c6334db7a29aabc69259e647577",
+  "fixturePath": "apps/api/tests/fixtures/workflow-use-hybrid/short.json",
+  "fixtureDigest": "1d6ba1fc359c58bdf9a34f53ef5db07378d799e993845b76f3dd50c3e4635128",
+  "policy": "structure-only/v1",
+  "preserved": [
+    "step/action/result order",
+    "action names and argument field shape",
+    "numeric and boolean argument values",
+    "opaque repeated-string equality",
+    "result flags",
+    "tab and interacted element counts"
+  ],
+  "removed": [
+    "all string argument values replaced by opaque tokens",
+    "all result text, memory and judgement bodies",
+    "state_message",
+    "title",
+    "tabs contents",
+    "interacted_element contents",
+    "metadata",
+    "screenshot paths"
+  ],
+  "neverOpened": [
+    "screenshots",
+    "profile",
+    "Cookies",
+    "Local Storage"
+  ],
+  "limits": [
+    "Not a successful normalized trace",
+    "Does not infer per-action success from absent error",
+    "Does not infer post-state from next history item",
+    "Does not claim business judgement passed"
+  ]
+}

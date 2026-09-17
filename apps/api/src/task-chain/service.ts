@@ -1,3 +1,5 @@
+import { assertCommandRuntime } from "./command-retirement.js"
+import { DomainError } from "../errors.js"
 import {
   CONTRACT_VERSION, parseTaskValue, taskChainCommandSchema, taskChainStateSchema, taskPlanExecutionIssues,
   type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskChainCommand, type TaskExecution,
@@ -59,6 +61,8 @@ export class TaskChainService {
   dispatch(taskId: string, raw: unknown) {
     const command = taskChainCommandSchema.parse(raw)
     this.store.task(taskId)
+    if (["author_task", "generate_chain", "generate_task_chains"].includes(command.type)) syncConfirmedRequirement(this.store, this.repository, taskId)
+    assertCommandRuntime(taskId, command, this.repository, this.host)
     if (command.type === "cancel_authoring") {
       this.repository.job(taskId, command.jobId)
       this.controllers.get(`${taskId}:${command.jobId}`)?.abort()
@@ -115,7 +119,7 @@ export class TaskChainService {
     if (!requirement || requirement.version !== command.requirementVersion) conflict("只能为当前已确认需求执行预执行。")
     const input = command.input
     // WHY：恢复候选必须绑定实际规划规则；prompt 改变后不能把旧语义计划带进新的浏览器探索。
-    const key = `${requirement.id}:${requirement.version}:task-authoring:workflow-use-v1:${digestJson(planPrompt(requirement, input))}:${digestJson(input)}`
+    const key = `${requirement.id}:${requirement.version}:task-authoring:workflow-use-v2:${digestJson(planPrompt(requirement, input))}:${digestJson(input)}`
     const jobs = this.repository.jobs(taskId)
     const fromAudit = reusablePlanCandidate(jobs, key, (candidate) => semanticPlanSchema.safeParse(candidate).success)
     const job = this.newJob(taskId, command.requestId, "chain", key)
@@ -328,7 +332,7 @@ export class TaskChainService {
         failed.status = "paused"; failed.outcome = { status: "paused", cause: "interrupted", checkpointId: failed.checkpoint.id,
           reason: "验证已中断。", evidence: failed.checkpoint.artifacts }
       } else {
-        failed.status = "failed"; failed.outcome = { status: "failed", code: "validation_host_failed",
+        failed.status = "failed"; failed.outcome = { status: "failed", code: error instanceof DomainError ? error.code : "validation_host_failed",
           reason: `验证未完成：${error instanceof Error ? error.message : "host_failed"}`, evidence: [] }
       }
       this.repository.saveRun(failed)

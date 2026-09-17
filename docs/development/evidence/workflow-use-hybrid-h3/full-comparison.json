@@ -1,0 +1,1452 @@
+{
+  "scope": "redacted structure only; actual imported converter methods; no LLM conversion run",
+  "sourceDigest": "9fbc88645c29c65155e2e235727d318f7a70e1e1accceda76eacda580197b69a",
+  "traceDigest": "a8fc454d2b13df8bd24531d9d06930a2f299915ed017a80c5e79b258e7523295",
+  "registry": {
+    "providerVersion": "0.13.8",
+    "schemaDigest": "b9a7a5300f7385c27f40e09acd51add971d237177f4be0ddc7c498fb80ed10a2",
+    "names": [
+      "click",
+      "close",
+      "done",
+      "dropdown_options",
+      "evaluate",
+      "extract",
+      "find_elements",
+      "find_text",
+      "go_back",
+      "input",
+      "navigate",
+      "read_file",
+      "replace_file",
+      "save_as_pdf",
+      "screenshot",
+      "scroll",
+      "search",
+      "search_page",
+      "select_dropdown",
+      "send_keys",
+      "switch",
+      "upload_file",
+      "wait",
+      "write_file"
+    ]
+  },
+  "comparison": [
+    {
+      "actionRef": "a-0001",
+      "name": "write_file",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0002",
+      "name": "navigate",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "navigation"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0003",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0004",
+      "name": "wait",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0005",
+      "name": "replace_file",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0006",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0007",
+      "name": "wait",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0008",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0009",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0010",
+      "name": "wait",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0011",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0012",
+      "name": "wait",
+      "status": "proposed",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0013",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0014",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0015",
+      "name": "wait",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0016",
+      "name": "replace_file",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0017",
+      "name": "find_elements",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0018",
+      "name": "find_elements",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0019",
+      "name": "evaluate",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0020",
+      "name": "find_elements",
+      "status": "proposed",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0021",
+      "name": "evaluate",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0022",
+      "name": "find_elements",
+      "status": "proposed",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0023",
+      "name": "find_elements",
+      "status": "proposed",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0024",
+      "name": "scroll",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "scroll"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0025",
+      "name": "replace_file",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0026",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0027",
+      "name": "scroll",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "scroll"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0028",
+      "name": "find_elements",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0029",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0030",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0031",
+      "name": "go_back",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "go_back"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0032",
+      "name": "go_back",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "go_back"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0033",
+      "name": "replace_file",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0034",
+      "name": "find_elements",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0035",
+      "name": "scroll",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "scroll"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0036",
+      "name": "click",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "produced_step",
+        "stepType": "click"
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0037",
+      "name": "find_elements",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    },
+    {
+      "actionRef": "a-0038",
+      "name": "done",
+      "status": "succeeded",
+      "deterministic": {
+        "result": "omitted",
+        "stepType": null
+      },
+      "hybrid": "not_compilable"
+    }
+  ],
+  "coverage": [
+    {
+      "actionRef": "a-0001",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/0/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0002",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/0/result/1",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0003",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/1/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0004",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/2/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0005",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/3/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0006",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/3/result/1",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0007",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/4/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0008",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/5/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0009",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/6/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0010",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/7/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0011",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/8/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0012",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": []
+    },
+    {
+      "actionRef": "a-0013",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/9/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0014",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/10/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0015",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/11/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0016",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/12/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0017",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/12/result/1",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0018",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/12/result/2",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0019",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/13/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0020",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": []
+    },
+    {
+      "actionRef": "a-0021",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/14/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0022",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": []
+    },
+    {
+      "actionRef": "a-0023",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": []
+    },
+    {
+      "actionRef": "a-0024",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/16/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0025",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/17/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0026",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/17/result/1",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0027",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/18/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0028",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/19/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0029",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/19/result/1",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0030",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/20/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0031",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/21/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0032",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/22/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0033",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/23/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0034",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/23/result/1",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0035",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/24/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0036",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/25/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0037",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/26/result/0",
+          "digest": "e852380cb87dcb56283f38402f34ee09fb22d271b33e886fafb9bf9130ca1059"
+        }
+      ]
+    },
+    {
+      "actionRef": "a-0038",
+      "disposition": "not_compilable",
+      "ownerSegmentId": null,
+      "exclusionRule": null,
+      "evidenceRefs": [
+        {
+          "ref": "fixture:step/27/result/0",
+          "digest": "90b4176f0390b5fd16d1fd1d2d35c4ba626ee323018046c11c05720d49538ba4"
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "id": "g-039b56f7899fbead",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0003"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-12f5748c4beb458e",
+      "code": "invalid_source",
+      "actionRefs": [
+        "a-0012"
+      ],
+      "clauseRefs": [],
+      "reason": "action_result_unpaired_or_ambiguous",
+      "resolution": "reject_trace"
+    },
+    {
+      "id": "g-132f069ff7457fa9",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0018"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-13cbdc353e253af4",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0017"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-15bb81d1c5f73849",
+      "code": "invalid_source",
+      "actionRefs": [
+        "a-0038"
+      ],
+      "clauseRefs": [],
+      "reason": "action_not_valid_for_public_schema",
+      "resolution": "reject_trace"
+    },
+    {
+      "id": "g-16f0551f463668ae",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0036"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-190fe3895478819e",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0024"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-1bb5c2f7a5cc4f3a",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0030"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-1f0ab96d2f01570b",
+      "code": "invalid_source",
+      "actionRefs": [
+        "a-0020"
+      ],
+      "clauseRefs": [],
+      "reason": "action_result_unpaired_or_ambiguous",
+      "resolution": "reject_trace"
+    },
+    {
+      "id": "g-2279022d80d593f9",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0011"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-28442c1dd90823c1",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0036"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-31b194914faa107e",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0021"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-388174d0f77b57d8",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0035"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-3d80703a8608ecd1",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0005"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-401ed8315d021d8d",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0016"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-44c8b0a23766127c",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0029"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-4912f45664fb37e5",
+      "code": "invalid_source",
+      "actionRefs": [],
+      "clauseRefs": [],
+      "reason": "unpaired_result_at_step:15",
+      "resolution": "reject_trace"
+    },
+    {
+      "id": "g-5218f6b52d819001",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0002"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-5511b8e52ce232ce",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0030"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-56e74e34ef91e287",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0006"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-576cd827eba36861",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0019"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-5ab3409915ed5ac4",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0031"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-5ba7baff3618561e",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0005"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-67f6758ae6f5b771",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0034"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-6ea66c0632fe048d",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0011"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-704d5a8639ea3167",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0019"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-71ac16a165501cd8",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0032"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-724e3d0a9080a1a7",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0008"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-7528dcf0153d2c54",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0014"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-7e7ad7f132f6ed2d",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0033"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-85db5d29e5366def",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0037"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-85ead0e4c3a5b403",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0032"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-8612974d4ea4f780",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0009"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-89353f0b9152e1ce",
+      "code": "invalid_source",
+      "actionRefs": [
+        "a-0022"
+      ],
+      "clauseRefs": [],
+      "reason": "action_result_unpaired_or_ambiguous",
+      "resolution": "reject_trace"
+    },
+    {
+      "id": "g-8cd624bac6f319fa",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0001"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-911b6128f0ea5acd",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0006"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-91a4c9e89424fb76",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0031"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-97218901c1fc12bf",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0016"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-97d6a3b0008b8f43",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0013"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-9ddca434cccf14c4",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0001"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-a6efd24166f63e5d",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0003"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-b2b5fe0609a53129",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0026"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-b8dc0b55631cf5c7",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0002"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-b9120de174aef163",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0021"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-c4183e1736c68d46",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0029"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-ce5cd7f65dda7027",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0033"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-cf742b0058f918e2",
+      "code": "invalid_source",
+      "actionRefs": [
+        "a-0023"
+      ],
+      "clauseRefs": [],
+      "reason": "action_result_unpaired_or_ambiguous",
+      "resolution": "reject_trace"
+    },
+    {
+      "id": "g-d1d43cdc78dcdf1c",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0014"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-d5b44bdb1224d495",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0013"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-d78bbed44d01c822",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0027"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-dbbcfc8a01d8ac79",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0025"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-ddbc67bb3e8a3e9d",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0028"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-e23009aeaea0433a",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0008"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-eb07be7ef03d901f",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0009"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-ed6142bf192c23a7",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0027"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-f03893a6a310e9fe",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0026"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-f8b0878009d3ff5e",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0035"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-fb02bd04d664e40f",
+      "code": "missing_postcondition",
+      "actionRefs": [
+        "a-0024"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_post_observation",
+      "resolution": "collect_evidence"
+    },
+    {
+      "id": "g-fc29be853b16924e",
+      "code": "missing_observation",
+      "actionRefs": [
+        "a-0025"
+      ],
+      "clauseRefs": [],
+      "reason": "missing_action_pre_observation",
+      "resolution": "collect_evidence"
+    }
+  ],
+  "candidate": false,
+  "browserSessions": 0,
+  "modelCalls": 0,
+  "llmConversion": {
+    "execution": "not_run",
+    "reason": "upstream full-graph generation is outside the accepted model boundary"
+  }
+}

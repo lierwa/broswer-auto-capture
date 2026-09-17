@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "bat.mainline-natural/v1",
+  "validationScope": "source_probe",
+  "runId": "c5388804-13b6-4c70-845b-d1316a0f7bd5",
+  "taskId": "79b4e6a3-b500-4d52-98c7-f9370638675e",
+  "status": "failed_before_source_acceptance",
+  "model": {
+    "modelId": "gpt-5.6-terra",
+    "reasoningEffort": "medium"
+  },
+  "reasonCode": "mainline_natural_probe_timeout",
+  "artifacts": {
+    "localResult": "work/natural-task-validation/c5388804-13b6-4c70-845b-d1316a0f7bd5/source-result.json"
+  },
+  "cleanup": {
+    "applicationClosed": true,
+    "sourceContractsUnchanged": true
+  }
+}

@@ -1,0 +1,959 @@
+{
+  "format": "bat-redacted-history-structure/v1",
+  "sourceDigest": "9fbc88645c29c65155e2e235727d318f7a70e1e1accceda76eacda580197b69a",
+  "history": [
+    {
+      "stepIndex": 0,
+      "actions": [
+        {
+          "write_file": {
+            "file_name": "redacted-1",
+            "content": "redacted-2",
+            "append": false,
+            "trailing_newline": true,
+            "leading_newline": false
+          }
+        },
+        {
+          "navigate": {
+            "url": "redacted-3",
+            "new_tab": false
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        },
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-4",
+        "tabCount": 1,
+        "interactedElementCount": 2
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 1,
+      "actions": [
+        {
+          "click": {
+            "index": 1369
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-3",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 2,
+      "actions": [
+        {
+          "wait": {
+            "seconds": 3
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-3",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 3,
+      "actions": [
+        {
+          "replace_file": {
+            "file_name": "redacted-1",
+            "old_str": "redacted-5",
+            "new_str": "redacted-6"
+          }
+        },
+        {
+          "click": {
+            "index": 9857
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        },
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-7",
+        "tabCount": 1,
+        "interactedElementCount": 2
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 4,
+      "actions": [
+        {
+          "wait": {
+            "seconds": 3
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-8",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 5,
+      "actions": [
+        {
+          "click": {
+            "index": 7753
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-8",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 6,
+      "actions": [
+        {
+          "click": {
+            "index": 12768
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-8",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 7,
+      "actions": [
+        {
+          "wait": {
+            "seconds": 3
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-8",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 8,
+      "actions": [
+        {
+          "click": {
+            "index": 12710
+          }
+        },
+        {
+          "wait": {
+            "seconds": 3
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-8",
+        "tabCount": 1,
+        "interactedElementCount": 2
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 9,
+      "actions": [
+        {
+          "click": {
+            "index": 7792
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-9",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 10,
+      "actions": [
+        {
+          "click": {
+            "index": 16049
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-9",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 11,
+      "actions": [
+        {
+          "wait": {
+            "seconds": 3
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 12,
+      "actions": [
+        {
+          "replace_file": {
+            "file_name": "redacted-1",
+            "old_str": "redacted-11",
+            "new_str": "redacted-12"
+          }
+        },
+        {
+          "find_elements": {
+            "selector": "redacted-13",
+            "attributes": [
+              "redacted-14"
+            ],
+            "max_results": 10,
+            "include_text": true
+          }
+        },
+        {
+          "find_elements": {
+            "selector": "redacted-15",
+            "attributes": [
+              "redacted-14",
+              "redacted-16",
+              "redacted-17"
+            ],
+            "max_results": 50,
+            "include_text": true
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        },
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        },
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 3
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 13,
+      "actions": [
+        {
+          "evaluate": {
+            "code": "redacted-18"
+          }
+        },
+        {
+          "find_elements": {
+            "selector": "redacted-19",
+            "attributes": [
+              "redacted-14",
+              "redacted-17",
+              "redacted-16"
+            ],
+            "max_results": 30,
+            "include_text": true
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 2
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 14,
+      "actions": [
+        {
+          "evaluate": {
+            "code": "redacted-20"
+          }
+        },
+        {
+          "find_elements": {
+            "selector": "redacted-21",
+            "attributes": [
+              "redacted-14",
+              "redacted-16",
+              "redacted-17"
+            ],
+            "max_results": 10,
+            "include_text": true
+          }
+        },
+        {
+          "find_elements": {
+            "selector": "redacted-22",
+            "attributes": [
+              "redacted-14",
+              "redacted-16"
+            ],
+            "max_results": 20,
+            "include_text": true
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 3
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 15,
+      "actions": [],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": true,
+          "extractedContentPresent": false,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 16,
+      "actions": [
+        {
+          "scroll": {
+            "down": true,
+            "pages": 10.0
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 17,
+      "actions": [
+        {
+          "replace_file": {
+            "file_name": "redacted-1",
+            "old_str": "redacted-23",
+            "new_str": "redacted-24"
+          }
+        },
+        {
+          "click": {
+            "index": 8931
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        },
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 2
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 18,
+      "actions": [
+        {
+          "scroll": {
+            "down": false,
+            "pages": 10.0
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-25",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 19,
+      "actions": [
+        {
+          "find_elements": {
+            "selector": "redacted-26",
+            "attributes": [
+              "redacted-14"
+            ],
+            "max_results": 5,
+            "include_text": true
+          }
+        },
+        {
+          "click": {
+            "index": 17822
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        },
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-25",
+        "tabCount": 1,
+        "interactedElementCount": 2
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 20,
+      "actions": [
+        {
+          "click": {
+            "index": 17822
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-25",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 21,
+      "actions": [
+        {
+          "go_back": {
+            "description": "redacted-27"
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-28",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 22,
+      "actions": [
+        {
+          "go_back": {
+            "description": "redacted-29"
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-25",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 23,
+      "actions": [
+        {
+          "replace_file": {
+            "file_name": "redacted-1",
+            "old_str": "redacted-30",
+            "new_str": "redacted-31"
+          }
+        },
+        {
+          "find_elements": {
+            "selector": "redacted-32",
+            "attributes": [
+              "redacted-14"
+            ],
+            "max_results": 15,
+            "include_text": true
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        },
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 2
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 24,
+      "actions": [
+        {
+          "scroll": {
+            "down": true,
+            "pages": 10.0
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 25,
+      "actions": [
+        {
+          "click": {
+            "index": 30030
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-10",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 26,
+      "actions": [
+        {
+          "find_elements": {
+            "selector": "redacted-33",
+            "attributes": [
+              "redacted-14"
+            ],
+            "max_results": 5,
+            "include_text": true
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-25",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 27,
+      "actions": [
+        {
+          "done": {
+            "success": true,
+            "data": {
+              "pages": [
+                {
+                  "page": 1,
+                  "issues": [
+                    {
+                      "number": "redacted-34",
+                      "title": "redacted-35",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-37"
+                      ],
+                      "updatedAt": "redacted-38",
+                      "detailUrl": "redacted-39"
+                    },
+                    {
+                      "number": "redacted-40",
+                      "title": "redacted-41",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-42"
+                      ],
+                      "updatedAt": "redacted-43",
+                      "detailUrl": "redacted-44"
+                    },
+                    {
+                      "number": "redacted-45",
+                      "title": "redacted-46",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-47"
+                      ],
+                      "updatedAt": "redacted-43",
+                      "detailUrl": "redacted-48"
+                    },
+                    {
+                      "number": "redacted-49",
+                      "title": "redacted-50",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-47"
+                      ],
+                      "updatedAt": "redacted-51",
+                      "detailUrl": "redacted-52"
+                    },
+                    {
+                      "number": "redacted-53",
+                      "title": "redacted-54",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-47"
+                      ],
+                      "updatedAt": "redacted-55",
+                      "detailUrl": "redacted-56"
+                    }
+                  ]
+                },
+                {
+                  "page": 2,
+                  "issues": [
+                    {
+                      "number": "redacted-57",
+                      "title": "redacted-58",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-47"
+                      ],
+                      "updatedAt": "redacted-59",
+                      "detailUrl": "redacted-28"
+                    },
+                    {
+                      "number": "redacted-60",
+                      "title": "redacted-61",
+                      "labels": [
+                        "redacted-36"
+                      ],
+                      "updatedAt": "redacted-62",
+                      "detailUrl": "redacted-63"
+                    },
+                    {
+                      "number": "redacted-64",
+                      "title": "redacted-65",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-47"
+                      ],
+                      "updatedAt": "redacted-62",
+                      "detailUrl": "redacted-66"
+                    },
+                    {
+                      "number": "redacted-67",
+                      "title": "redacted-68",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-47",
+                        "redacted-37"
+                      ],
+                      "updatedAt": "redacted-69",
+                      "detailUrl": "redacted-70"
+                    },
+                    {
+                      "number": "redacted-71",
+                      "title": "redacted-72",
+                      "labels": [
+                        "redacted-36",
+                        "redacted-47"
+                      ],
+                      "updatedAt": "redacted-73",
+                      "detailUrl": "redacted-74"
+                    }
+                  ]
+                }
+              ],
+              "secondPageFirstDetail": {
+                "number": "redacted-57",
+                "author": "redacted-75",
+                "createdAt": "redacted-76"
+              },
+              "report": "redacted-77"
+            },
+            "files_to_display": []
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": true,
+          "success": true,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": true
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-25",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    }
+  ],
+  "expectedCompilation": {
+    "status": "not_compilable",
+    "candidate": false,
+    "reason": "Structure-only evidence does not prove stable targets, postconditions, bindings or confirmed control intent."
+  }
+}

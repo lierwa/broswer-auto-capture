@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "bat.mainline-natural-audit-correction/v1",
+  "validationScope": "source_probe_audit_correction",
+  "runId": "1c5c36c8-911c-4ad7-9d61-19aa1ede003a",
+  "corrects": {
+    "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-1c5c36c8-911c-4ad7-9d61-19aa1ede003a.json",
+    "sha256": "57b66e9cd8f11abca31fa848dcd31241eb8bc9ba95b2ad9e5c50eed4c1b748ee"
+  },
+  "failure": {
+    "stage": "exploring",
+    "layer": "browser-use 探索",
+    "issueCode": "unrecognized_keys",
+    "issuePath": [],
+    "unrecognizedKeys": [
+      "semanticAnnotationCalls"
+    ]
+  },
+  "audit": {
+    "available": false,
+    "reason": "source_result_rejected_before_host_acceptance",
+    "acceptedSourceCount": 0,
+    "expectedSourceCount": 1,
+    "jobConsumptionProviderInvocations": null,
+    "persistedModelAuditCount": 0,
+    "persistedBrowserRunCount": 0,
+    "persistedSourceArtifactCount": 0
+  },
+  "correctedOutcome": {
+    "source_success": null,
+    "source_judged": null,
+    "source_closed": null,
+    "browserCommands": null,
+    "modelCalls": null,
+    "candidate": false,
+    "sample": false,
+    "sampleAttempts": 0,
+    "verification": false,
+    "verificationAttempts": 0
+  },
+  "recovery": {
+    "sourceRecoverable": false,
+    "reason": "no_persisted_source_artifact_or_return_cache"
+  },
+  "cleanup": {
+    "applicationClosed": true,
+    "sourceContractsUnchanged": true
+  }
+}

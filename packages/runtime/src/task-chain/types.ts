@@ -53,7 +53,7 @@ export interface LlmNodeInvocation {
 
 export type ModelCallReport = Readonly<{
   callId: string
-  purpose: "agent" | "judge" | "workflow_generation" | "variable_suggestion" | "extract" | "output_conversion"
+  purpose: "agent" | "judge" | "workflow_generation" | "variable_suggestion" | "extract" | "output_conversion" | "semantic_annotation"
   model: string
   intendedAt: string
   status: "intended" | "completed" | "failed" | "interrupted"

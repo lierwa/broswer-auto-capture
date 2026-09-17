@@ -1,0 +1,30 @@
+{
+  "actionsExecuted": [
+    "navigate:compiled-scope-url",
+    "click:compiled-target-condition"
+  ],
+  "actualTargetState": "{\"aria-expanded\":true,\"disabled\":false}",
+  "browserClosed": true,
+  "compiledInput": {
+    "condition": {
+      "clauseRef": "fact-ad914ea9180a52ee9d5a6d27d7493ddaedd1e6ef52669c12bd18130016f0b6ed",
+      "equals": "{\"aria-expanded\":true,\"disabled\":false}",
+      "kind": "target_state",
+      "settle": {
+        "intervalMs": 300,
+        "maxAttempts": 100,
+        "maxMs": 30000
+      }
+    },
+    "target": {
+      "scope": {
+        "url": "https://github.com/langchain-ai/langgraph/issues",
+        "urlDigest": "c7471eaa22972c32ef5a9705f99f4cfdb6f2772c4132750b7e9bf37ac8bd758d"
+      },
+      "strategy": "css",
+      "value": "button[aria-label=\"Filter by labels\"]"
+    }
+  },
+  "providerCalls": 0,
+  "stage": "completed"
+}

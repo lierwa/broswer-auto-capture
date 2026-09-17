@@ -1,5 +1,0 @@
-name = "sol-lifecycle"
-description = "跨模块协议、运行生命周期和恢复语义"
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
-developer_instructions = "处理跨模块协议或生命周期前先明确不变量、失败语义和验证门。"

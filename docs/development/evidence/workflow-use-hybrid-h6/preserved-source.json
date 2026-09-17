@@ -1,0 +1,62 @@
+[
+  {
+    "path": "apps/api/python/browser_use_runner/main.py",
+    "sha256": "315edbffbd6d4b0eb930f0502f4a07825f8b2248c7b72eb72fe23f74c1fffd78",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/main.py",
+    "disposition": "rewrite only after v2 replacement is verified; original bytes preserved"
+  },
+  {
+    "path": "scripts/setup-upstream-browser-runner.mjs",
+    "sha256": "6cd3164bb7e360d2b0225f140c4fad7d93d74c0abc59c42fe14ce72e053a905a",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/setup-upstream-browser-runner.mjs",
+    "disposition": "rewrite only after v2 replacement is verified; original bytes preserved"
+  },
+  {
+    "path": "apps/api/tests/upstream-browser-runner.test.ts",
+    "sha256": "d2782fa6f99060d377fb2456db0d556994c8808296798618e79146f173f7efd6",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/upstream-browser-runner.test.ts",
+    "disposition": "rewrite only after v2 replacement is verified; original bytes preserved"
+  },
+  {
+    "path": "apps/api/src/task-chain/runtime-host.ts",
+    "sha256": "de13431b6b3ad7d841b80c591decbcb53852322bd6720b34005988fa5d996d21",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/runtime-host-with-v1-retired.ts",
+    "disposition": "v1 implementation archived; v2 adapter replaces execution only"
+  },
+  {
+    "path": "apps/api/src/upstream-browser/workflow-artifact.ts",
+    "sha256": "378b79cbc68ceca931a07314162df2d99675889d9f8be39db28ac663f094fcf4",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/workflow-artifact-with-v1-retired.ts",
+    "disposition": "v1 implementation archived; v2 adapter replaces execution only"
+  },
+  {
+    "path": "apps/api/src/upstream-browser/task-request.ts",
+    "sha256": "18075540db7ab8c81fde5ab6486e76a5bb94e933ea0c40427030c3f3492ce5ab",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/task-request-v1.ts",
+    "disposition": "v1 implementation archived; v2 adapter replaces execution only"
+  },
+  {
+    "path": "apps/api/src/task-chain/authoring-prompts.ts",
+    "sha256": "f17e12f685dfbc0b8ba82278050a7b41fb7c37885fc971aae8ff32d552f98bfd",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/authoring-prompts-v1.ts",
+    "disposition": "v1 implementation archived; v2 adapter replaces execution only"
+  },
+  {
+    "path": "apps/api/src/task-chain/authoring.ts",
+    "sha256": "876e8a1bfeac09897b61bf15229dee7e732f7866aa3fb740b435004af5de3918",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/authoring.ts",
+    "disposition": "original retired implementation preserved before rewrite"
+  },
+  {
+    "path": "apps/api/src/upstream-browser/service.ts",
+    "sha256": "ff02dd71a58baccdbcca126d3780387c8f124dc16da7df28315c047b12cc3bf9",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/service-with-v1-retired.ts",
+    "disposition": "original retired implementation preserved before rewrite"
+  },
+  {
+    "path": "apps/api/tests/task-chain.test.ts",
+    "sha256": "0a87fd8ca5df80de9ecc5f5e41288dcb21ef7074646d9b73641b37fa33d53c6c",
+    "preservedAt": "work/workflow-use-hybrid-h6-before/task-chain-v1.test.ts",
+    "disposition": "v1 positive tests replaced by formal v2 lifecycle tests"
+  }
+]

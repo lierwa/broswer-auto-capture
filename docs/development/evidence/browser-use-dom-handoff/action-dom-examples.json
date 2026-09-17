@@ -1,0 +1,172 @@
+{
+  "sourceSha256": "9fbc88645c29c65155e2e235727d318f7a70e1e1accceda76eacda580197b69a",
+  "indexing": "zero-based step/action",
+  "examples": [
+    {
+      "stepIndex": 17,
+      "actionIndex": 1,
+      "name": "click",
+      "actionDigest": "5778b08e20f6cb18ae240bc922eed8935f0e6b1ad3f55d0c4a455ab43cd0930b",
+      "interactionIndex": 8931,
+      "interactedElementPresent": true,
+      "displayTargetMatchCount": 1,
+      "nodeTag": "A",
+      "xpathPresent": true,
+      "parentChildrenPresent": false,
+      "state": {
+        "kind": "list",
+        "pageQueryParameter": null
+      },
+      "nextStepState": {
+        "kind": "list",
+        "pageQueryParameter": [
+          "2"
+        ]
+      },
+      "resultPresent": true,
+      "resultErrorPresent": false,
+      "findElementsReturnedZero": false,
+      "clickCoordinatesInResultMetadata": true,
+      "qualification": "Next-step state is an observation, not an atomic per-action post-state. No implication that DOM ancestor attributes or list order are fully proved."
+    },
+    {
+      "stepIndex": 19,
+      "actionIndex": 0,
+      "name": "find_elements",
+      "actionDigest": "c2660f448a08bab07988cab1a778a34b5ac47df65ea7c29fb935a7b76a383044",
+      "interactionIndex": null,
+      "interactedElementPresent": false,
+      "displayTargetMatchCount": 0,
+      "nodeTag": null,
+      "xpathPresent": false,
+      "parentChildrenPresent": false,
+      "state": {
+        "kind": "list",
+        "pageQueryParameter": [
+          "2"
+        ]
+      },
+      "nextStepState": {
+        "kind": "list",
+        "pageQueryParameter": [
+          "2"
+        ]
+      },
+      "resultPresent": true,
+      "resultErrorPresent": false,
+      "findElementsReturnedZero": true,
+      "clickCoordinatesInResultMetadata": false,
+      "qualification": "Next-step state is an observation, not an atomic per-action post-state. No implication that DOM ancestor attributes or list order are fully proved."
+    },
+    {
+      "stepIndex": 19,
+      "actionIndex": 1,
+      "name": "click",
+      "actionDigest": "33b3874dc4899b35477fb92bbeb92bfbf6f9b3cb6b4a0ed01d4c69ea0cee24c8",
+      "interactionIndex": 17822,
+      "interactedElementPresent": true,
+      "displayTargetMatchCount": 1,
+      "nodeTag": "A",
+      "xpathPresent": true,
+      "parentChildrenPresent": false,
+      "state": {
+        "kind": "list",
+        "pageQueryParameter": [
+          "2"
+        ]
+      },
+      "nextStepState": {
+        "kind": "list",
+        "pageQueryParameter": [
+          "2"
+        ]
+      },
+      "resultPresent": true,
+      "resultErrorPresent": false,
+      "findElementsReturnedZero": false,
+      "clickCoordinatesInResultMetadata": true,
+      "qualification": "Next-step state is an observation, not an atomic per-action post-state. No implication that DOM ancestor attributes or list order are fully proved."
+    },
+    {
+      "stepIndex": 20,
+      "actionIndex": 0,
+      "name": "click",
+      "actionDigest": "33b3874dc4899b35477fb92bbeb92bfbf6f9b3cb6b4a0ed01d4c69ea0cee24c8",
+      "interactionIndex": 17822,
+      "interactedElementPresent": true,
+      "displayTargetMatchCount": 1,
+      "nodeTag": "A",
+      "xpathPresent": true,
+      "parentChildrenPresent": false,
+      "state": {
+        "kind": "list",
+        "pageQueryParameter": [
+          "2"
+        ]
+      },
+      "nextStepState": {
+        "kind": "detail",
+        "pageQueryParameter": null
+      },
+      "resultPresent": true,
+      "resultErrorPresent": false,
+      "findElementsReturnedZero": false,
+      "clickCoordinatesInResultMetadata": false,
+      "qualification": "Next-step state is an observation, not an atomic per-action post-state. No implication that DOM ancestor attributes or list order are fully proved."
+    },
+    {
+      "stepIndex": 21,
+      "actionIndex": 0,
+      "name": "go_back",
+      "actionDigest": "75ffbbd9cdd50a1d6bbf9f1077034d46cc11fa577463261b18c49dac195e7ca0",
+      "interactionIndex": null,
+      "interactedElementPresent": false,
+      "displayTargetMatchCount": 0,
+      "nodeTag": null,
+      "xpathPresent": false,
+      "parentChildrenPresent": false,
+      "state": {
+        "kind": "detail",
+        "pageQueryParameter": null
+      },
+      "nextStepState": {
+        "kind": "list",
+        "pageQueryParameter": [
+          "2"
+        ]
+      },
+      "resultPresent": true,
+      "resultErrorPresent": false,
+      "findElementsReturnedZero": false,
+      "clickCoordinatesInResultMetadata": false,
+      "qualification": "Next-step state is an observation, not an atomic per-action post-state. No implication that DOM ancestor attributes or list order are fully proved."
+    },
+    {
+      "stepIndex": 25,
+      "actionIndex": 0,
+      "name": "click",
+      "actionDigest": "35bfcd28761a75b594f44b6152067625228582da8c659c7bd7f67df24cd5e1df",
+      "interactionIndex": 30030,
+      "interactedElementPresent": true,
+      "displayTargetMatchCount": 1,
+      "nodeTag": "A",
+      "xpathPresent": true,
+      "parentChildrenPresent": false,
+      "state": {
+        "kind": "list",
+        "pageQueryParameter": null
+      },
+      "nextStepState": {
+        "kind": "list",
+        "pageQueryParameter": [
+          "2"
+        ]
+      },
+      "resultPresent": true,
+      "resultErrorPresent": false,
+      "findElementsReturnedZero": false,
+      "clickCoordinatesInResultMetadata": true,
+      "qualification": "Next-step state is an observation, not an atomic per-action post-state. No implication that DOM ancestor attributes or list order are fully proved."
+    }
+  ]
+}

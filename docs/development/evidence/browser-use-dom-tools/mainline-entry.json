@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "bat.mainline-entry/v1",
+  "taskId": "79b4e6a3-b500-4d52-98c7-f9370638675e",
+  "source": {
+    "kind": "readonly_sqlite",
+    "authorityRowsDigest": "11a3523fca72db72e389fb16de07f4259bf28a08a3ce531195f9db40c8fdcb78",
+    "copiedTables": [
+      "taskContracts"
+    ],
+    "copiedContractKinds": [
+      "requirement",
+      "plan"
+    ],
+    "accountOrProfileCopied": false
+  },
+  "authority": {
+    "requirement": {
+      "id": "3960924a-335c-4fe3-81b9-19f8add50473",
+      "version": 2,
+      "format": "markdown",
+      "confirmed": true,
+      "hasCompilationFence": false
+    },
+    "plan": {
+      "id": "e84c7660-21f6-44ac-87af-1826450c9e45",
+      "version": 6,
+      "stepIds": [
+        "collect-issues"
+      ]
+    },
+    "structuredControlKeysPresent": [],
+    "missingStructuredAuthority": true
+  },
+  "invocation": {
+    "command": "generate_task_chains",
+    "input": {
+      "startUrl": "https://github.com/langchain-ai/langgraph"
+    },
+    "formalHttpStatus": 409,
+    "status": "blocked_before_exploration"
+  },
+  "rejection": {
+    "code": "missing_control_intent",
+    "error": "structured_authority_missing"
+  },
+  "sideEffects": {
+    "externalCalls": [],
+    "before": {
+      "requirements": 1,
+      "plans": 1,
+      "chains": 0,
+      "runs": 0,
+      "jobs": 0,
+      "executions": 0
+    },
+    "after": {
+      "requirements": 1,
+      "plans": 1,
+      "chains": 0,
+      "runs": 0,
+      "jobs": 0,
+      "executions": 0
+    },
+    "active": false
+  },
+  "gateVerified": true
+}

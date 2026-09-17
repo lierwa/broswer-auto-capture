@@ -1,0 +1,12 @@
+{
+  "compiledStrategy": "css",
+  "connectedValue": "kept-string",
+  "detachedState": "target_state_detached",
+  "detachedValue": "target_value_detached",
+  "duplicateLabel": "rejected",
+  "invalidCandidate": true,
+  "postLabelMismatch": "target_refresh_not_unique",
+  "postTagMismatch": "target_refresh_not_unique",
+  "postWrongBackend": "target_refresh_not_unique",
+  "preWrongBackend": "rejected"
+}

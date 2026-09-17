@@ -1,0 +1,438 @@
+{
+  "status": "read-only registry inspection; no Agent/Browser/model invocation",
+  "browserUseVersion": "0.13.8",
+  "default": [
+    {
+      "name": "done",
+      "parameters": [
+        "text",
+        "success",
+        "files_to_display"
+      ],
+      "required": [
+        "text"
+      ]
+    },
+    {
+      "name": "search",
+      "parameters": [
+        "query",
+        "engine"
+      ],
+      "required": [
+        "query"
+      ]
+    },
+    {
+      "name": "navigate",
+      "parameters": [
+        "url",
+        "new_tab"
+      ],
+      "required": [
+        "url"
+      ]
+    },
+    {
+      "name": "go_back",
+      "parameters": [
+        "description"
+      ],
+      "required": []
+    },
+    {
+      "name": "wait",
+      "parameters": [
+        "seconds"
+      ],
+      "required": []
+    },
+    {
+      "name": "click",
+      "parameters": [
+        "index"
+      ],
+      "required": [
+        "index"
+      ]
+    },
+    {
+      "name": "input",
+      "parameters": [
+        "index",
+        "text",
+        "clear"
+      ],
+      "required": [
+        "index",
+        "text"
+      ]
+    },
+    {
+      "name": "upload_file",
+      "parameters": [
+        "index",
+        "path"
+      ],
+      "required": [
+        "index",
+        "path"
+      ]
+    },
+    {
+      "name": "switch",
+      "parameters": [
+        "tab_id"
+      ],
+      "required": [
+        "tab_id"
+      ]
+    },
+    {
+      "name": "close",
+      "parameters": [
+        "tab_id"
+      ],
+      "required": [
+        "tab_id"
+      ]
+    },
+    {
+      "name": "extract",
+      "parameters": [
+        "query",
+        "extract_links",
+        "extract_images",
+        "start_from_char",
+        "already_collected"
+      ],
+      "required": [
+        "query"
+      ]
+    },
+    {
+      "name": "search_page",
+      "parameters": [
+        "pattern",
+        "regex",
+        "case_sensitive",
+        "context_chars",
+        "css_scope",
+        "max_results"
+      ],
+      "required": [
+        "pattern"
+      ]
+    },
+    {
+      "name": "find_elements",
+      "parameters": [
+        "selector",
+        "attributes",
+        "max_results",
+        "include_text"
+      ],
+      "required": [
+        "selector"
+      ]
+    },
+    {
+      "name": "scroll",
+      "parameters": [
+        "down",
+        "pages",
+        "index"
+      ],
+      "required": []
+    },
+    {
+      "name": "send_keys",
+      "parameters": [
+        "keys"
+      ],
+      "required": [
+        "keys"
+      ]
+    },
+    {
+      "name": "find_text",
+      "parameters": [
+        "text"
+      ],
+      "required": [
+        "text"
+      ]
+    },
+    {
+      "name": "screenshot",
+      "parameters": [
+        "file_name"
+      ],
+      "required": []
+    },
+    {
+      "name": "save_as_pdf",
+      "parameters": [
+        "file_name",
+        "print_background",
+        "landscape",
+        "scale",
+        "paper_format",
+        "display_header_footer",
+        "header_template",
+        "footer_template"
+      ],
+      "required": []
+    },
+    {
+      "name": "dropdown_options",
+      "parameters": [
+        "index"
+      ],
+      "required": [
+        "index"
+      ]
+    },
+    {
+      "name": "select_dropdown",
+      "parameters": [
+        "index",
+        "text"
+      ],
+      "required": [
+        "index",
+        "text"
+      ]
+    },
+    {
+      "name": "write_file",
+      "parameters": [
+        "file_name",
+        "content",
+        "append",
+        "trailing_newline",
+        "leading_newline"
+      ],
+      "required": [
+        "file_name",
+        "content"
+      ]
+    },
+    {
+      "name": "replace_file",
+      "parameters": [
+        "file_name",
+        "old_str",
+        "new_str"
+      ],
+      "required": [
+        "file_name",
+        "old_str",
+        "new_str"
+      ]
+    },
+    {
+      "name": "read_file",
+      "parameters": [
+        "file_name"
+      ],
+      "required": [
+        "file_name"
+      ]
+    },
+    {
+      "name": "evaluate",
+      "parameters": [
+        "code"
+      ],
+      "required": [
+        "code"
+      ]
+    }
+  ],
+  "currentHybrid": [
+    {
+      "name": "done",
+      "parameters": [
+        "data"
+      ],
+      "required": [
+        "data"
+      ]
+    },
+    {
+      "name": "search",
+      "parameters": [
+        "query",
+        "engine"
+      ],
+      "required": [
+        "query"
+      ]
+    },
+    {
+      "name": "navigate",
+      "parameters": [
+        "url",
+        "new_tab"
+      ],
+      "required": [
+        "url"
+      ]
+    },
+    {
+      "name": "go_back",
+      "parameters": [
+        "description"
+      ],
+      "required": []
+    },
+    {
+      "name": "wait",
+      "parameters": [
+        "seconds"
+      ],
+      "required": []
+    },
+    {
+      "name": "click",
+      "parameters": [
+        "index"
+      ],
+      "required": [
+        "index"
+      ]
+    },
+    {
+      "name": "input",
+      "parameters": [
+        "index",
+        "text",
+        "clear"
+      ],
+      "required": [
+        "index",
+        "text"
+      ]
+    },
+    {
+      "name": "switch",
+      "parameters": [
+        "tab_id"
+      ],
+      "required": [
+        "tab_id"
+      ]
+    },
+    {
+      "name": "close",
+      "parameters": [
+        "tab_id"
+      ],
+      "required": [
+        "tab_id"
+      ]
+    },
+    {
+      "name": "extract",
+      "parameters": [
+        "query",
+        "extract_links",
+        "extract_images",
+        "start_from_char",
+        "already_collected"
+      ],
+      "required": [
+        "query"
+      ]
+    },
+    {
+      "name": "search_page",
+      "parameters": [
+        "pattern",
+        "regex",
+        "case_sensitive",
+        "context_chars",
+        "css_scope",
+        "max_results"
+      ],
+      "required": [
+        "pattern"
+      ]
+    },
+    {
+      "name": "find_elements",
+      "parameters": [
+        "selector",
+        "attributes",
+        "max_results",
+        "include_text"
+      ],
+      "required": [
+        "selector"
+      ]
+    },
+    {
+      "name": "scroll",
+      "parameters": [
+        "down",
+        "pages",
+        "index"
+      ],
+      "required": []
+    },
+    {
+      "name": "send_keys",
+      "parameters": [
+        "keys"
+      ],
+      "required": [
+        "keys"
+      ]
+    },
+    {
+      "name": "find_text",
+      "parameters": [
+        "text"
+      ],
+      "required": [
+        "text"
+      ]
+    },
+    {
+      "name": "save_as_pdf",
+      "parameters": [
+        "file_name",
+        "print_background",
+        "landscape",
+        "scale",
+        "paper_format",
+        "display_header_footer",
+        "header_template",
+        "footer_template"
+      ],
+      "required": []
+    },
+    {
+      "name": "dropdown_options",
+      "parameters": [
+        "index"
+      ],
+      "required": [
+        "index"
+      ]
+    },
+    {
+      "name": "select_dropdown",
+      "parameters": [
+        "index",
+        "text"
+      ],
+      "required": [
+        "index",
+        "text"
+      ]
+    }
+  ],
+  "qualification": "Current hybrid done schema uses a synthetic output model. This is an action-name/parameter inventory, not an actual task registry digest. Agent construction may change click/screenshot registration; custom tools and versions may add actions."
+}

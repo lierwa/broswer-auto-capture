@@ -4,7 +4,7 @@ import { z } from "zod"
 import type { AI, AIEvent, ModelSelection } from "@agent-platform/ai-connect/server"
 
 export const modelPurposeSchema = z.enum(["agent", "judge", "workflow_generation", "variable_suggestion",
-  "extract", "output_conversion"])
+  "extract", "output_conversion", "semantic_annotation"])
 const text = z.object({ type: z.literal("text"), text: z.string() }).strict()
 const image = z.object({ type: z.literal("image"), data: z.string().min(1),
   mediaType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]) }).strict()
@@ -28,6 +28,7 @@ type Subject = Pick<AISubject, "generate" | "generateObject"> & {
 /** WHY：HTTP 独立于上游 stdout/stderr；账号与凭据只在 TS AI Connect 内，Python 只有本次桥的随机口令。 */
 export async function openModelBridge(input: {
   subject: Subject; selection: ModelSelection; signal: AbortSignal; onAudit(audit: ModelAudit): void;
+  allowedPurposes?: readonly z.infer<typeof modelPurposeSchema>[];
 }) {
   input.signal.throwIfAborted()
   const selection = Object.freeze({ ...input.selection })
@@ -45,6 +46,7 @@ export async function openModelBridge(input: {
     const parsed = modelRequestSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: "bridge_request_invalid" })
     const body = parsed.data
+    if (input.allowedPurposes && !input.allowedPurposes.includes(body.purpose)) return reply.code(400).send({ error: "bridge_purpose_denied" })
     if (seen.has(body.id)) return reply.code(409).send({ error: "bridge_duplicate_request" })
     seen.add(body.id)
     try {

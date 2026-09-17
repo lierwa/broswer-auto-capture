@@ -1,0 +1,85 @@
+{
+  "kind": "obsolete-patch-removal",
+  "date": "2026-09-17",
+  "supplements": "CLEANUP_RESULT_20260917.json",
+  "reason": "Managed vendor source is the build/runtime source; old patch stack has no active consumer. Prior retention was a cleanup omission.",
+  "backup": "/private/tmp/bat-cleanup-20260917-patch-removal",
+  "removed": [
+    {
+      "path": "patches/workflow-use/0001-escape-workflow-prompt-variable-placeholders.patch",
+      "sha256": "b41b21da09efbe13e1082f8a722f10446ccbe4d4575349e9e65b38e24178fd06",
+      "size": 2598
+    },
+    {
+      "path": "patches/workflow-use/0002-dispatch-page-extraction-steps.patch",
+      "sha256": "a196162065e6c80fca300bb1952caf3c44591f1c177151e41c3d77028158c585",
+      "size": 3164
+    },
+    {
+      "path": "patches/workflow-use/0003-retry-structured-workflow-generation.patch",
+      "sha256": "8eb393692ee85bef4b7d8723f267dbf226c18b61cd2876e001aa456bb46effc5",
+      "size": 2992
+    },
+    {
+      "path": "patches/workflow-use/0004-bound-workflow-generation-screenshots.patch",
+      "sha256": "100b7e0b76c249d5df6fe95e8c6266e872396ea03008088a4f251a073f9b7a5b",
+      "size": 4849
+    },
+    {
+      "path": "patches/workflow-use/0005-fallback-to-semantic-text-click.patch",
+      "sha256": "a77657c0e7afbe599a43a1406f480b9dabc3a36d113567d70227891046f83593",
+      "size": 5672
+    },
+    {
+      "path": "patches/workflow-use/0006-respect-contextual-click-targets.patch",
+      "sha256": "2e2f94be623ba95f86a496fa02e72acb86e27fd3e7d27dda30a3be4f65c6ca6d",
+      "size": 2558
+    },
+    {
+      "path": "patches/workflow-use/0007-rank-duplicate-text-by-accessible-context.patch",
+      "sha256": "d4a0b6ba7ee7c041a0c49f8c2677404d1a0a0f3ea23eae57337762da0508fa51",
+      "size": 4701
+    },
+    {
+      "path": "patches/workflow-use/0008-use-accessible-names-for-click-targets.patch",
+      "sha256": "d9f18a7fcd4b939b09306ee06954780dc15c295a85eecfccb7d2ef2d140a8746",
+      "size": 5028
+    },
+    {
+      "path": "patches/workflow-use/0009-prefer-open-choice-controls.patch",
+      "sha256": "70026540d015912766bc4754a2ae793817803ad03dc584678793bf2ac303b60d",
+      "size": 2397
+    },
+    {
+      "path": "patches/workflow-use/0010-keep-action-text-on-its-own-element.patch",
+      "sha256": "b626dfee1ea5b33d030e4f145d046af44905f1481283b40a01fe4e20cc895032",
+      "size": 3582
+    },
+    {
+      "path": "patches/workflow-use/0011-wait-for-no-ai-page-stability.patch",
+      "sha256": "137449a06dfeffe0acedbd130655509b083d9433822ed78dfcbfc80cec507bae",
+      "size": 5368
+    },
+    {
+      "path": "patches/workflow-use/0012-verify-link-effects-and-refresh-retries.patch",
+      "sha256": "49f5c11c6dec3cd95663fd9faebdde0b237077148abafa7946f087631713244b",
+      "size": 9822
+    },
+    {
+      "path": "patches/workflow-use/README.md",
+      "sha256": "ea5fde3fdbea6da70c9caf7bba9261f645d6a71983459e75ddb6e633e299a1da",
+      "size": 2382
+    }
+  ],
+  "vendorSourceDigest": "78255b0cdd0c3040aca2975ca627a6fa6df045226216c398b510b3040f952095",
+  "validation": {
+    "setupCheck": "passed; installed versions and vendor source digest unchanged",
+    "activePatchReferences": 0,
+    "gitDiffCheck": "passed",
+    "removedFiles": 13,
+    "outsideRepositoryBackupHashes": "all matched",
+    "productModelCalls": 0,
+    "browserStarts": 0,
+    "dependencyInstalls": 0
+  }
+}

@@ -32,7 +32,8 @@ export const runnerReplayResultSchema = common.extend({ output: jsonValueSchema,
 export const runnerResponseSchema = z.discriminatedUnion("ok", [
   z.object({ id: identity, ok: z.literal(true), result: jsonValueSchema }).strict(),
   z.object({ id: identity, ok: z.literal(false), code: z.enum(["upstream_start_failed", "upstream_author_failed",
-    "upstream_replay_failed", "upstream_human_required", "upstream_cancelled"]), diagnostic: localArtifact.optional() }).strict(),
+    "upstream_replay_failed", "upstream_human_required", "upstream_cancelled", "hybrid_runner_failed"]), diagnostic: localArtifact.optional(),
+    reason: z.string().regex(/^[A-Za-z_][A-Za-z_0-9:]{0,159}$/).optional() }).strict(),
 ])
 
 export type RunnerRequest = z.infer<typeof runnerStartRequestSchema> | z.infer<typeof runnerAuthorRequestSchema>

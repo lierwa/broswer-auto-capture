@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from browser_use.llm.messages import BaseMessage, UserMessage
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
-Purpose = Literal["agent", "judge", "workflow_generation", "variable_suggestion", "extract", "output_conversion"]
+Purpose = Literal["agent", "judge", "workflow_generation", "variable_suggestion", "extract", "output_conversion", "semantic_annotation"]
 
 
 class BridgeCompletion(ChatInvokeCompletion):

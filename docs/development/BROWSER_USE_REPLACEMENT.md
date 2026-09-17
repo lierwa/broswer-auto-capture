@@ -1,5 +1,7 @@
 # browser-use / workflow-use 替换：阶段 0 决策与阶段门
 
+> **状态更新（2026-09-16）**：本文阶段 1–7 的冻结结论已被真实复杂任务推翻。当前外置补丁栈与 LLM 整图生成路线停止，不得按本文继续实施。新的唯一接续入口是[混合编译规范](WORKFLOW_USE_HYBRID_CONVERSION_SPEC.md)、[旧路径处置规范](WORKFLOW_USE_LEGACY_DISPOSITION.md)、[开发计划](WORKFLOW_USE_HYBRID_COMPILER_PLAN.md)与 [ADR 0005](../adr/0005-workflow-use-fork-hybrid-compiler.md)。下文保留为历史证据。
+
 日期：2026-09-15。依据：修订交接第三轮终审通过版；初版不作为依据。
 本任务已获阶段 0 后继续实施的授权；在现有 master 工作，不创建分支/worktree，不推送、不改相邻项目。
 

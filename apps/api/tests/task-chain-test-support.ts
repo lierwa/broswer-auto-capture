@@ -10,11 +10,13 @@ const openContract: TaskDataContract = { id: "task-value", version: 1, dialect: 
   schema: { type: "object", properties: {}, required: [], additionalProperties: true } }
 const input = { source: "input" as const, path: [] }
 
-export function confirmedDraft(store: ProductStore, taskId: string) {
+export function confirmedDraft(store: ProductStore, taskId: string, draft = {
+  title: "通用确认任务",
+  markdown: "# 通用确认任务\n\n目标页面：https://example.com/\n\n需要人工确认后返回结构化结果。",
+}) {
   store.mutate(taskId, (state) => {
     state.revision = 1
-    state.drafts.push({ version: 1, revision: 1, title: "通用确认任务",
-      markdown: "# 通用确认任务\n\n目标页面：https://example.com/\n\n需要人工确认后返回结构化结果。", brief: null })
+    state.drafts.push({ version: 1, revision: 1, title: draft.title, markdown: draft.markdown, brief: null })
     state.confirmedVersion = 1
     state.decisions.push({ id: randomUUID(), revision: 1, kind: "draft_confirmation", text: "确认需求草稿 v1",
       messageId: null, questionId: null, draftVersion: 1, createdAt: "2026-09-12T01:00:00.000Z" })

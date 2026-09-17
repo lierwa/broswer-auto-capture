@@ -33,7 +33,7 @@ export const capabilityReferenceSchema = z.object({
   version: z.number().int().positive(),
 }).strict()
 export const modelCallPurposeSchema = z.enum([
-  "explicit_llm", "agent", "judge", "workflow_generation", "variable_suggestion", "extract", "output_conversion",
+  "explicit_llm", "agent", "judge", "workflow_generation", "variable_suggestion", "extract", "output_conversion", "semantic_annotation",
 ])
 const delegatedLlmSchema = z.object({
   capability: capabilityReferenceSchema, config: jsonValueSchema,

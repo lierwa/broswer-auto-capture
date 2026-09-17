@@ -1,0 +1,66 @@
+{
+  "actionsExecuted": [
+    "navigate:issues",
+    "source-click:label-filter"
+  ],
+  "browserClosed": true,
+  "capturedFacts": {
+    "postTargetState": [
+      "{\"aria-expanded\":true,\"disabled\":false}"
+    ],
+    "postTargetValueCount": 0,
+    "preTargetState": [
+      "{\"disabled\":false}"
+    ]
+  },
+  "compiled": {
+    "target": {
+      "scope": {
+        "url": "https://github.com/langchain-ai/langgraph/issues",
+        "urlDigest": "c7471eaa22972c32ef5a9705f99f4cfdb6f2772c4132750b7e9bf37ac8bd758d"
+      },
+      "strategy": "css",
+      "value": "button[aria-label=\"Filter by labels\"]"
+    },
+    "targetStateCondition": {
+      "clauseRef": "fact-ad914ea9180a52ee9d5a6d27d7493ddaedd1e6ef52669c12bd18130016f0b6ed",
+      "equals": "{\"aria-expanded\":true,\"disabled\":false}",
+      "kind": "target_state",
+      "settle": {
+        "intervalMs": 300,
+        "maxAttempts": 100,
+        "maxMs": 30000
+      }
+    }
+  },
+  "failure": {
+    "code": null,
+    "frames": [
+      {
+        "file": "/private/tmp/bat-github-a5-post-refresh-acceptance.py",
+        "function": "main",
+        "line": 230
+      },
+      {
+        "file": "vendor/workflow-use/workflows/workflow_use/hybrid/capability.py",
+        "function": "execute",
+        "line": 57
+      }
+    ],
+    "type": "RuntimeError"
+  },
+  "providerCalls": 0,
+  "sourceTarget": {
+    "freshConnectedAfter": true,
+    "freshStateAfter": "{\"aria-expanded\":true,\"disabled\":false}",
+    "oldConnectedAfter": false,
+    "postBackendNodeId": 4269,
+    "postXpath": "html/body/div[1]/div[5]/div/main/turbo-frame/div/turbo-frame/react-app/div/section/div/div/div/div/div/div/div[2]/section/div/div/div[3]/div/div/div[2]/div/div[3]/div/button",
+    "preBackendNodeId": 63,
+    "preState": "{\"disabled\":false}",
+    "preXpath": "html/body/div[1]/div[5]/div/main/turbo-frame/div/turbo-frame/react-app/div/section/div/div/div/div/div/div/div[2]/section/div/div/div[3]/div/div/div[2]/div/div[3]/button",
+    "selectorIndex": 63
+  },
+  "stage": "acceptance_failed",
+  "threadId": "01a0ab9d-b039-7181-baa1-933684e4103f"
+}

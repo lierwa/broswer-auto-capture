@@ -1,0 +1,105 @@
+[
+  {
+    "sourcePath": "data/upstream-browser-artifacts/e76cc02e-4760-4901-8692-9579e02097d3/84974663-8e1b-4ef0-8c3a-a3910025cf99-collect-issues/history.json",
+    "sourceDigest": "9fbc88645c29c65155e2e235727d318f7a70e1e1accceda76eacda580197b69a",
+    "done": true,
+    "success": true,
+    "judged": true,
+    "verdict": true,
+    "actionResultMismatches": [
+      {
+        "stepIndex": 8,
+        "actionNames": [
+          [
+            "click"
+          ],
+          [
+            "wait"
+          ]
+        ],
+        "resultFlags": [
+          {
+            "error": false,
+            "done": false,
+            "success": null
+          }
+        ]
+      },
+      {
+        "stepIndex": 13,
+        "actionNames": [
+          [
+            "evaluate"
+          ],
+          [
+            "find_elements"
+          ]
+        ],
+        "resultFlags": [
+          {
+            "error": false,
+            "done": false,
+            "success": null
+          }
+        ]
+      },
+      {
+        "stepIndex": 14,
+        "actionNames": [
+          [
+            "evaluate"
+          ],
+          [
+            "find_elements"
+          ],
+          [
+            "find_elements"
+          ]
+        ],
+        "resultFlags": [
+          {
+            "error": false,
+            "done": false,
+            "success": null
+          }
+        ]
+      },
+      {
+        "stepIndex": 15,
+        "actionNames": [],
+        "resultFlags": [
+          {
+            "error": true,
+            "done": false,
+            "success": null
+          }
+        ]
+      }
+    ],
+    "dedicatedPerActionPostObservation": false,
+    "stateFields": [
+      "interacted_element",
+      "screenshot_path",
+      "tabs",
+      "title",
+      "url"
+    ]
+  },
+  {
+    "sourcePath": "data/upstream-browser-artifacts/0d64348d-f4d1-44d0-8000-cbbc62241eee/874566da-bd4e-4485-8b1b-dcde7e7df248-collect-filtered-issues/history.json",
+    "sourceDigest": "3f941f1dc9b95780dae7e2ca5fc9e8068b7c7c6334db7a29aabc69259e647577",
+    "done": true,
+    "success": true,
+    "judged": true,
+    "verdict": true,
+    "actionResultMismatches": [],
+    "dedicatedPerActionPostObservation": false,
+    "stateFields": [
+      "interacted_element",
+      "screenshot_path",
+      "tabs",
+      "title",
+      "url"
+    ]
+  }
+]

@@ -1,0 +1,3023 @@
+{
+  "kind": "cleanup-inventory",
+  "date": "2026-09-17",
+  "scope": "opening dirty/untracked non-ignored file inventory; not entire workspace or databases",
+  "head": "7242264bd3757a7ebe82514f9a17cb63e7bf614c",
+  "branch": "master",
+  "openingFileCount": 428,
+  "changedCount": 35,
+  "unchangedCount": 393,
+  "originalFormalSource": {
+    "path": "work/natural-task-validation/30db3c05-a8e9-47b5-907f-9e19d5ba1e80/source-result.json",
+    "sha256": "40e86826603532b6f194f155a45c9dcf508afc138e61c78ddf23df0a10e0aeb6"
+  },
+  "sourceDigest": "78255b0cdd0c3040aca2975ca627a6fa6df045226216c398b510b3040f952095",
+  "validation": {
+    "apiTypeCheck": "passed",
+    "domEvidenceExistingChecks": 6,
+    "remainingNaturalCompileAndOutputChecks": 11,
+    "urlOnlyAndLateAttributionCounterexamples": "passed",
+    "executionValueCounterexamples": "passed",
+    "productModelCalls": 0,
+    "browserStarts": 0,
+    "fullSuites": 0
+  },
+  "files": [
+    {
+      "path": ".codex/config.toml",
+      "sha256": "4c55ed56a633288b54471c9cc08689edf21dd7df635aa9fc46a635674fc8caad",
+      "size": 279,
+      "afterSha256": "4c55ed56a633288b54471c9cc08689edf21dd7df635aa9fc46a635674fc8caad",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/python/browser_use_runner/ai_connect.py",
+      "sha256": "1c86b2f9700c437a84470b2a7058bf31bc57ef0881ef501d4962a85ee382312b",
+      "size": 4412,
+      "afterSha256": "1c86b2f9700c437a84470b2a7058bf31bc57ef0881ef501d4962a85ee382312b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/python/browser_use_runner/hybrid_main.py",
+      "sha256": "9fbc1155d082f92cd31c6390676a2943238d50001f6957db2c142b1b7057217a",
+      "size": 12946,
+      "afterSha256": "9fbc1155d082f92cd31c6390676a2943238d50001f6957db2c142b1b7057217a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/python/browser_use_runner/main.py",
+      "sha256": "7c4cc9d80f26d903f66d9f9bfa412906b1596014397b30deaa56b0a28dde94ba",
+      "size": 268,
+      "afterSha256": "7c4cc9d80f26d903f66d9f9bfa412906b1596014397b30deaa56b0a28dde94ba",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/python/browser_use_runner/output_schema.py",
+      "sha256": "a3de6e0cd4fb7c714c57c21e790191769e14e3738a72a3f047fbf47afc3e3360",
+      "size": 1368,
+      "afterSha256": "a3de6e0cd4fb7c714c57c21e790191769e14e3738a72a3f047fbf47afc3e3360",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/task-chain/authoring-prompts.ts",
+      "sha256": "5c7bcbad26cb36772e2f97fa8d4a7eb41711254795da893860fd5fb8e3e6b35a",
+      "size": 3559,
+      "afterSha256": "5c7bcbad26cb36772e2f97fa8d4a7eb41711254795da893860fd5fb8e3e6b35a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/task-chain/authoring.ts",
+      "sha256": "afd8048de290c7d2a33f7e6fb32527d2895fc48c58d77d2972ca66f484e1cd12",
+      "size": 26347,
+      "afterSha256": "afd8048de290c7d2a33f7e6fb32527d2895fc48c58d77d2972ca66f484e1cd12",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/task-chain/command-retirement.ts",
+      "sha256": "4832c0c9f4b97954c8a3b102739f962b27da83eb9efcb1a37d4d08996311d4c9",
+      "size": 1358,
+      "afterSha256": "4832c0c9f4b97954c8a3b102739f962b27da83eb9efcb1a37d4d08996311d4c9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/task-chain/hybrid-source-reuse.ts",
+      "sha256": "3c81b113fadd3ecb30d3758eb62cc1f6fa1cc31d4bae92ba42fdb40f4c3322aa",
+      "size": 3126,
+      "afterSha256": "3c81b113fadd3ecb30d3758eb62cc1f6fa1cc31d4bae92ba42fdb40f4c3322aa",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/task-chain/runtime-host.ts",
+      "sha256": "24fa67ed90c9e0a5d5bade163946f5f513022f5f48afc2bd9c01d2bfcdbb0bfd",
+      "size": 27758,
+      "afterSha256": "24fa67ed90c9e0a5d5bade163946f5f513022f5f48afc2bd9c01d2bfcdbb0bfd",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/task-chain/service.ts",
+      "sha256": "a4a7489d0ef5b33fb1d5ff62a99d124a118c28548b66f2cc29e3ec320a7cbe06",
+      "size": 26066,
+      "afterSha256": "a4a7489d0ef5b33fb1d5ff62a99d124a118c28548b66f2cc29e3ec320a7cbe06",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-artifact.ts",
+      "sha256": "ea088b39ac9795bc6e6c2513e85d9ba18b361ab518a02c4e0c847d399b32b906",
+      "size": 15359,
+      "afterSha256": "ea088b39ac9795bc6e6c2513e85d9ba18b361ab518a02c4e0c847d399b32b906",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-authority.ts",
+      "sha256": "14145afa3346c4304d20c1ec09385fe16a0ead0c21f91044d29a7d8c314744eb",
+      "size": 6448,
+      "afterSha256": "14145afa3346c4304d20c1ec09385fe16a0ead0c21f91044d29a7d8c314744eb",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-exploration.ts",
+      "sha256": "64666802973cca494a6de1d6fa5e99a157304691bc3ca7962f8cdae416f0c4c8",
+      "size": 4980,
+      "afterSha256": "64666802973cca494a6de1d6fa5e99a157304691bc3ca7962f8cdae416f0c4c8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-invoke.ts",
+      "sha256": "929fcaaae00573716a573db54419c0dc590f33b744d3157ef2141c67b2bb2b07",
+      "size": 4493,
+      "afterSha256": "929fcaaae00573716a573db54419c0dc590f33b744d3157ef2141c67b2bb2b07",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-materializer.ts",
+      "sha256": "cd7886886220bf9b58447b133ad3d459a821c9eb7e7488ac963d48bd50509927",
+      "size": 31487,
+      "afterSha256": "cd7886886220bf9b58447b133ad3d459a821c9eb7e7488ac963d48bd50509927",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-natural-payload.ts",
+      "sha256": "8de758f9dc827a15b0754667323cf2d397f136aed649573b64a1ac3bb2411508",
+      "size": 6698,
+      "afterSha256": "8de758f9dc827a15b0754667323cf2d397f136aed649573b64a1ac3bb2411508",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-output.ts",
+      "sha256": "0424f5bd46df074f10ac285bc7ae2d54bd126e812ebb96434f0f1014e5864747",
+      "size": 3042,
+      "afterSha256": "0424f5bd46df074f10ac285bc7ae2d54bd126e812ebb96434f0f1014e5864747",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-protocol.ts",
+      "sha256": "ceaa01bd86d4f777d084a40999197166c106cbd5ca504b1f6a7d126b207ecc92",
+      "size": 3746,
+      "afterSha256": "ceaa01bd86d4f777d084a40999197166c106cbd5ca504b1f6a7d126b207ecc92",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-runtime-scope.ts",
+      "sha256": "2f077185eaac3b6e90e7df9de2e87469058a602dceaae740bd3669f06d402c4b",
+      "size": 22685,
+      "afterSha256": "b93f7f1e7e8f109e3eb5c21640a904c1e02502406188c06076ba08a041dade2b",
+      "disposition": "changed"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-runtime.ts",
+      "sha256": "f97ae21a2854d2bcff525cd31f4a16f27995c265e3b0ec7bf2e45a5d6d81b199",
+      "size": 6237,
+      "afterSha256": "f97ae21a2854d2bcff525cd31f4a16f27995c265e3b0ec7bf2e45a5d6d81b199",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-schema.ts",
+      "sha256": "04288fbe4438c71ec0fce1066d16fbec3c41180517b438b012579106b84544c9",
+      "size": 9055,
+      "afterSha256": "04288fbe4438c71ec0fce1066d16fbec3c41180517b438b012579106b84544c9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/hybrid-summary.ts",
+      "sha256": "4097ccf9dcb9344339ffa0cf1236f7b887f2c76bfacb1ea53d7c5968b9338569",
+      "size": 12335,
+      "afterSha256": "4097ccf9dcb9344339ffa0cf1236f7b887f2c76bfacb1ea53d7c5968b9338569",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/model-bridge.ts",
+      "sha256": "ec0105d861376e612b71ecebebe0ea3c1ef97a10cb44d640286415f4c390cca9",
+      "size": 4822,
+      "afterSha256": "ec0105d861376e612b71ecebebe0ea3c1ef97a10cb44d640286415f4c390cca9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/protocol.ts",
+      "sha256": "74df95a54135a250d096c477ca9dcfbf14164414bda9e817b01a826259b7bd1b",
+      "size": 3013,
+      "afterSha256": "74df95a54135a250d096c477ca9dcfbf14164414bda9e817b01a826259b7bd1b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/retirement.ts",
+      "sha256": "444779ef2187328b69ab935114c74e56d50b5cee4814561d4cda844edcea8160",
+      "size": 2615,
+      "afterSha256": "444779ef2187328b69ab935114c74e56d50b5cee4814561d4cda844edcea8160",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/service.ts",
+      "sha256": "e0ba7bcc4f4f5f5a9f910287ba6a0ee4feac24aec8821f373be0c8119be9af55",
+      "size": 11307,
+      "afterSha256": "e0ba7bcc4f4f5f5a9f910287ba6a0ee4feac24aec8821f373be0c8119be9af55",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/source-lifecycle-diagnostics.ts",
+      "sha256": "df74099f862031e453a9d44cb6fbc8fdc7f422bb148414e19b39dc9ca2a8cbde",
+      "size": 3564,
+      "afterSha256": "df74099f862031e453a9d44cb6fbc8fdc7f422bb148414e19b39dc9ca2a8cbde",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/task-request.ts",
+      "sha256": "410ee3b470e86d1d9840730ab6b7bcc4c98cb8eb7232f17750dbbda3ad452113",
+      "size": 7177,
+      "afterSha256": "410ee3b470e86d1d9840730ab6b7bcc4c98cb8eb7232f17750dbbda3ad452113",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/src/upstream-browser/workflow-artifact.ts",
+      "sha256": "30ae581542435089b53e4ca15d9fb6c71dfdbcc1641a74a756722c324747cdd5",
+      "size": 4926,
+      "afterSha256": "30ae581542435089b53e4ca15d9fb6c71dfdbcc1641a74a756722c324747cdd5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/hybrid-compilation.ts",
+      "sha256": "a6e6e9c3edf290c670298260e28fa7f56311b1aecf96e8d755e2777a7b01d52e",
+      "size": 2492,
+      "afterSha256": "a6e6e9c3edf290c670298260e28fa7f56311b1aecf96e8d755e2777a7b01d52e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/hybrid-runner-protocol.py",
+      "sha256": "5f32ef5bc465207f7245a83d0d3bc2f900844d49108b359fb98b2fcd6a9f14b9",
+      "size": 1827,
+      "afterSha256": "5f32ef5bc465207f7245a83d0d3bc2f900844d49108b359fb98b2fcd6a9f14b9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/mainline-authority-probe.ts",
+      "sha256": "cb636557262b82aa87fba442894c94d1f4a1291108b966fc462385ea106d00c9",
+      "size": 7503,
+      "afterSha256": null,
+      "disposition": "deleted"
+    },
+    {
+      "path": "apps/api/tests/fixtures/mainline-natural-probe.ts",
+      "sha256": "b960c7f9eadff93e1be601e4dc7911db823fb515e1bd9aa3f1df4273f1cfd8ae",
+      "size": 13810,
+      "afterSha256": "b960c7f9eadff93e1be601e4dc7911db823fb515e1bd9aa3f1df4273f1cfd8ae",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/retired-workflow.ts",
+      "sha256": "af1db6b62754a48de245b0a1db61d3419b92b522f33d8c152d47b5b55de349d1",
+      "size": 3322,
+      "afterSha256": "af1db6b62754a48de245b0a1db61d3419b92b522f33d8c152d47b5b55de349d1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/workflow-fork-probe.py",
+      "sha256": "024d6bd0a84ad058c00755c57c549b12675543e2767d8f5673fc1e2fb446d441",
+      "size": 4215,
+      "afterSha256": "024d6bd0a84ad058c00755c57c549b12675543e2767d8f5673fc1e2fb446d441",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/workflow-use-hybrid/full.json",
+      "sha256": "f706a8b0bf890c7635ec7456bbe85af2fa7b7c19e9fe8880ec8895adcaed38f0",
+      "size": 22414,
+      "afterSha256": "f706a8b0bf890c7635ec7456bbe85af2fa7b7c19e9fe8880ec8895adcaed38f0",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/workflow-use-hybrid/full.redaction.json",
+      "sha256": "1f78df510387661271517986d39673f4d20004b74bd4c2b714c6e0494cc14b9a",
+      "size": 1253,
+      "afterSha256": "1f78df510387661271517986d39673f4d20004b74bd4c2b714c6e0494cc14b9a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/workflow-use-hybrid/short.json",
+      "sha256": "1d6ba1fc359c58bdf9a34f53ef5db07378d799e993845b76f3dd50c3e4635128",
+      "size": 8789,
+      "afterSha256": "1d6ba1fc359c58bdf9a34f53ef5db07378d799e993845b76f3dd50c3e4635128",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/workflow-use-hybrid/short.redaction.json",
+      "sha256": "89fe44329f687473c2db98f02a99f0350262aa9a938c7a0abd2159153c4c71ec",
+      "size": 1263,
+      "afterSha256": "89fe44329f687473c2db98f02a99f0350262aa9a938c7a0abd2159153c4c71ec",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/workflow-use-hybrid/test_dom_browser_probe.py",
+      "sha256": "fbdca52ba463b26028b557c8dde84073c53df24b38ee49ffe665d193a9faf443",
+      "size": 6902,
+      "afterSha256": "fbdca52ba463b26028b557c8dde84073c53df24b38ee49ffe665d193a9faf443",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/workflow-use-hybrid/test_dom_readiness.py",
+      "sha256": "122cfa3728caf0f81659faee8f886d3477e2895afdecb8282fd589c7861955d6",
+      "size": 5878,
+      "afterSha256": "122cfa3728caf0f81659faee8f886d3477e2895afdecb8282fd589c7861955d6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/fixtures/workflow-use-hybrid/test_dom_targets.py",
+      "sha256": "fd94dd3603e126cd9915f25f5eb15cf29d038055d873f955849f4f98fb356d3d",
+      "size": 7916,
+      "afterSha256": "fd94dd3603e126cd9915f25f5eb15cf29d038055d873f955849f4f98fb356d3d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-artifact.test.ts",
+      "sha256": "92cb9eabd3f6df523a33a48d69c190359d1a231b0b85fcbe17f6bec10d14a556",
+      "size": 5105,
+      "afterSha256": "92cb9eabd3f6df523a33a48d69c190359d1a231b0b85fcbe17f6bec10d14a556",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-authoring.test.ts",
+      "sha256": "ded407be3219f17cdd726bb7e2de0abb5ca8b0bca0357eba007d73d2a442b9d7",
+      "size": 9841,
+      "afterSha256": "ded407be3219f17cdd726bb7e2de0abb5ca8b0bca0357eba007d73d2a442b9d7",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-dom-tools.test.ts",
+      "sha256": "99a74755290665433c49b2d68edf9073407daa9e903319a5905a72aa4c463697",
+      "size": 18838,
+      "afterSha256": "99a74755290665433c49b2d68edf9073407daa9e903319a5905a72aa4c463697",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-extraction.test.ts",
+      "sha256": "0b912b8b0bc5f2c99d5e7e52df8243a02f98aba0f73bd02e40f63024c3aff4d1",
+      "size": 6308,
+      "afterSha256": "0b912b8b0bc5f2c99d5e7e52df8243a02f98aba0f73bd02e40f63024c3aff4d1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-form.test.ts",
+      "sha256": "22337344a2cfce070b6d5420998a0488f0dfd31952b97e8a31ad1e92b6aa0227",
+      "size": 10755,
+      "afterSha256": "22337344a2cfce070b6d5420998a0488f0dfd31952b97e8a31ad1e92b6aa0227",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-host.test.ts",
+      "sha256": "e629d5797067e462cbe4898fb6551617c356f67055f5de303f36b4a86fc92b3c",
+      "size": 3161,
+      "afterSha256": "e629d5797067e462cbe4898fb6551617c356f67055f5de303f36b4a86fc92b3c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-invoke.test.ts",
+      "sha256": "6e34ac3006c0c686322edfde3a77cb9171fe463608ff42c8b0f5c3f37c76b619",
+      "size": 4405,
+      "afterSha256": "6e34ac3006c0c686322edfde3a77cb9171fe463608ff42c8b0f5c3f37c76b619",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-materializer.test.ts",
+      "sha256": "335467269a85359fd882eaf367fe0600a887b8dad8319950d77477be68aa8274",
+      "size": 8170,
+      "afterSha256": "335467269a85359fd882eaf367fe0600a887b8dad8319950d77477be68aa8274",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-native-agent.test.ts",
+      "sha256": "f1425427c8ebe6fa0ac61002311abb88a7d44cb5111389d9dbb60cf91ba0fc0e",
+      "size": 3427,
+      "afterSha256": "f1425427c8ebe6fa0ac61002311abb88a7d44cb5111389d9dbb60cf91ba0fc0e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-runtime.test.ts",
+      "sha256": "9c29d27a531cb452250db65c213f43012206644ee4b02d88a3db03f63209cdfe",
+      "size": 4414,
+      "afterSha256": "9c29d27a531cb452250db65c213f43012206644ee4b02d88a3db03f63209cdfe",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/hybrid-source-reuse.test.ts",
+      "sha256": "73f650fc07521f397e3aa19b2add3844ce0b08cdcabda1d8f6e4047d31cbef81",
+      "size": 5667,
+      "afterSha256": "73f650fc07521f397e3aa19b2add3844ce0b08cdcabda1d8f6e4047d31cbef81",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/natural-authoring.test.ts",
+      "sha256": "563c61c27c7050ecaa4a3f1a3338732e0bf075b6719ab07f4f87898f4dc9ca0b",
+      "size": 6312,
+      "afterSha256": "563c61c27c7050ecaa4a3f1a3338732e0bf075b6719ab07f4f87898f4dc9ca0b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/natural-output-assembly.test.ts",
+      "sha256": "acf6139b506292d8dc0b979f58265fb122163974845f9489f1287bb7fa4d486b",
+      "size": 10393,
+      "afterSha256": "acf6139b506292d8dc0b979f58265fb122163974845f9489f1287bb7fa4d486b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/natural-python-boundary.test.ts",
+      "sha256": "8c632ad8122ab95f57817ceabd79ed6d760635c7d6eb468d1cf21f109759461e",
+      "size": 13103,
+      "afterSha256": "8c632ad8122ab95f57817ceabd79ed6d760635c7d6eb468d1cf21f109759461e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/natural-source-artifact.test.ts",
+      "sha256": "4ede5c4439e25e894c5ad9b9f936357685039c74b42417e988bc6f2a6b84dd89",
+      "size": 9615,
+      "afterSha256": "4ede5c4439e25e894c5ad9b9f936357685039c74b42417e988bc6f2a6b84dd89",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/task-chain.test.ts",
+      "sha256": "7fc571a795e421f1566006094ad5a265e5f61f82ee65758db6d79d8975616436",
+      "size": 7288,
+      "afterSha256": "7fc571a795e421f1566006094ad5a265e5f61f82ee65758db6d79d8975616436",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/upstream-browser-runner.test.ts",
+      "sha256": "9e1dac7d7d93018e1d8d5e9f9361969b3dd84fdc35fb5324a55352f1693ef9c6",
+      "size": 1680,
+      "afterSha256": "9e1dac7d7d93018e1d8d5e9f9361969b3dd84fdc35fb5324a55352f1693ef9c6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "apps/api/tests/workflow-retirement.test.ts",
+      "sha256": "793ee0580e53fecf6331c93f4d9fab913364e0f3969566d3d87f33fb3513a1d5",
+      "size": 8898,
+      "afterSha256": "793ee0580e53fecf6331c93f4d9fab913364e0f3969566d3d87f33fb3513a1d5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/adr/0004-browser-use-workflow-use-replacement.md",
+      "sha256": "82d3c8836ba1256285a2f3d9c5bfdf4712a1deb7493fc6d18f6d730efad8eef5",
+      "size": 6747,
+      "afterSha256": "82d3c8836ba1256285a2f3d9c5bfdf4712a1deb7493fc6d18f6d730efad8eef5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/adr/0005-workflow-use-fork-hybrid-compiler.md",
+      "sha256": "4796def26a7831485bd6ef9cfbf8e0c5b0c07c7e89254e74b6743e3902994b32",
+      "size": 9896,
+      "afterSha256": "4796def26a7831485bd6ef9cfbf8e0c5b0c07c7e89254e74b6743e3902994b32",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/BROWSER_REPLAY_REPAIR_PLAN.md",
+      "sha256": "0157b0a51bbff54d1516a38d1628cacce1d02eddf51ee1731a4d89e89c67ef67",
+      "size": 51279,
+      "afterSha256": "276e8f036fd6e71e9af02ad908017f592f94193ea8820a3ff86afa754082c4dc",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/BROWSER_USE_DOM_HANDOFF_DESIGN.md",
+      "sha256": "47b2b7bbabbbbcbe9f4be3754c714dcf12716c09002f020c663a8b556e0d7d0e",
+      "size": 33418,
+      "afterSha256": "47b2b7bbabbbbcbe9f4be3754c714dcf12716c09002f020c663a8b556e0d7d0e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/BROWSER_USE_DOM_TOOLS_IMPLEMENTATION.md",
+      "sha256": "33d25fc42bc9c5e2d972ad48816214a4dc1ce6ca1c881e6454e7b5700f286578",
+      "size": 15477,
+      "afterSha256": "33d25fc42bc9c5e2d972ad48816214a4dc1ce6ca1c881e6454e7b5700f286578",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/BROWSER_USE_REPLACEMENT.md",
+      "sha256": "3515969d08a71ebc443465f18418455c7b265131387ca7cc5206656957b40174",
+      "size": 10904,
+      "afterSha256": "3515969d08a71ebc443465f18418455c7b265131387ca7cc5206656957b40174",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/PROGRESS.md",
+      "sha256": "d5becddcdc3dc879339ddc56b74a5d47a213f82549101234d9d012ffc683bf4f",
+      "size": 177838,
+      "afterSha256": "122d96a34a42b265a6637f06f48f50c3181b4e4ede97db2dfb2f6b3df6613e0f",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/REPLAY_CLEANUP_20260917.md",
+      "sha256": "67158d7def18bfd3bc23233e936a89e9c68607b7848a57f689fd3a04f0bf5cec",
+      "size": 7631,
+      "afterSha256": "d8a4abf8cead877a5de05ac92bd24e2146d6e99e6ac56ccbe2065e1a356d0b8f",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/RESEARCH.md",
+      "sha256": "b7db894f5cac96c4828c1cde2f9309c12b80e3767bf188c27ec23b8e788bc425",
+      "size": 74750,
+      "afterSha256": "e78ede1aa8ecd57da29d8b56f56e8b6fc3599cf423c14f47bf71d67af571faf9",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/ROADMAP.md",
+      "sha256": "d11dbf24878071cc4b4d23a8290eda9452f56646081830cdfc06a6fd9beb748d",
+      "size": 34850,
+      "afterSha256": "97be10390592af59fc4ec98c4ba3dbcbfbe39570ef1a5ee31cf40d8bc5407826",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/TASK_CHAIN_ARCHITECTURE.md",
+      "sha256": "0601a1be5b742a243a4e2dfd348640e575748045e2e2dc4a3e66e7aba71a1ec2",
+      "size": 12672,
+      "afterSha256": "0601a1be5b742a243a4e2dfd348640e575748045e2e2dc4a3e66e7aba71a1ec2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/WORKFLOW_USE_HYBRID_COMPILER_PLAN.md",
+      "sha256": "1990f5ab6b915ebc8cda9e4e46eb09274b3f55d82ea4bac4504b754e7ef34867",
+      "size": 12050,
+      "afterSha256": "1990f5ab6b915ebc8cda9e4e46eb09274b3f55d82ea4bac4504b754e7ef34867",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/WORKFLOW_USE_HYBRID_CONVERSION_SPEC.md",
+      "sha256": "415cb2958fac2c4275a8ab8bcc7e5352c427896869ed6add2d106e2fe90ca5de",
+      "size": 20659,
+      "afterSha256": "47a671f0779c67d1c72bf275d28ee6b8ca94465bdfd0584c7d75b950b0cf4e0a",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/WORKFLOW_USE_LEGACY_DISPOSITION.md",
+      "sha256": "81b261439265cf825f284fdfc9473cf08821b708598c2445b7b9f0de4d17dac8",
+      "size": 12594,
+      "afterSha256": "81b261439265cf825f284fdfc9473cf08821b708598c2445b7b9f0de4d17dac8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-handoff/action-dom-examples.json",
+      "sha256": "f1a4656f0326407c0cb927c5ee78d79220cc138cc3043cc6c233ac4ea2c83c3c",
+      "size": 5580,
+      "afterSha256": "f1a4656f0326407c0cb927c5ee78d79220cc138cc3043cc6c233ac4ea2c83c3c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-handoff/action-inventory.json",
+      "sha256": "5ad18251d893734dcf3e2b39b1cfa82da789ab2a0530b90a6a20eb68afd55443",
+      "size": 7251,
+      "afterSha256": "5ad18251d893734dcf3e2b39b1cfa82da789ab2a0530b90a6a20eb68afd55443",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-handoff/history-structure-audit.json",
+      "sha256": "8fe4b22e4d53fb3481fc430f69051beca31b8f140399af28a08dc28fb7023fd8",
+      "size": 1196,
+      "afterSha256": "8fe4b22e4d53fb3481fc430f69051beca31b8f140399af28a08dc28fb7023fd8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/AUTHOR_RESULT_AND_GUIDANCE_FIX.md",
+      "sha256": "6da8dae614458c7d2cfbc3dd6ebe8a6ad6bb769b21a6abb98eab1c4995dd7df4",
+      "size": 2150,
+      "afterSha256": "6da8dae614458c7d2cfbc3dd6ebe8a6ad6bb769b21a6abb98eab1c4995dd7df4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/CLEANUP.md",
+      "sha256": "0e80adc51f10b27793b47652906d45b3c6a2e6a56cbc4a28154130813c4d6b53",
+      "size": 12943,
+      "afterSha256": "8e419cf5d588b96d45bdb2187671ab1d5cf41ba0506c3f0b6499b0a5d4f3a97d",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/FAILED_LOOKUP_COVERAGE.md",
+      "sha256": "9f5cda62e3dd2acf41328d23c03a196c65a6c0958b1acbb6ae0d80c137da44fc",
+      "size": 4647,
+      "afterSha256": "9f5cda62e3dd2acf41328d23c03a196c65a6c0958b1acbb6ae0d80c137da44fc",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/FIELD_READ_FEEDBACK.md",
+      "sha256": "45b75668a3c21bce01fd1c42d6c95a0aa3ea3210534c71609b49a170ce78465f",
+      "size": 6863,
+      "afterSha256": "45b75668a3c21bce01fd1c42d6c95a0aa3ea3210534c71609b49a170ce78465f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/INPUT_TEXT_PRESERVATION.md",
+      "sha256": "ea3136c2cb7681e5fb14fbc3739b6ab58f07e9320b284963590b4d1ccef17210",
+      "size": 3833,
+      "afterSha256": "ea3136c2cb7681e5fb14fbc3739b6ab58f07e9320b284963590b4d1ccef17210",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/INPUT_TEXT_PRESERVATION_TASK.md",
+      "sha256": "89c126a6db8dd6612bc2539f45e7bc40e8dbae30eb19bd1cb8347b2833dd8919",
+      "size": 2006,
+      "afterSha256": "de82f776ab8a3ab2fa1b38f2befe3f8b6a559b3e43b1f68ff3caffffe62b366b",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/LATEST_READ_FAILURE_PROBE.md",
+      "sha256": "4a13db62f23781b1ab63103becc44188cac9404b060d21f963cad2603bbf65d6",
+      "size": 9480,
+      "afterSha256": "4a13db62f23781b1ab63103becc44188cac9404b060d21f963cad2603bbf65d6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/LATE_NAVIGATION_BOUNDARY.md",
+      "sha256": "a4fe8eda5ebe3093af7fa05df00a17c37a6aac13471d6c45de80de3083517334",
+      "size": 7153,
+      "afterSha256": "a4fe8eda5ebe3093af7fa05df00a17c37a6aac13471d6c45de80de3083517334",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/LOCAL_MODEL_FIELD_READ.md",
+      "sha256": "62ec10e4be727338dc0b17ddfdd37a4b8d59711766384e1d2e18f51cedf80cbd",
+      "size": 6085,
+      "afterSha256": "62ec10e4be727338dc0b17ddfdd37a4b8d59711766384e1d2e18f51cedf80cbd",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/LOCAL_MODEL_FIELD_READ_TASK.md",
+      "sha256": "3fd0bc650a24e9161117a322c635932ebb0e22abe10703f70581c3d165de2e2e",
+      "size": 2411,
+      "afterSha256": "51695eefebed0b951707e98e9f83f77e24b4e503dc1889a7e020cbd7a083e386",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/LOCAL_STRUCTURE_FIELD_READ.md",
+      "sha256": "e7d7423bd7e2d8ef3b2c7e59cc438763d70b5c57ba15166ca3a90ff71e9a88d2",
+      "size": 2865,
+      "afterSha256": "5d18a9b4c81f3a68a2e3d43d9a44205e5992f0dfb24c07a2b8d0c978b5004a39",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/MAINLINE_AFTER_CAPTURE_REPAIRS.md",
+      "sha256": "cec13e526fbd0b754a088a181f1e96e868c5f261ed26d733e87d5e2d8ea464a3",
+      "size": 5185,
+      "afterSha256": "cec13e526fbd0b754a088a181f1e96e868c5f261ed26d733e87d5e2d8ea464a3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/MAINLINE_AFTER_SNAPSHOT_FIX.md",
+      "sha256": "31bff3ffa6633243afc39817d39858d96a1e00dd9060079eb49214b0fb252bb6",
+      "size": 2270,
+      "afterSha256": "31bff3ffa6633243afc39817d39858d96a1e00dd9060079eb49214b0fb252bb6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/MAINLINE_AFTER_VISIBLE_TEXT.md",
+      "sha256": "2d2756f156ac36d2e81e6b9b10dcce16cd314c7b1d381849a7c7ca2291d0bc79",
+      "size": 3348,
+      "afterSha256": "2d2756f156ac36d2e81e6b9b10dcce16cd314c7b1d381849a7c7ca2291d0bc79",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/MAINLINE_AUTHORITY_DECISION.md",
+      "sha256": "db09e761b0e29ce79d6d6bf25d4ec6f8794554a0efe83c28021958656d893f59",
+      "size": 3294,
+      "afterSha256": "db09e761b0e29ce79d6d6bf25d4ec6f8794554a0efe83c28021958656d893f59",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/MAINLINE_FINAL_RUN_BLOCKED.md",
+      "sha256": "9dc040b069b107977aa9fce911c5022637bddc35027343fdf805265b80276c73",
+      "size": 6708,
+      "afterSha256": "9dc040b069b107977aa9fce911c5022637bddc35027343fdf805265b80276c73",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/MAINLINE_FINAL_RUN_TASK.md",
+      "sha256": "1694e44cc5ba246c3bf08750e59c1de621983d8489818a20a94a7192894469dd",
+      "size": 3691,
+      "afterSha256": "3e744879ae957a91fefd6f6673b557a0c6bd796819617469f7e66775d8b5ee0d",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/MAINLINE_FIRST_LIVE_FAILURE.md",
+      "sha256": "8684d2e524ecfca3e9cf7150568528ffd923280663b07a2d03c042a633a65c4b",
+      "size": 4618,
+      "afterSha256": "8684d2e524ecfca3e9cf7150568528ffd923280663b07a2d03c042a633a65c4b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/MAINLINE_WITH_LIFECYCLE.md",
+      "sha256": "8f930f3736ecd210c8fa8c7d680b9152a4d0a119cf58e8ad66d8873a51744479",
+      "size": 5940,
+      "afterSha256": "8f930f3736ecd210c8fa8c7d680b9152a4d0a119cf58e8ad66d8873a51744479",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/NATIVE_LOOKUP_STRUCTURE.md",
+      "sha256": "f350d2b09ce4bf10e42fd908f0260285f064234f8b56eeba9315e823e695304e",
+      "size": 4035,
+      "afterSha256": "40ff0acd091507a4723d5ef862d07057d2e13976775692364a3882b1b55ebcde",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/NATIVE_SEARCH_COVERAGE.md",
+      "sha256": "556b72f7da5969891108f2a8d6873fe2b8b106b807fa34d92d100aca341a94ed",
+      "size": 3924,
+      "afterSha256": "556b72f7da5969891108f2a8d6873fe2b8b106b807fa34d92d100aca341a94ed",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/NATURAL_TASK_IMPLEMENTATION.md",
+      "sha256": "f6aab1651b33072bd686808b59cf746b8c0fec6c991af20af0ed5026517fcf67",
+      "size": 18453,
+      "afterSha256": "f6aab1651b33072bd686808b59cf746b8c0fec6c991af20af0ed5026517fcf67",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/POST_ACTION_TARGET_REFRESH.md",
+      "sha256": "bea8c474488489a6f5fc006d713e60aa4e5b3e34d1b99477b4bf431993a59810",
+      "size": 5004,
+      "afterSha256": "bea8c474488489a6f5fc006d713e60aa4e5b3e34d1b99477b4bf431993a59810",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/POST_SNAPSHOT_COHERENCE.md",
+      "sha256": "8ed39a25bea5ab84d04ec8e95e881c23d74a709aec0475fade5a7ffaa7c9780f",
+      "size": 2039,
+      "afterSha256": "8df1404aadc7b6007a146525a4c5fbc33238fd70979d6ee4ba1f97b06483528c",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R3_RUNTIME_SCOPE.md",
+      "sha256": "dead62e734e95c5bcd83ee9af64e0d45b98a21bfe0e560b6db8692fc539b1097",
+      "size": 5303,
+      "afterSha256": "dead62e734e95c5bcd83ee9af64e0d45b98a21bfe0e560b6db8692fc539b1097",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R3_RUNTIME_SCOPE_TASK.md",
+      "sha256": "07423499ca810abb1b26e7ca0d74e6141e2aba7dd65fdb953aaebe83e3747d60",
+      "size": 5229,
+      "afterSha256": "3d37a37008717a140010b9f936534a4d69abe4732b4c82b6599597d418330ec4",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R3_TARGET_SCROLL.md",
+      "sha256": "7b6cc2e22cf49fcf5ca3f3676ac27390c8f50ab9db7bdf6cd256a9d5d4256bc0",
+      "size": 8534,
+      "afterSha256": "7b6cc2e22cf49fcf5ca3f3676ac27390c8f50ab9db7bdf6cd256a9d5d4256bc0",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R3_TARGET_SCROLL_TASK.md",
+      "sha256": "d99c0edf1fa75c4bcd6c7aaf7e57abb3a2536219e71d4646314b6069c2adcce2",
+      "size": 8874,
+      "afterSha256": "85c845b754afd4ed3a515f40a50371e601a2ff068cf6d92b7edba6ba2327f56b",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R4_SLOW_RUNTIME.md",
+      "sha256": "28b8e8fbd97e6063db24535d3e7b73c7a174f8a7edb0f07870ecd239b56642ea",
+      "size": 2486,
+      "afterSha256": "28b8e8fbd97e6063db24535d3e7b73c7a174f8a7edb0f07870ecd239b56642ea",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R4_VISIBLE_WAIT.md",
+      "sha256": "8112f669e11d18053f3a05a4608395cabe1fc1c46ef2dd783c2a7f35379b7c7a",
+      "size": 6829,
+      "afterSha256": "8112f669e11d18053f3a05a4608395cabe1fc1c46ef2dd783c2a7f35379b7c7a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R4_VISIBLE_WAIT_TASK.md",
+      "sha256": "de6be9afc4a9c416ae6ca272ae27d22ac3233eb33222fbaa94f4313034880abf",
+      "size": 7475,
+      "afterSha256": "58e8ce7759a2ac0ab893bace6278da4f9b2c3326b07536f124d1f08d0039f6b8",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R5_FIELD_INTERFACE.md",
+      "sha256": "e161a16cc5c4dc07b19d12501446ce5123f9c144519caa4d22f1c217267d0330",
+      "size": 3888,
+      "afterSha256": "e161a16cc5c4dc07b19d12501446ce5123f9c144519caa4d22f1c217267d0330",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R5_FIELD_INTERFACE_TASK.md",
+      "sha256": "becd30b0ff577a1de8e6b16afbd9f414ccf7011a5482ebc88c5224908c13e664",
+      "size": 4479,
+      "afterSha256": "fc5b36090bada3f6f47d38d841e21356083f73c13ef07efd7b2a6386a470405a",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R5_PRODUCTION_READ.md",
+      "sha256": "b0fc5e89a32ed227303781dbb561150c69f42f854d4b227df43ab17d818ea164",
+      "size": 8130,
+      "afterSha256": "b0fc5e89a32ed227303781dbb561150c69f42f854d4b227df43ab17d818ea164",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R5_PRODUCTION_READ_TASK.md",
+      "sha256": "3f68cfc083485ebb72fb2beb8e2368e650d498174c072ad1963daf9a0873fbe6",
+      "size": 7375,
+      "afterSha256": "561f22586fc9502f73da50315a0fbf3e6f6965d7ca3bb59c5186ec3775006f4f",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R5_SCOPED_FIELD_TOOL.md",
+      "sha256": "a7ee1c926133d6fb3283c700d7cd43ee0a6c2fbc85de395e1b4f43abf2104da1",
+      "size": 7322,
+      "afterSha256": "a7ee1c926133d6fb3283c700d7cd43ee0a6c2fbc85de395e1b4f43abf2104da1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R5_SCOPED_FIELD_TOOL_TASK.md",
+      "sha256": "8915670532c2ed9870c87079537abe10e5a79b5f8c89379d5dfb0e8d2454cbc0",
+      "size": 5141,
+      "afterSha256": "ba9e00ee4cf3e41129d536b327a7d2018cca0aed51f64f79f5cd7ac0f58fba76",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R5_SUMMARY_OUTPUT.md",
+      "sha256": "a0b6aa251f0255772c42928bd1fc4850f9f265bbc6e68d0b531bbe9d83b5516b",
+      "size": 7264,
+      "afterSha256": "a0b6aa251f0255772c42928bd1fc4850f9f265bbc6e68d0b531bbe9d83b5516b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R5_SUMMARY_OUTPUT_TASK.md",
+      "sha256": "20ed86ee002961c1cdf1d6a40f5c673974fe0a93c5ba1ad08c7c332404ad15d7",
+      "size": 8171,
+      "afterSha256": "d42d70f40d0ed91aea7b833fe900f953bfac9f959c737bbf5f2ce001a38341e3",
+      "disposition": "changed"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/R6_DISPATCH_REPAIR.md",
+      "sha256": "81ba3f142c6ffb075c204f1566e51404568fa1f002195a261762567ecda66764",
+      "size": 8492,
+      "afterSha256": "81ba3f142c6ffb075c204f1566e51404568fa1f002195a261762567ecda66764",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/REPLAY_REPAIR_EXECUTION.md",
+      "sha256": "55950df96f1ab347f737f5d62877a6513e3ba5931e70b4d72baa7463f8d1d72c",
+      "size": 19357,
+      "afterSha256": "55950df96f1ab347f737f5d62877a6513e3ba5931e70b4d72baa7463f8d1d72c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/SOURCE_LIFECYCLE_DIAGNOSTICS.md",
+      "sha256": "e5b11b51958b938863dbcd1d42fb01ea0bd34401f1ea5d306ab1942b23ecf08a",
+      "size": 5884,
+      "afterSha256": "e5b11b51958b938863dbcd1d42fb01ea0bd34401f1ea5d306ab1942b23ecf08a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/baseline.json",
+      "sha256": "6e896ea47c34af0979faba625310c4cca5b58bed75b2cd728e312e2e85509841",
+      "size": 16562,
+      "afterSha256": "6e896ea47c34af0979faba625310c4cca5b58bed75b2cd728e312e2e85509841",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/bat-github-a5-compiled-replay.json",
+      "sha256": "ef8dfd5a704d0a98b7c7d1cfdbaef478514d125f7001c80a6e86d2ba16299313",
+      "size": 871,
+      "afterSha256": "ef8dfd5a704d0a98b7c7d1cfdbaef478514d125f7001c80a6e86d2ba16299313",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/bat-github-a5-handle-probe.json",
+      "sha256": "8b74090ee4593297207e4a52104c526db217aab25f26eab40c2f66fedb46fc4c",
+      "size": 986,
+      "afterSha256": "8b74090ee4593297207e4a52104c526db217aab25f26eab40c2f66fedb46fc4c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/bat-github-a5-post-refresh-acceptance.json",
+      "sha256": "874ef36851fa31934a76c60fc9aad26a7eb4dcc794b014a2b1daa6d535809e3f",
+      "size": 2092,
+      "afterSha256": "874ef36851fa31934a76c60fc9aad26a7eb4dcc794b014a2b1daa6d535809e3f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/bat-post-action-target-counterexamples.json",
+      "sha256": "4638740363ead998503ca561c18c9d685b14a6823505529ea2491278794f3151",
+      "size": 401,
+      "afterSha256": "4638740363ead998503ca561c18c9d685b14a6823505529ea2491278794f3151",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-entry.json",
+      "sha256": "5ca0ded206f9334539cecae1e7e36ca65bfd2b0ce27ece1cd1e77f05b0baf9ea",
+      "size": 1531,
+      "afterSha256": "5ca0ded206f9334539cecae1e7e36ca65bfd2b0ce27ece1cd1e77f05b0baf9ea",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-1c5c36c8-911c-4ad7-9d61-19aa1ede003a-audit-correction.json",
+      "sha256": "5998d77789cf6a085520a99a6966476b4d2d2abd3f6c6aa105d65649231ec80c",
+      "size": 1412,
+      "afterSha256": "5998d77789cf6a085520a99a6966476b4d2d2abd3f6c6aa105d65649231ec80c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-1c5c36c8-911c-4ad7-9d61-19aa1ede003a.json",
+      "sha256": "57b66e9cd8f11abca31fa848dcd31241eb8bc9ba95b2ad9e5c50eed4c1b748ee",
+      "size": 1709,
+      "afterSha256": "57b66e9cd8f11abca31fa848dcd31241eb8bc9ba95b2ad9e5c50eed4c1b748ee",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-30db3c05-a8e9-47b5-907f-9e19d5ba1e80.json",
+      "sha256": "8fab98665575d84aa63f6ef07d24fbb473a11d9ade3ec4b763f38a68d1f3002d",
+      "size": 3431,
+      "afterSha256": "8fab98665575d84aa63f6ef07d24fbb473a11d9ade3ec4b763f38a68d1f3002d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-51ca80c2-9d7c-470e-935f-300dd2b0f8a4.json",
+      "sha256": "32a238a056c89e240b35f5c8748e97af7157d2ed587548d93b352147e61c883f",
+      "size": 6904,
+      "afterSha256": "32a238a056c89e240b35f5c8748e97af7157d2ed587548d93b352147e61c883f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-5c333a80-53e0-45bd-9755-ae5560ed7608.json",
+      "sha256": "4c99f005452f223e844a7b0e6e933bda6211477b2c7c5df067669517739ec193",
+      "size": 3215,
+      "afterSha256": "4c99f005452f223e844a7b0e6e933bda6211477b2c7c5df067669517739ec193",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-6efb997b-a6c1-4841-abf7-503495c14774.json",
+      "sha256": "7bc4d2b9c78d7361faba4129c6ca199844cc7ace269e61ed8fe7664c9dffbe1b",
+      "size": 1701,
+      "afterSha256": "7bc4d2b9c78d7361faba4129c6ca199844cc7ace269e61ed8fe7664c9dffbe1b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-c1fb5edf-6d28-4c80-84f0-b5456a39d170.json",
+      "sha256": "c66349b3c04a5ccd378c94a93934d7cccf695c4483d0ac9d80e92728684ab46b",
+      "size": 1792,
+      "afterSha256": "c66349b3c04a5ccd378c94a93934d7cccf695c4483d0ac9d80e92728684ab46b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-c5388804-13b6-4c70-845b-d1316a0f7bd5.json",
+      "sha256": "71558b0b99a0af8d0fc8f947b77984659571d8ef4dedf2b2a3fb7b5412ff8440",
+      "size": 584,
+      "afterSha256": "71558b0b99a0af8d0fc8f947b77984659571d8ef4dedf2b2a3fb7b5412ff8440",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-c93e4b5a-b6d2-414f-ad95-5cd50c2ce854.json",
+      "sha256": "4a2b5adf567886db3d64dcb56d0df1f24b9d108b1dc8d5f7fdffa623698135e4",
+      "size": 1804,
+      "afterSha256": "4a2b5adf567886db3d64dcb56d0df1f24b9d108b1dc8d5f7fdffa623698135e4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-da124af1-ef86-4905-bf54-3e3f00431445.json",
+      "sha256": "a0e4bc714a566839e8b8c64e8c6e1dbd2c2c8cb79e8bea23ea703052a9106666",
+      "size": 4696,
+      "afterSha256": "a0e4bc714a566839e8b8c64e8c6e1dbd2c2c8cb79e8bea23ea703052a9106666",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-f8ad64fe-750c-4600-a7b7-064adeff84ff.json",
+      "sha256": "85ad48aaf0f44f96919fcc33940b942f4e20add54b8f1cad83d1ca4f27f1fd68",
+      "size": 9622,
+      "afterSha256": "85ad48aaf0f44f96919fcc33940b942f4e20add54b8f1cad83d1ca4f27f1fd68",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural-fb3775e0-7e17-40fa-bcff-6ed22cb07a19.json",
+      "sha256": "0de2a588d31da1672e3fda815df2fcb4713fe28f531bc9529da72af046c3a316",
+      "size": 3240,
+      "afterSha256": "0de2a588d31da1672e3fda815df2fcb4713fe28f531bc9529da72af046c3a316",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-natural.json",
+      "sha256": "8fab98665575d84aa63f6ef07d24fbb473a11d9ade3ec4b763f38a68d1f3002d",
+      "size": 3431,
+      "afterSha256": "8fab98665575d84aa63f6ef07d24fbb473a11d9ade3ec4b763f38a68d1f3002d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/mainline-source.json",
+      "sha256": "74bae056e993fd0b80c8b4320c92e332cc683798e77110230f57eb00c9d7f748",
+      "size": 1496,
+      "afterSha256": "74bae056e993fd0b80c8b4320c92e332cc683798e77110230f57eb00c9d7f748",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/browser-use-dom-tools/preserved-source.json",
+      "sha256": "11271d36ec341d3e00b18f61a63fbcc4540a7181f4ca7f99eced1b4b384bd9d6",
+      "size": 2867,
+      "afterSha256": "11271d36ec341d3e00b18f61a63fbcc4540a7181f4ca7f99eced1b4b384bd9d6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h0/README.md",
+      "sha256": "93ab37452ec5ed785480b7c6b51cca755c3615b3067f5a893ab82125f994faa8",
+      "size": 8700,
+      "afterSha256": "93ab37452ec5ed785480b7c6b51cca755c3615b3067f5a893ab82125f994faa8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h0/initial-dirty.json",
+      "sha256": "8783f2fe3278eb483bd2dd8f17d6b8134f2646c19d2f7ab1c75192bfda59fe3f",
+      "size": 6705,
+      "afterSha256": "8783f2fe3278eb483bd2dd8f17d6b8134f2646c19d2f7ab1c75192bfda59fe3f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h2/FORK-REPAIR.md",
+      "sha256": "1c7aadeaa8b6874bad0518d425993d6ad435c65fde95d1496130dc89203c7d49",
+      "size": 5017,
+      "afterSha256": "1c7aadeaa8b6874bad0518d425993d6ad435c65fde95d1496130dc89203c7d49",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h2/H3-IMPLEMENTATION.md",
+      "sha256": "0dbb570de6f7d914b273c4dcc87359f3c3c77a4d270bf70ba37eb2fbfbf0306e",
+      "size": 51108,
+      "afterSha256": "0dbb570de6f7d914b273c4dcc87359f3c3c77a4d270bf70ba37eb2fbfbf0306e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h2/README.md",
+      "sha256": "b141fc7a672a4845fa989abf2b4da631a1b7deae82028e0d5208395673214749",
+      "size": 8064,
+      "afterSha256": "b141fc7a672a4845fa989abf2b4da631a1b7deae82028e0d5208395673214749",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h2/admission-gaps.json",
+      "sha256": "40af3fbd09605ef1d434244a964fd26514cb617a2418656a7b653411f18fc5e2",
+      "size": 1200,
+      "afterSha256": "40af3fbd09605ef1d434244a964fd26514cb617a2418656a7b653411f18fc5e2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h2/history-admission.json",
+      "sha256": "85a45d48b725d1e6e890ed4ffe835a967f3c66cc7bc8a329336858959ffaa7ff",
+      "size": 2296,
+      "afterSha256": "85a45d48b725d1e6e890ed4ffe835a967f3c66cc7bc8a329336858959ffaa7ff",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h2/method-probe.json",
+      "sha256": "34481570e5de8a8f84334b7789f0fa2db63329d26558f1368d73e422780904f8",
+      "size": 627,
+      "afterSha256": "34481570e5de8a8f84334b7789f0fa2db63329d26558f1368d73e422780904f8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h3/README.md",
+      "sha256": "6331bdd70122181d6fc6018e709b639004b74d90817b895809a31ebab07dd535",
+      "size": 5373,
+      "afterSha256": "6331bdd70122181d6fc6018e709b639004b74d90817b895809a31ebab07dd535",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h3/TARGET_OBSERVATION_DIAGNOSTIC.md",
+      "sha256": "cc7ad71b7534ab0473ef0c2aa40c2f1ae200acf4acfd82a8a1a84734de699a68",
+      "size": 3487,
+      "afterSha256": "cc7ad71b7534ab0473ef0c2aa40c2f1ae200acf4acfd82a8a1a84734de699a68",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h3/full-comparison.json",
+      "sha256": "0d1ef04b65919c3b6d43c5aad97f4ab97980532d98e10c9dcff9ccaa6a0583ac",
+      "size": 35713,
+      "afterSha256": "0d1ef04b65919c3b6d43c5aad97f4ab97980532d98e10c9dcff9ccaa6a0583ac",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h3/recorded-llm-comparison.json",
+      "sha256": "2591eaf5fb374a5bd4c592979a5d9229d7e5a38ce7590ce9e0467ae05ce5fc0e",
+      "size": 6637,
+      "afterSha256": "2591eaf5fb374a5bd4c592979a5d9229d7e5a38ce7590ce9e0467ae05ce5fc0e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h3/short-comparison.json",
+      "sha256": "03181c8cc4bd455141582d07f92bbb203afccd1476c9a037fcbb93b55c8057f1",
+      "size": 8986,
+      "afterSha256": "03181c8cc4bd455141582d07f92bbb203afccd1476c9a037fcbb93b55c8057f1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h6/LEGACY-ALLOWLIST.md",
+      "sha256": "b8958b688e3c838cf6fd101291396b157ceacc0c2155143cd14cd2000d7ff4e4",
+      "size": 1589,
+      "afterSha256": "b8958b688e3c838cf6fd101291396b157ceacc0c2155143cd14cd2000d7ff4e4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "docs/development/evidence/workflow-use-hybrid-h6/preserved-source.json",
+      "sha256": "3b06df015537298832633d3c83862568320b0384289c8161ebe23943531e87c4",
+      "size": 3155,
+      "afterSha256": "3b06df015537298832633d3c83862568320b0384289c8161ebe23943531e87c4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "packages/contracts/src/task-chain/node.ts",
+      "sha256": "5d7cd87e7d699b4d5e3feadf508348c2dd03cb8c5df02b2c056322f351cc8709",
+      "size": 11789,
+      "afterSha256": "5d7cd87e7d699b4d5e3feadf508348c2dd03cb8c5df02b2c056322f351cc8709",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "packages/runtime/src/task-chain/types.ts",
+      "sha256": "6b9305166e0246c9ea1cb8c4b5d86fe3295ac8f53921836f7f265b92fb759cca",
+      "size": 3518,
+      "afterSha256": "6b9305166e0246c9ea1cb8c4b5d86fe3295ac8f53921836f7f265b92fb759cca",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0003-retry-structured-workflow-generation.patch",
+      "sha256": "8eb393692ee85bef4b7d8723f267dbf226c18b61cd2876e001aa456bb46effc5",
+      "size": 2992,
+      "afterSha256": "8eb393692ee85bef4b7d8723f267dbf226c18b61cd2876e001aa456bb46effc5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0004-bound-workflow-generation-screenshots.patch",
+      "sha256": "100b7e0b76c249d5df6fe95e8c6266e872396ea03008088a4f251a073f9b7a5b",
+      "size": 4849,
+      "afterSha256": "100b7e0b76c249d5df6fe95e8c6266e872396ea03008088a4f251a073f9b7a5b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0005-fallback-to-semantic-text-click.patch",
+      "sha256": "a77657c0e7afbe599a43a1406f480b9dabc3a36d113567d70227891046f83593",
+      "size": 5672,
+      "afterSha256": "a77657c0e7afbe599a43a1406f480b9dabc3a36d113567d70227891046f83593",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0006-respect-contextual-click-targets.patch",
+      "sha256": "2e2f94be623ba95f86a496fa02e72acb86e27fd3e7d27dda30a3be4f65c6ca6d",
+      "size": 2558,
+      "afterSha256": "2e2f94be623ba95f86a496fa02e72acb86e27fd3e7d27dda30a3be4f65c6ca6d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0007-rank-duplicate-text-by-accessible-context.patch",
+      "sha256": "d4a0b6ba7ee7c041a0c49f8c2677404d1a0a0f3ea23eae57337762da0508fa51",
+      "size": 4701,
+      "afterSha256": "d4a0b6ba7ee7c041a0c49f8c2677404d1a0a0f3ea23eae57337762da0508fa51",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0008-use-accessible-names-for-click-targets.patch",
+      "sha256": "d9f18a7fcd4b939b09306ee06954780dc15c295a85eecfccb7d2ef2d140a8746",
+      "size": 5028,
+      "afterSha256": "d9f18a7fcd4b939b09306ee06954780dc15c295a85eecfccb7d2ef2d140a8746",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0009-prefer-open-choice-controls.patch",
+      "sha256": "70026540d015912766bc4754a2ae793817803ad03dc584678793bf2ac303b60d",
+      "size": 2397,
+      "afterSha256": "70026540d015912766bc4754a2ae793817803ad03dc584678793bf2ac303b60d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0010-keep-action-text-on-its-own-element.patch",
+      "sha256": "b626dfee1ea5b33d030e4f145d046af44905f1481283b40a01fe4e20cc895032",
+      "size": 3582,
+      "afterSha256": "b626dfee1ea5b33d030e4f145d046af44905f1481283b40a01fe4e20cc895032",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0011-wait-for-no-ai-page-stability.patch",
+      "sha256": "137449a06dfeffe0acedbd130655509b083d9433822ed78dfcbfc80cec507bae",
+      "size": 5368,
+      "afterSha256": "137449a06dfeffe0acedbd130655509b083d9433822ed78dfcbfc80cec507bae",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/0012-verify-link-effects-and-refresh-retries.patch",
+      "sha256": "49f5c11c6dec3cd95663fd9faebdde0b237077148abafa7946f087631713244b",
+      "size": 9822,
+      "afterSha256": "49f5c11c6dec3cd95663fd9faebdde0b237077148abafa7946f087631713244b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "patches/workflow-use/README.md",
+      "sha256": "ea5fde3fdbea6da70c9caf7bba9261f645d6a71983459e75ddb6e633e299a1da",
+      "size": 2382,
+      "afterSha256": "ea5fde3fdbea6da70c9caf7bba9261f645d6a71983459e75ddb6e633e299a1da",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "scripts/setup-upstream-browser-runner.mjs",
+      "sha256": "c25ed239326fb3ad08f69f2564f1e28bee13a267a2139fbe79e2469c0da49ee4",
+      "size": 2756,
+      "afterSha256": "c25ed239326fb3ad08f69f2564f1e28bee13a267a2139fbe79e2469c0da49ee4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/.github/workflows/lint.yml",
+      "sha256": "b65322f9cc5f15d8bed54c4c9045764969a4d4fa05cc08f8b66766cae733dba5",
+      "size": 4054,
+      "afterSha256": "b65322f9cc5f15d8bed54c4c9045764969a4d4fa05cc08f8b66766cae733dba5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/.github/workflows/publish.yml",
+      "sha256": "814063fed953f23fe4bb594920ac0f54ca5a50db7a3c1280ecf3a33c9d5bdc6d",
+      "size": 2207,
+      "afterSha256": "814063fed953f23fe4bb594920ac0f54ca5a50db7a3c1280ecf3a33c9d5bdc6d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/.gitignore",
+      "sha256": "7f9abc26ed9ecdf23cb7fcd6a3443721aed3b17e5b133c24d6d2b289d06794cd",
+      "size": 3454,
+      "afterSha256": "7f9abc26ed9ecdf23cb7fcd6a3443721aed3b17e5b133c24d6d2b289d06794cd",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/BAT-CHANGES.md",
+      "sha256": "1c1c24e58de4687a093489055d1121c7b84b0d04bd3007ce48e3eb0590125907",
+      "size": 4051,
+      "afterSha256": "1c1c24e58de4687a093489055d1121c7b84b0d04bd3007ce48e3eb0590125907",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/LICENSE",
+      "sha256": "d0244248ae3e9cc081ff0d0010aaae97fc89d2a4bce58fd93a137ab26c268989",
+      "size": 34295,
+      "afterSha256": "d0244248ae3e9cc081ff0d0010aaae97fc89d2a4bce58fd93a137ab26c268989",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/LOCAL-CHANGES.json",
+      "sha256": "537674e1431f9e73719ca11e79da5b77fbcf21687106b0602707d3e6f320a7ca",
+      "size": 12220,
+      "afterSha256": "c9fe4c56f9ebcd16a8ffa5e93cf2cb63b7190be1959ac1d2c84e2872e4f722cf",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/README.md",
+      "sha256": "d87cca0c2041e2d10c4643dc04d21fc142dddd6c3bea7b208e57fed4474363d2",
+      "size": 8243,
+      "afterSha256": "d87cca0c2041e2d10c4643dc04d21fc142dddd6c3bea7b208e57fed4474363d2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/UPSTREAM.json",
+      "sha256": "06278e7c33761fc9940ec4336f9c72eb81329a0dbfd278735486a74d3597782e",
+      "size": 33739,
+      "afterSha256": "06278e7c33761fc9940ec4336f9c72eb81329a0dbfd278735486a74d3597782e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/.eslintignore",
+      "sha256": "211be6acbb086705eec09067fc073a57202993ebf8ad1279e71321d3daa7a635",
+      "size": 55,
+      "afterSha256": "211be6acbb086705eec09067fc073a57202993ebf8ad1279e71321d3daa7a635",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/.eslintrc.cjs",
+      "sha256": "788bed3452d96eff67993fe5017ce8c200f160d7161de2cda3d11e023217cbc5",
+      "size": 556,
+      "afterSha256": "788bed3452d96eff67993fe5017ce8c200f160d7161de2cda3d11e023217cbc5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/.gitignore",
+      "sha256": "b727faab67a7bdc19094e7915a3b0b343b3d8af60bbb0db49401e088ae9b06a5",
+      "size": 286,
+      "afterSha256": "b727faab67a7bdc19094e7915a3b0b343b3d8af60bbb0db49401e088ae9b06a5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/README.md",
+      "sha256": "1a58183187c45c8b54a5a7fe53e36f231e4c3251339527e749e265928c65b683",
+      "size": 87,
+      "afterSha256": "1a58183187c45c8b54a5a7fe53e36f231e4c3251339527e749e265928c65b683",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/components.json",
+      "sha256": "c9eb9c39c15f4dd5db7f2c77f7c16daea44f98f6a4ec562a4b62000edf96bd05",
+      "size": 431,
+      "afterSha256": "c9eb9c39c15f4dd5db7f2c77f7c16daea44f98f6a4ec562a4b62000edf96bd05",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/package-lock.json",
+      "sha256": "aa0cd156974bc294888fcee5c9be0f320741994699fbd89a2d28de081e488d22",
+      "size": 203629,
+      "afterSha256": "aa0cd156974bc294888fcee5c9be0f320741994699fbd89a2d28de081e488d22",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/package.json",
+      "sha256": "48708500a083f81b462710fafbfe2d51020219b274c28a7de762a92e60805799",
+      "size": 1997,
+      "afterSha256": "48708500a083f81b462710fafbfe2d51020219b274c28a7de762a92e60805799",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/assets/react.svg",
+      "sha256": "9d72e876c70d7c7d4cbfe6c315747b66308176577329d2dc59b75191bdc21a4e",
+      "size": 4127,
+      "afterSha256": "9d72e876c70d7c7d4cbfe6c315747b66308176577329d2dc59b75191bdc21a4e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/assets/tailwind.css",
+      "sha256": "fe48c8925f1eb5a5764855e9bfa343b449c65abc8da61abd11be9c3773567088",
+      "size": 4090,
+      "afterSha256": "fe48c8925f1eb5a5764855e9bfa343b449c65abc8da61abd11be9c3773567088",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/components/ui/button.tsx",
+      "sha256": "107d8c7ccc98359058ab27d55edafa944f5edd73dcc515ff577b0f6a6fabb388",
+      "size": 2197,
+      "afterSha256": "107d8c7ccc98359058ab27d55edafa944f5edd73dcc515ff577b0f6a6fabb388",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/background.ts",
+      "sha256": "bc43061fe2b2b04545564cec73f94f6567336901117d764596555140d984255b",
+      "size": 33944,
+      "afterSha256": "bc43061fe2b2b04545564cec73f94f6567336901117d764596555140d984255b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/content.ts",
+      "sha256": "92737e8d2b248f8a01efd64cd7be1387bab2aa06cc8ee74f0b10888fd21c4073",
+      "size": 38747,
+      "afterSha256": "92737e8d2b248f8a01efd64cd7be1387bab2aa06cc8ee74f0b10888fd21c4073",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/components/error-view.tsx",
+      "sha256": "1c466aa1351e948e12faa699f1aae869829a95f0746ab60fa7e88424b8daa581",
+      "size": 1042,
+      "afterSha256": "1c466aa1351e948e12faa699f1aae869829a95f0746ab60fa7e88424b8daa581",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/components/event-viewer.tsx",
+      "sha256": "817c755f88189ae4ece2e70adf390fdfbb384729fa79fab7c700abfd93b4674d",
+      "size": 12546,
+      "afterSha256": "817c755f88189ae4ece2e70adf390fdfbb384729fa79fab7c700abfd93b4674d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/components/initial-view.tsx",
+      "sha256": "b315c92c528eaa0fc8d449fd7b04a7f1ba9080e2bdde277a00cdc1902df30acd",
+      "size": 5246,
+      "afterSha256": "b315c92c528eaa0fc8d449fd7b04a7f1ba9080e2bdde277a00cdc1902df30acd",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/components/logina-view.tsx",
+      "sha256": "b19946a6109f8c151f6914ac8f5245d22fd5560a5a6832b879f72aa4a54250d7",
+      "size": 852,
+      "afterSha256": "b19946a6109f8c151f6914ac8f5245d22fd5560a5a6832b879f72aa4a54250d7",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/components/recording-view.tsx",
+      "sha256": "2bc58a84c52693e3f118a97c034e1be19fcaf2489330d14e5d0dce9e922ec669",
+      "size": 7672,
+      "afterSha256": "2bc58a84c52693e3f118a97c034e1be19fcaf2489330d14e5d0dce9e922ec669",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/components/stopped-view.tsx",
+      "sha256": "fe5cd7b66114e489d9d76b096ee1a3d41ad621021e23a0917caf054396a705e9",
+      "size": 6270,
+      "afterSha256": "fe5cd7b66114e489d9d76b096ee1a3d41ad621021e23a0917caf054396a705e9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/context/workflow-provider.tsx",
+      "sha256": "aac7109a04e21d1fe1f6b97ae5a6f29fb0e415e9b7248e9adef62e980bd0a9f7",
+      "size": 8237,
+      "afterSha256": "aac7109a04e21d1fe1f6b97ae5a6f29fb0e415e9b7248e9adef62e980bd0a9f7",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/index.html",
+      "sha256": "8755fde8d0707125803eebe393ac8695274b39ae01b76201dd9c5d66b94e7f3d",
+      "size": 541,
+      "afterSha256": "8755fde8d0707125803eebe393ac8695274b39ae01b76201dd9c5d66b94e7f3d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/entrypoints/sidepanel/index.tsx",
+      "sha256": "abf74b6374fe8ff116a04f9f5e15de4931ca08a2bc9bf8f3cdfde74f09dae211",
+      "size": 1540,
+      "afterSha256": "abf74b6374fe8ff116a04f9f5e15de4931ca08a2bc9bf8f3cdfde74f09dae211",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/public/icon/128.png",
+      "sha256": "988d6880e0394785fc45b95bf69c71b0e00139044ae309ac32bfad13bb60ffab",
+      "size": 3366,
+      "afterSha256": "988d6880e0394785fc45b95bf69c71b0e00139044ae309ac32bfad13bb60ffab",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/public/icon/16.png",
+      "sha256": "8df297d62fdd8c987f6ce6cc89f9b04b482acb7f8c11ba4efa930d9c20522535",
+      "size": 337,
+      "afterSha256": "8df297d62fdd8c987f6ce6cc89f9b04b482acb7f8c11ba4efa930d9c20522535",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/public/icon/32.png",
+      "sha256": "3df8dfa7a98c3eef1884efe39c1579236d91bbd33b44103d80e90d9a2243928b",
+      "size": 581,
+      "afterSha256": "3df8dfa7a98c3eef1884efe39c1579236d91bbd33b44103d80e90d9a2243928b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/public/icon/48.png",
+      "sha256": "bf943143b69de11a3129bf37f3e18d5f5f898cf99b2be479500a0819114fe40b",
+      "size": 929,
+      "afterSha256": "bf943143b69de11a3129bf37f3e18d5f5f898cf99b2be479500a0819114fe40b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/src/public/wxt.svg",
+      "sha256": "e8b659fcd30b4f55427597cbcdcac33c9946d2e5f9e27ed78d6c5697a1d058e8",
+      "size": 1072,
+      "afterSha256": "e8b659fcd30b4f55427597cbcdcac33c9946d2e5f9e27ed78d6c5697a1d058e8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/tsconfig.json",
+      "sha256": "f00e4bf11b6493a166bc929adc8854fb3ce4b26a2ba317b4b5381d165779b8af",
+      "size": 213,
+      "afterSha256": "f00e4bf11b6493a166bc929adc8854fb3ce4b26a2ba317b4b5381d165779b8af",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/vite.config.ts",
+      "sha256": "98a6cce17c956ec149c1f0b64efdc8fd3ee210764048ef1aafc4bc4fc6991120",
+      "size": 272,
+      "afterSha256": "98a6cce17c956ec149c1f0b64efdc8fd3ee210764048ef1aafc4bc4fc6991120",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/extension/wxt.config.ts",
+      "sha256": "082f509ca1dbd6fa6e1453d662cd929b475b33cb0646822f9bef661fe9645075",
+      "size": 583,
+      "afterSha256": "082f509ca1dbd6fa6e1453d662cd929b475b33cb0646822f9bef661fe9645075",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/lint.sh",
+      "sha256": "589d282fff1d2b0a7f73c7b25950204f97477ead894fbc3f88f0b1be966474a2",
+      "size": 1285,
+      "afterSha256": "589d282fff1d2b0a7f73c7b25950204f97477ead894fbc3f88f0b1be966474a2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/static/workflow-use.png",
+      "sha256": "324106b04bdce0d2c0c2be38acccf505e82211107d3e269d50805aac046dbe54",
+      "size": 32692,
+      "afterSha256": "324106b04bdce0d2c0c2be38acccf505e82211107d3e269d50805aac046dbe54",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/.eslintrc.cjs",
+      "sha256": "48fbb93fc59962f7f52881f89adcc7254a2e164afa8c01cd7628f299f0b485ec",
+      "size": 436,
+      "afterSha256": "48fbb93fc59962f7f52881f89adcc7254a2e164afa8c01cd7628f299f0b485ec",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/.github/dependabot.yml",
+      "sha256": "6d49bbc2ec19dbf0213000c081142b20cbd86db5d4261bd732e4ca7ef34509f2",
+      "size": 295,
+      "afterSha256": "6d49bbc2ec19dbf0213000c081142b20cbd86db5d4261bd732e4ca7ef34509f2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/.gitignore",
+      "sha256": "d4f0958cd1d3bfc89caa56bf4119b5395ff9a2b4bb541463f87f231065aeede4",
+      "size": 278,
+      "afterSha256": "d4f0958cd1d3bfc89caa56bf4119b5395ff9a2b4bb541463f87f231065aeede4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/index.html",
+      "sha256": "cb413e49e91539eb36738820139ad138cc50de0c82d07c041521a272bbf1148b",
+      "size": 365,
+      "afterSha256": "cb413e49e91539eb36738820139ad138cc50de0c82d07c041521a272bbf1148b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/package-lock.json",
+      "sha256": "fb65a18add6ef4875b5278bccde6c70a3044b53f8bbc35a04f09098e41227823",
+      "size": 130171,
+      "afterSha256": "fb65a18add6ef4875b5278bccde6c70a3044b53f8bbc35a04f09098e41227823",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/package.json",
+      "sha256": "335af2a85e8ff1aa6ea0e2f2d58fbb99e8ee34ba189be456f54c0bbce36cd784",
+      "size": 1746,
+      "afterSha256": "335af2a85e8ff1aa6ea0e2f2d58fbb99e8ee34ba189be456f54c0bbce36cd784",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/public/browseruse.png",
+      "sha256": "8f9d77f1b473aa487816f13486bfad7ebebbf0292836bd9670ae3102cc694244",
+      "size": 1325801,
+      "afterSha256": "8f9d77f1b473aa487816f13486bfad7ebebbf0292836bd9670ae3102cc694244",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/public/favicon.ico",
+      "sha256": "378331b7db2e16fe4396830913dcfc3eeec238f37a3af75c1085351043cb1d87",
+      "size": 114104,
+      "afterSha256": "378331b7db2e16fe4396830913dcfc3eeec238f37a3af75c1085351043cb1d87",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/App.tsx",
+      "sha256": "3f29b875e4a34b440e52cabce6ef58f3376175cf207b1427a414c6fdfebffc9e",
+      "size": 487,
+      "afterSha256": "3f29b875e4a34b440e52cabce6ef58f3376175cf207b1427a414c6fdfebffc9e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/components/log-viewer.tsx",
+      "sha256": "47cbffcb8b1bc894f8c8a0d49c7d694e49e5d172ffb78f09d91495cc890d8e43",
+      "size": 8750,
+      "afterSha256": "47cbffcb8b1bc894f8c8a0d49c7d694e49e5d172ffb78f09d91495cc890d8e43",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/components/no-workflow-message.tsx",
+      "sha256": "e57ebda898c9632685101b4925a1d50fc3d816310be8bc17f6d045fc5ca41cfa",
+      "size": 1252,
+      "afterSha256": "e57ebda898c9632685101b4925a1d50fc3d816310be8bc17f6d045fc5ca41cfa",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/components/node-config-menu.tsx",
+      "sha256": "9f2a91f065ef119a61578a3e8e02ff4e67225126c6a38f1dd5bdefe553fe7ece",
+      "size": 13988,
+      "afterSha256": "9f2a91f065ef119a61578a3e8e02ff4e67225126c6a38f1dd5bdefe553fe7ece",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/components/play-button.tsx",
+      "sha256": "593d8c8ce4b1e777671e09fdc840688f42a5973b8659b01a06b7a9d0a330c20b",
+      "size": 8567,
+      "afterSha256": "593d8c8ce4b1e777671e09fdc840688f42a5973b8659b01a06b7a9d0a330c20b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/components/sidebar.tsx",
+      "sha256": "c082920c65c2dcdb7f6a15cc11496c5e386d6a9dbae6b988bab634b95d43f5c5",
+      "size": 1414,
+      "afterSha256": "c082920c65c2dcdb7f6a15cc11496c5e386d6a9dbae6b988bab634b95d43f5c5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/components/workflow-item.tsx",
+      "sha256": "707d23a7f2cd9748ea4e1e9f50049a4f9e730dd7d880b11754b9de0d2aa5e8a7",
+      "size": 4569,
+      "afterSha256": "707d23a7f2cd9748ea4e1e9f50049a4f9e730dd7d880b11754b9de0d2aa5e8a7",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/components/workflow-layout.tsx",
+      "sha256": "5f8b4d97d4567d706ee737ada0a37eb119e28b469465188714d62fe3da5a44ac",
+      "size": 7877,
+      "afterSha256": "5f8b4d97d4567d706ee737ada0a37eb119e28b469465188714d62fe3da5a44ac",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/index.css",
+      "sha256": "37ad0ad69069f552e2eb9e7a2ee5ef9f92453d97e21e1bca07e21864bc15d811",
+      "size": 197,
+      "afterSha256": "37ad0ad69069f552e2eb9e7a2ee5ef9f92453d97e21e1bca07e21864bc15d811",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/main.tsx",
+      "sha256": "d61712b53970b87b3ce55fbb114820378c4b28981cf4485378f2c21fea14d9d6",
+      "size": 238,
+      "afterSha256": "d61712b53970b87b3ce55fbb114820378c4b28981cf4485378f2c21fea14d9d6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/types/log-viewer.types.ts",
+      "sha256": "7410e614e57d9bf4baaee5e9d716e489b618a1500f7a5f87e9b650463d21b8a4",
+      "size": 218,
+      "afterSha256": "7410e614e57d9bf4baaee5e9d716e489b618a1500f7a5f87e9b650463d21b8a4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/types/node-config-menu.types.ts",
+      "sha256": "fc36f966512b793994834b7718ef8ffa63ce6a43fc9846516758681539fb4932",
+      "size": 640,
+      "afterSha256": "fc36f966512b793994834b7718ef8ffa63ce6a43fc9846516758681539fb4932",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/types/play-button.types.ts",
+      "sha256": "9dc681ffd958e0cd0d867b4c26859a4dde9be83cc23d6fb1cd005fb207e00390",
+      "size": 295,
+      "afterSha256": "9dc681ffd958e0cd0d867b4c26859a4dde9be83cc23d6fb1cd005fb207e00390",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/types/sidebar.types.ts",
+      "sha256": "3b31e81a07e792b7a93de4cf3c49facb44a33aabbd78bca28164e459923b8416",
+      "size": 354,
+      "afterSha256": "3b31e81a07e792b7a93de4cf3c49facb44a33aabbd78bca28164e459923b8416",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/types/workflow-layout.types.ts",
+      "sha256": "693739f5306c7b99a22b2638bb2f2ecd9165ec331e7fa86667cfeb8c3279c583",
+      "size": 2304,
+      "afterSha256": "693739f5306c7b99a22b2638bb2f2ecd9165ec331e7fa86667cfeb8c3279c583",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/utils/json-to-flow.ts",
+      "sha256": "0d2713ce64234235d83296c7cd475429284740ab64b44feffa39fc2dd22fbfa7",
+      "size": 1160,
+      "afterSha256": "0d2713ce64234235d83296c7cd475429284740ab64b44feffa39fc2dd22fbfa7",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/src/vite-env.d.ts",
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+      "size": 38,
+      "afterSha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/tsconfig.json",
+      "sha256": "18003cfa3573cb0f5a35b334f349ff62b587fa3067d4ecd13bd233b6a0dc2964",
+      "size": 652,
+      "afterSha256": "18003cfa3573cb0f5a35b334f349ff62b587fa3067d4ecd13bd233b6a0dc2964",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/tsconfig.node.json",
+      "sha256": "9e2abb169ea87b7190613a1d4da57ca608463a453bd4231fa3aeee5e308370dd",
+      "size": 213,
+      "afterSha256": "9e2abb169ea87b7190613a1d4da57ca608463a453bd4231fa3aeee5e308370dd",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/ui/vite.config.ts",
+      "sha256": "968cd3dbd3f5a3d1da4164f50cc06161aadc6c1036c83b8a5213e105680ec057",
+      "size": 222,
+      "afterSha256": "968cd3dbd3f5a3d1da4164f50cc06161aadc6c1036c83b8a5213e105680ec057",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/verify-source.d.mts",
+      "sha256": "4064193a2f19c518aea8ed5ba012c898b984e1cd192e1d88eee49711178b82d6",
+      "size": 98,
+      "afterSha256": "4064193a2f19c518aea8ed5ba012c898b984e1cd192e1d88eee49711178b82d6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/verify-source.mjs",
+      "sha256": "d132d16d3c7ca3925c6941245769fbad22aa337c2169452da6f0cb27d6bfe8f8",
+      "size": 1696,
+      "afterSha256": "d132d16d3c7ca3925c6941245769fbad22aa337c2169452da6f0cb27d6bfe8f8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/.env.example",
+      "sha256": "54a341c90448792397cf48e9e638b1adc29aa6dfaa698dab54bc82a8019134f9",
+      "size": 94,
+      "afterSha256": "54a341c90448792397cf48e9e638b1adc29aa6dfaa698dab54bc82a8019134f9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/.gitignore",
+      "sha256": "619e2e6f7865a41d143d87872a4b91a4ef3d72261a1f69b5f3efd0fabd305f3a",
+      "size": 3589,
+      "afterSha256": "619e2e6f7865a41d143d87872a4b91a4ef3d72261a1f69b5f3efd0fabd305f3a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/.python-version",
+      "sha256": "33307da56af13f791584518fef2e49641180bfbf2ef7b2d256c9ab6fad564f80",
+      "size": 4,
+      "afterSha256": "33307da56af13f791584518fef2e49641180bfbf2ef7b2d256c9ab6fad564f80",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/BUGFIX_SUMMARY.md",
+      "sha256": "48eb9a16d9a28625f26034fb94cb0ea21b87ab6eb5ef18bf414867847e7ed860",
+      "size": 7608,
+      "afterSha256": "48eb9a16d9a28625f26034fb94cb0ea21b87ab6eb5ef18bf414867847e7ed860",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/IMPLEMENTATION_SUMMARY.md",
+      "sha256": "0188b514a2923e0092ecd438dc0a5ad9d46ca9a8b6db876ac90ec738afa5857d",
+      "size": 11513,
+      "afterSha256": "0188b514a2923e0092ecd438dc0a5ad9d46ca9a8b6db876ac90ec738afa5857d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/QUICK_START_PROGRESS_TRACKING.md",
+      "sha256": "a8f59b8d58e9a243844c1e8dec4d5d733b23cd873b1f5d27316a46fd24e75ad7",
+      "size": 7142,
+      "afterSha256": "a8f59b8d58e9a243844c1e8dec4d5d733b23cd873b1f5d27316a46fd24e75ad7",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/README.md",
+      "sha256": "c9239610d0a3d98e0877b6c794ff04d7c96b39cebab7c0d073d25a7ed609c881",
+      "size": 6939,
+      "afterSha256": "c9239610d0a3d98e0877b6c794ff04d7c96b39cebab7c0d073d25a7ed609c881",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/backend/api.py",
+      "sha256": "c5e22bd9d47f835aa60636d546746a215d4e05103850ea91257bdc190e40c99d",
+      "size": 522,
+      "afterSha256": "c5e22bd9d47f835aa60636d546746a215d4e05103850ea91257bdc190e40c99d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/backend/routers.py",
+      "sha256": "1aeb852d3a83ecc204b41eabd4aa22c7df7a42d9f44136f55d01b20ba4716afd",
+      "size": 3598,
+      "afterSha256": "1aeb852d3a83ecc204b41eabd4aa22c7df7a42d9f44136f55d01b20ba4716afd",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/backend/service.py",
+      "sha256": "17e24efede16eb0de08a5adb130c79bb186a78e11f3147d76dda0ba93f4c77d6",
+      "size": 9301,
+      "afterSha256": "17e24efede16eb0de08a5adb130c79bb186a78e11f3147d76dda0ba93f4c77d6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/backend/views.py",
+      "sha256": "ba1a57c836007cf4e30ee617e27d8c26b0de9d98b7aad37559aa6ccf529eb2a8",
+      "size": 1199,
+      "afterSha256": "ba1a57c836007cf4e30ee617e27d8c26b0de9d98b7aad37559aa6ccf529eb2a8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/cli.py",
+      "sha256": "55518ed690170fcb8b7f393a79286dd74806976184eb90d328182ad3ffcafca5",
+      "size": 96551,
+      "afterSha256": "55518ed690170fcb8b7f393a79286dd74806976184eb90d328182ad3ffcafca5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/docs/DETERMINISTIC.md",
+      "sha256": "d8b84cf67ee12c0d477f227dd6f452846d400818defc1ad3a52a87360919c8ec",
+      "size": 2864,
+      "afterSha256": "d8b84cf67ee12c0d477f227dd6f452846d400818defc1ad3a52a87360919c8ec",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/docs/PROGRESS_TRACKING.md",
+      "sha256": "637351df056b080f78cc4ed662dbe2dc6171809d70659b7a581c304d3b2255fa",
+      "size": 24270,
+      "afterSha256": "637351df056b080f78cc4ed662dbe2dc6171809d70659b7a581c304d3b2255fa",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/docs/VARIABLES.md",
+      "sha256": "6dc73bcd99d4d7066683bff81b6807263333312068b763cbf6b7101cfaa176cb",
+      "size": 1650,
+      "afterSha256": "6dc73bcd99d4d7066683bff81b6807263333312068b763cbf6b7101cfaa176cb",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/README.md",
+      "sha256": "25aedafe7d0dfc8c018f6455cfdbdb7c027ba85556b8d156f6e4689891d60602",
+      "size": 2577,
+      "afterSha256": "25aedafe7d0dfc8c018f6455cfdbdb7c027ba85556b8d156f6e4689891d60602",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/progress_tracking_example.py",
+      "sha256": "83cab607f59ace4ffe9b8d7087a9178c001138200c342ceb4b0387b4fd5d55fc",
+      "size": 8747,
+      "afterSha256": "83cab607f59ace4ffe9b8d7087a9178c001138200c342ceb4b0387b4fd5d55fc",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/README.md",
+      "sha256": "52c766b592728b2d0998997de60e4b8f24f77918af83b048e08125f130af3402",
+      "size": 4416,
+      "afterSha256": "52c766b592728b2d0998997de60e4b8f24f77918af83b048e08125f130af3402",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/demos/cloud_browser_demo.py",
+      "sha256": "26b2590c34f4e995e014d87aa2edf2ff5776b9a90096a3ceb8d0fd961b493d48",
+      "size": 1418,
+      "afterSha256": "26b2590c34f4e995e014d87aa2edf2ff5776b9a90096a3ceb8d0fd961b493d48",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/demos/generation_mode_demo.py",
+      "sha256": "dfcee4017e5f74bd5c32c6c09e3550dba0b1b7230b70de07cc9bbf5449dd96b3",
+      "size": 6503,
+      "afterSha256": "dfcee4017e5f74bd5c32c6c09e3550dba0b1b7230b70de07cc9bbf5449dd96b3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/demos/hierarchical_selection_demo.py",
+      "sha256": "01c7d9b66271790e0d296ac27c762a7b2ad943ac4377be06e64970766a34b711",
+      "size": 30591,
+      "afterSha256": "01c7d9b66271790e0d296ac27c762a7b2ad943ac4377be06e64970766a34b711",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/demos/semantic_extraction_demo.py",
+      "sha256": "661b4ebdb13b225459ab4098c2d629d144974821444e7d3ce251bd2118c1664c",
+      "size": 4127,
+      "afterSha256": "661b4ebdb13b225459ab4098c2d629d144974821444e7d3ce251bd2118c1664c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/demos/travel_booking_demo.py",
+      "sha256": "36cd804149db72a837ffb1985dc0a7b510c268be97d3ee340565ad6731e9f476",
+      "size": 15178,
+      "afterSha256": "36cd804149db72a837ffb1985dc0a7b510c268be97d3ee340565ad6731e9f476",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/deterministic/auto_generate_workflow.py",
+      "sha256": "c8ea1eada5dc5d4b2742e6472d89540e8895a8e6ae39ff49a2eeac3f393718ad",
+      "size": 4446,
+      "afterSha256": "c8ea1eada5dc5d4b2742e6472d89540e8895a8e6ae39ff49a2eeac3f393718ad",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/deterministic/create_deterministic_workflow.py",
+      "sha256": "20938349b33170aade856b693f8ef803fa93d9c6f6153ed7dcb4830aad4f3dad",
+      "size": 4829,
+      "afterSha256": "20938349b33170aade856b693f8ef803fa93d9c6f6153ed7dcb4830aad4f3dad",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/deterministic/run_complete_test.py",
+      "sha256": "9f5d591cc0b68b487dc260a5b7cb45e410bddcf9d28e59706d1afb6bdac99349",
+      "size": 6380,
+      "afterSha256": "9f5d591cc0b68b487dc260a5b7cb45e410bddcf9d28e59706d1afb6bdac99349",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/deterministic/test_custom_task.py",
+      "sha256": "5c5c4ca6a9d5fc70218bb7ae7b186fe7170fcf9a3852038b504281a2db30d547",
+      "size": 2680,
+      "afterSha256": "5c5c4ca6a9d5fc70218bb7ae7b186fe7170fcf9a3852038b504281a2db30d547",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/deterministic/test_deterministic_workflow.py",
+      "sha256": "b3098db1762cc2921ae8a119f030f7db7191fb5ad9f64188a4dac36c3ed3a918",
+      "size": 5116,
+      "afterSha256": "b3098db1762cc2921ae8a119f030f7db7191fb5ad9f64188a4dac36c3ed3a918",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/generate_workflow.py",
+      "sha256": "9d0876178661c6ed6f63e8ca2969192c06cfaa29650a2f13b4adbef14ef92bba",
+      "size": 6240,
+      "afterSha256": "9d0876178661c6ed6f63e8ca2969192c06cfaa29650a2f13b4adbef14ef92bba",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/runner.py",
+      "sha256": "66db93db3a15608bc01ca668ac6f160df31bcae72475de62335914e319f1a77d",
+      "size": 551,
+      "afterSha256": "66db93db3a15608bc01ca668ac6f160df31bcae72475de62335914e319f1a77d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/variables/create_workflow_with_variables.py",
+      "sha256": "d28eda3ac3d28616e1c43cebfc56f2f63a7f47aefb0108134b037a8f72dc48c9",
+      "size": 5465,
+      "afterSha256": "d28eda3ac3d28616e1c43cebfc56f2f63a7f47aefb0108134b037a8f72dc48c9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/scripts/variables/run_workflow_with_variables.py",
+      "sha256": "3f4f1e72c1f23f0f3935d32ba3ddaaf0cce88ad236a417cbd7ed5b21198c4c12",
+      "size": 12727,
+      "afterSha256": "3f4f1e72c1f23f0f3935d32ba3ddaaf0cce88ad236a417cbd7ed5b21198c4c12",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/basic/example.workflow.json.bak",
+      "sha256": "cac05cb7b923b59449fd094e120f317665a70c80b85effafbea03cc6c166b891",
+      "size": 5288,
+      "afterSha256": "cac05cb7b923b59449fd094e120f317665a70c80b85effafbea03cc6c166b891",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/basic/example.workflow.yaml",
+      "sha256": "1ec147a4bd433aac133d4c957f2bb7f724796915c465b512e45b9539eeabfbca",
+      "size": 4475,
+      "afterSha256": "1ec147a4bd433aac133d4c957f2bb7f724796915c465b512e45b9539eeabfbca",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/basic/example_github_stars_workflow.yaml",
+      "sha256": "d585830671930a0c770ca53f7ed891f18a0ac71eaf60075ff1942c51e9d97639",
+      "size": 2295,
+      "afterSha256": "d585830671930a0c770ca53f7ed891f18a0ac71eaf60075ff1942c51e9d97639",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/basic/example_workflow.yaml",
+      "sha256": "1d8ba94ce6742ac69c4d32c426f39239f466a5a33eeb0603b75254468230456d",
+      "size": 3216,
+      "afterSha256": "1d8ba94ce6742ac69c4d32c426f39239f466a5a33eeb0603b75254468230456d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/basic/example_workflow_with_default.yaml",
+      "sha256": "589963232b3aeaa570f06dd99f77ded6c111236450108ddfc90e41da96df8787",
+      "size": 1046,
+      "afterSha256": "589963232b3aeaa570f06dd99f77ded6c111236450108ddfc90e41da96df8787",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/basic/pure_semantic.workflow.json.bak",
+      "sha256": "dbce123e03b2bea36c166bf552da00a433fbef984e13dfcde7e61ac0c797ef3e",
+      "size": 1617,
+      "afterSha256": "dbce123e03b2bea36c166bf552da00a433fbef984e13dfcde7e61ac0c797ef3e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/basic/pure_semantic.workflow.yaml",
+      "sha256": "279e020088b74d2461068a5159d7cf34e756bb0a69e3595eb347438c13dcdfcf",
+      "size": 1398,
+      "afterSha256": "279e020088b74d2461068a5159d7cf34e756bb0a69e3595eb347438c13dcdfcf",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/form_filling/semantic_form_fill.workflow.json.bak",
+      "sha256": "5f61dc7f66a82ab1437ddccb5e9b716880f132b6b8bf845bc63dcfe149c5db51",
+      "size": 1702,
+      "afterSha256": "5f61dc7f66a82ab1437ddccb5e9b716880f132b6b8bf845bc63dcfe149c5db51",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/form_filling/semantic_form_fill.workflow.yaml",
+      "sha256": "13478100dfc49212a8b11976a1290d359d5c422b5c34443e7cea1f29ab7c0d0a",
+      "size": 1469,
+      "afterSha256": "13478100dfc49212a8b11976a1290d359d5c422b5c34443e7cea1f29ab7c0d0a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/form_filling/v1.fully-semantic.json",
+      "sha256": "81c21dbcc56f0f82bc75f4becdc5c60c5e2af9db0a08e4620da7b18ec70f0d06",
+      "size": 8889,
+      "afterSha256": "81c21dbcc56f0f82bc75f4becdc5c60c5e2af9db0a08e4620da7b18ec70f0d06",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/form_filling/v1.json",
+      "sha256": "435bb8c589bf0db4cdc4aa0c9932aa33b290d6fbaf102ff1c80903ad9e7c45ab",
+      "size": 8611,
+      "afterSha256": "435bb8c589bf0db4cdc4aa0c9932aa33b290d6fbaf102ff1c80903ad9e7c45ab",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/parameterized/github_stars_parameterized.workflow.json.bak",
+      "sha256": "987fe045734598dd33b5c469f238198f0a4869ccad57d169d2ac2fc32e8553cc",
+      "size": 1485,
+      "afterSha256": "987fe045734598dd33b5c469f238198f0a4869ccad57d169d2ac2fc32e8553cc",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/examples/workflows/parameterized/github_stars_parameterized.workflow.yaml",
+      "sha256": "6a05b752317197b208b854f14de5f28986b0ed0286a3fa7ee56aac367e7e009f",
+      "size": 1175,
+      "afterSha256": "6a05b752317197b208b854f14de5f28986b0ed0286a3fa7ee56aac367e7e009f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/migrate_json_to_yaml.py",
+      "sha256": "102c8cd62867ca8ab0fa784c251eb8560d1df0ee2034ce6bc82a51f8f1f64bf2",
+      "size": 6225,
+      "afterSha256": "102c8cd62867ca8ab0fa784c251eb8560d1df0ee2034ce6bc82a51f8f1f64bf2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/pyproject.toml",
+      "sha256": "e9197030f501e822ac8db4f09ab12c9c8857554ea8c158fa719238284b4088f8",
+      "size": 3051,
+      "afterSha256": "e9197030f501e822ac8db4f09ab12c9c8857554ea8c158fa719238284b4088f8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/storage/metadata.json",
+      "sha256": "89e70e7305cb027fbaf7be113e96c382521417314ab43ada5604a878af3d9068",
+      "size": 1560,
+      "afterSha256": "89e70e7305cb027fbaf7be113e96c382521417314ab43ada5604a878af3d9068",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/test_max_alternatives_bug_fix.py",
+      "sha256": "e45eb0232ed2a3b41c3fff8a2e9a8a02c359628166b1f0fe27c58034f005f467",
+      "size": 4736,
+      "afterSha256": "e45eb0232ed2a3b41c3fff8a2e9a8a02c359628166b1f0fe27c58034f005f467",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/hybrid_fixture.py",
+      "sha256": "c8a53f7f1fa29be725d626893f2ff43ffdcf11256b74a08f4785baca7e265c58",
+      "size": 11342,
+      "afterSha256": "c8a53f7f1fa29be725d626893f2ff43ffdcf11256b74a08f4785baca7e265c58",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/natural_author_fixture.py",
+      "sha256": "1e476fcf4fda6564d8640525acc6b3d058d278383f7b36af052c34e1b950f6fb",
+      "size": 8416,
+      "afterSha256": "1e476fcf4fda6564d8640525acc6b3d058d278383f7b36af052c34e1b950f6fb",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/run_all_tests.py",
+      "sha256": "0afee079573d6bf3371918b92f17d6fc80a5bfc9c7a5f65d4e791afbdea93c94",
+      "size": 2043,
+      "afterSha256": "0afee079573d6bf3371918b92f17d6fc80a5bfc9c7a5f65d4e791afbdea93c94",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_button_click.py",
+      "sha256": "908a47ba43c3e2eebc5ae221900d545e6c0aab6ac7ad177e99aa820c1075e74d",
+      "size": 1927,
+      "afterSha256": "908a47ba43c3e2eebc5ae221900d545e6c0aab6ac7ad177e99aa820c1075e74d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_element_finder.py",
+      "sha256": "e5efef133320bc71ea47ee7c333fdec7b5aab6e1574e5c3648fce6603395ae40",
+      "size": 11814,
+      "afterSha256": "e5efef133320bc71ea47ee7c333fdec7b5aab6e1574e5c3648fce6603395ae40",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_executor_contract.py",
+      "sha256": "808a00a433f102ebff0522bfa98b49157292c7ae232aa94db96cfa690548316e",
+      "size": 8631,
+      "afterSha256": "808a00a433f102ebff0522bfa98b49157292c7ae232aa94db96cfa690548316e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_go_back.workflow.yaml",
+      "sha256": "bdfd75f0c11dc0fb8cea4ddb922199eeac231c6b32e40ff5a16fc009d5ade05c",
+      "size": 532,
+      "afterSha256": "bdfd75f0c11dc0fb8cea4ddb922199eeac231c6b32e40ff5a16fc009d5ade05c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_go_back_fix.py",
+      "sha256": "5c9d15a3ea5c0a6e902697a2a6b4c19554e4b8f81d334db643c7f102c7c0828c",
+      "size": 1736,
+      "afterSha256": "5c9d15a3ea5c0a6e902697a2a6b4c19554e4b8f81d334db643c7f102c7c0828c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_annotations.py",
+      "sha256": "720eb2cae4eaa2609f61082819a3b40a1d59ebe6eee49836c85b2a1a12875f0c",
+      "size": 2656,
+      "afterSha256": "720eb2cae4eaa2609f61082819a3b40a1d59ebe6eee49836c85b2a1a12875f0c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_author.py",
+      "sha256": "19a4bbe1de118775ade2e767978893cf843d2023bd85a1e8efc08d4e560e35ee",
+      "size": 7876,
+      "afterSha256": "19a4bbe1de118775ade2e767978893cf843d2023bd85a1e8efc08d4e560e35ee",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_browser.py",
+      "sha256": "3b4253200635a0d214f8f783b430d8d17c1ed85c958397c70b1e18613b7474dc",
+      "size": 3940,
+      "afterSha256": "3b4253200635a0d214f8f783b430d8d17c1ed85c958397c70b1e18613b7474dc",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_capability.py",
+      "sha256": "352b24076ace066e963419888bd26ac9e0f3a2408daabc910cc2f4acafe1d84e",
+      "size": 4871,
+      "afterSha256": "352b24076ace066e963419888bd26ac9e0f3a2408daabc910cc2f4acafe1d84e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_capture.py",
+      "sha256": "2b05a04828b6a131b6ceb6a70b25f7ef9a21a8f3939dbd50c1875e525f07f006",
+      "size": 20388,
+      "afterSha256": "2b05a04828b6a131b6ceb6a70b25f7ef9a21a8f3939dbd50c1875e525f07f006",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_causal.py",
+      "sha256": "72630aa090d367a86b4845d24090ba4971f90e99b676336a7b50095e1b0114d3",
+      "size": 10667,
+      "afterSha256": "72630aa090d367a86b4845d24090ba4971f90e99b676336a7b50095e1b0114d3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_compiler.py",
+      "sha256": "fe88fff7dbec7777a9647443b50a8b0a1053edf0f6f18bdc02cdb0a8dfc5e1f8",
+      "size": 5491,
+      "afterSha256": "fe88fff7dbec7777a9647443b50a8b0a1053edf0f6f18bdc02cdb0a8dfc5e1f8",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_completion.py",
+      "sha256": "2423f5f9740eae927b37e0b814e808f249f8beb75d313bdde9dced2ca8481c7a",
+      "size": 9673,
+      "afterSha256": "2423f5f9740eae927b37e0b814e808f249f8beb75d313bdde9dced2ca8481c7a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_dom_evidence.py",
+      "sha256": "3fd213f4fa88edff37cd71b27cac65ee53f7643aa87e4f5385a8e85d71cb9bd1",
+      "size": 12625,
+      "afterSha256": "30b638a3ed52a4189c2345c07e3fa69a9eabbc8931a42900e9fe4509039f2304",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_evidence.py",
+      "sha256": "4389c547ed2738521ed78f2695a8a157f04745dfa7b1471864f1e78e4bcab66d",
+      "size": 5700,
+      "afterSha256": "4389c547ed2738521ed78f2695a8a157f04745dfa7b1471864f1e78e4bcab66d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_extraction.py",
+      "sha256": "cedf88f50e62a5bfe2e243e650162f4ac8952c7a2ff338ca65fd2eb8afdc3b14",
+      "size": 4178,
+      "afterSha256": "cedf88f50e62a5bfe2e243e650162f4ac8952c7a2ff338ca65fd2eb8afdc3b14",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_gates.py",
+      "sha256": "efe55f9200ae7ecc34860ec2be952e65f21c54f204921dde9d852def0467c4a3",
+      "size": 6935,
+      "afterSha256": "efe55f9200ae7ecc34860ec2be952e65f21c54f204921dde9d852def0467c4a3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_input.py",
+      "sha256": "22242020b3b30d4369d253f08a4aff52b5e31ff04c4cbc1c9762b7467bc5d9c5",
+      "size": 4382,
+      "afterSha256": "22242020b3b30d4369d253f08a4aff52b5e31ff04c4cbc1c9762b7467bc5d9c5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_loop_alignment.py",
+      "sha256": "b2c9e8aec025ea85357f94068046d59e0e2faf7f6033d6319a67983504a3cc58",
+      "size": 2792,
+      "afterSha256": "b2c9e8aec025ea85357f94068046d59e0e2faf7f6033d6319a67983504a3cc58",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_natural_author_fixture.py",
+      "sha256": "99b8bf180a2cc446071fda2840383b03446669569b8ac28c865da54bfd4b009f",
+      "size": 2976,
+      "afterSha256": "99b8bf180a2cc446071fda2840383b03446669569b8ac28c865da54bfd4b009f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_natural_compile.py",
+      "sha256": "a94bfad6260a036248b801ff7ef36cdefa09f96be2c18c24cb9239145e2c0432",
+      "size": 27164,
+      "afterSha256": "c47d2856a6e0cad5ef7fdb5d960019c71500e89dfbdfd5f287b73d9ca56d3dd8",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_natural_effects.py",
+      "sha256": "c57a844d11634326160ea7825500eb0145ca31723a6f43459af1a947805896a2",
+      "size": 5121,
+      "afterSha256": "c57a844d11634326160ea7825500eb0145ca31723a6f43459af1a947805896a2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_natural_output.py",
+      "sha256": "967e62dfd59db93703fe51c3f9b336c2dfdc96d0e9004053f7752b6fe42aab05",
+      "size": 5727,
+      "afterSha256": "967e62dfd59db93703fe51c3f9b336c2dfdc96d0e9004053f7752b6fe42aab05",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_natural_reads.py",
+      "sha256": "a30abc9db14bf5e6556d65ec925cfb819b82d1fb2b1966cdc2c5fc9aa4847bdb",
+      "size": 8131,
+      "afterSha256": null,
+      "disposition": "deleted"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_read.py",
+      "sha256": "6bb0c79ab3811564f0257440f68a75fb4ed86376f14b59e283b605c87470f0c9",
+      "size": 4430,
+      "afterSha256": "6bb0c79ab3811564f0257440f68a75fb4ed86376f14b59e283b605c87470f0c9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_hybrid_targets.py",
+      "sha256": "0c12c34c4212ed317988f7a94593679c8e24e8c89843105181b3680707113456",
+      "size": 3313,
+      "afterSha256": "0c12c34c4212ed317988f7a94593679c8e24e8c89843105181b3680707113456",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_progress_tracking.py",
+      "sha256": "dba977c0a0bda57858559ad96f7742683cb0c539708a7f8a3f72590e51231faf",
+      "size": 9913,
+      "afterSha256": "dba977c0a0bda57858559ad96f7742683cb0c539708a7f8a3f72590e51231faf",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_recorded_workflow.py",
+      "sha256": "56278659e71e4a69d83650220b7f842f5239e7872e4f9935874ff5b1a3cc67b9",
+      "size": 689,
+      "afterSha256": "56278659e71e4a69d83650220b7f842f5239e7872e4f9935874ff5b1a3cc67b9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_selector_generator.py",
+      "sha256": "c289e6baaeed818128e4051b5297b4320314348c961d3b7e9769b60c9e4114e2",
+      "size": 12217,
+      "afterSha256": "c289e6baaeed818128e4051b5297b4320314348c961d3b7e9769b60c9e4114e2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_selector_generator_fix.py",
+      "sha256": "a6b53411cef30e6c94676cc410d77372df7c6a63eefa6afea3cd8ec6beb043cf",
+      "size": 4520,
+      "afterSha256": "a6b53411cef30e6c94676cc410d77372df7c6a63eefa6afea3cd8ec6beb043cf",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_step_counter_without_callback.py",
+      "sha256": "c95349c46b24e40e0b241cb56968fe346276e437541f88f2bd825c4fba9ca025",
+      "size": 3566,
+      "afterSha256": "c95349c46b24e40e0b241cb56968fe346276e437541f88f2bd825c4fba9ca025",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_wait_times.py",
+      "sha256": "cd009eb1bc3aa90e872452ca1353b12d545bb7dbad15095de9c06df28596711e",
+      "size": 13732,
+      "afterSha256": "cd009eb1bc3aa90e872452ca1353b12d545bb7dbad15095de9c06df28596711e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_workflow_execution.py",
+      "sha256": "cfe9bb3fc7eaf3cf80c5ae7b94548ed59d12026776f298e5d6201bdb8a2788a6",
+      "size": 8476,
+      "afterSha256": "cfe9bb3fc7eaf3cf80c5ae7b94548ed59d12026776f298e5d6201bdb8a2788a6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/tests/test_xpath_optimization.py",
+      "sha256": "95bdb1a7f4d6e7ddc6506aeafd5fa60d939a031fed126674dabcae18880666d5",
+      "size": 19435,
+      "afterSha256": "95bdb1a7f4d6e7ddc6506aeafd5fa60d939a031fed126674dabcae18880666d5",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/uv.lock",
+      "sha256": "e4cd1f329b678508c1a82e7d1555550815b41cec990f45e27bce2bfdf54fd14e",
+      "size": 842028,
+      "afterSha256": "e4cd1f329b678508c1a82e7d1555550815b41cec990f45e27bce2bfdf54fd14e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/__init__.py",
+      "sha256": "5d62b1558bee9a0371cf1126da4e0f8d5549b9696cf46c4dfe94b2932e25069c",
+      "size": 166,
+      "afterSha256": "5d62b1558bee9a0371cf1126da4e0f8d5549b9696cf46c4dfe94b2932e25069c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/builder/prompts.py",
+      "sha256": "373ae14e518a4318a0972321ef9955c7738f58fc2759d018b5a7ab9d1c5aaa6d",
+      "size": 5138,
+      "afterSha256": "373ae14e518a4318a0972321ef9955c7738f58fc2759d018b5a7ab9d1c5aaa6d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/builder/service.py",
+      "sha256": "9400d2f6a2b3f6e1dff7d825b40d66b51d9dda412d2b3b1a9838a1cd9f944d92",
+      "size": 10055,
+      "afterSha256": "9400d2f6a2b3f6e1dff7d825b40d66b51d9dda412d2b3b1a9838a1cd9f944d92",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/builder/tests/build_workflow.py",
+      "sha256": "92cc1022d988c4248ef127196624655b4ab36187d48cc25940b192040bf784b3",
+      "size": 896,
+      "afterSha256": "92cc1022d988c4248ef127196624655b4ab36187d48cc25940b192040bf784b3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/controller/service.py",
+      "sha256": "6c3786d26774f3cc5084e6aa07f0c8dcaf05508304cde2f8ee1427a9a8c57f23",
+      "size": 9656,
+      "afterSha256": "6c3786d26774f3cc5084e6aa07f0c8dcaf05508304cde2f8ee1427a9a8c57f23",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/controller/utils.py",
+      "sha256": "c12fea1946484925bb07a84ed92c7e15e64c71410c704bd6c002452a2d9179b9",
+      "size": 5248,
+      "afterSha256": "c12fea1946484925bb07a84ed92c7e15e64c71410c704bd6c002452a2d9179b9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/controller/views.py",
+      "sha256": "63e866268db2b0482cbdcad073452d92b504d2dd7f996ece8ccbdd226329f13c",
+      "size": 1890,
+      "afterSha256": "63e866268db2b0482cbdcad073452d92b504d2dd7f996ece8ccbdd226329f13c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/_agent/agent_prompt.md",
+      "sha256": "5e97a089e904dde29e45ed005473f0f9af69a0d048c9e6c3c1b4c4de0d002eb4",
+      "size": 7046,
+      "afterSha256": "5e97a089e904dde29e45ed005473f0f9af69a0d048c9e6c3c1b4c4de0d002eb4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/_agent/controller.py",
+      "sha256": "c27e243cf3034f5e034522a871e77c2c8ed2da24959bf34b87b79a751e150fd0",
+      "size": 3254,
+      "afterSha256": "c27e243cf3034f5e034522a871e77c2c8ed2da24959bf34b87b79a751e150fd0",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/deterministic_converter.py",
+      "sha256": "9dd44b7323ab31ff4c57e2d33b065bcbffa6ef578cb7f73b7f17fad0284a8bf1",
+      "size": 35007,
+      "afterSha256": "9dd44b7323ab31ff4c57e2d33b065bcbffa6ef578cb7f73b7f17fad0284a8bf1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/prompts.py",
+      "sha256": "ee80e7f4ea8768fe19f3718bac52dd033d1852fedd2e79684a4e661cdd1838ed",
+      "size": 220,
+      "afterSha256": "ee80e7f4ea8768fe19f3718bac52dd033d1852fedd2e79684a4e661cdd1838ed",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/prompts/workflow_creation_prompt.md",
+      "sha256": "287e28210b3ca856cfa09f008eaabaf517d95777915210457f9e8711000fff9a",
+      "size": 13706,
+      "afterSha256": "287e28210b3ca856cfa09f008eaabaf517d95777915210457f9e8711000fff9a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/prompts/workflow_validation_prompt.md",
+      "sha256": "13e139dbfb130d48d30400ccd6021574ac118a6c713403c8d9cc3b4d220af4c1",
+      "size": 7809,
+      "afterSha256": "13e139dbfb130d48d30400ccd6021574ac118a6c713403c8d9cc3b4d220af4c1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/selector_generator.py",
+      "sha256": "6c49eaae80cfc5dca7e5ea2a8c90050359228269ac2dd785929f4f5430b490cb",
+      "size": 18117,
+      "afterSha256": "6c49eaae80cfc5dca7e5ea2a8c90050359228269ac2dd785929f4f5430b490cb",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/service.py",
+      "sha256": "cc5b35734caa270360eb1d1b0cf054a87cf84d04a8d2ed7177acc8db467d2e9f",
+      "size": 36312,
+      "afterSha256": "cc5b35734caa270360eb1d1b0cf054a87cf84d04a8d2ed7177acc8db467d2e9f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/tests/constants.py",
+      "sha256": "2ecc9e12fa8dfc17ed8413b5e083d76c9b931efe1ec907f9a97e2cb4ca6a2716",
+      "size": 209,
+      "afterSha256": "2ecc9e12fa8dfc17ed8413b5e083d76c9b931efe1ec907f9a97e2cb4ca6a2716",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/tests/test_exploration_agent.py",
+      "sha256": "dc64a39835fca2cdcb100f4de42095a51c8082cc7be68bba8fb712ff6c42608d",
+      "size": 1431,
+      "afterSha256": "dc64a39835fca2cdcb100f4de42095a51c8082cc7be68bba8fb712ff6c42608d",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/tests/test_generate_workflow.py",
+      "sha256": "de4302f3d4720e68369dcdaab1d50cb8b84d046b8dda47ddc355f53abe9dcf59",
+      "size": 2142,
+      "afterSha256": "de4302f3d4720e68369dcdaab1d50cb8b84d046b8dda47ddc355f53abe9dcf59",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/tests/test_validator.py",
+      "sha256": "d9dd5ed07a956c2a27d18a96b2f31c6fbcfbac914beea1b8755db561b57f5726",
+      "size": 2265,
+      "afterSha256": "d9dd5ed07a956c2a27d18a96b2f31c6fbcfbac914beea1b8755db561b57f5726",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/tests/test_variable_extractor.py",
+      "sha256": "0eff101a3d94a2c819a6f4ed88313b66e1fb3a09f42b265d44b5adbe5b6f5467",
+      "size": 5641,
+      "afterSha256": "0eff101a3d94a2c819a6f4ed88313b66e1fb3a09f42b265d44b5adbe5b6f5467",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/tests/test_workflow_creation.py",
+      "sha256": "f47153a022b96fee5d783e244f60f7e462d42140af57b03318e3a25af0628340",
+      "size": 1186,
+      "afterSha256": "f47153a022b96fee5d783e244f60f7e462d42140af57b03318e3a25af0628340",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/validator.py",
+      "sha256": "a11fefdc61527592c6ba4b04e41df414d973806a9ff1bca1e571dea4e7c06581",
+      "size": 5754,
+      "afterSha256": "a11fefdc61527592c6ba4b04e41df414d973806a9ff1bca1e571dea4e7c06581",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/variable_extractor.py",
+      "sha256": "bfc00034030e7bacf20a580aebc4e2c8ee258c5fc9c125491c618b3f3c946ac4",
+      "size": 9511,
+      "afterSha256": "bfc00034030e7bacf20a580aebc4e2c8ee258c5fc9c125491c618b3f3c946ac4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/variable_utils.py",
+      "sha256": "c14b64a9699f3298bc1d9bb1dd5d7824178408cc35f94880fcc529590a8df58c",
+      "size": 4469,
+      "afterSha256": "c14b64a9699f3298bc1d9bb1dd5d7824178408cc35f94880fcc529590a8df58c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/views.py",
+      "sha256": "fa9c09b16d251b5cd75ea52e12aa88509163862d3d11afde7b0be9d364e80bed",
+      "size": 688,
+      "afterSha256": "fa9c09b16d251b5cd75ea52e12aa88509163862d3d11afde7b0be9d364e80bed",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/healing/xpath_optimizer.py",
+      "sha256": "137a5c750192e06cc733d5e05ae5804eacf0d09e80d475f068b6efb62e01661f",
+      "size": 12447,
+      "afterSha256": "137a5c750192e06cc733d5e05ae5804eacf0d09e80d475f068b6efb62e01661f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/__init__.py",
+      "sha256": "e2e40cec8efe72b80167989bcd6fcb64ce2a1a6a0b9f3c58d7ec49349acbbf9f",
+      "size": 83,
+      "afterSha256": "e2e40cec8efe72b80167989bcd6fcb64ce2a1a6a0b9f3c58d7ec49349acbbf9f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/__main__.py",
+      "sha256": "fdfff6ee716eafb8e8a35360bd962ec71dd04e6c3312c7550ae0590281080755",
+      "size": 2186,
+      "afterSha256": "fdfff6ee716eafb8e8a35360bd962ec71dd04e6c3312c7550ae0590281080755",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/action_dispatch.py",
+      "sha256": "e1166751da76a2679d903613e5077f246bde89d8169c479d5ab0202cb200dbae",
+      "size": 6389,
+      "afterSha256": "b265bf88d5fc8440df69dcbd02dbd64407a70668776f70f1ca0403fdd10a8d0f",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/action_identity.py",
+      "sha256": "8658cbea8d01ebe69c6d1e5147fbbf7ae729bb3ca341b18e7b6cbcee3e857741",
+      "size": 1995,
+      "afterSha256": "8658cbea8d01ebe69c6d1e5147fbbf7ae729bb3ca341b18e7b6cbcee3e857741",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/alignment.py",
+      "sha256": "ce25b27685c371efe896da7bfa88152b98e73384d00571785a11be7b749a3b1e",
+      "size": 2500,
+      "afterSha256": "ce25b27685c371efe896da7bfa88152b98e73384d00571785a11be7b749a3b1e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/annotations.py",
+      "sha256": "7f42047c51021d7c6b3b049ce0fb80080169322fc39a9ac0a3f3d4b6b7c312f3",
+      "size": 2209,
+      "afterSha256": "7f42047c51021d7c6b3b049ce0fb80080169322fc39a9ac0a3f3d4b6b7c312f3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/audit.py",
+      "sha256": "579cf83b6f66c749ca99a19a2891f65a7333f691af3b206be007c8d9274281ad",
+      "size": 1952,
+      "afterSha256": "579cf83b6f66c749ca99a19a2891f65a7333f691af3b206be007c8d9274281ad",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/author.py",
+      "sha256": "c8c2cf4e25a57dd63acbfa31656971419c87ae706aff0053b0fdbd318df97f86",
+      "size": 16623,
+      "afterSha256": "2c1666e3634cd27726eb08f72970458ffeae0a2c1162e8d1d125863941a5a873",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/bindings.py",
+      "sha256": "965d6663a3fc843b4b0797d8d69fbcc3a5dcc9066a10bbf1e0a74fc9849986f3",
+      "size": 5111,
+      "afterSha256": "965d6663a3fc843b4b0797d8d69fbcc3a5dcc9066a10bbf1e0a74fc9849986f3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/capability.py",
+      "sha256": "c928945e9ba4b9de958686a99d0825470729bed108bd57c08ab35b3a239846b0",
+      "size": 4688,
+      "afterSha256": "c928945e9ba4b9de958686a99d0825470729bed108bd57c08ab35b3a239846b0",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/capture.py",
+      "sha256": "460d3c4a26fe94f54199e95c1e5db382623ffba0c797c24e4d22e1be72ed0f0c",
+      "size": 28378,
+      "afterSha256": "460d3c4a26fe94f54199e95c1e5db382623ffba0c797c24e4d22e1be72ed0f0c",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/causal.py",
+      "sha256": "cbdb5a63f6573f7249318b3217e823541e203040edb38cfba3304d648c4e9158",
+      "size": 9526,
+      "afterSha256": "26d05ebc4666505edb32eb3904caaa6b67d773b5486a4dc7bd7868c62f4a97f2",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/compiler.py",
+      "sha256": "5dd72c25088daa4f8d6fc35b7417d1b871ef3a7b78279dad18fb873620053c4b",
+      "size": 20478,
+      "afterSha256": "5dd72c25088daa4f8d6fc35b7417d1b871ef3a7b78279dad18fb873620053c4b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/completion.py",
+      "sha256": "0f232aabdcbd32885ea42cf0054ef09b0ec9dfdce890bb83eb0ddff7f30c829e",
+      "size": 2188,
+      "afterSha256": "0f232aabdcbd32885ea42cf0054ef09b0ec9dfdce890bb83eb0ddff7f30c829e",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/controls.py",
+      "sha256": "03f81852fa5d3834a574ed3089e93b984145daf3f994d7f37d90fc8064a48445",
+      "size": 8681,
+      "afterSha256": "03f81852fa5d3834a574ed3089e93b984145daf3f994d7f37d90fc8064a48445",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/coverage.py",
+      "sha256": "9555f852d804d54d7de4b27858eb0b020eadd6784c13b1cc481886a96ef43a0b",
+      "size": 9703,
+      "afterSha256": "9555f852d804d54d7de4b27858eb0b020eadd6784c13b1cc481886a96ef43a0b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/dom_evidence.py",
+      "sha256": "23ebf8f69e338b79796bf6dc3427c1cb18d2db158dfdc11c4cf1457cd2b12915",
+      "size": 18410,
+      "afterSha256": "826111d52610a587b62641764afcfab3851b298752f3c42ded17d5ae187cc00e",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/evidence.py",
+      "sha256": "26e27e8507d5f235e7b4e21773e1ce1745b041af621ad6d9fb12c639e9834274",
+      "size": 6374,
+      "afterSha256": "26e27e8507d5f235e7b4e21773e1ce1745b041af621ad6d9fb12c639e9834274",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/field_read_evidence.py",
+      "sha256": "d03d14ff0ef025ab09a0fc7b1b2dbb0ee97d2640ad34775b1462358f0e33728a",
+      "size": 3394,
+      "afterSha256": "d03d14ff0ef025ab09a0fc7b1b2dbb0ee97d2640ad34775b1462358f0e33728a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/field_read_params.py",
+      "sha256": "1254c59f9abc3112a956b45e98d4357701d18fbd7ec59eb3e27c79ad52561019",
+      "size": 5851,
+      "afterSha256": "1254c59f9abc3112a956b45e98d4357701d18fbd7ec59eb3e27c79ad52561019",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/field_read_tool.py",
+      "sha256": "6a1127d73f19826c0955deed36cdbe9631faf5f1a3deecb4f4e0a6c4a822f47a",
+      "size": 6844,
+      "afterSha256": "6a1127d73f19826c0955deed36cdbe9631faf5f1a3deecb4f4e0a6c4a822f47a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/find_elements_context.py",
+      "sha256": "94768e0e88adf8d80fcb25b63b9211683c1784963561d36a2add057cb60bf9cc",
+      "size": 3452,
+      "afterSha256": null,
+      "disposition": "deleted"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/history.py",
+      "sha256": "d155e312876fd17e5369e9b22a72ccbc75ae86e184d649be08ea7ec0b432014a",
+      "size": 9948,
+      "afterSha256": "d155e312876fd17e5369e9b22a72ccbc75ae86e184d649be08ea7ec0b432014a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/invokes.py",
+      "sha256": "ae2db939a00b2cb44b17d4d816af76452dc9a40fc11d29947b4216d84cce0c65",
+      "size": 8669,
+      "afterSha256": "ae2db939a00b2cb44b17d4d816af76452dc9a40fc11d29947b4216d84cce0c65",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/lifecycle_diagnostics.py",
+      "sha256": "cfeecdd1e3959ca41ad7aa5b9c9b655dd65d2d26317f3f46a56a5cf5c7ceb152",
+      "size": 1320,
+      "afterSha256": "cfeecdd1e3959ca41ad7aa5b9c9b655dd65d2d26317f3f46a56a5cf5c7ceb152",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/natural_compile.py",
+      "sha256": "4e9396bb8aeb70aabbce8e7cb238b2c7582aea978a0f1f25097877fd9d2bf238",
+      "size": 26654,
+      "afterSha256": "1fc3f04b6f896b46ac4796e9aa3f6c166ffb2753f490c1902ef5432f52ec85b2",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/natural_effects.py",
+      "sha256": "90cb9f173bb3a901211e5f0ca3cf18625aef14b9107d8cab333723862b3c429f",
+      "size": 5858,
+      "afterSha256": "90cb9f173bb3a901211e5f0ca3cf18625aef14b9107d8cab333723862b3c429f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/natural_facts.py",
+      "sha256": "d03bf59aa6eb26d74948d4557cdfc3620a699273e35b4515ab4680c3bff06d90",
+      "size": 6299,
+      "afterSha256": "d03bf59aa6eb26d74948d4557cdfc3620a699273e35b4515ab4680c3bff06d90",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/natural_output.py",
+      "sha256": "37bba409647e88a2c9277f88459e33ffba1246fedd7b88db38d205829a8802d1",
+      "size": 11596,
+      "afterSha256": "37bba409647e88a2c9277f88459e33ffba1246fedd7b88db38d205829a8802d1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/natural_reads.py",
+      "sha256": "b71ef35e33ade07a74414ab963e98c8edd97fd1ccc85cd80bb32ce55f55ae531",
+      "size": 17308,
+      "afterSha256": "ab9ae02537f1b072b6eaf2885c97ee57f87a72c711e3b3fda0951e10f0258a70",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/natural_target_compile.py",
+      "sha256": "5b87235ac9f0e13818c9e4f9899425a79ad6c2b978e6239b7d9704a4aaefce06",
+      "size": 3649,
+      "afterSha256": "5b87235ac9f0e13818c9e4f9899425a79ad6c2b978e6239b7d9704a4aaefce06",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/normalize.py",
+      "sha256": "ccd79918bd1b4cba4fc8372c08a7b67915a887391ff81355005ff1fabf69e27b",
+      "size": 6496,
+      "afterSha256": "ccd79918bd1b4cba4fc8372c08a7b67915a887391ff81355005ff1fabf69e27b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/output.py",
+      "sha256": "ca135066ab0da967fde8012dc2c1eee4c86981bf28d858ad8c4c261a6ce366e0",
+      "size": 2664,
+      "afterSha256": "ca135066ab0da967fde8012dc2c1eee4c86981bf28d858ad8c4c261a6ce366e0",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/post_action_target.py",
+      "sha256": "f06d23320162b01d4ead375bf782419cadaeddd3e1bab7638a3b509a75a1f2a3",
+      "size": 7381,
+      "afterSha256": "f06d23320162b01d4ead375bf782419cadaeddd3e1bab7638a3b509a75a1f2a3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/postconditions.py",
+      "sha256": "a5f0249463153cdd61be577ed2e43779f42e601e68561d5ceb78f976c02314e9",
+      "size": 7503,
+      "afterSha256": "a5f0249463153cdd61be577ed2e43779f42e601e68561d5ceb78f976c02314e9",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/read.py",
+      "sha256": "88b33573be5839e42598cf939e2b1b3b618a5161ee596fd4e62e4265e5033df1",
+      "size": 10210,
+      "afterSha256": "88b33573be5839e42598cf939e2b1b3b618a5161ee596fd4e62e4265e5033df1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/registry.py",
+      "sha256": "d6a12ff691c4419b2a46423ca0bd3fa2ec1aa98490de3f91fd5b169c3ddcc5e0",
+      "size": 2533,
+      "afterSha256": "d6a12ff691c4419b2a46423ca0bd3fa2ec1aa98490de3f91fd5b169c3ddcc5e0",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/rendered_field_text.py",
+      "sha256": "1cd3b95bb666cd69eed45be243a7848645f6bcb79449b5d05f496b3c4eaa2d97",
+      "size": 6084,
+      "afterSha256": "1cd3b95bb666cd69eed45be243a7848645f6bcb79449b5d05f496b3c4eaa2d97",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/request.py",
+      "sha256": "0e00020a5389071c688173ee178b91110a3171af498a856407f4bc34e0b62a61",
+      "size": 8308,
+      "afterSha256": "0e00020a5389071c688173ee178b91110a3171af498a856407f4bc34e0b62a61",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/semantic.py",
+      "sha256": "f3129741038543b7f66c6d6af4312d19221907656990a0cc57a79b33d19fd8a3",
+      "size": 4983,
+      "afterSha256": "f3129741038543b7f66c6d6af4312d19221907656990a0cc57a79b33d19fd8a3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/snapshot_consistency.py",
+      "sha256": "38b1e0be251d93c6afccb53100595e7fd5e800b2fd1f73afb6bb8d1aba550929",
+      "size": 2440,
+      "afterSha256": "e75473c5a90071c696168875464358eafdbb41743208ab22fdf0dd6071e2c9e7",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/summary_compile.py",
+      "sha256": "d8eeee48b3108fb4b2152bd53b1fd193fe3f31f795689733a0d435fa106b4e6b",
+      "size": 9817,
+      "afterSha256": "d8eeee48b3108fb4b2152bd53b1fd193fe3f31f795689733a0d435fa106b4e6b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/summary_context.py",
+      "sha256": "90d794343319e2b55cb3d43448bdf50ca73149892464d68accd470fff7124bbb",
+      "size": 5709,
+      "afterSha256": "90d794343319e2b55cb3d43448bdf50ca73149892464d68accd470fff7124bbb",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/summary_evidence.py",
+      "sha256": "6156c242407d309ba0f0972fcbcd447c336640c64a3b891420c4004329ff144b",
+      "size": 2712,
+      "afterSha256": "6156c242407d309ba0f0972fcbcd447c336640c64a3b891420c4004329ff144b",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/summary_tool.py",
+      "sha256": "30bf38ce6e569e132c2d4e9bb374fd93300aa46f2cdf521adad524d9667e0b71",
+      "size": 4665,
+      "afterSha256": "30bf38ce6e569e132c2d4e9bb374fd93300aa46f2cdf521adad524d9667e0b71",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/target_scroll.py",
+      "sha256": "34786d4da3c017f2f7023d378a61464b6ee28494b04a067ffc3cfe25cea7edf1",
+      "size": 8464,
+      "afterSha256": "34786d4da3c017f2f7023d378a61464b6ee28494b04a067ffc3cfe25cea7edf1",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/targets.py",
+      "sha256": "8ecfc5c26d33ef052d31438ef8a3ce4cffa967c65704519e3758dccd89014dc1",
+      "size": 21208,
+      "afterSha256": "3dc8c78af762a7f07f7ceda57beabcfdf3e052a4474ac1944f706f5ac0fa51d9",
+      "disposition": "changed"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/visible_wait.py",
+      "sha256": "f3fe4dc59497c4b25cd49bc3f9e0438e21eabbe456ace1a85c9f84f969419996",
+      "size": 9240,
+      "afterSha256": "f3fe4dc59497c4b25cd49bc3f9e0438e21eabbe456ace1a85c9f84f969419996",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/hybrid/visible_wait_compile.py",
+      "sha256": "19f9b3545557520d747517d6523e62e9f6bdefde0b8f88dcef77ddf4a2432375",
+      "size": 4158,
+      "afterSha256": "19f9b3545557520d747517d6523e62e9f6bdefde0b8f88dcef77ddf4a2432375",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/mcp/service.py",
+      "sha256": "6acdde597f9fe6d65699b0a5c88f6d7828153145e37932beb5dc6f5925d621d6",
+      "size": 4323,
+      "afterSha256": "6acdde597f9fe6d65699b0a5c88f6d7828153145e37932beb5dc6f5925d621d6",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/mcp/tests/test_tools.py",
+      "sha256": "08db7f247c59600687fe3952af4cb6d00f669a08e2ffc52fb2ce180a320dc466",
+      "size": 1076,
+      "afterSha256": "08db7f247c59600687fe3952af4cb6d00f669a08e2ffc52fb2ce180a320dc466",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/recorder/recorder.py",
+      "sha256": "6c37adb62a36584e26f8e9a585c8f0e81c1d4e19282bf2e9731521a1559e98ef",
+      "size": 21022,
+      "afterSha256": "6c37adb62a36584e26f8e9a585c8f0e81c1d4e19282bf2e9731521a1559e98ef",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/recorder/semantic_converter.py",
+      "sha256": "bb7b36ae50a4fb4a033d6fa7b45add0b78bf2ada1ce46f31570eb6c89a76ec84",
+      "size": 11406,
+      "afterSha256": "bb7b36ae50a4fb4a033d6fa7b45add0b78bf2ada1ce46f31570eb6c89a76ec84",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/recorder/service.py",
+      "sha256": "dc3391ae8dd940fc42081716788f33ecf92b464beaeda2939bf2b39573de45a0",
+      "size": 10548,
+      "afterSha256": "dc3391ae8dd940fc42081716788f33ecf92b464beaeda2939bf2b39573de45a0",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/recorder/views.py",
+      "sha256": "69f5f9a4e73bbe7b140fcf6a7a676c921b7eb3bbd01e3c7bcd6d9af0d03419e2",
+      "size": 936,
+      "afterSha256": "69f5f9a4e73bbe7b140fcf6a7a676c921b7eb3bbd01e3c7bcd6d9af0d03419e2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/schema/views.py",
+      "sha256": "e3dcb56321e72831b7e91d6bcfd7f3526488afde1e5329b7c74b0afddfd78584",
+      "size": 9618,
+      "afterSha256": "e3dcb56321e72831b7e91d6bcfd7f3526488afde1e5329b7c74b0afddfd78584",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/storage/__init__.py",
+      "sha256": "9c086b222fe2fc12dd4ac6c82b6a910a0dbb18ff211b2556fc6089b33b8ad388",
+      "size": 140,
+      "afterSha256": "9c086b222fe2fc12dd4ac6c82b6a910a0dbb18ff211b2556fc6089b33b8ad388",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/storage/service.py",
+      "sha256": "8a6827f6424ef9a02feda14d30abbc7ecf84907ce23a2a6c124f888c34a8053a",
+      "size": 8576,
+      "afterSha256": "8a6827f6424ef9a02feda14d30abbc7ecf84907ce23a2a6c124f888c34a8053a",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/element_finder.py",
+      "sha256": "635c7d7559a291c3447daeeb1efe54dddd38486e84c8acc6c04aa79930ddcd93",
+      "size": 19938,
+      "afterSha256": "635c7d7559a291c3447daeeb1efe54dddd38486e84c8acc6c04aa79930ddcd93",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/error_reporter.py",
+      "sha256": "54a31418b86dfded1e836f5e0a8e535d46edf208ed3779cda628425de8568ecf",
+      "size": 10571,
+      "afterSha256": "54a31418b86dfded1e836f5e0a8e535d46edf208ed3779cda628425de8568ecf",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/prompts.py",
+      "sha256": "b8c1f5a7c565c3901b1e0a4032792698a72b79a4e261d5f7d01a08b3c2e59f26",
+      "size": 1765,
+      "afterSha256": "b8c1f5a7c565c3901b1e0a4032792698a72b79a4e261d5f7d01a08b3c2e59f26",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/prompts/agent_step_system_prompt.md",
+      "sha256": "8dfe959f440bf28549c103e35c6fa9b6479e122fa770eb063ef5f16b359d5885",
+      "size": 6386,
+      "afterSha256": "8dfe959f440bf28549c103e35c6fa9b6479e122fa770eb063ef5f16b359d5885",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/semantic_executor.py",
+      "sha256": "e6d2828fec9356bd504881cce6b3f04f62783374ab92864f85baec373e79bc64",
+      "size": 129853,
+      "afterSha256": "e6d2828fec9356bd504881cce6b3f04f62783374ab92864f85baec373e79bc64",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/semantic_extractor.py",
+      "sha256": "146aa4c1813e9a410ba134293b44972af4aec9bd0eed48bfdc5d1102c4fadbd3",
+      "size": 45497,
+      "afterSha256": "146aa4c1813e9a410ba134293b44972af4aec9bd0eed48bfdc5d1102c4fadbd3",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/service.py",
+      "sha256": "2366e5fcb7f1b9439894910aba776158c6c25a86a93625eae5a3cd60fe7c3dd7",
+      "size": 44250,
+      "afterSha256": "2366e5fcb7f1b9439894910aba776158c6c25a86a93625eae5a3cd60fe7c3dd7",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/step_agent/controller.py",
+      "sha256": "529e97796d25cb427c38fe9a96597199c2f48373a4e4570227185d8432be73b4",
+      "size": 613,
+      "afterSha256": "529e97796d25cb427c38fe9a96597199c2f48373a4e4570227185d8432be73b4",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/step_verifier.py",
+      "sha256": "3b091f9b7e8c53859f535d746a6c56402ac0b385a2a721a97182291367ad40e2",
+      "size": 21133,
+      "afterSha256": "3b091f9b7e8c53859f535d746a6c56402ac0b385a2a721a97182291367ad40e2",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/tests/run_workflow.py",
+      "sha256": "2717855bbd8a892ade704bbbfa5bb6ea409b7ab2382a2b7a0cfffe0fe8535aaf",
+      "size": 621,
+      "afterSha256": "2717855bbd8a892ade704bbbfa5bb6ea409b7ab2382a2b7a0cfffe0fe8535aaf",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/tests/run_workflow_tool.py",
+      "sha256": "8de00fd7f74124e239a29b06e89e94e800da1eb2cde57020f0c9f6638d976cb7",
+      "size": 925,
+      "afterSha256": "8de00fd7f74124e239a29b06e89e94e800da1eb2cde57020f0c9f6638d976cb7",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/tests/test_extract.py",
+      "sha256": "312429db96e417154afa7b46949e04c024bf45c666262ae5af49cf69e1b0f5a0",
+      "size": 896,
+      "afterSha256": "312429db96e417154afa7b46949e04c024bf45c666262ae5af49cf69e1b0f5a0",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/tests/test_semantic_extractor.py",
+      "sha256": "a1a3a0730cbe65589b4155f0a063c3471251c69f1670d2a8f9631640e9020e72",
+      "size": 10223,
+      "afterSha256": "a1a3a0730cbe65589b4155f0a063c3471251c69f1670d2a8f9631640e9020e72",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/tests/test_variable_identifier.py",
+      "sha256": "cff663f6c09ba64394b166047db953894c194a26e1df343471c2ab486e680989",
+      "size": 8293,
+      "afterSha256": "cff663f6c09ba64394b166047db953894c194a26e1df343471c2ab486e680989",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/validation_utils.py",
+      "sha256": "9a48f61ad162459769e5ff93e50e941525118e3bc9a78a2a5e329dc8ac0d94ae",
+      "size": 3754,
+      "afterSha256": "9a48f61ad162459769e5ff93e50e941525118e3bc9a78a2a5e329dc8ac0d94ae",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/variable_config.py",
+      "sha256": "2bea4ddf588ab2419a01c10e69ce683d5c672d872b048de00e1f6b232de8bc7f",
+      "size": 5947,
+      "afterSha256": "2bea4ddf588ab2419a01c10e69ce683d5c672d872b048de00e1f6b232de8bc7f",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/variable_identifier.py",
+      "sha256": "62e6f10dbcc0f3d12f97c2fdf8059b32a8efe2ea8e0427ee0c819895f94b5442",
+      "size": 17273,
+      "afterSha256": "62e6f10dbcc0f3d12f97c2fdf8059b32a8efe2ea8e0427ee0c819895f94b5442",
+      "disposition": "unchanged"
+    },
+    {
+      "path": "vendor/workflow-use/workflows/workflow_use/workflow/views.py",
+      "sha256": "9f3b14192048f7df8d999eae8055a259ec101ab1a22d12e773255b5aa999d733",
+      "size": 915,
+      "afterSha256": "9f3b14192048f7df8d999eae8055a259ec101ab1a22d12e773255b5aa999d733",
+      "disposition": "unchanged"
+    }
+  ]
+}

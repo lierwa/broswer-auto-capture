@@ -1,0 +1,53 @@
+{
+  "taskId": "79b4e6a3-b500-4d52-98c7-f9370638675e",
+  "database": "data/workbench.sqlite",
+  "sourceRecords": [
+    {
+      "kind": "plan",
+      "version": 6,
+      "digest": "920ffa87030c9cc1533112cb37e4da15d7a42deebc26d5e38d34a5a38b4a783d",
+      "id": "e84c7660-21f6-44ac-87af-1826450c9e45",
+      "confirmed": null,
+      "structuredAuthorityPresent": null,
+      "stepIds": [
+        "collect-issues"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "startUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "startUrl"
+        ],
+        "additionalProperties": false
+      },
+      "requirement": {
+        "id": "3960924a-335c-4fe3-81b9-19f8add50473",
+        "version": 2,
+        "digest": "976a22bf29613ce9891277a20e411c6f200dc10e86f35d1b6dff8b359548410b",
+        "revision": 2
+      }
+    },
+    {
+      "kind": "requirement",
+      "version": 2,
+      "digest": "976a22bf29613ce9891277a20e411c6f200dc10e86f35d1b6dff8b359548410b",
+      "id": "3960924a-335c-4fe3-81b9-19f8add50473",
+      "confirmed": true,
+      "structuredAuthorityPresent": false,
+      "stepIds": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "requirement": null
+    }
+  ],
+  "historySha256": "9fbc88645c29c65155e2e235727d318f7a70e1e1accceda76eacda580197b69a",
+  "status": "read_only_source_identified_not_executed"
+}

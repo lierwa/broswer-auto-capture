@@ -1,3 +1,4 @@
+import { assertWorkflowRuntimeSupported } from "../upstream-browser/retirement.js"
 import { z } from "zod"
 import {
   CONTRACT_VERSION, parseTaskValue, taskRunSchema, type JsonValue, type TaskChain, type TaskRun,
@@ -8,14 +9,12 @@ import { BrowserError, browserGrantLimits, TaskChainBrowserAdapter, taskChainBro
   type BrowserCommand, type BrowserFailure, type BrowserGrant, type BrowserHelpState } from "@browser-capture/browser"
 import {
   TaskChainRuntime, digestJson, executableChainDigest, stableUuid,
-  RuntimeBudgetExceededError, type InvokeChainInvocation, type LlmNodeInvocation, type RuntimeControl,
+  RuntimeBudgetExceededError, type InvokeChainInvocation, type RuntimeControl,
   type TaskChainCapabilities,
 } from "@browser-capture/runtime"
 import type { AIModelProvider, PreparedAIModel, PreparedMainAIModel } from "../ai/model.js"
 import type { BrowserService } from "../browser/service.js"
-import type { UpstreamBrowserRuntime, UpstreamBrowserSession } from "../upstream-browser/service.js"
-import { workflowArtifactMediaType, workflowArtifactSchema, workflowDelegateConfigSchema,
-  workflowValues } from "../upstream-browser/workflow-artifact.js"
+import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
 import type { TaskContractRepository } from "./repository.js"
 import { explorationStepSubmissionSchema, traceEvent, validateExplorationResult,
   type ExplorationStepResult, type ExplorationTrace } from "./exploration-trace.js"
@@ -228,21 +227,19 @@ export class TaskRuntimeHost {
     const scopes = new Map(input.chains.map((chain) => [chain.stepId, { budget: input.scopeBudgets?.[chain.stepId] ?? chain.budget,
       consumed: input.scopeConsumption[chain.stepId] ?? zeroConsumption() }]))
     const ledger = new TaskBudgetLedger(input.budget, input.consumed, scopes, input.onConsumption)
-    const closure = this.chainClosure(input.taskId, input.chains)
+    const closure = this.assertExecutable(input.taskId, input.chains)
     const injected = await this.factory?.({ taskId: input.taskId, authorizationId: input.authorizationId, purpose: input.purpose })
     if (injected) return work(this.executor(injected, input.purpose, input.signal, ledger, 0))
-    const delegated = closure.flatMap((chain) => chain.nodes.filter((node) => node.kind === "llm"
-      && "delegate" in node && node.delegate?.capability.name === "browser.workflow-use"))
-    if (delegated.length) {
-      const incompatible = closure.some((chain) => chain.nodes.some((node) => node.kind === "browser" || node.kind === "observe"
-        || node.kind === "human" || node.kind === "capability" && node.capability.name.startsWith("browser.")))
-      if (incompatible) throw new Error("mixed_browser_runtime_unsupported")
-      const models = [...new Set(delegated.flatMap((node) => node.kind === "llm" ? [node.model] : []))]
-      if (models.length !== 1) throw new Error("workflow_model_selection_mismatch")
-      const selection = { ...this.ai.selection(), modelId: models[0]! }
-      return this.upstream.withSession({ selection, signal: input.signal, ownerId: input.browserRunId }, async (session) =>
-        work(this.executor({ llm: (invocation) => this.workflowLlm(session, invocation) },
-          input.purpose, input.signal, ledger, 0)))
+    const hybrid = closure.some((chain) => chain.nodes.some((node) => node.kind === "capability"
+      && ["browser.workflow-step", "browser.read-fields"].includes(node.capability.name)))
+    if (hybrid) {
+      if (!this.upstream.withCapabilities) throw new Error("hybrid_runtime_unavailable")
+      const canRestoreByNavigation = closure.every((chain) => chain.nodes.every((node) => node.kind !== "capability"
+        || !node.capability.name.startsWith("browser.") || node.capability.name === "browser.read-fields"
+        || z.object({ actionName: z.literal("navigate") }).passthrough().safeParse(node.config).success))
+      return this.upstream.withCapabilities({ signal: input.signal, ownerId: input.browserRunId,
+        allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation }, (capabilities) =>
+        work(this.executor(capabilities, input.purpose, input.signal, ledger, 0)))
     }
     const actions = [...new Set(closure.flatMap(taskChainBrowserActions))]
     if (!actions.length) {
@@ -315,6 +312,17 @@ export class TaskRuntimeHost {
     return invokedResult(child, run)
   }
 
+  assertExecutable(taskId: string, roots: TaskChain[]) {
+    const closure = this.chainClosure(taskId, roots)
+    assertWorkflowRuntimeSupported(closure)
+    const invoked = new Set(closure.flatMap((chain) => chain.nodes.flatMap((node) =>
+      node.kind === "invoke" ? [`${node.chain.id}:${node.chain.version}`] : [])))
+    if (closure.some((chain) => invoked.has(`${chain.id}:${chain.version}`) && chain.validation.status !== "verified")) {
+      throw new Error("invoked_chain_not_verified")
+    }
+    return closure
+  }
+
   private chainClosure(taskId: string, roots: TaskChain[]) {
     const result: TaskChain[] = [], queue = [...roots], seen = new Set<string>()
     while (queue.length) {
@@ -324,7 +332,6 @@ export class TaskRuntimeHost {
       for (const node of chain.nodes) {
         if (node.kind !== "invoke") continue
         const child = this.repository.chain(taskId, node.chain.id, node.chain.version, node.chain.digest)
-        if (child.validation.status !== "verified") throw new Error("invoked_chain_not_verified")
         queue.push(child)
       }
     }
@@ -339,35 +346,7 @@ export class TaskRuntimeHost {
     return { outcome: "success" as const, output: value, reportedInvocations: 1 }
   }
 
-  private async workflowLlm(session: UpstreamBrowserSession, invocation: LlmNodeInvocation) {
-    if (!("delegate" in invocation.node) || !invocation.node.delegate) return this.llm(invocation.node.model, invocation.node.instruction,
-      invocation.input, invocation.node.outputContract.schema, invocation.signal)
-    if (invocation.node.delegate.capability.name !== "browser.workflow-use"
-      || invocation.node.delegate.capability.version !== 1) throw new Error("workflow_capability_unsupported")
-    const config = workflowDelegateConfigSchema.parse(invocation.node.delegate.config)
-    const stored = this.repository.artifact(invocation.binding.taskId, config.artifactId)
-    if (stored.mediaType !== workflowArtifactMediaType || stored.digest !== config.digest) throw new Error("workflow_artifact_reference_mismatch")
-    const artifact = workflowArtifactSchema.parse(stored.body)
-    if (artifact.definitionDigest !== config.definitionDigest || digestJson(artifact.definition) !== config.definitionDigest
-      || JSON.stringify(artifact.inputBindings) !== JSON.stringify(config.inputBindings)) throw new Error("workflow_artifact_digest_mismatch")
-    const result = await session.replay({ definition: artifact.definition,
-      inputs: workflowValues(invocation.input, config.inputBindings), outputSchema: invocation.node.outputContract.schema,
-      artifactKey: `${invocation.binding.runId}-${invocation.node.id}`,
-      ...(invocation.onModelCall ? { onModelCall: invocation.onModelCall } : {}) })
-    invocation.signal.throwIfAborted()
-    const reportedInvocations = result.modelCalls.filter((call) => call.status !== "intended")
-      .reduce((sum, call) => sum + (call.reportedInvocations ?? 0), 0)
-    const evidence = this.repository.saveArtifact(invocation.binding.taskId, invocation.binding.runId,
-      "application/vnd.bat.workflow-use-run+json;version=1", z.json().parse({ mode: "workflow-use-run/v1",
-        stage: invocation.mode === "sample" ? "sample_replayed" : invocation.mode === "verification" ? "input_verified" : "authorized_replay",
-        runId: invocation.binding.runId,
-        definitionDigest: artifact.definitionDigest, inputDigest: invocation.binding.inputDigest,
-        outputDigest: digestJson(result.output), stepCount: result.stepCount, browserCommands: result.browserCommands,
-        rawResult: result.rawResult, modelPurposes: [...new Set(result.modelCalls.map((call) => call.purpose))] }))
-    return { outcome: "success" as const, output: parseTaskValue(invocation.node.outputContract, result.output),
-      artifacts: [evidence], browser: result.browser, reportedInvocations,
-      reportedBrowserCommands: result.browserCommands }
-  }
+
 }
 
 class ExplorationBrowserError extends BrowserError {

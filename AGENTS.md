@@ -34,7 +34,7 @@ Product Alignment:
 ## 代码约束
 
 - 使用 TypeScript、Zod 和 npm workspaces。跨包输入在边界用 Zod 立即校验。
-- 文件不超过 500 行、函数不超过 100 行、嵌套不超过 3 层。领域规则需保留中文 WHY/TRADE-OFF 注释。
+- 代码文件不超过 500 行、函数不超过 100 行、嵌套不超过 3 层。500 行限制不适用于 Markdown 或其他文档。领域规则需保留中文 WHY/TRADE-OFF 注释。
 - 普通节点不得隐式调用模型；运行结果必须保留模型调用审计。复跑中LLM调用只允许来自显式 `llm` 节点；需求对话、首次探索和用户发起的修复是各自独立的模型调用用途。
 - 每次复跑创建独立运行；运行内按稳定来源键去重；恢复必须继续同一运行并核验浏览器状态。
 
@@ -79,8 +79,8 @@ Reuse Assessment:
 
 ## 开发期模型与并发
 
-- 仅当主 agent 使用 `gpt-6-astra` 时，开发执行子 agent 固定使用 `gpt-5.6-sol` / `high`。
-- 主 agent 使用其他模型时，主 agent 与开发执行子 agent 均保持当前或用户明确选择的模型与 reasoning effort，选定什么就使用什么，不得自动切换为 `gpt-5.6-sol` / `high`。
-- 不全局强制主 agent 使用 `gpt-6-astra`；是否由主 agent 直接执行或分派子 agent，按当前任务和用户授权决定。
-- 同时运行的开发子 agent 最多两个。每次派发仍须写清目标、依赖、文件范围、产物和验收，并用实际 `turn_context` 核验 model/effort。
-- 本规则仅约束开发任务，不改变产品运行时的 Terra medium、Sol high、Luna medium 路由。
+- 开发主 agent 以用户开启 session 时指定的 `modelId` 为准；项目配置、角色文件、文档和派发不得指定另一模型或覆盖 reasoning effort。
+- 开发子 agent 继承该 session 的模型和 reasoning effort；不传入固定 model/effort，不使用带模型覆盖的自定义角色。后续用户明确改选时遵循最新选择。
+- 同时运行的开发子 agent 最多两个。每次派发写清目标、依赖、文件范围、产物和验收；同一职责之外不复用旧上下文。
+- 主 agent 负责决策、派发及验收；实际模型以运行上下文为证据，不能把移除配置说成已经切换了当前正在运行的会话。
+- 本规则仅约束开发 agent；按用户 2026-09-17 的明确回复，产品运行时模型路由暂不改。

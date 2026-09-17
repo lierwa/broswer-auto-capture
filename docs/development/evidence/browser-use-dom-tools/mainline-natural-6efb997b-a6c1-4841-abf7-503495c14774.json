@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "bat.mainline-natural/v1",
+  "validationScope": "source_probe",
+  "runId": "6efb997b-a6c1-4841-abf7-503495c14774",
+  "taskId": "79b4e6a3-b500-4d52-98c7-f9370638675e",
+  "source": {
+    "kind": "readonly_sqlite",
+    "requirementId": "3960924a-335c-4fe3-81b9-19f8add50473",
+    "requirementVersion": 2,
+    "requirementDigest": "976a22bf29613ce9891277a20e411c6f200dc10e86f35d1b6dff8b359548410b",
+    "planId": "e84c7660-21f6-44ac-87af-1826450c9e45",
+    "planVersion": 6,
+    "planDigest": "920ffa87030c9cc1533112cb37e4da15d7a42deebc26d5e38d34a5a38b4a783d",
+    "minimalInterviewSeed": {
+      "draftVersion": 2,
+      "draftCount": 1,
+      "confirmationCount": 1
+    },
+    "accountOrProfileCopied": false
+  },
+  "invocation": {
+    "command": "generate_task_chains",
+    "input": {
+      "startUrl": "https://github.com/langchain-ai/langgraph"
+    },
+    "httpStatus": 202,
+    "waitUpperBoundMs": 1440000
+  },
+  "model": {
+    "modelId": "gpt-5.6-terra",
+    "reasoningEffort": "medium"
+  },
+  "outcome": {
+    "jobStatus": "failed",
+    "jobStage": "exploring",
+    "failureLayer": "browser-use 探索",
+    "reasonCode": "生成未完成：listen EPERM",
+    "source_success": false,
+    "source_judged": false,
+    "source_closed": false,
+    "candidate": false,
+    "sample": false,
+    "sampleAttempts": 0,
+    "verification": false,
+    "verificationAttempts": 0,
+    "gaps": [],
+    "browserCommands": 0,
+    "modelCalls": []
+  },
+  "artifacts": {
+    "localResult": "work/natural-task-validation/6efb997b-a6c1-4841-abf7-503495c14774/source-result.json",
+    "sourceCount": 0
+  },
+  "cleanup": {
+    "applicationClosed": true,
+    "sourceContractsUnchanged": true
+  }
+}

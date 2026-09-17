@@ -1,0 +1,319 @@
+{
+  "format": "bat-redacted-history-structure/v1",
+  "sourceDigest": "3f941f1dc9b95780dae7e2ca5fc9e8068b7c7c6334db7a29aabc69259e647577",
+  "history": [
+    {
+      "stepIndex": 0,
+      "actions": [
+        {
+          "navigate": {
+            "url": "redacted-1",
+            "new_tab": false
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-1",
+        "tabCount": 0,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": false
+    },
+    {
+      "stepIndex": 1,
+      "actions": [
+        {
+          "navigate": {
+            "url": "redacted-2",
+            "new_tab": false
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-1",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 2,
+      "actions": [
+        {
+          "evaluate": {
+            "code": "redacted-3"
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-2",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 3,
+      "actions": [
+        {
+          "navigate": {
+            "url": "redacted-4",
+            "new_tab": false
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-2",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 4,
+      "actions": [
+        {
+          "extract": {
+            "query": "redacted-5",
+            "extract_links": true,
+            "extract_images": false,
+            "start_from_char": 0,
+            "already_collected": []
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-4",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 5,
+      "actions": [
+        {
+          "click": {
+            "index": 8469
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-4",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 6,
+      "actions": [
+        {
+          "click": {
+            "index": 8469
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": false,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": false
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-4",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    },
+    {
+      "stepIndex": 7,
+      "actions": [
+        {
+          "done": {
+            "success": true,
+            "data": {
+              "pages": [
+                {
+                  "pageNumber": 1,
+                  "entries": [
+                    {
+                      "issueNumber": 6731,
+                      "title": "redacted-6",
+                      "labels": "redacted-7",
+                      "updatedAt": "redacted-8",
+                      "url": "redacted-9",
+                      "author": "redacted-10",
+                      "createdAt": "redacted-11"
+                    },
+                    {
+                      "issueNumber": 8616,
+                      "title": "redacted-12",
+                      "labels": "redacted-13",
+                      "updatedAt": "redacted-14",
+                      "url": "redacted-15",
+                      "author": "redacted-16",
+                      "createdAt": "redacted-11"
+                    },
+                    {
+                      "issueNumber": 7848,
+                      "title": "redacted-17",
+                      "labels": "redacted-18",
+                      "updatedAt": "redacted-19",
+                      "url": "redacted-20",
+                      "author": "redacted-21",
+                      "createdAt": "redacted-11"
+                    },
+                    {
+                      "issueNumber": 8559,
+                      "title": "redacted-22",
+                      "labels": "redacted-18",
+                      "updatedAt": "redacted-23",
+                      "url": "redacted-24",
+                      "author": "redacted-25",
+                      "createdAt": "redacted-11"
+                    },
+                    {
+                      "issueNumber": 8384,
+                      "title": "redacted-26",
+                      "labels": "redacted-18",
+                      "updatedAt": "redacted-27",
+                      "url": "redacted-28",
+                      "author": "redacted-29",
+                      "createdAt": "redacted-11"
+                    }
+                  ],
+                  "shortfallOrAccessNote": "redacted-30"
+                },
+                {
+                  "pageNumber": 2,
+                  "entries": [
+                    {
+                      "issueNumber": 7479,
+                      "title": "redacted-31",
+                      "labels": "redacted-18",
+                      "updatedAt": "redacted-32",
+                      "url": "redacted-33",
+                      "author": "redacted-34",
+                      "createdAt": "redacted-35"
+                    },
+                    {
+                      "issueNumber": 5099,
+                      "title": "redacted-36",
+                      "labels": "redacted-37",
+                      "updatedAt": "redacted-38",
+                      "url": "redacted-39",
+                      "author": "redacted-40",
+                      "createdAt": "redacted-11"
+                    },
+                    {
+                      "issueNumber": 7492,
+                      "title": "redacted-41",
+                      "labels": "redacted-18",
+                      "updatedAt": "redacted-38",
+                      "url": "redacted-42",
+                      "author": "redacted-43",
+                      "createdAt": "redacted-11"
+                    },
+                    {
+                      "issueNumber": 6435,
+                      "title": "redacted-44",
+                      "labels": "redacted-45",
+                      "updatedAt": "redacted-46",
+                      "url": "redacted-47",
+                      "author": "redacted-48",
+                      "createdAt": "redacted-11"
+                    },
+                    {
+                      "issueNumber": 7362,
+                      "title": "redacted-49",
+                      "labels": "redacted-18",
+                      "updatedAt": "redacted-50",
+                      "url": "redacted-51",
+                      "author": "redacted-52",
+                      "createdAt": "redacted-11"
+                    }
+                  ],
+                  "shortfallOrAccessNote": "redacted-53"
+                }
+              ],
+              "overallNote": "redacted-54"
+            },
+            "files_to_display": []
+          }
+        }
+      ],
+      "results": [
+        {
+          "is_done": true,
+          "success": true,
+          "errorPresent": false,
+          "extractedContentPresent": true,
+          "judgementPresent": true
+        }
+      ],
+      "preState": {
+        "urlToken": "redacted-33",
+        "tabCount": 1,
+        "interactedElementCount": 1
+      },
+      "stateMessagePresent": true
+    }
+  ],
+  "expectedCompilation": {
+    "status": "not_compilable",
+    "candidate": false,
+    "reason": "Structure-only evidence does not prove stable targets, postconditions, bindings or confirmed control intent."
+  }
+}

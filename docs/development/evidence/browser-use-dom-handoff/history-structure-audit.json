@@ -1,0 +1,46 @@
+{
+  "source": "data/upstream-browser-artifacts/e76cc02e-4760-4901-8692-9579e02097d3/84974663-8e1b-4ef0-8c3a-a3910025cf99-collect-issues/history.json",
+  "sha256": "9fbc88645c29c65155e2e235727d318f7a70e1e1accceda76eacda580197b69a",
+  "historySteps": 28,
+  "proposedActions": 38,
+  "actionCounts": {
+    "click": 11,
+    "done": 1,
+    "evaluate": 2,
+    "find_elements": 8,
+    "go_back": 2,
+    "navigate": 1,
+    "replace_file": 4,
+    "scroll": 3,
+    "wait": 5,
+    "write_file": 1
+  },
+  "stateMessagePresent": 28,
+  "interactedElements": 11,
+  "interactedElementsWithXPath": 11,
+  "interactedElementsWithParentChildren": 0,
+  "multiActionSteps": 9,
+  "countMismatches": [
+    {
+      "stepIndex": 8,
+      "proposedActions": 2,
+      "results": 1
+    },
+    {
+      "stepIndex": 13,
+      "proposedActions": 2,
+      "results": 1
+    },
+    {
+      "stepIndex": 14,
+      "proposedActions": 3,
+      "results": 1
+    },
+    {
+      "stepIndex": 15,
+      "proposedActions": 0,
+      "results": 1
+    }
+  ],
+  "qualification": "Counts describe recorded proposed actions, not proof that every action executed. No raw page text, selectors, screenshots, credentials or model messages copied."
+}

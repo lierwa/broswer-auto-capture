@@ -1,0 +1,324 @@
+{
+  "schemaVersion": "bat.mainline-natural/v1",
+  "runId": "f8ad64fe-750c-4600-a7b7-064adeff84ff",
+  "taskId": "79b4e6a3-b500-4d52-98c7-f9370638675e",
+  "source": {
+    "kind": "readonly_sqlite",
+    "requirementId": "3960924a-335c-4fe3-81b9-19f8add50473",
+    "requirementVersion": 2,
+    "requirementDigest": "976a22bf29613ce9891277a20e411c6f200dc10e86f35d1b6dff8b359548410b",
+    "planId": "e84c7660-21f6-44ac-87af-1826450c9e45",
+    "planVersion": 6,
+    "planDigest": "920ffa87030c9cc1533112cb37e4da15d7a42deebc26d5e38d34a5a38b4a783d",
+    "minimalInterviewSeed": {
+      "draftVersion": 2,
+      "draftCount": 1,
+      "confirmationCount": 1
+    },
+    "accountOrProfileCopied": false
+  },
+  "invocation": {
+    "command": "generate_task_chains",
+    "input": {
+      "startUrl": "https://github.com/langchain-ai/langgraph"
+    },
+    "httpStatus": 202,
+    "waitUpperBoundMs": 1440000
+  },
+  "model": {
+    "modelId": "gpt-5.6-terra",
+    "reasoningEffort": "medium"
+  },
+  "outcome": {
+    "jobStatus": "failed",
+    "jobStage": "compiling",
+    "failureLayer": "workflow-use definition",
+    "reasonCode": "生成未完成：hybrid_compilation_gaps",
+    "source_success": true,
+    "source_judged": true,
+    "source_closed": true,
+    "candidate": false,
+    "sample": false,
+    "sampleAttempts": 0,
+    "verification": false,
+    "verificationAttempts": 0,
+    "gaps": [
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_field_read_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_binding",
+        "reason": "natural_binding_evidence_missing:index",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "unsupported_capability",
+        "reason": "natural_action_not_admitted",
+        "resolution": "add_capability"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_target_scope_url_redacted",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "unsupported_capability",
+        "reason": "natural_action_not_admitted",
+        "resolution": "add_capability"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_target_scope_url_redacted",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "unsupported_capability",
+        "reason": "natural_action_not_admitted",
+        "resolution": "add_capability"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_postcondition_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_postcondition_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "unsupported_capability",
+        "reason": "natural_action_not_admitted",
+        "resolution": "add_capability"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_postcondition_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_postcondition_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "native_extraction_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_target_scope_url_redacted",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "unsupported_capability",
+        "reason": "natural_action_not_admitted",
+        "resolution": "add_capability"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "native_extraction_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "native_extraction_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "unsupported_capability",
+        "reason": "natural_action_not_admitted",
+        "resolution": "add_capability"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_binding",
+        "reason": "natural_binding_evidence_missing:index",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_postcondition_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_target_scope_url_redacted",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "unsupported_capability",
+        "reason": "natural_action_not_admitted",
+        "resolution": "add_capability"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_field_read_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_postcondition_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "invalid_source",
+        "reason": "unpaired_result_at_step:10",
+        "resolution": "reject_trace"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_postcondition_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "unsupported_capability",
+        "reason": "natural_action_not_admitted",
+        "resolution": "add_capability"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_target_scope_url_redacted",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_target_scope_url_redacted",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_field_read_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_binding",
+        "reason": "natural_binding_evidence_missing:index",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_binding",
+        "reason": "natural_binding_evidence_missing:index",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_binding",
+        "reason": "natural_binding_evidence_missing:index",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_binding",
+        "reason": "natural_binding_evidence_missing:index",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_effect_proof",
+        "reason": "natural_postcondition_evidence_missing",
+        "resolution": "collect_evidence"
+      },
+      {
+        "stepId": "collect-issues",
+        "code": "missing_binding",
+        "reason": "natural_binding_evidence_missing:description",
+        "resolution": "collect_evidence"
+      }
+    ],
+    "browserCommands": 23,
+    "modelCalls": [
+      {
+        "purpose": "agent",
+        "model": "gpt-5.6-terra",
+        "status": "intended",
+        "count": 25,
+        "reportedInvocations": 0
+      },
+      {
+        "purpose": "agent",
+        "model": "gpt-5.6-terra",
+        "status": "completed",
+        "count": 24,
+        "reportedInvocations": 24
+      },
+      {
+        "purpose": "agent",
+        "model": "gpt-5.6-terra",
+        "status": "failed",
+        "count": 1,
+        "reportedInvocations": 1
+      },
+      {
+        "purpose": "extract",
+        "model": "gpt-5.6-terra",
+        "status": "intended",
+        "count": 3,
+        "reportedInvocations": 0
+      },
+      {
+        "purpose": "extract",
+        "model": "gpt-5.6-terra",
+        "status": "completed",
+        "count": 3,
+        "reportedInvocations": 3
+      },
+      {
+        "purpose": "judge",
+        "model": "gpt-5.6-terra",
+        "status": "intended",
+        "count": 1,
+        "reportedInvocations": 0
+      },
+      {
+        "purpose": "judge",
+        "model": "gpt-5.6-terra",
+        "status": "completed",
+        "count": 1,
+        "reportedInvocations": 1
+      }
+    ]
+  },
+  "artifacts": {
+    "localResult": "work/natural-task-validation/f8ad64fe-750c-4600-a7b7-064adeff84ff/source-result.json",
+    "sourceCount": 1
+  },
+  "cleanup": {
+    "applicationClosed": true,
+    "sourceContractsUnchanged": true
+  }
+}

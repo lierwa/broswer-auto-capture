@@ -1,0 +1,25 @@
+{
+  "scope": "unchanged method AST with in-memory ports; not installed package or real browser acceptance",
+  "sourceCommit": "5d2d19fe8835cc86f1bf3e04302a5000d590f249",
+  "schemaExecutorMismatch": {
+    "generated": "extract_page_content",
+    "executor": "unsupported"
+  },
+  "ordinalOutOfRange": {
+    "requested": 2,
+    "available": 1,
+    "actual": "first",
+    "expected": "missing"
+  },
+  "silentlySkipped": [
+    "future_action",
+    "wait",
+    "switch_tab",
+    "write_file",
+    "replace_file"
+  ],
+  "browserSessions": 0,
+  "modelCalls": 0,
+  "admittedWholeConverter": false,
+  "admittedSemanticExecutor": false
+}

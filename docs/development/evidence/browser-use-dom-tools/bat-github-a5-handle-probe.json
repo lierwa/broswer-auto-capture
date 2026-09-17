@@ -1,0 +1,42 @@
+{
+  "actionsExecuted": [
+    "navigate:issues",
+    "a5:label"
+  ],
+  "afterWaitFresh": {
+    "backendNodeId": 4353,
+    "isConnected": true,
+    "ok": true,
+    "targetState": "{\"aria-expanded\":true,\"disabled\":false}"
+  },
+  "afterWaitOld": {
+    "backendNodeId": 65,
+    "isConnected": false,
+    "ok": true,
+    "targetState": "{\"disabled\":false}"
+  },
+  "beforeOld": {
+    "backendNodeId": 65,
+    "isConnected": true,
+    "targetState": "{\"disabled\":false}"
+  },
+  "browserClosed": true,
+  "comparison": {
+    "oldVsAfterWaitFreshSameBackend": false,
+    "oldVsImmediateFreshSameBackend": false
+  },
+  "immediateFresh": {
+    "backendNodeId": 4353,
+    "isConnected": true,
+    "ok": true,
+    "targetState": "{\"aria-expanded\":true,\"disabled\":false}"
+  },
+  "immediateOld": {
+    "backendNodeId": 65,
+    "isConnected": false,
+    "ok": true,
+    "targetState": "{\"disabled\":false}"
+  },
+  "stage": "completed",
+  "threadId": "01a0ab9d-b039-7181-baa1-933684e4103f"
+}

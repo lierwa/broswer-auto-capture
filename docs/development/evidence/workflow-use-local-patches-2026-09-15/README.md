@@ -1,5 +1,7 @@
 # workflow-use 本地补丁与兼容门证据：2026-09-15
 
+> **历史实验报告：** 2026-09-17 已删除无活动消费者的旧 patch 目录；以下应用顺序和测试结果仅记录当时实验，不是当前操作指令。当前构建直接使用 vendor 源码，详见 [清理账本](../../REPLAY_CLEANUP_20260917.md)。
+
 ## 结论
 
 **阶段 4、阶段 5 通过；允许进入 B-A-T 本地产品接线。** 固定上游
@@ -13,7 +15,7 @@ browser-use success/judge 的 history 转为 workflow，并由官方
 
 ## 补丁系列
 
-补丁维护在 [`patches/workflow-use`](../../../../patches/workflow-use/README.md)，
+补丁维护在 `patches/workflow-use`（目录已删除），
 按编号应用：
 
 1. `0001-escape-workflow-prompt-variable-placeholders.patch`

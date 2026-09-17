@@ -1,0 +1,177 @@
+[
+  {
+    "status": " M",
+    "path": "apps/api/python/browser_use_runner/main.py",
+    "sha256": "315edbffbd6d4b0eb930f0502f4a07825f8b2248c7b72eb72fe23f74c1fffd78",
+    "h0Disposition": "keep",
+    "laterDisposition": "rewrite"
+  },
+  {
+    "status": " M",
+    "path": "apps/api/src/upstream-browser/workflow-artifact.ts",
+    "sha256": "d9a9e9ac1e58d1a1562bfa83f72e9e37f3646290623de4afec43e0b46a4a25ab",
+    "h0Disposition": "keep",
+    "laterDisposition": "rewrite"
+  },
+  {
+    "status": " M",
+    "path": "docs/adr/0004-browser-use-workflow-use-replacement.md",
+    "sha256": "82d3c8836ba1256285a2f3d9c5bfdf4712a1deb7493fc6d18f6d730efad8eef5",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": " M",
+    "path": "docs/development/BROWSER_USE_REPLACEMENT.md",
+    "sha256": "3515969d08a71ebc443465f18418455c7b265131387ca7cc5206656957b40174",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": " M",
+    "path": "docs/development/PROGRESS.md",
+    "sha256": "29266038c32229def51d0ace1da5d76028f2f34b72fb131055e092d2a56e8169",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": " M",
+    "path": "docs/development/RESEARCH.md",
+    "sha256": "0dc7a9344030c0f926fcbc6be28a0e5a473d929bc62c6d6df3a2859bc745af1e",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": " M",
+    "path": "docs/development/ROADMAP.md",
+    "sha256": "3d6719f7e734c18557057b02718b8c2289d9a7d97671e38047c78c4ff5f64256",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": " M",
+    "path": "docs/development/TASK_CHAIN_ARCHITECTURE.md",
+    "sha256": "c25b16b94ccb4bb2f3769e9ca19aa95eeba113ccd4089914cfe0ea97c54abcc1",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": " M",
+    "path": "patches/workflow-use/README.md",
+    "sha256": "ea5fde3fdbea6da70c9caf7bba9261f645d6a71983459e75ddb6e633e299a1da",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": " M",
+    "path": "scripts/setup-upstream-browser-runner.mjs",
+    "sha256": "6cd3164bb7e360d2b0225f140c4fad7d93d74c0abc59c42fe14ce72e053a905a",
+    "h0Disposition": "keep",
+    "laterDisposition": "rewrite"
+  },
+  {
+    "status": "??",
+    "path": "apps/api/tests/upstream-browser-runner.test.ts",
+    "sha256": "d2782fa6f99060d377fb2456db0d556994c8808296798618e79146f173f7efd6",
+    "h0Disposition": "keep",
+    "laterDisposition": "rewrite"
+  },
+  {
+    "status": "??",
+    "path": "docs/adr/0005-workflow-use-fork-hybrid-compiler.md",
+    "sha256": "4796def26a7831485bd6ef9cfbf8e0c5b0c07c7e89254e74b6743e3902994b32",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": "??",
+    "path": "docs/development/WORKFLOW_USE_HYBRID_COMPILER_PLAN.md",
+    "sha256": "ea87c9898de92aa9ed62d6bf7eaba500325c80bdbfe569a25ff2a3dd8aba88bb",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": "??",
+    "path": "docs/development/WORKFLOW_USE_HYBRID_CONVERSION_SPEC.md",
+    "sha256": "bbcace5eba2078e2b9fffc3dfddbe76af8324ca188dddf6eaf7f0b2adf47ece0",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": "??",
+    "path": "docs/development/WORKFLOW_USE_LEGACY_DISPOSITION.md",
+    "sha256": "81b261439265cf825f284fdfc9473cf08821b708598c2445b7b9f0de4d17dac8",
+    "h0Disposition": "keep",
+    "laterDisposition": "keep"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0003-retry-structured-workflow-generation.patch",
+    "sha256": "8eb393692ee85bef4b7d8723f267dbf226c18b61cd2876e001aa456bb46effc5",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0004-bound-workflow-generation-screenshots.patch",
+    "sha256": "100b7e0b76c249d5df6fe95e8c6266e872396ea03008088a4f251a073f9b7a5b",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0005-fallback-to-semantic-text-click.patch",
+    "sha256": "a77657c0e7afbe599a43a1406f480b9dabc3a36d113567d70227891046f83593",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0006-respect-contextual-click-targets.patch",
+    "sha256": "2e2f94be623ba95f86a496fa02e72acb86e27fd3e7d27dda30a3be4f65c6ca6d",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0007-rank-duplicate-text-by-accessible-context.patch",
+    "sha256": "d4a0b6ba7ee7c041a0c49f8c2677404d1a0a0f3ea23eae57337762da0508fa51",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0008-use-accessible-names-for-click-targets.patch",
+    "sha256": "d9f18a7fcd4b939b09306ee06954780dc15c295a85eecfccb7d2ef2d140a8746",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0009-prefer-open-choice-controls.patch",
+    "sha256": "70026540d015912766bc4754a2ae793817803ad03dc584678793bf2ac303b60d",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0010-keep-action-text-on-its-own-element.patch",
+    "sha256": "b626dfee1ea5b33d030e4f145d046af44905f1481283b40a01fe4e20cc895032",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0011-wait-for-no-ai-page-stability.patch",
+    "sha256": "137449a06dfeffe0acedbd130655509b083d9433822ed78dfcbfc80cec507bae",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  },
+  {
+    "status": "??",
+    "path": "patches/workflow-use/0012-verify-link-effects-and-refresh-retries.patch",
+    "sha256": "49f5c11c6dec3cd95663fd9faebdde0b237077148abafa7946f087631713244b",
+    "h0Disposition": "keep",
+    "laterDisposition": "remove from active path only after H7; retain diagnosis evidence until then"
+  }
+]
