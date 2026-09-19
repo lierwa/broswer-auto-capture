@@ -21,6 +21,10 @@ const base = z.object({
   id: keySchema, label: textSchema, outcomes: z.array(nodeOutcomeSchema),
   outputContract: taskDataContractSchema, writes: z.array(valueWriteSchema),
 }).strict()
+const baseV2 = z.object({
+  id: keySchema, label: textSchema,
+  outputContract: taskDataContractSchema, writes: z.array(valueWriteSchema),
+}).strict()
 export const invocationModeSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("once") }).strict(),
   z.object({ mode: z.literal("each"), collection: valueBindingSchema, itemVariable: keySchema,
@@ -81,6 +85,36 @@ export const stableChainNodeSchema = z.discriminatedUnion("kind", [
     result: terminalOutputSchema.optional(), evidence: z.array(valueBindingSchema).min(1) }).strict(),
 ])
 
+const functionSourceSchema = z.string().refine((source) => {
+  const bytes = new TextEncoder().encode(source).byteLength
+  return bytes >= 1 && bytes <= 32_768
+}, "function_source_bytes")
+const branchCaseSchema = z.object({ id: keySchema, label: textSchema, predicate: predicateSchema }).strict()
+
+/** stable/v2 以节点种类推导 port；保存格式不再重复 outcomes。 */
+export const stableChainNodeV2Schema = z.discriminatedUnion("kind", [
+  baseV2.extend({ kind: z.literal("capability"), capability: capabilityReferenceSchema,
+    input: bindings, config: jsonValueSchema, effect: z.enum(["read", "idempotent_write", "external_write"]),
+    stableWhen: observationConditionSchema.optional(), human: humanResumeSchema.optional(),
+    timeoutMs: z.number().int().positive() }).strict(),
+  baseV2.extend({ kind: z.literal("function"), language: z.literal("javascript"), source: functionSourceSchema,
+    inputs: bindings, timeoutMs: z.number().int().min(50).max(5_000) }).strict(),
+  baseV2.extend({ kind: z.literal("llm"), systemPrompt: textSchema, input: valueBindingSchema,
+    model: textSchema, timeoutMs: z.number().int().positive() }).strict(),
+  baseV2.extend({ kind: z.literal("branch"), cases: z.array(branchCaseSchema).min(1) }).strict(),
+  baseV2.extend({ kind: z.literal("loop"), iteration: z.discriminatedUnion("mode", [
+    z.object({ mode: z.literal("each"), collection: valueBindingSchema, itemVariable: keySchema, stableKeyPath: valuePathSchema }).strict(),
+    z.object({ mode: z.literal("while"), condition: predicateSchema,
+      repeatCondition: predicateSchema.optional() }).strict(),
+  ]), cursorVariable: keySchema, maxIterations: z.number().int().positive(),
+  body: z.object({ entry: keySchema, exits: z.array(keySchema).min(1) }).strict(),
+  accumulators: z.array(loopAccumulatorSchema).default([]), stopWhen: predicateSchema.optional() }).strict(),
+  baseV2.extend({ kind: z.literal("invoke"), chain: versionReferenceSchema, input: valueBindingSchema,
+    iteration: invocationModeSchema }).strict(),
+  baseV2.extend({ kind: z.literal("terminal"), status: terminalStatusSchema, reason: textSchema,
+    result: terminalOutputSchema.optional(), evidence: z.array(valueBindingSchema).min(1) }).strict(),
+])
+
 /** 仅用于读取历史 v1 链；新编译器不得再产出这些节点。 */
 export const legacyChainNodeSchema = z.discriminatedUnion("kind", [
   base.extend({ kind: z.literal("browser"), operation: browserOperationSchema, arguments: bindings,
@@ -108,19 +142,22 @@ export const legacyChainNodeSchema = z.discriminatedUnion("kind", [
     evidence: z.array(valueBindingSchema).min(1) }).strict(),
 ])
 
-export const chainNodeSchema = z.union([stableChainNodeSchema, legacyChainNodeSchema])
+export const chainNodeSchema = z.union([stableChainNodeV2Schema, stableChainNodeSchema, legacyChainNodeSchema])
 export type StableChainNode = z.infer<typeof stableChainNodeSchema>
+export type StableChainNodeV1 = StableChainNode
+export type StableChainNodeV2 = z.infer<typeof stableChainNodeV2Schema>
 export type LegacyChainNode = z.infer<typeof legacyChainNodeSchema>
-export type ChainNode = StableChainNode | LegacyChainNode
-export type NodeOutcome = z.infer<typeof nodeOutcomeSchema>
+export type ChainNode = StableChainNodeV2 | StableChainNode | LegacyChainNode
+export type NodeOutcome = string
+type StableV1Outcome = z.infer<typeof nodeOutcomeSchema>
 
-export const requiredStableNodeOutcomes: Record<StableChainNode["kind"], readonly NodeOutcome[]> = {
+export const requiredStableNodeOutcomes: Record<StableChainNode["kind"], readonly StableV1Outcome[]> = {
   capability: ["success", "missing", "timeout", "blocked", "human_required", "failed", "cancelled"],
   llm: ["success", "timeout", "failed", "cancelled"], branch: ["true", "false", "failed"],
   loop: ["body", "done", "limit", "failed"],
   invoke: ["success", "partial", "blocked", "human_required", "timeout", "failed", "cancelled"], terminal: [],
 }
-export const requiredLegacyNodeOutcomes: Record<LegacyChainNode["kind"], readonly NodeOutcome[]> = {
+export const requiredLegacyNodeOutcomes: Record<LegacyChainNode["kind"], readonly StableV1Outcome[]> = {
   browser: ["success", "missing", "timeout", "blocked", "human_required", "failed", "cancelled"],
   observe: ["success", "missing", "timeout", "blocked", "human_required", "failed", "cancelled"],
   data: ["success", "failed"], condition: ["true", "false", "failed"], loop: ["body", "done", "limit", "failed"],
@@ -130,9 +167,23 @@ export const requiredLegacyNodeOutcomes: Record<LegacyChainNode["kind"], readonl
 }
 export const requiredNodeOutcomes = { ...requiredLegacyNodeOutcomes, ...requiredStableNodeOutcomes }
 
+const stableV2Ports: Record<Exclude<StableChainNodeV2["kind"], "branch">, readonly string[]> = {
+  capability: ["success", "missing", "timeout", "blocked", "human_required", "failed", "cancelled"],
+  function: ["success", "timeout", "failed", "cancelled"], llm: ["success", "timeout", "failed", "cancelled"],
+  loop: ["body", "done", "limit", "failed"],
+  invoke: ["success", "partial", "blocked", "human_required", "timeout", "failed", "cancelled"], terminal: [],
+}
+
+export function nodePorts(node: ChainNode): readonly string[] {
+  if ("outcomes" in node) return node.outcomes
+  if (node.kind === "branch") return [...node.cases.map((item) => item.id), "default", "failed"]
+  return stableV2Ports[node.kind]
+}
+
 /** 只遍历协议内 binding，不把 config 中的任务数据误识别为平台指令。 */
 export function nodeBindings(node: ChainNode): z.infer<typeof valueBindingSchema>[] {
   const own = node.kind === "capability" ? Object.values(node.input)
+    : node.kind === "function" ? Object.values(node.inputs)
     : node.kind === "browser" || node.kind === "data" ? Object.values(node.arguments)
       : node.kind === "invoke" || node.kind === "llm" ? [node.input]
         : node.kind === "terminal" ? [...node.evidence] : []
@@ -157,7 +208,11 @@ export function nodeBindings(node: ChainNode): z.infer<typeof valueBindingSchema
     }
     if (node.stopWhen) own.push(...predicateBindings(node.stopWhen))
   }
-  const predicate = node.kind === "branch" || node.kind === "condition" ? node.predicate
+  if (node.kind === "branch" && "cases" in node) {
+    for (const item of node.cases) own.push(...predicateBindings(item.predicate))
+  }
+  const predicate = node.kind === "branch" && "predicate" in node ? node.predicate
+    : node.kind === "condition" ? node.predicate
     : node.kind === "loop" && node.iteration.mode === "while" ? node.iteration.condition : null
   if (predicate) own.push(...predicateBindings(predicate))
   if (node.kind === "loop" && node.iteration.mode === "while" && "repeatCondition" in node.iteration

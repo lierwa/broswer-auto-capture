@@ -80,7 +80,8 @@ function fixture(failFirst: boolean) {
   const record: TaskExecution = { contractVersion: CONTRACT_VERSION, kind: "execution", id: randomUUID(), taskId,
     authorizationId: randomUUID(), plan: { id: plan.id, version: 1, digest: planDigest }, requirement: plan.requirement,
     input: { items: [{ id: "first", value: "甲" }, { id: "first", value: "甲" }, { id: "second", value: "乙" }] },
-    inputDigest: "a".repeat(64), consumed: empty(), status: "queued", sequence: 0, currentStepId: null, currentRunId: null,
+    inputDigest: "a".repeat(64), pacing: { nodeDelayMs: 0 }, consumed: empty(), status: "queued", sequence: 0,
+    currentStepId: null, currentRunId: null,
     steps: [{ stepId, chain: chainRef, invocationIds: [], runIds: [], consumed: empty(), status: "pending", output: null, reason: null }],
     output: null, reason: "等待执行", createdAt: now, updatedAt: now }
   record.inputDigest = digestJson(record.input)

@@ -4,7 +4,7 @@ import { Background, Controls, ReactFlow } from "@xyflow/react"
 import type { ChainNode, TaskChain, TaskRun } from "@browser-capture/contracts"
 import { DetailPane } from "./DetailPane.js"
 import { sha256 } from "./Plan.js"
-import { chainFamilyLabels, chainOperation, isStaleVersion, projectChainGraph, runsForChain } from "./taskChainProjection.js"
+import { chainFamilyLabels, chainOperation, digestNodeText, isStaleVersion, projectChainGraph, runsForChain } from "./taskChainProjection.js"
 import { TaskChainConnection } from "./taskChainConnection.js"
 
 export function LiveChain({ connection, active, theme, onPlan }: { connection: TaskChainConnection; active: boolean;
@@ -59,9 +59,18 @@ export function LiveChain({ connection, active, theme, onPlan }: { connection: T
 }
 
 function NodeDetail({ node, runs }: { node: ChainNode; runs: TaskRun[] }) {
+  const protectedText = node.kind === "function" ? node.source : node.kind === "llm" && "systemPrompt" in node ? node.systemPrompt : null
+  const [digest, setDigest] = useState<string | null>(null)
+  useEffect(() => { let live = true; if (protectedText) void digestNodeText(protectedText).then((value) => { if (live) setDigest(value) })
+    else setDigest(null); return () => { live = false } }, [protectedText])
   const events = runs.flatMap((run) => run.events.filter((event) => event.nodeId === node.id)).slice(-12)
+  const visible = node.kind === "function" ? { ...node, source: "（默认折叠；显式展开后可查看）" }
+    : node.kind === "llm" && "systemPrompt" in node ? { ...node, systemPrompt: "（固定 prompt；见下方显式展开）" } : node
   return <div className="detail-content node-inspector"><Badge>{chainFamilyLabels[node.kind]}</Badge><Badge color="gray">{chainOperation(node)}</Badge><h3>{node.label}</h3>
-    <pre className="chain-json">{JSON.stringify(node, null, 2)}</pre>{events.map((event) => <p key={`${event.invocationId}:${event.sequence}`}>{event.status} · {event.outcome ?? "等待结果"} · {event.at}</p>)}</div>
+    {digest && <p>{node.kind === "function" ? "源码" : "systemPrompt"} SHA-256：<code>{digest}</code></p>}
+    <pre className="chain-json">{JSON.stringify(visible, null, 2)}</pre>
+    {protectedText && <details><summary>展开完整{node.kind === "function" ? "源码" : "systemPrompt"}</summary><pre className="chain-json">{protectedText}</pre></details>}
+    {events.map((event) => <p key={`${event.invocationId}:${event.sequence}`}>{event.status} · {event.outcome ?? "等待结果"} · {event.at}</p>)}</div>
 }
 function ValidationEvidence({ chain, runs }: { chain: TaskChain; runs: TaskRun[] }) {
   return <details className="supporting-detail"><summary>验证、预算与审计</summary>{chain.validation.evidence.length ? chain.validation.evidence.map((item) => {

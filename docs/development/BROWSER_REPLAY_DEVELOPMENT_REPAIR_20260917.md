@@ -4,20 +4,20 @@
 
 将自然语言浏览器任务转换为可保存、可参数化、可复跑的 TaskChain。
 
-首次执行由 browser-use（b-u）探索页面并完成任务。系统记录动作、目标、上下文和结果，编译为任务链。复跑使用普通浏览器能力执行确定性步骤；需要视觉、语义判断或处理复杂页面状态的步骤，通过显式 LLM 节点调用 b-u。
+首次执行由 browser-use（b-u）探索页面并完成任务。系统记录动作、目标、上下文和结果，编译为任务链。复跑使用普通浏览器能力执行确定性步骤；只有已确认计划显式声明的语义判断步骤调用单次、单值 LLM 节点。页面干扰由普通能力处理或证据化失败，不交给 LLM 临时接管。
 
 ## 能力与交付顺序
 
 | 模块 | 交付结果 | 依赖 | 验收状态 |
 | --- | --- | --- | --- |
 | [A 动作记录](replay-repair/A_ACTION_CONTEXT.md) | 可还原的动作参数、真实命中上下文和动作结果 | 原生 Browser/Tools | 已通过 |
-| [B 定位与读取](replay-repair/B_DOM_TARGET_READ.md) | 可重新解析的目标与有来源的字段数据 | 原生 DOM 查询；A 的目标上下文 | 当前阶段；内部 P1–P6 和真实 B E1–E4 待完成 |
-| [C 交互执行](replay-repair/C_INTERACTION_ORDER.md) | 滚动、操作、异步等待、读取按条件顺序衔接 | B 的目标/读取接口 | 待验收 |
-| [D b-u 节点](replay-repair/D_EXPLICIT_BU_NODE.md) | 在当前浏览器中完成指定局部任务的显式 LLM 节点 | 原生 Agent、模型桥、现有 llm 节点 | 待实现及验收 |
+| [B 定位与读取](replay-repair/B_DOM_TARGET_READ.md) | 可重新解析的目标与有来源的字段数据 | 原生 DOM 查询；A 的目标上下文 | 已通过 |
+| [C 交互执行](replay-repair/C_INTERACTION_ORDER.md) | 滚动、操作、异步等待、读取按条件顺序衔接 | B 的目标/读取接口 | 已通过 |
+| [D 复跑干扰与显式节点](replay-repair/D_RUNTIME_RESILIENCE_AND_EXPLICIT_NODES.md) | React 干扰实验站、Function、多路 Branch、显式单值 LLM 及独立验收 | A–C、现有模型桥、LangGraph | 待实现及验收 |
 | [组合验收](replay-repair/E_INTEGRATION_ACCEPTANCE.md) | 保存加载、同链换输入、弹窗差异及完整业务验证 | A–D | 待验收 |
 
-唯一主线仍是 A → B → C → D → 组合验收。当前位于 B；[ResultSpec / ResultBinding 开发计划](RESULT_SPEC_BINDING_IMPLEMENTATION.md)
-中的 P1–P6 只是 B 的内部开发包。ConsumerReadiness 的提前实现只算 B 所需的 C 共享基础，不替代 C 的完整独立验收。D 的会话复用接口可提前核验。每次实施只修改当前模块所需文件及直接消费边界。
+唯一主线仍是 A → B → C → D → 组合验收。A–C 已通过，当前位于 D；[ResultSpec / ResultBinding 开发计划](RESULT_SPEC_BINDING_IMPLEMENTATION.md)
+中的 P1–P6 是已经关闭的 B 内部开发包。D 按 D1 干扰实验站、D2 Function、D3 多路 Branch、D4 显式 LLM、D5 独立验收连续完成。每次实施只修改当前模块所需文件及直接消费边界。
 
 ## 代码入口
 
@@ -34,9 +34,9 @@
 ## 实现约束
 
 - 自然语言任务是需求入口；内部协议由程序和工具生成，LLM 接口仅保留必要字段。
-- 复用 b-u 的 Agent/Browser/Tools、w-u 的 StepVerifier、Tenacity 和 LangGraph；B-A-T 负责适配、绑定、版本、运行与审计。
-- 普通节点不调用模型；显式 LLM 节点允许多轮观察和操作，并执行步骤、时间及取消预算。
-- 一个产品运行使用一个实际浏览器控制会话；借用会话的节点不得关闭运行所有者的浏览器。
+- 预执行复用 b-u 的 Agent/Browser/Tools；普通复跑复用 browser capability、w-u 的 StepVerifier、Tenacity 和 LangGraph。B-A-T 负责适配、绑定、版本、运行与审计。
+- 普通节点不调用模型；显式 LLM 节点使用编译时保存的 prompt，一次调用只返回一个类型化结果，不观察或操作浏览器。
+- 一个产品运行使用一个实际浏览器控制会话；任何节点不得另起浏览器或关闭运行所有者的浏览器。
 - 公共源码不包含网站专用选择器、业务字段或样本输出。它们随任务版本保存。
 - 执行原值保存在受控运行产物中；日志、Git 和测试快照不包含敏感页面原文、账号或 profile。
 - 开发主/子 agent 继承 session 的 modelId 和 reasoning effort；产品模型路由保持现有配置。

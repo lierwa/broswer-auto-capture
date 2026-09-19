@@ -24,6 +24,7 @@ Reuse Assessment:
 - focused validation: actual EventRegistry re-entrancy test and one formal browser dialog continuation run.
 """
 import asyncio
+import hashlib
 import inspect
 
 
@@ -35,8 +36,9 @@ _WRAPPER_ATTRIBUTE = '_bat_dialog_event_bridge_wrapper'
 class DialogEventBridge:
     """Let cdp-use's receiver process the response awaited by PopupsWatchdog."""
 
-    def __init__(self, browser, *, settle_timeout=2.0):
+    def __init__(self, browser, *, policy=None, settle_timeout=2.0):
         self.browser = browser
+        self.policy = policy
         self.settle_timeout = settle_timeout
         self.registry = None
         self.handlers = None
@@ -46,6 +48,9 @@ class DialogEventBridge:
         self.instance_register = None
         self.tasks = set()
         self.active_dialogs = {}
+        self.seen_dialogs = set()
+        self.events = []
+        self.unexpected = []
         self.started = False
 
     def start(self):
@@ -82,11 +87,18 @@ class DialogEventBridge:
 
         def scheduled(params, session_id=None):
             key = self._dialog_key(params, session_id)
+            if key in self.seen_dialogs:
+                return None
+            self.seen_dialogs.add(key)
             active = self.active_dialogs.get(key)
             # WHY：同一 target 的多个 CDP session 会扇出同一个 opening；dialog 未关闭前不可能是下一次交互。
             if active is not None and not active.done():
                 return None
-            result = callback(params, session_id)
+            if self.policy is not None:
+                result = self._handle_with_policy(params, session_id)
+            else:
+                self._record(params, session_id, declared=True, resolution='upstream_policy')
+                result = callback(params, session_id)
             if inspect.isawaitable(result):
                 task = asyncio.ensure_future(result)
                 self.tasks.add(task)
@@ -98,6 +110,41 @@ class DialogEventBridge:
         setattr(scheduled, _WRAPPER_ATTRIBUTE, self)
         scheduled._bat_original_dialog_handler = callback
         return scheduled
+
+    def _handle_with_policy(self, params, session_id):
+        values = params if isinstance(params, dict) else {}
+        dialog_type = str(values.get('type') or '')
+        declared_type = self.policy.get('type') if isinstance(self.policy, dict) else None
+        action = self.policy.get('action') if isinstance(self.policy, dict) else None
+        declared = dialog_type == declared_type and action in ('accept', 'dismiss')
+        resolution = action if declared else 'cleanup_dismiss'
+        event = self._record(params, session_id, declared=declared, resolution=resolution)
+        task = asyncio.ensure_future(self._resolve_dialog(
+            session_id, accept=declared and action == 'accept',
+            prompt_text=self.policy.get('promptText') if declared and isinstance(self.policy, dict) else None))
+        if not declared:
+            self.unexpected.append(event)
+        return task
+
+    async def _resolve_dialog(self, session_id, *, accept, prompt_text):
+        params = {'accept': bool(accept)}
+        if accept and isinstance(prompt_text, str):
+            params['promptText'] = prompt_text
+        await self.browser.cdp_client.send.Page.handleJavaScriptDialog(
+            params=params, session_id=session_id)
+
+    def _record(self, params, session_id, *, declared, resolution):
+        values = params if isinstance(params, dict) else {}
+        event = {
+            'type': str(values.get('type') or ''),
+            'declared': declared,
+            'resolution': resolution,
+            'sessionId': str(session_id) if session_id is not None else None,
+            'messageDigest': _digest(values.get('message')),
+            'urlDigest': _digest(values.get('url')),
+        }
+        self.events.append(event)
+        return event
 
     def _dialog_key(self, params, session_id):
         target_id = None
@@ -135,6 +182,8 @@ class DialogEventBridge:
             raise ValueError('native_dialog_handler_timeout') from None
         if failures:
             raise ValueError('native_dialog_handler_failed')
+        if self.unexpected:
+            raise ValueError('unexpected_native_dialog')
 
     async def close(self):
         failure = None
@@ -173,3 +222,7 @@ class DialogEventBridge:
         self.active_dialogs.clear()
         if conflict:
             raise ValueError('dialog_event_bridge_ownership_lost')
+
+
+def _digest(value):
+    return hashlib.sha256(str(value or '').encode('utf-8')).hexdigest()

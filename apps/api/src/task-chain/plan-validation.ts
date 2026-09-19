@@ -7,7 +7,7 @@ export function queuedPlanValidation(taskId: string, requestId: string, plan: Ta
   const now = new Date().toISOString()
   return { contractVersion: CONTRACT_VERSION, kind: "execution", id: stableUuid(requestId, "execution"), taskId,
     authorizationId: requestId, plan: { id: plan.id, version: plan.version, digest: digestJson(plan) },
-    requirement: plan.requirement, mode, input, inputDigest: digestJson(input), consumed: zero(),
+    requirement: plan.requirement, mode, input, inputDigest: digestJson(input), pacing: { nodeDelayMs: 0 }, consumed: zero(),
     status: "queued", sequence: 0, currentStepId: null, currentRunId: null,
     steps: plan.steps.map((step) => {
       const chain = chains.find((item) => item.stepId === step.id)

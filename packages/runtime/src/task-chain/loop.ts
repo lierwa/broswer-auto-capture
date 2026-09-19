@@ -1,11 +1,11 @@
-import type { ChainNode, JsonValue, StableChainNode } from "@browser-capture/contracts"
+import type { ChainNode, JsonValue, StableChainNode, StableChainNodeV2 } from "@browser-capture/contracts"
 import { evaluatePredicate, readPath, resolveBinding } from "./bindings.js"
 import { digestJson } from "./hash.js"
 import type { RuntimeState } from "./runtime.js"
 import type { NodeCapabilityResult } from "./types.js"
 
 type LoopNode = Extract<ChainNode, { kind: "loop" }>
-type StableLoopNode = Extract<StableChainNode, { kind: "loop" }>
+type StableLoopNode = Extract<StableChainNode | StableChainNodeV2, { kind: "loop" }>
 type WriteVariable = (state: RuntimeState, name: string, value: JsonValue) => void
 
 export function executeLoop(state: RuntimeState, node: LoopNode, writeVariable: WriteVariable): NodeCapabilityResult {

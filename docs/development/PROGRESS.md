@@ -5,6 +5,10 @@
 
 ## 当前状态
 
+> 2026-09-19 产品基线更新：D 已在当前 Windows x64 产品范围内完成；macOS arm64 由用户明确延期且仍记录为未测。
+> 下一开发阶段不是继续增加 TaskChain 节点，而是按 [产品最小闭环开发基准](MINIMUM_PRODUCT_LOOP.md) 完成 P1–P6。
+> 下文较早的逐轮记录保留为历史证据；其中“D 尚未开发”的旧时点描述不代表当前结论。
+
 Product Alignment:
 - natural-language task: 按运行输入中的完整查询读取两页记录，并在第二页非空时读取首条详情。
 - reusable chain boundary: 宿主从原生页面读取反向形成通用记录投影；未实际 dispatch 的失败探测不进入复跑图。
@@ -19,7 +23,8 @@ Product Alignment:
 | [A 动作记录](replay-repair/A_ACTION_CONTEXT.md) | 已通过 | 受控正式入口和真实 GitHub Issues 任务页均通过；来源业务结果及 judge 验证成功 |
 | [B 定位与读取](replay-repair/B_DOM_TARGET_READ.md) | 已通过 | P1–P6 完成；真实 GitHub B 的 E1/E2/E3/E4 已通过，普通复跑模型调用为 0 |
 | [C 交互执行](replay-repair/C_INTERACTION_ORDER.md) | 已通过 | 动作准备/命中、单次派发、具体后态、取消与恢复已通过受控及真实可见 Chrome 独立验收 |
-| [D 显式 b-u 节点](replay-repair/D_EXPLICIT_BU_NODE.md) | 下一阶段，未开始 | 需要复用当前 Browser 会话、原生 Agent 与现有模型桥 |
+| [D 复跑干扰与显式节点](replay-repair/D_RUNTIME_RESILIENCE_AND_EXPLICIT_NODES.md) | Windows 当前范围已通过 | D1/D3/D4/D5 通过；D2 Windows x64 通过；macOS arm64 延期且未测 |
+| [产品最小闭环](MINIMUM_PRODUCT_LOOP.md) | 文档已固定，未开发 | P1 可运行版本/预设 → P2 准备编排 → P3 直接运行 → P4 回执/人工/修复 → P5 UI 收口 → P6 正式入口验收 |
 | [组合验收](replay-repair/E_INTEGRATION_ACCEPTANCE.md) | 未开始 | 依赖 A–D |
 
 A 的受控 Chromium 验收在一个 Browser 会话中覆盖 37 个动作、120 个真实 DOM 事件和 42 个业务副作用；
@@ -137,8 +142,8 @@ history identity 在动作后 DOM 中唯一重绑定；多个候选立即失败�
 
 ## 下一步
 
-**C · 交互执行与异步顺序已通过**。下一阶段是 D；D 和组合验收尚未开始。`RESULT_SPEC_BINDING_IMPLEMENTATION.md`
-中的 P1–P6 是已经关闭的 B 内部开发包，C 直接复用其 ResultBinding 与 ConsumerReadiness。
+按 [产品最小闭环开发基准](MINIMUM_PRODUCT_LOOP.md) 执行 P1–P6。第一项是固定可运行版本、运行预设和唯一产品状态投影；
+在这些事实成立前，不先添加任务列表运行按钮，也不继续让主产品路径暴露 JSON、sample/verification 或内部链路冻结操作。
 
 2026-09-19，A/B 当前实现与验收状态已由本地提交 `8aaa4a8` 固定，未推送远程。C 随后在同一 checkout 完成：
 没有重复实现稳定目标、ConsumerReadiness、缺失目标分支或 ResultBinding，只补齐动作前准备与命中核验、正确滚动、
@@ -161,4 +166,18 @@ document 替换；业务动作在后态重试外只派发一次。取消验收�
 `paused/interrupted + pendingEffect=uncertain`，同一运行恢复后副作用总数仍为 1。新的真实可见 Chrome GitHub TaskChain
 完成第一页 5 条、第二页 5 条及第二页首条详情，30 条节点事件闭合、10 次浏览器命令、编译 gaps 为 0，
 `modelCalls=0`、`llmCalls=0`；关闭后测试 runner/Chrome 进程数为 0。详见
-[C 独立验收记录](evidence/browser-replay-repair/C_ACCEPTANCE_CONFORMANCE.md)。D 本轮未进入。
+[C 独立验收记录](evidence/browser-replay-repair/C_ACCEPTANCE_CONFORMANCE.md)。D 尚未开发。
+
+同日补充了干扰与滚动的真实浏览器反例。原生 confirm 在普通复跑侧原先会被多 CDP session 重复记账 4 次，现复用已有
+`DialogEventBridge` 并把 owner 收窄为单次普通动作，真实页面只记录 1 次且 authoring owner 不冲突。DOM 蒙层不再被描述为
+“可识别弹窗”：完全覆盖时目标不进入 browser-use selector map；部分覆盖时只能由 `elementFromPoint` 证明中心点被其他 DOM
+元素挡住。固定 browser-use 的真实 `Tools.act(click)` 是 `isTrusted=false`、坐标 `(0,0)` 的合成点击，不等同于物理鼠标；
+同坐标 CDP 鼠标点击才实际命中蒙层。scroll 现保存前后坐标、范围与 wheel/scroll 事件，能区分无范围、边界、CSS 锁定和事件取消。
+真实 Chromium 1/1、相关 Python 35/35 与 fork source 校验通过；详见
+[干扰与滚动可观测性验收](evidence/browser-replay-repair/INTERFERENCE_OBSERVABILITY_ACCEPTANCE.md)。这不表示任意 DOM 弹窗可自动关闭，也不表示 D 已完成。
+
+2026-09-19，D 已按最新结论重写为一个连续交付阶段：D1 建立 React + Radix UI 干扰实验站并完成确定性干扰处理；
+D2 新增隔离 `function`；D3 将二元 branch 升级为有序 N 路 case/default；D4 把 LLM 收敛为编译时保存 prompt、
+运行时单次调用且只输出一个 `result` 的显式节点；D5 经受控页面、真实页面和不同输入关闭独立验收。未知弹窗、遮挡、
+scroll 或 selector 失败不进入 LLM。[D 实施交接](replay-repair/D_IMPLEMENTATION_HANDOFF.md) 已固定 stable/v2 schema、
+25 个场景 ID、逐文件改动、错误码、定点命令和 GitHub 真实语义任务。D2 的 QuickJS 准入已修正为同一 commit/lockfile 下的 Windows x64 与 macOS arm64 实机验证；若产品声明支持 Intel Mac，再补 macOS x64。任一必需平台失败或未测，D2 与 D 均不得写成完成。本次只更新设计文档，没有开始 D 代码实现或验收。

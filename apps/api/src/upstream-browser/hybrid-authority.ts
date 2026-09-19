@@ -1,15 +1,19 @@
 import { z } from "zod"
-import { jsonValueSchema, predicateSchema, valueSchemaSchema, type JsonValue, type TaskRequirement } from "@browser-capture/contracts"
+import { jsonValueSchema, predicateSchema, type JsonValue, type TaskRequirement } from "@browser-capture/contracts"
 import { evaluatePredicate } from "@browser-capture/runtime"
 import { isDeepStrictEqual } from "node:util"
 import { DomainError } from "../errors.js"
+import { hybridPreparationSchema, semanticOperationBindingSchema, semanticOperationSchema } from "./hybrid-schema.js"
 
 const record = z.record(z.string(), jsonValueSchema)
 const refs = z.array(z.string().min(1)).min(1)
 const selection = z.object({ id: z.string(), clauseRefs: refs, actionRefs: z.array(z.string().min(1)).default([]),
   strategy: z.enum(["ordinal", "title", "locator"]), target: record }).strict()
-const branch = z.object({ id: z.string(), clauseRefs: refs, predicateSource: record, predicate: record,
+const binaryBranch = z.object({ id: z.string(), clauseRefs: refs, predicateSource: record, predicate: record,
   outcomes: z.record(z.string(), z.string()) }).strict()
+const nWayBranch = z.object({ id: z.string(), clauseRefs: refs, cases: z.array(z.object({ id: z.string(), label: z.string(),
+  predicateSource: record, predicate: record }).strict()).min(1), outcomes: z.record(z.string(), z.string()) }).strict()
+const branch = z.union([binaryBranch, nWayBranch])
 const loop = z.object({ id: z.string(), clauseRefs: refs, bodyRef: z.string(), stableItemKey: record.nullable().default(null),
   maxIterations: z.number().int().min(1).max(10000), accumulator: record, continuePredicate: record,
   stopOutcomes: z.array(z.enum(["complete", "exhausted", "blocked", "failed"])).min(1) }).strict()
@@ -19,18 +23,22 @@ const invoke = z.object({ id: z.string(), clauseRefs: refs, chainId: z.string(),
 const annotation = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("control_intent"), clauseRefs: refs, intent: z.union([selection, branch, loop, invoke]),
     confirmedBy: z.literal("user") }).strict(),
-  z.object({ kind: z.literal("semantic_operation"), segmentEvidenceRefs: z.array(z.object({ ref: z.string(),
-    digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).min(1), clauseRefs: refs,
-    purpose: z.enum(["classify", "extract_semantics", "summarize", "rank_candidates", "semantic_dedupe"]),
-    candidateIds: z.array(z.string()).max(300).nullable().default(null), inputFieldRefs: refs.max(100),
-    proposedOutputSchema: valueSchemaSchema }).strict(),
+  semanticOperationBindingSchema,
 ])
 export const hybridStepAuthoritySchema = z.object({
   clauses: z.array(z.object({ id: z.string().min(1), kind: z.enum(["input", "selection", "constraint", "output", "completion"]),
     expression: jsonValueSchema }).strict()).min(1),
   control: z.object({ selections: z.array(selection), branches: z.array(branch), loops: z.array(loop), invokes: z.array(invoke) }).strict(),
+  semanticOperations: z.array(semanticOperationSchema).default([]),
+  preparations: z.array(hybridPreparationSchema).default([]),
   acceptedAnnotations: z.array(annotation),
-}).strict()
+}).strict().superRefine((value, context) => {
+  const ids = value.semanticOperations.map((item) => item.id)
+  if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", message: "semantic_operation_duplicate" })
+  for (const item of value.acceptedAnnotations) if (item.kind === "semantic_operation" && !ids.includes(item.operationId)) {
+    context.addIssue({ code: "custom", message: "explicit_llm_declaration_missing" })
+  }
+})
 const document = z.object({ version: z.literal(1), steps: z.record(z.string().min(1), hybridStepAuthoritySchema) }).strict()
 
 /** WHY：确认覆盖 Markdown 全文；只读取其中明确的结构条款，绝不把模型生成控制意图标为用户确认。 */
@@ -72,14 +80,19 @@ export function hybridBranchChoices(authority: z.infer<typeof hybridStepAuthorit
   const branches = [...authority.control.branches, ...authority.acceptedAnnotations.flatMap((item) =>
     item.kind === "control_intent" && "predicateSource" in item.intent ? [item.intent] : [])]
   return branches.map((intent) => {
-    const predicate = predicateSchema.parse(intent.predicate)
-    const bindings = predicate.operator === "exists" ? [predicate.value]
-      : predicate.operator === "array_length_at_least" ? [predicate.value, predicate.minimum] : [predicate.left, predicate.right]
-    if (intent.predicateSource.source !== "input" || bindings.some((binding) => !["input", "constant"].includes(binding.source))) {
-      throw new Error("hybrid_source_branch_requires_pure_input")
+    const cases = "cases" in intent ? intent.cases : [{ id: "true", label: intent.id,
+      predicateSource: intent.predicateSource, predicate: intent.predicate }]
+    let selected = "default"
+    for (const item of cases) {
+      const predicate = predicateSchema.parse(item.predicate)
+      const bindings = predicate.operator === "exists" ? [predicate.value]
+        : predicate.operator === "array_length_at_least" ? [predicate.value, predicate.minimum] : [predicate.left, predicate.right]
+      if (item.predicateSource.source !== "input" || bindings.some((binding) => !["input", "constant"].includes(binding.source))) {
+        throw new Error("hybrid_source_branch_requires_pure_input")
+      }
+      if (evaluatePredicate(predicate, { input, variables: {}, nodeOutputs: {} })) { selected = item.id; break }
     }
-    return { branchId: intent.id, predicate: z.record(z.string(), jsonValueSchema).parse(predicate),
-      outcome: evaluatePredicate(predicate, { input, variables: {}, nodeOutputs: {} }) ? "true" as const : "false" as const }
+    return { branchId: intent.id, outcome: "cases" in intent ? selected : selected === "true" ? "true" : "false" }
   })
 }
 

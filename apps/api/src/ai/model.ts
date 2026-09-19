@@ -20,6 +20,14 @@ export type PreparedAIModel = Readonly<{
     signal: AbortSignal
     onEvent(event: AIEvent): void
   }>): Promise<T>
+  generateRuntimeObject?<T>(input: Readonly<{
+    systemPrompt: string
+    userInput: unknown
+    jsonSchema: Record<string, unknown>
+    parse(value: unknown): T
+    signal: AbortSignal
+    onEvent(event: AIEvent): void
+  }>): Promise<T>
 }>
 
 export type PreparedMainAIModel = Readonly<{
@@ -74,6 +82,14 @@ export function createAIModelProvider(
         selection: Object.freeze({ ...selection }),
         async generateObject<T>(input: Readonly<{ prompt: string; jsonSchema: Record<string, unknown>; parse(value: unknown): T; signal: AbortSignal; onEvent(event: AIEvent): void }>) {
           const result = await subject.generateObject({ model: selection, requiredCapabilities: ["structuredOutput"], messages: [{ role: "user", content: input.prompt }],
+            schema: { jsonSchema: input.jsonSchema, parse: input.parse }, signal: input.signal, onEvent: input.onEvent })
+          return result.object
+        },
+        async generateRuntimeObject<T>(input: Readonly<{ systemPrompt: string; userInput: unknown;
+          jsonSchema: Record<string, unknown>; parse(value: unknown): T; signal: AbortSignal; onEvent(event: AIEvent): void }>) {
+          // WHY：显式 LLM 节点的固定指令与动态数据是两个不同消息，运行时不得重写已冻结 prompt。
+          const result = await subject.generateObject({ model: selection, requiredCapabilities: ["structuredOutput"],
+            system: input.systemPrompt, messages: [{ role: "user", content: JSON.stringify(input.userInput) }],
             schema: { jsonSchema: input.jsonSchema, parse: input.parse }, signal: input.signal, onEvent: input.onEvent })
           return result.object
         },

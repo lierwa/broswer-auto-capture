@@ -20,11 +20,12 @@ export function validationRequest(run: TaskRun) {
 }
 
 export function queuedExecution(taskId: string, requestId: string, plan: TaskPlan, requirement: NonNullable<ReturnType<typeof syncConfirmedRequirement>>,
-  input: JsonValue, repository: TaskContractRepository): TaskExecution {
+  input: JsonValue, repository: TaskContractRepository, pacing: TaskExecution["pacing"]): TaskExecution {
   const now = new Date().toISOString()
   return { contractVersion: CONTRACT_VERSION, kind: "execution", id: stableUuid(requestId, "execution"), taskId,
     authorizationId: requestId, plan: { id: plan.id, version: plan.version, digest: digestJson(plan) }, requirement: plan.requirement,
-    input, inputDigest: digestJson(input), consumed: zeroConsumption(), status: "queued", sequence: 0, currentStepId: null, currentRunId: null,
+    input, inputDigest: digestJson(input), pacing, consumed: zeroConsumption(), status: "queued", sequence: 0,
+    currentStepId: null, currentRunId: null,
     steps: plan.steps.map((step) => { const chain = repository.latestChain(plan, step.id, true)!
       return { stepId: step.id, chain: { id: chain.id, version: chain.version, digest: executableChainDigest(chain) },
         invocationIds: [], runIds: [], consumed: zeroConsumption(), status: "pending" as const, output: null, reason: null } }),

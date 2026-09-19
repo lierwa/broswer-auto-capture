@@ -92,7 +92,8 @@ CAPTURE_SCRIPT = r"""
     }));
     const intentRelation = !element(intendedElement) ? null
       : event.target === intendedElement ? 'self'
-      : intendedElement.contains(event.target) ? 'descendant' : 'outside';
+      : intendedElement.contains(event.target) ? 'descendant'
+      : rawPath.includes(intendedElement) ? 'composed' : 'outside';
     return { targetRef: refs.get(event.target) || null, target: pathEntry(event.target, refs), intentRelation,
       composedPath: rawPath.map((value) => pathEntry(value, refs)), nodes };
   };

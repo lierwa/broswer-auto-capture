@@ -1,10 +1,28 @@
 import { z } from "zod"
-import { budgetSchema, versionReferenceSchema, jsonValueSchema, nodeOutcomeSchema, resultSpecSchema, valueBindingSchema, valuePathSchema,
+import { budgetSchema, versionReferenceSchema, jsonValueSchema, resultSpecSchema, valueBindingSchema, valuePathSchema,
   valueSchemaSchema } from "@browser-capture/contracts"
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
 const reference = z.object({ ref: z.string().min(1), digest: hash }).strict()
 const record = z.record(z.string(), jsonValueSchema)
+export const functionDraftSchema = z.object({
+  language: z.literal("javascript"), source: z.string().min(1), inputs: z.record(z.string(), valueSchemaSchema),
+  outputSchema: valueSchemaSchema, examples: z.array(z.object({ input: record, output: jsonValueSchema }).strict()).min(1).max(20),
+}).strict()
+export const functionSegmentSchema = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/), kind: z.literal("function"),
+  label: z.string().min(1), draft: functionDraftSchema, inputBindings: z.record(z.string(), valueBindingSchema),
+  proofRefs: z.array(reference).min(1) }).strict()
+export const hybridPreparationSchema = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/),
+  actionSegmentId: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/), consumerSegmentId: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/),
+  proofRefs: z.array(reference).min(3) }).strict()
+export const semanticOperationSchema = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/),
+  clauseRefs: z.array(z.string().min(1)).min(1),
+  purpose: z.enum(["classify", "extract_semantics", "summarize", "rank_candidates", "semantic_dedupe"]),
+  instruction: z.string().min(1), inputDescription: z.string().min(1), resultSchema: valueSchemaSchema,
+  candidateIds: z.array(z.string().min(1)).max(300).nullable() }).strict()
+export const semanticOperationBindingSchema = z.object({ kind: z.literal("semantic_operation"),
+  operationId: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/), inputFieldRefs: z.array(z.string().min(1)).min(1).max(100),
+  segmentEvidenceRefs: z.array(reference).min(1) }).strict()
 const binding = z.object({ id: z.string(), actionRef: z.string(), argumentPath: z.string(),
   kind: z.enum(["runtime_input", "prior_output", "authorized_constant", "sample_evidence"]),
   sourceRef: z.string(), transform: z.null(), proofRefs: z.array(reference) }).strict()
@@ -125,6 +143,7 @@ const deterministicBase = { id: z.string(), kind: z.literal("deterministic"),
 const deterministic = z.object({ ...deterministicBase, bindings: z.array(binding) }).strict()
 const naturalDeterministic = z.object({ ...deterministicBase, operation: naturalOperation, bindings: z.array(naturalBinding) }).strict()
 const semantic = z.object({ id: z.string(), kind: z.literal("explicit_llm"),
+  operationId: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/),
   purpose: z.enum(["classify", "extract_semantics", "summarize", "rank_candidates", "semantic_dedupe"]),
   requirementClauseRefs: z.array(z.string()).min(1), inputSchema: valueSchemaSchema,
   inputBindings: z.array(valueBindingSchema).length(1), outputSchema: valueSchemaSchema,
@@ -132,14 +151,16 @@ const semantic = z.object({ id: z.string(), kind: z.literal("explicit_llm"),
   budget: z.object({ maxCalls: z.literal(1), maxInputBytes: z.number().int().min(1).max(128000),
     timeoutMs: z.number().int().min(1).max(120000) }).strict() }).strict()
 export const naturalSummarySegmentSchema = z.object({ id: z.string(), kind: z.literal("explicit_llm"),
-  purpose: z.literal("summarize"), sourceRef: z.string().min(1), inputSchema: valueSchemaSchema,
+  operationId: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/), purpose: z.literal("summarize"),
+  sourceRef: z.string().min(1), inputSchema: valueSchemaSchema,
   inputBindings: z.array(valueBindingSchema).length(1), outputSchema: valueSchemaSchema,
   validation: z.object({ schema: valueSchemaSchema, candidateIds: z.null() }).strict(),
   budget: z.object({ maxCalls: z.literal(1), timeoutMs: z.number().int().min(1).max(120000) }).strict() }).strict()
 const compilationBody = {
   mediaType: z.literal("application/vnd.bat.hybrid-compilation+json;version=1"),
   sourceDigests: z.array(hash).length(6), segments: z.array(z.discriminatedUnion("kind", [deterministic, semantic])).max(500),
-  controlGraph: z.object({ entry: z.string(), edges: z.array(z.object({ from: z.string(), outcome: nodeOutcomeSchema, to: z.string() }).strict()),
+  controlGraph: z.object({ entry: z.string(), edges: z.array(z.object({ from: z.string(),
+    outcome: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/), to: z.string() }).strict()),
     terminals: z.array(z.object({ id: z.string(), status: z.string() }).strict()) }).strict(),
   coverage: z.array(z.object({ actionRef: z.string(), disposition: z.enum(["compiled", "supporting", "retry_attempt", "agent_internal", "not_compilable"]),
     ownerSegmentId: z.string().nullable(), exclusionRule: z.string().nullable(), evidenceRefs: z.array(reference) }).strict()),
@@ -162,7 +183,8 @@ export const hybridAuthoritySchema = z.object({
   requirement: z.object({ id: z.string(), version: z.number().int().positive(), digest: hash,
     clauses: z.array(z.object({ id: z.string(), kind: z.string(), expression: jsonValueSchema }).strict()) }).strict(),
   plan: z.object({ id: z.string(), version: z.number().int().positive(), digest: hash, stepId: z.string(),
-    inputSchemaDigest: hash, outputSchemaDigest: hash, callMode: z.enum(["once", "each", "batch"]) }).strict(),
+    inputSchemaDigest: hash, outputSchemaDigest: hash, callMode: z.enum(["once", "each", "batch"]),
+    semanticOperations: z.array(semanticOperationSchema).default([]) }).strict(),
 }).strict()
 
 export const hybridNaturalRequestSchema = z.object({ compilerVersion: z.literal("bat-hybrid/2"),
@@ -171,7 +193,8 @@ export const hybridNaturalRequestSchema = z.object({ compilerVersion: z.literal(
     taskText: z.string().min(1), sourceDigest: hash, digest: hash }).strict(),
   plan: z.object({ id: z.string(), version: z.number().int().positive(), sourceDigest: hash, digest: hash,
     stepId: z.string(), inputSchemaDigest: hash, outputSchemaDigest: hash,
-    callMode: z.enum(["once", "each", "batch"]), resultSpec: resultSpecSchema }).strict(),
+    callMode: z.enum(["once", "each", "batch"]), resultSpec: resultSpecSchema,
+    semanticOperations: z.array(semanticOperationSchema).default([]) }).strict(),
   runtimeInputSchema: valueSchemaSchema,
   trace: z.object({ digest: hash, source: z.object({ historyRef: z.string().min(1) }).passthrough(),
     actions: z.array(z.object({ id: z.string(), preObservationRef: z.string().nullable(),

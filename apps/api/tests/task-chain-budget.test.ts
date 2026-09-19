@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import test from "node:test"
-import { CONTRACT_VERSION, requiredNodeOutcomes, taskChainSchema, type JsonValue, type LegacyTaskChain, type TaskBudget, type TaskChain,
+import { CONTRACT_VERSION, nodePorts, requiredNodeOutcomes, taskChainSchema, type JsonValue, type LegacyTaskChain, type TaskBudget, type TaskChain,
   type TaskConsumption, type TaskRun, type TaskRunRequest } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest, stableUuid, type RuntimeControl } from "@browser-capture/runtime"
 import { BrowserError, type BrowserGrant } from "@browser-capture/browser"
@@ -393,7 +393,7 @@ function finishableChain(taskId: string, stepId: string, starts: TaskChain["node
   return taskChainSchema.parse({ contractVersion: CONTRACT_VERSION, kind: "chain", id: randomUUID(), taskId, version: 1,
     plan: { id: randomUUID(), version: 1, digest: "a".repeat(64) }, stepId, name: stepId,
     inputContract: contract, outputContract: contract, variables: {}, entry, nodes: [...starts, emit, done, failed],
-    edges: [...first.outcomes.map((outcome) => ({ from: entry, outcome, to: outcome === "success" ? emit.id : failed.id })),
+    edges: [...nodePorts(first).map((outcome) => ({ from: entry, outcome, to: outcome === "success" ? emit.id : failed.id })),
       ...emit.outcomes.map((outcome) => ({ from: emit.id, outcome, to: outcome === "success" ? done.id : failed.id }))],
     completion: [{ id: "emitted", description: "output emitted", predicate: { operator: "equals", left: {
       source: "node", nodeId: emit.id, path: [] }, right: { source: "constant", value: null } } }], budget: resumeBudget,

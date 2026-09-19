@@ -14,6 +14,7 @@ import { conflict } from "../errors.js"
 import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
 import { semanticPlanSchema, TaskChainAuthoring } from "./authoring.js"
 import { reusablePlanCandidate } from "./authoring-recovery.js"
+import { ExecutionPacingController } from "./execution-pacing.js"
 import { planPrompt } from "./authoring-prompts.js"
 import { TaskPlanExecutor } from "./plan-executor.js"
 import { TaskContractRepository } from "./repository.js"
@@ -33,6 +34,7 @@ export class TaskChainService {
   private readonly host: TaskRuntimeHost
   private readonly activeWork = new Set<Promise<unknown>>()
   private readonly controllers = new Map<string, AbortController>()
+  private readonly executionPacing = new Map<string, { controller: ExecutionPacingController; record: TaskExecution }>()
   private readonly queue: QueueItem[] = []
   private drainWork: Promise<void> | null = null
   private draining = false
@@ -76,6 +78,7 @@ export class TaskChainService {
     else if (command.type === "validate_plan") this.validatePlan(taskId, command)
     else if (command.type === "authorize_plan") this.authorizePlan(taskId, command)
     else if (command.type === "resume_execution") this.resumeExecution(taskId, command)
+    else if (command.type === "set_execution_pacing") this.setExecutionPacing(taskId, command)
     else this.cancelExecution(taskId, command.executionId)
     return this.snapshot(taskId)
   }
@@ -244,7 +247,7 @@ export class TaskChainService {
     if (missing) conflict(`步骤“${missing.title}”尚无已验证链路。`)
     if (plan.steps.length > 1 && !planValidationPassed(this.repository, plan,
       plan.steps.map((step) => this.repository.latestChain(plan, step.id, true)!))) conflict("完整计划尚未通过样本和换输入验证。")
-    const record = queuedExecution(taskId, command.requestId, plan, requirement, input, this.repository)
+    const record = queuedExecution(taskId, command.requestId, plan, requirement, input, this.repository, command.pacing)
     this.repository.saveExecution(record); this.store.recordOperation("task-chain:execution", command.requestId, command, record.id)
     this.queue.push({ type: "execution", taskId, id: record.id, resume: false }); this.scheduleDrain()
   }
@@ -259,6 +262,26 @@ export class TaskChainService {
     record.sequence++; record.updatedAt = new Date().toISOString(); this.repository.saveExecution(record)
     this.store.recordOperation("task-chain:resume", command.requestId, command, record.id)
     this.queue.push({ type: "execution", taskId, id: record.id, resume: true }); this.scheduleDrain()
+  }
+
+  private setExecutionPacing(taskId: string, command: Extract<TaskChainCommand, { type: "set_execution_pacing" }>) {
+    if (this.store.operation("task-chain:pacing", command.requestId, command)) return
+    const record = this.repository.execution(taskId, command.executionId)
+    if (["completed", "partial", "blocked", "failed", "cancelled", "stale"].includes(record.status)) {
+      conflict("已结束的运行不能再调整复跑节奏。")
+    }
+    record.pacing = command.pacing
+    record.sequence++
+    record.updatedAt = new Date().toISOString()
+    this.repository.saveExecution(record)
+    const active = this.executionPacing.get(`${taskId}:${record.id}`)
+    if (active) {
+      active.record.pacing = structuredClone(record.pacing)
+      active.record.sequence = record.sequence
+      active.record.updatedAt = record.updatedAt
+      active.controller.update(record.pacing)
+    }
+    this.store.recordOperation("task-chain:pacing", command.requestId, command, record.id)
   }
 
   private cancelExecution(taskId: string, executionId: string) {
@@ -303,8 +326,12 @@ export class TaskChainService {
         try {
           if (item.type === "execution") {
             const record = this.repository.execution(taskId, item.id)
-            await this.executor.execute(record, controller.signal, item.resume)
-            recordPlanValidation(this.repository, record)
+            const pacing = !record.mode || record.mode === "replay" ? new ExecutionPacingController(record.pacing) : undefined
+            if (pacing) this.executionPacing.set(`${taskId}:${record.id}`, { controller: pacing, record })
+            try {
+              await this.executor.execute(record, controller.signal, item.resume, pacing)
+              recordPlanValidation(this.repository, record)
+            } finally { this.executionPacing.delete(`${taskId}:${record.id}`) }
           }
           else await this.runValidation(item.taskId, item.runId, controller.signal, item.resume)
         } finally { this.controllers.delete(`${taskId}:${key}`) }

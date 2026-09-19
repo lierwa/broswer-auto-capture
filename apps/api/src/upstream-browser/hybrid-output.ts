@@ -1,11 +1,11 @@
 import { z } from "zod"
 import { jsonValueSchema, requiredNodeOutcomes, valueBindingSchema, valuePathSchema, valueSchemaSchema,
-  type StableChainNode, type ValueBinding, type TaskChain, type TaskDataContract } from "@browser-capture/contracts"
+  type ChainEdgeV1, type StableChainNode, type ValueBinding, type TaskDataContract } from "@browser-capture/contracts"
 import { hybridOutputAssemblySchema, type HybridCompilation } from "./hybrid-schema.js"
 
 const assemblySchema = hybridOutputAssemblySchema.omit({ sourceRef: true, proofRefs: true })
 const schema = z.object({ assemble: assemblySchema }).strict()
-type OutputPath = { nodes: StableChainNode[]; edges: TaskChain["edges"]; entry: string;
+type OutputPath = { nodes: StableChainNode[]; edges: ChainEdgeV1[]; entry: string;
   binding: ValueBinding; schema: TaskDataContract["schema"] }
 export type MaterializedOutput = OutputPath & { alternates: Array<{ terminalId: string } & OutputPath> }
 
@@ -35,7 +35,7 @@ export function materializeOutputAssembly(raw: unknown, rewrite: (binding: Value
     paths: { source: "constant", value: paths }, mode: { source: "constant", value: "assemble" } },
     { operation: "transform", arguments: { source: "source", paths: "paths", mode: "mode" } }, contract("output-assemble", assemble.schema))
   if (options.writeVariable) assembleNode.writes = [{ variable: options.writeVariable, path: [] }]
-  const edges: TaskChain["edges"] = [merge, assembleNode].flatMap((node) => node.outcomes.map((outcome) => ({ from: node.id, outcome,
+  const edges: ChainEdgeV1[] = [merge, assembleNode].flatMap((node) => node.outcomes.map((outcome) => ({ from: node.id, outcome,
     to: outcome === "success" ? node.id === merge.id ? assembleNode.id : options.terminalId ?? "completed" : outcome })))
   return { nodes: [merge, assembleNode], edges, entry: merge.id,
     binding: options.writeVariable ? { source: "variable", name: options.writeVariable, path: [] } as ValueBinding

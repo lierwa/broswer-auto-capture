@@ -4,6 +4,7 @@ import type { TaskRun } from "@browser-capture/contracts"
 import type { TaskExecution } from "@browser-capture/contracts/api"
 import { DetailPane } from "./DetailPane.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
+import { ReplayPacingControl } from "./ReplayPacingControl.js"
 
 const statusLabels: Record<TaskExecution["status"], string> = { queued: "排队中", running: "执行中", completed: "已完成",
   partial: "部分完成", waiting_for_human: "等待人工", paused: "已暂停", blocked: "受阻", failed: "失败",
@@ -13,6 +14,7 @@ export function Results({ taskId, readOnly, connection, active, onPlan }: { task
   connection: TaskChainConnection; active: boolean; onPlan(): void }) {
   const view = useSyncExternalStore(connection.subscribe, connection.snapshot, connection.snapshot)
   const [selected, setSelected] = useState<string | null>(null), [detailRunId, setDetailRunId] = useState<string | null>(null)
+  const [nodeDelayMs, setNodeDelayMs] = useState(0)
   useEffect(() => {
     if (!active) return
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>
@@ -23,6 +25,9 @@ export function Results({ taskId, readOnly, connection, active, onPlan }: { task
   const execution = executions.find((item) => item.id === selected) ?? executions[0]
   const runs = execution && state ? state.runs.filter((run) => run.binding.authorizationId === execution.authorizationId) : []
   const detail = runs.find((run) => run.binding.runId === detailRunId)
+  const currentRun = execution ? runs.find((run) => run.binding.runId === execution.currentRunId) : undefined
+  const currentNodeEvent = currentRun?.events.at(-1)
+  useEffect(() => { setNodeDelayMs(execution?.pacing.nodeDelayMs ?? 0) }, [execution?.id, execution?.pacing.nodeDelayMs])
   if (!state) return <section className="artifact-view"><p role="status">{view.error || "正在读取运行结果…"}</p><Button onClick={() => void connection.reload()}>重新连接</Button></section>
   return <div className="view-with-detail"><section className="artifact-view" aria-label="运行结果">
     <header className="view-heading"><h2>运行结果</h2><Button variant="ghost" onClick={onPlan}>查看任务计划</Button></header>
@@ -33,6 +38,15 @@ export function Results({ taskId, readOnly, connection, active, onPlan }: { task
         <Badge color="gray">{execution.mode === "sample" ? "计划样本验证" : execution.mode === "verification" ? "计划换输入验证" : "正式复跑"}</Badge>
         <Badge color="gray">计划 v{execution.plan.version}</Badge>{state.staleIds.includes(execution.id) && <Badge color="amber">历史只读</Badge>}</Flex>
       <p role="status">{execution.reason}</p>
+      {currentNodeEvent && <p className="current-node-strip"><span>当前节点</span><strong>{currentNodeEvent.nodeId}</strong>
+        <span>{currentNodeEvent.status === "planned" ? "等待节奏后执行" : currentNodeEvent.status === "started" ? "正在执行" : "已产生结果"}</span></p>}
+      <ReplayPacingControl value={nodeDelayMs} live={execution.status === "running"}
+        disabled={readOnly || view.busy || !["queued", "running", "paused", "waiting_for_human"].includes(execution.status)}
+        onValueChange={setNodeDelayMs} onValueCommit={(value) => {
+          if (value === execution.pacing.nodeDelayMs) return
+          void connection.dispatch({ type: "set_execution_pacing", requestId: crypto.randomUUID(),
+            executionId: execution.id, pacing: { nodeDelayMs: value } })
+        }} />
       <p>本次累计：转换 {execution.consumed.transitions} · 浏览器命令 {execution.consumed.browserCommands} · 自动化时间 {execution.consumed.activeMs}ms · 模型调用 {execution.consumed.llmCalls ?? "未知"} · 链路调用 {execution.consumed.invocations}</p>
       <div className="plan-cards">{execution.steps.map((step) => <article className="plan-card" key={step.stepId}><h3>{step.stepId}</h3><p>{step.status} · 链路 v{step.chain.version}</p><p>{step.invocationIds.length} 次调用 · {step.runIds.length} 个独立运行</p>
         <p>预算消费：{step.consumed.transitions} 次转换 · {step.consumed.browserCommands} 条浏览器命令 · {step.consumed.activeMs}ms · {step.consumed.invocations} 次链路调用</p>

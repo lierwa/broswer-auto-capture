@@ -2,7 +2,7 @@ import { z } from "zod"
 import { artifactReferenceSchema, budgetSchema, consumptionSchema, contractVersionSchema, digestSchema,
   identitySchema, keySchema, taskIdentitySchema, textSchema, versionReferenceSchema } from "./common.js"
 import { observationConditionSchema } from "./binding.js"
-import { modelCallPurposeSchema, nodeOutcomeSchema, terminalStatusSchema } from "./node.js"
+import { modelCallPurposeSchema, terminalStatusSchema } from "./node.js"
 import { jsonValueSchema, taskOutputSchema } from "./value.js"
 
 export const runBindingSchema = z.object({
@@ -31,7 +31,7 @@ export const externalFailureSchema = z.object({
   httpStatus: z.number().int().min(100).max(599).nullable(), retryAt: z.string().datetime().nullable(),
 }).strict()
 export const nodeCapabilityResultSchema = z.object({
-  outcome: nodeOutcomeSchema, output: jsonValueSchema.optional(), artifacts: z.array(artifactReferenceSchema).optional(),
+  outcome: keySchema, output: jsonValueSchema.optional(), artifacts: z.array(artifactReferenceSchema).optional(),
   browser: browserStateSummarySchema.optional(), reason: textSchema.optional(), externalFailure: externalFailureSchema.optional(),
 }).strict().refine((result) => !result.externalFailure || !["success", "true", "false", "body", "done"].includes(result.outcome),
   "external_failure_requires_failure_outcome")
@@ -42,7 +42,7 @@ export const llmNodeCapabilityResultSchema = nodeCapabilityResultSchema.safeExte
 export const nodeExecutionEventSchema = z.object({
   sequence: z.number().int().nonnegative(), at: z.string().datetime(), invocationId: identitySchema,
   nodeId: keySchema, status: z.enum(["planned", "started", "finished"]),
-  outcome: nodeOutcomeSchema.nullable(), idempotencyKey: textSchema, stableKey: textSchema.nullable(),
+  outcome: keySchema.nullable(), idempotencyKey: textSchema, stableKey: textSchema.nullable(),
 }).strict().refine((event) => (event.status === "finished") === (event.outcome !== null), "只有完成事件携带出口")
 export const modelCallAuditSchema = z.object({
   callId: identitySchema, invocationId: identitySchema, nodeId: keySchema, purpose: modelCallPurposeSchema,

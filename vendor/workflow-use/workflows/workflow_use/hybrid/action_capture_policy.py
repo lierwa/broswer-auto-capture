@@ -42,7 +42,8 @@ ACTION_CAPTURE_POLICIES = {
     # browser-use selects native <select> options by script and intentionally emits untrusted input/change.
     'select_dropdown': ActionCapturePolicy('target', ('input', 'change'), 'required'),
     'dropdown_options': ActionCapturePolicy('read'),
-    'scroll': ActionCapturePolicy('scroll', ('scroll',), 'optional'),
+    # Wheel proves input dispatch; scroll proves actual movement. They are intentionally separate facts.
+    'scroll': ActionCapturePolicy('scroll', ('wheel', 'scroll'), 'optional'),
     'find_text': ActionCapturePolicy('scroll', ('scroll',), 'optional'),
     'bat_scroll_to': ActionCapturePolicy('scroll', ('scroll',), 'optional'),
     'extract': ActionCapturePolicy('read'),

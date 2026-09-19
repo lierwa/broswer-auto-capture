@@ -4,7 +4,7 @@ import {
   type TaskExecutionStep, type TaskOutput, type TaskPlan, type TaskPlanStep, type TaskRun, type TaskRunRequest,
 } from "@browser-capture/contracts"
 import { evaluatePredicate, readPath, resolveBinding, digestJson, executableChainDigest, stableUuid,
-  RuntimeBudgetExceededError, type BindingContext, type RuntimeControl } from "@browser-capture/runtime"
+  RuntimeBudgetExceededError, type BindingContext, type RuntimeControl, type RuntimeNodePacing } from "@browser-capture/runtime"
 import type { ProductStore } from "../database/store.js"
 import type { TaskContractRepository } from "./repository.js"
 import type { TaskRuntimeHost } from "./runtime-host.js"
@@ -13,7 +13,7 @@ export class TaskPlanExecutor {
   constructor(private readonly store: ProductStore, private readonly repository: TaskContractRepository,
     private readonly host: TaskRuntimeHost) {}
 
-  async execute(record: TaskExecution, signal: AbortSignal, resume = false) {
+  async execute(record: TaskExecution, signal: AbortSignal, resume = false, pacing?: RuntimeNodePacing) {
     try {
       const plan = this.repository.plan(record.taskId, record.plan.id, record.plan.version, record.plan.digest)
       if (!this.isCurrent(record, plan)) return this.finish(record, "stale", "需求或计划版本已变化，原授权不能继续执行。")
@@ -23,7 +23,7 @@ export class TaskPlanExecutor {
       const browserRunId = stableUuid(record.id, "browser", String(record.sequence))
       await this.host.group({ taskId: record.taskId, authorizationId: record.authorizationId, browserRunId,
         requirementVersion: record.requirement.version, purpose: record.mode ?? "replay", chains, input: record.input, signal,
-        ...executionBudget(plan, chains), consumed: record.consumed,
+        ...executionBudget(plan, chains), consumed: record.consumed, ...(pacing ? { pacing } : {}),
         scopeConsumption: Object.fromEntries(record.steps.map((step) => [step.stepId, step.consumed])),
         onConsumption: (scopeId, snapshot) => {
           const progress = record.steps.find((step) => step.stepId === scopeId)

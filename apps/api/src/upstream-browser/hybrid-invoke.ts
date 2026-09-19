@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { budgetSchema, jsonValueSchema, valueSchemaSchema, versionReferenceSchema, type TaskChain, type VersionReference } from "@browser-capture/contracts"
+import { budgetSchema, chainEdgePort, jsonValueSchema, valueSchemaSchema, versionReferenceSchema, type TaskChain, type VersionReference } from "@browser-capture/contracts"
 import { compileTaskChain, executableChainDigest } from "@browser-capture/runtime"
 import { isDeepStrictEqual } from "node:util"
 
@@ -33,8 +33,8 @@ export function projectVerifiedChild(chain: TaskChain) {
     operations.push({ id: node.id, operation, target, arguments: node.input, postconditions, effect: node.effect,
       outputSchema: node.outputContract.schema })
     const exits = chain.edges.filter((edge) => edge.from === id)
-    if (exits.some((edge) => edge.outcome !== "success" && nodes.get(edge.to)?.kind !== "terminal")) throw new Error("hybrid_child_control_mapping_unavailable")
-    id = exits.find((edge) => edge.outcome === "success")!.to
+    if (exits.some((edge) => chainEdgePort(edge) !== "success" && nodes.get(edge.to)?.kind !== "terminal")) throw new Error("hybrid_child_control_mapping_unavailable")
+    id = exits.find((edge) => chainEdgePort(edge) === "success")!.to
   }
   if (!operations.length || operations.length !== chain.nodes.filter((node) => node.kind !== "terminal").length) {
     throw new Error("hybrid_child_control_mapping_unavailable")

@@ -1,11 +1,12 @@
 import { z } from "zod"
 import { budgetSchema, contractVersionSchema, digestSchema, identitySchema, keySchema, taskIdentitySchema, textSchema, versionReferenceSchema } from "./common.js"
 import { completionConditionSchema } from "./binding.js"
-import { legacyChainNodeSchema, nodeBindings, nodeOutcomeSchema, predicateBindings, requiredNodeOutcomes,
-  stableChainNodeSchema, type ChainNode } from "./node.js"
+import { legacyChainNodeSchema, nodeBindings, nodeOutcomeSchema, nodePorts, predicateBindings, requiredNodeOutcomes,
+  stableChainNodeSchema, stableChainNodeV2Schema, type ChainNode } from "./node.js"
 import { taskDataContractSchema } from "./value.js"
 
 export const chainEdgeSchema = z.object({ from: keySchema, outcome: nodeOutcomeSchema, to: keySchema }).strict()
+export const chainEdgeV2Schema = z.object({ from: keySchema, port: keySchema, to: keySchema }).strict()
 export const chainValidationEvidenceSchema = z.object({
   phase: z.enum(["sample", "verification"]), runId: identitySchema, chainDigest: digestSchema,
   inputDigest: digestSchema, outputDigest: digestSchema, passed: z.boolean(),
@@ -24,28 +25,39 @@ const chainShape = {
   validation: z.object({ status: z.enum(["candidate", "verified"]), evidence: z.array(chainValidationEvidenceSchema) }).strict(),
 } as const
 
+const chainShapeV2 = { ...chainShape, edges: z.array(chainEdgeV2Schema).max(5000) } as const
+
 export const stableTaskChainSchema = z.object({ ...chainShape, nodeModel: z.literal("stable/v1"),
   nodes: z.array(stableChainNodeSchema).min(1).max(500) }).strict()
+export const stableTaskChainV2Schema = z.object({ ...chainShapeV2, nodeModel: z.literal("stable/v2"),
+  nodes: z.array(stableChainNodeV2Schema).min(1).max(500) }).strict()
 export const legacyTaskChainSchema = z.object({ ...chainShape,
   nodes: z.array(legacyChainNodeSchema).min(1).max(500) }).strict()
 
 /** 旧链保持原字节可读；只有带 stable/v1 的新链可由新编译器产出。 */
-export const taskChainSchema = z.union([stableTaskChainSchema, legacyTaskChainSchema]).superRefine((chain, ctx) => {
+export const taskChainSchema = z.union([stableTaskChainV2Schema, stableTaskChainSchema, legacyTaskChainSchema]).superRefine((chain, ctx) => {
   const issue = (message: string) => ctx.addIssue({ code: "custom", message })
   const nodes = new Map<string, ChainNode>(chain.nodes.map((node) => [node.id, node]))
   if (nodes.size !== chain.nodes.length || !nodes.has(chain.entry)) issue("chain_identity")
   if (!chain.nodes.some((node) => node.kind === "terminal")) issue("chain_terminal_missing")
   const edgeKeys = new Set<string>()
   for (const edge of chain.edges) {
-    const from = nodes.get(edge.from), edgeKey = `${edge.from}:${edge.outcome}`
-    if (!from || !nodes.has(edge.to) || !from.outcomes.includes(edge.outcome) || edgeKeys.has(edgeKey)) issue("chain_edge")
+    const port = chainEdgePort(edge), from = nodes.get(edge.from), edgeKey = `${edge.from}:${port}`
+    if (!from || !nodes.has(edge.to) || !nodePorts(from).includes(port) || edgeKeys.has(edgeKey)) issue("chain_edge")
     edgeKeys.add(edgeKey)
   }
   for (const node of nodes.values()) {
-    const required = requiredNodeOutcomes[node.kind]
-    if (new Set(node.outcomes).size !== node.outcomes.length || required.length !== node.outcomes.length
-      || required.some((outcome) => !node.outcomes.includes(outcome))) issue("node_outcomes")
-    if (node.outcomes.some((outcome) => !edgeKeys.has(`${node.id}:${outcome}`))) issue("unbound_outcome")
+    const ports = nodePorts(node)
+    if ("outcomes" in node) {
+      const required = requiredNodeOutcomes[node.kind]
+      if (new Set(node.outcomes).size !== node.outcomes.length || required.length !== node.outcomes.length
+        || required.some((outcome) => !node.outcomes.includes(outcome))) issue("node_outcomes")
+    } else if (node.kind === "branch") {
+      const ids = node.cases.map((item) => item.id), reserved = new Set(["default", "failed"])
+      if (new Set(ids).size !== ids.length) issue("branch_case_duplicate")
+      if (ids.some((id) => reserved.has(id))) issue("branch_case_reserved")
+    }
+    if (ports.some((port) => !edgeKeys.has(`${node.id}:${port}`))) issue(node.kind === "branch" ? "branch_port_unbound" : "unbound_outcome")
     if (node.writes.some((write) => !Object.hasOwn(chain.variables, write.variable))) issue("unknown_write_variable")
     if (new Set(node.writes.map((write) => write.variable)).size !== node.writes.length) issue("duplicate_write_variable")
     if (node.kind === "loop" && !Object.hasOwn(chain.variables, node.cursorVariable)) issue("unknown_cursor_variable")
@@ -81,10 +93,22 @@ export const taskChainSchema = z.union([stableTaskChainSchema, legacyTaskChainSc
 })
 
 export type StableTaskChain = z.infer<typeof stableTaskChainSchema>
+export type StableTaskChainV1 = StableTaskChain
+export type StableTaskChainV2 = z.infer<typeof stableTaskChainV2Schema>
 export type LegacyTaskChain = z.infer<typeof legacyTaskChainSchema>
 export type TaskChain = z.infer<typeof taskChainSchema>
-export type ChainEdge = z.infer<typeof chainEdgeSchema>
+export type ChainEdgeV1 = z.infer<typeof chainEdgeSchema>
+export type ChainEdgeV2 = z.infer<typeof chainEdgeV2Schema>
+export type ChainEdge = ChainEdgeV1 | ChainEdgeV2
+
+export function chainEdgePort(edge: ChainEdge): string {
+  return "port" in edge ? edge.port : edge.outcome
+}
 
 export function isStableTaskChain(chain: TaskChain): chain is StableTaskChain {
   return "nodeModel" in chain && chain.nodeModel === "stable/v1"
+}
+
+export function isStableTaskChainV2(chain: TaskChain): chain is StableTaskChainV2 {
+  return "nodeModel" in chain && chain.nodeModel === "stable/v2"
 }

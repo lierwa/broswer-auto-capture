@@ -66,7 +66,7 @@ function emit(outputContract: TaskDataContract, value: ValueBinding): LegacyChai
     output: { kind: "value", value }, contract: outputContract }
 }
 
-export function loopChain(): TaskChain {
+export function loopChain(): LegacyTaskChain {
   const loop: LegacyChainNode = { ...base("repeat", "loop"), kind: "loop", iteration: {
     mode: "each", collection: binding("input", ["items"]), itemVariable: "item", stableKeyPath: ["id"],
   }, cursorVariable: "cursor", maxIterations: 10 }
@@ -83,7 +83,7 @@ export function loopChain(): TaskChain {
     chainEdges, loop.id, { cursor: contract("cursor", { type: "integer", minimum: 0 }), item: itemContract })
 }
 
-export function invokeChain(): TaskChain {
+export function invokeChain(): LegacyTaskChain {
   const invoke: LegacyChainNode = { ...base("invoke", "invoke", opaqueListContract), kind: "invoke",
     chain: { id: childChainId, version: 3, digest: "b".repeat(64) }, input: binding("variable", [], "item"),
     iteration: { mode: "each", collection: binding("input", ["items"]), itemVariable: "item",
@@ -94,7 +94,7 @@ export function invokeChain(): TaskChain {
     [...edges(invoke, publish.id), ...edges(publish, done.id)], invoke.id, { item: itemContract })
 }
 
-export function humanChain(): TaskChain {
+export function humanChain(): LegacyTaskChain {
   const human: LegacyChainNode = { ...base("human", "human", readyContract), kind: "human", reason: "login",
     prompt: "请完成当前页面操作", resumeWhen: { operator: "equals", path: ["ready"],
       expected: { source: "constant", value: true } }, timeoutMs: 1000 }
@@ -104,7 +104,7 @@ export function humanChain(): TaskChain {
     [...edges(human, publish.id), ...edges(publish, done.id)], human.id)
 }
 
-export function llmChain(): TaskChain {
+export function llmChain(): LegacyTaskChain {
   const llm: LegacyChainNode = { ...base("llm", "llm", textContract), kind: "llm", instruction: "转换输入",
     input: binding("input"), model: "fixture-model", timeoutMs: 1000 }
   const publish = emit(textContract, { source: "node", nodeId: llm.id, path: [] })
@@ -113,7 +113,7 @@ export function llmChain(): TaskChain {
     [...edges(llm, publish.id), ...edges(publish, done.id)], llm.id)
 }
 
-export function browserEffectChain(): TaskChain {
+export function browserEffectChain(): LegacyTaskChain {
   const browser: LegacyChainNode = { ...base("browser", "browser", nullContract), kind: "browser", operation: "wait",
     arguments: {}, timeoutMs: 1000 }
   const publish = emit(nullContract, { source: "node", nodeId: browser.id, path: [] })
@@ -122,7 +122,7 @@ export function browserEffectChain(): TaskChain {
     [...edges(browser, publish.id), ...edges(publish, done.id)], browser.id)
 }
 
-export function capabilityEffectChain(): TaskChain {
+export function capabilityEffectChain(): import("@browser-capture/contracts").StableTaskChain {
   const stableBase = (id: string, kind: keyof typeof requiredStableNodeOutcomes) => ({ id, label: id,
     outcomes: [...requiredStableNodeOutcomes[kind]], outputContract: nullContract, writes: [] })
   const observe = { ...stableBase("observe", "capability"), kind: "capability" as const,
@@ -150,7 +150,7 @@ export function capabilityEffectChain(): TaskChain {
     validation: { status: "candidate", evidence: [] } })
 }
 
-export function checkpointChain(): TaskChain {
+export function checkpointChain(): LegacyTaskChain {
   const data: LegacyChainNode = { ...base("data", "data", textContract), kind: "data", operation: "extract",
     arguments: { source: binding("input") } }
   const checkpoint: LegacyChainNode = { ...base("checkpoint", "checkpoint"), kind: "checkpoint",

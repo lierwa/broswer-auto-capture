@@ -10,7 +10,7 @@ import { BrowserError, browserGrantLimits, TaskChainBrowserAdapter, taskChainBro
 import {
   TaskChainRuntime, digestJson, executableChainDigest, stableUuid,
   RuntimeBudgetExceededError, type InvokeChainInvocation, type RuntimeControl,
-  type TaskChainCapabilities,
+  type RuntimeNodePacing, type TaskChainCapabilities,
 } from "@browser-capture/runtime"
 import type { AIModelProvider, PreparedAIModel, PreparedMainAIModel } from "../ai/model.js"
 import type { BrowserService } from "../browser/service.js"
@@ -36,6 +36,7 @@ type RuntimeGroup = Readonly<{
   budget: TaskBudget; consumed: TaskConsumption; scopeConsumption: Readonly<Record<string, TaskConsumption>>;
   scopeBudgets?: Readonly<Record<string, TaskBudget>>;
   onConsumption?: (scopeId: string, snapshot: BudgetSnapshot) => void;
+  pacing?: RuntimeNodePacing;
 }>
 
 const explorationWallTimeoutMs = 180_000
@@ -229,7 +230,7 @@ export class TaskRuntimeHost {
     const ledger = new TaskBudgetLedger(input.budget, input.consumed, scopes, input.onConsumption)
     const closure = this.assertExecutable(input.taskId, input.chains)
     const injected = await this.factory?.({ taskId: input.taskId, authorizationId: input.authorizationId, purpose: input.purpose })
-    if (injected) return work(this.executor(injected, input.purpose, input.signal, ledger, 0))
+    if (injected) return work(this.executor(injected, input.purpose, input.signal, ledger, 0, input.pacing))
     const hybrid = closure.some((chain) => chain.nodes.some((node) => node.kind === "capability"
       && ["browser.workflow-step", "browser.read-fields"].includes(node.capability.name)))
     if (hybrid) {
@@ -239,15 +240,16 @@ export class TaskRuntimeHost {
         || z.object({ actionName: z.literal("navigate") }).passthrough().safeParse(node.config).success))
       return this.upstream.withCapabilities({ signal: input.signal, ownerId: input.browserRunId,
         allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation }, (capabilities) =>
-        work(this.executor(capabilities, input.purpose, input.signal, ledger, 0)))
+        work(this.executor(capabilities, input.purpose, input.signal, ledger, 0, input.pacing)))
     }
     const actions = [...new Set(closure.flatMap(taskChainBrowserActions))]
     if (!actions.length) {
       const hasLocalBrowserNode = closure.some((chain) => chain.nodes.some((node) => node.kind === "browser"
         || node.kind === "capability" && node.capability.name.startsWith("browser.")))
-      if (!hasLocalBrowserNode) return work(this.executor({}, input.purpose, input.signal, ledger, 0))
+      if (!hasLocalBrowserNode) return work(this.executor({}, input.purpose, input.signal, ledger, 0, input.pacing))
       const local = new TaskChainBrowserAdapter({ command: async () => { throw new BrowserError("capability_unsupported") }, state: () => null })
-      return work(this.executor({ browser: local.browser, capability: local.capability }, input.purpose, input.signal, ledger, 0))
+      return work(this.executor({ browser: local.browser, capability: local.capability },
+        input.purpose, input.signal, ledger, 0, input.pacing))
     }
     const grant = browserGrant(input, closure, actions)
     const browserScopes = new Set(input.chains.filter((chain) =>
@@ -266,13 +268,13 @@ export class TaskRuntimeHost {
         }
         return work(this.executor({ capability: adapter.capability, browser: adapter.browser, observe: adapter.observe, human: adapter.human,
           verifyResume: adapter.verifyResume, activeElapsedMs: session.activeElapsedMs.bind(session) },
-        input.purpose, AbortSignal.any([input.signal, lifetime]), ledger, 0, undefined, prepare))
+        input.purpose, AbortSignal.any([input.signal, lifetime]), ledger, 0, input.pacing, undefined, prepare))
       }, input.signal)
     } finally { this.activeGrants.delete(grant.runId) }
   }
 
   private executor(base: TaskChainCapabilities, mode: TaskRunMode, signal: AbortSignal, ledger: TaskBudgetLedger,
-    depth: number, parentScope?: string, prepare?: (scopeId: string) => void) {
+    depth: number, pacing?: RuntimeNodePacing, parentScope?: string, prepare?: (scopeId: string) => void) {
     return async (chain: TaskChain, request: TaskRunRequest, control?: RuntimeControl): Promise<TaskRun> => {
       const scopeId = parentScope ?? chain.stepId
       if (depth >= Math.min(chain.budget.maxDepth, ledger.depthLimit(scopeId))) throw new Error("chain_depth_exceeded")
@@ -288,19 +290,23 @@ export class TaskRuntimeHost {
           ledger.account(scopeId, adjusted, accountingMode)
           base.accountConsumption?.(delta, accountingMode)
         },
-        llm: base.llm ?? ((invocation) => this.llm(invocation.node.model, invocation.node.instruction,
+        llm: base.llm ?? ((invocation) => this.llm(invocation.node.model,
+          "systemPrompt" in invocation.node ? invocation.node.systemPrompt : invocation.node.instruction,
           invocation.input, invocation.node.outputContract.schema,
           AbortSignal.any([invocation.signal, AbortSignal.timeout(invocation.node.timeoutMs)]))),
         persist: (run) => { this.repository.saveRun(run) },
-        invoke: base.invoke ?? ((invocation) => this.invokeChild(base, mode, signal, ledger, depth, scopeId, invocation)),
+        invoke: base.invoke ?? ((invocation) => this.invokeChild(base, mode, signal, ledger, depth, pacing, scopeId, invocation)),
       }
+      const inheritedPacing = control?.pacing ?? pacing
       return new TaskChainRuntime().execute({ chain, request, capabilities,
-        control: { ...control, signal: control?.signal ? AbortSignal.any([signal, control.signal]) : signal } })
+        control: { ...control, ...(inheritedPacing ? { pacing: inheritedPacing } : {}),
+          signal: control?.signal ? AbortSignal.any([signal, control.signal]) : signal } })
     }
   }
 
   private async invokeChild(base: TaskChainCapabilities, mode: TaskRunMode, signal: AbortSignal,
-    ledger: TaskBudgetLedger, depth: number, scopeId: string, invocation: InvokeChainInvocation) {
+    ledger: TaskBudgetLedger, depth: number, pacing: RuntimeNodePacing | undefined,
+    scopeId: string, invocation: InvokeChainInvocation) {
     const child = this.repository.chain(invocation.parent.taskId, invocation.chain.id,
       invocation.chain.version, invocation.chain.digest)
     const request = requestForChild(invocation.parent, child, invocation.input, invocation.invocationId, mode)
@@ -308,7 +314,7 @@ export class TaskRuntimeHost {
       .find((run) => run.binding.runId === request.binding.runId)
     if (existing && !["paused", "waiting_for_human"].includes(existing.status)) return invokedResult(child, existing)
     const control = existing?.checkpoint ? childResumeControl(existing) : undefined
-    const run = await this.executor(base, mode, signal, ledger, depth + 1, scopeId)(child, request, control)
+    const run = await this.executor(base, mode, signal, ledger, depth + 1, pacing, scopeId)(child, request, control)
     return invokedResult(child, run)
   }
 
@@ -338,12 +344,21 @@ export class TaskRuntimeHost {
     return result
   }
 
-  private async llm(modelId: string, instruction: string, input: JsonValue, output: ValueSchema, signal: AbortSignal) {
+  private async llm(modelId: string, systemPrompt: string, input: JsonValue, output: ValueSchema, signal: AbortSignal) {
     const selection = this.ai.selection(), prepared: PreparedAIModel = await this.ai.prepare({ ...selection, modelId }, signal)
     const envelope = runtimeOutputEnvelope(output)
-    const value = await prepared.generateObject({ prompt: `${instruction}\n\n输入：${JSON.stringify(input)}`,
-      jsonSchema: envelope.jsonSchema, parse: envelope.parse, signal, onEvent: () => {} })
-    return { outcome: "success" as const, output: value, reportedInvocations: 1 }
+    try {
+      if (!prepared.generateRuntimeObject) throw new Error("explicit_llm_structured_messages_unavailable")
+      const value = await prepared.generateRuntimeObject({ systemPrompt, userInput: input,
+        jsonSchema: envelope.jsonSchema, parse: envelope.parse, signal, onEvent: () => {} })
+      return { outcome: "success" as const, output: value, reportedInvocations: 1 }
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "provider_protocol_error"
+      if (["llm_output_shape_invalid", "llm_result_invalid"].includes(code)) {
+        return { outcome: "failed" as const, output: null, reason: code, reportedInvocations: 1 }
+      }
+      throw error
+    }
   }
 
 
@@ -361,11 +376,15 @@ function incompleteExplorationError(trace: ExplorationTrace) {
   return new Error("exploration_business_result_missing")
 }
 
-/** WHY：供应商结构化结果使用对象根；TaskChain 的标量/数组仍按原动态合同校验和返回。 */
+/** WHY：供应商结构化结果严格只有 result；额外解释字段不能被静默丢弃。 */
 export function runtimeOutputEnvelope(schema: ValueSchema) {
-  return { jsonSchema: valueJsonSchema({ type: "object", properties: { value: schema }, required: ["value"], additionalProperties: false }),
-    parse: (raw: unknown) => parseTaskValue({ id: "llm-output", version: 1, dialect: "bat-value-schema/v1", schema },
-      z.object({ value: z.json() }).strict().parse(raw).value) }
+  return { jsonSchema: valueJsonSchema({ type: "object", properties: { result: schema }, required: ["result"], additionalProperties: false }),
+    parse: (raw: unknown) => {
+      const envelope = z.object({ result: z.json() }).strict().safeParse(raw)
+      if (!envelope.success) throw new Error("llm_output_shape_invalid")
+      try { return parseTaskValue({ id: "llm-output", version: 1, dialect: "bat-value-schema/v1", schema }, envelope.data.result) }
+      catch { throw new Error("llm_result_invalid") }
+    } }
 }
 
 function browserGrant(input: RuntimeGroup, chains: TaskChain[], actions: BrowserGrant["actions"]): BrowserGrant {

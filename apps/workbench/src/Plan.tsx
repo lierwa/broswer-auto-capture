@@ -4,6 +4,7 @@ import { taskPlanExecutionIssues, type TaskChain, type TaskPlan, type TaskRequir
 import { TaskChainConnection } from "./taskChainConnection.js"
 import { isStaleVersion } from "./taskChainProjection.js"
 import { AuthoringStatus } from "./AuthoringStatus.js"
+import { DEFAULT_REPLAY_NODE_DELAY_MS, ReplayPacingControl } from "./ReplayPacingControl.js"
 
 export function Plan({ connection, active, readOnly, confirmedVersion, onInterview, onDraft }: {
   taskId: string; connection: TaskChainConnection; active: boolean; readOnly: boolean;
@@ -12,6 +13,7 @@ export function Plan({ connection, active, readOnly, confirmedVersion, onIntervi
   const view = useSyncExternalStore(connection.subscribe, connection.snapshot, connection.snapshot)
   const [selected, setSelected] = useState<string | null>(null), [runInput, setRunInput] = useState("{}")
   const [inputError, setInputError] = useState("")
+  const [nodeDelayMs, setNodeDelayMs] = useState(DEFAULT_REPLAY_NODE_DELAY_MS)
   useEffect(() => {
     if (!active) return
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>
@@ -69,10 +71,12 @@ export function Plan({ connection, active, readOnly, confirmedVersion, onIntervi
                 executionId: run.id, expectedSequence: run.sequence })}>恢复原计划验证</Button>}
           </p>)}
         </div>}
-        <div className="action-gate"><h3>授权一次独立运行</h3><p>输入必须符合本计划保存的动态合同。授权后，每个步骤只调用其已验证链路；集合输入逐项复用同一版本。</p>
+        <div className="action-gate replay-authorization"><div className="replay-authorization__copy"><h3>授权一次独立运行</h3><p>输入必须符合本计划保存的动态合同。授权后，每个步骤只调用其已验证链路；集合输入逐项复用同一版本。</p></div>
           <TextArea aria-label="运行输入 JSON" value={runInput} onChange={(event) => setRunInput(event.target.value)} rows={5} />
+          <ReplayPacingControl value={nodeDelayMs} disabled={readOnly || view.busy} onValueChange={setNodeDelayMs} />
           {inputError && <p className="error-text">{inputError}</p>}
-          <Button disabled={readOnly || stale || !ready || view.busy} onClick={() => dispatchJson(connection, plan, runInput, setInputError)}>确认范围与预算并排队</Button></div>
+          <Button disabled={readOnly || stale || !ready || view.busy}
+            onClick={() => dispatchJson(connection, plan, runInput, setInputError, undefined, nodeDelayMs)}>确认范围、节奏与预算并排队</Button></div>
       </>}
       {state.legacy.length > 0 && <details className="supporting-detail"><summary>旧协议历史</summary><p>这些记录保持原字节，只能读取或导出，不能进入新运行器。</p>{state.legacy.map((item) => <p key={`${item.source}:${item.id}`}>{item.source} · {item.id} · {item.reason}</p>)}</details>}
     </>}
@@ -130,11 +134,12 @@ function dispatchPreexecution(connection: TaskChainConnection, requirement: Task
   } catch { error("请输入有效 JSON。") }
 }
 function dispatchJson(connection: TaskChainConnection, plan: TaskPlan, raw: string, error: (value: string) => void,
-  mode?: "sample" | "verification") {
+  mode?: "sample" | "verification", nodeDelayMs = 0) {
   try {
     const input: unknown = JSON.parse(raw); error("")
     void sha256(JSON.stringify(plan)).then((digest) => connection.dispatch({
-      ...(mode ? { type: "validate_plan", mode } : { type: "authorize_plan" }), requestId: crypto.randomUUID(),
+      ...(mode ? { type: "validate_plan", mode } : { type: "authorize_plan", pacing: { nodeDelayMs } }),
+      requestId: crypto.randomUUID(),
       plan: { id: plan.id, version: plan.version, digest }, input }))
   } catch { error("请输入有效 JSON。") }
 }

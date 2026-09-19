@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "exports": { ".": "./src/task-chain/index.ts", "./task-chain": "./src/task-chain/index.ts" },
+  "exports": {
+    ".": "./src/task-chain/index.ts",
+    "./task-chain": "./src/task-chain/index.ts"
+  },
   "scripts": {
     "check": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts"
@@ -11,6 +14,7 @@
   "dependencies": {
     "@browser-capture/contracts": "0.0.0",
     "@langchain/langgraph": "1.4.14",
+    "quickjs-emscripten": "0.32.0",
     "zod": "4.6.2"
   },
   "devDependencies": {

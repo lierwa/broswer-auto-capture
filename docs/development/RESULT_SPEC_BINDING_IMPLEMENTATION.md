@@ -14,7 +14,7 @@
 A 动作记录（已通过）
   → B DOM 定位与数据读取（当前阶段）
     → C 交互执行与异步顺序
-      → D 显式 b-u LLM 节点
+      → D 复跑干扰、Function、多路 Branch 与显式单值 LLM
         → 组合验收
 ```
 
@@ -24,7 +24,7 @@ A 动作记录（已通过）
 - P4–P5 把 B 已验证的读取结果连接为可复跑的 `ResultBinding`，并处理 B 验收所需的空列表路径；
 - P6 是 B 的定点验证；随后真实 GitHub B 才是 B 的阶段验收。
 
-ConsumerReadiness 已提前实现的部分只支撑 GitHub B 的分页/导航读取，它也是 C 的共享基础，但**不等于 C 已完成**。B 通过后仍必须按 C 的独立验收矩阵覆盖慢响应、滚动、遮挡、取消、恢复和不重复副作用。D 的显式 b-u 节点尚未开始。
+ConsumerReadiness 已提前实现的部分只支撑 GitHub B 的分页/导航读取，它也是 C 的共享基础。B、C 当前已经完成；D 按 React 干扰实验站、Function、多路 Branch、显式单值 LLM 和独立验收重新规划，尚未开发。
 
 ## Product Alignment
 

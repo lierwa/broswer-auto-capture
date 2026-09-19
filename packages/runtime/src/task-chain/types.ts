@@ -94,6 +94,16 @@ export interface RuntimeControl {
   resumeRequest?: unknown
   pauseAtCheckpoint?: boolean
   signal?: AbortSignal
+  pacing?: RuntimeNodePacing
+}
+
+export interface RuntimeNodePacing {
+  beforeNode(input: Readonly<{
+    binding: RunBinding
+    node: Pick<ChainNode, "id" | "kind" | "label">
+    transition: number
+    signal: AbortSignal
+  }>): Promise<void>
 }
 
 export interface TaskChainRuntimeInput {

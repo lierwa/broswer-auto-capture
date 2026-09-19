@@ -1,5 +1,5 @@
 import {
-  nodeBindings, predicateBindings, taskChainSchema, type ChainEdge, type ChainNode,
+  chainEdgePort, nodeBindings, nodePorts, predicateBindings, taskChainSchema, type ChainEdge, type ChainNode,
   type TaskChain, type ValueBinding, type ValueSchema,
 } from "@browser-capture/contracts"
 
@@ -12,7 +12,7 @@ export interface CompiledTaskChain {
 export function compileTaskChain(raw: unknown): CompiledTaskChain {
   const chain = taskChainSchema.parse(raw)
   const nodes = new Map<string, ChainNode>(chain.nodes.map((node) => [node.id, node]))
-  const edges = new Map(chain.edges.map((edge) => [`${edge.from}:${edge.outcome}`, edge] as const))
+  const edges = new Map(chain.edges.map((edge) => [`${edge.from}:${chainEdgePort(edge)}`, edge] as const))
   assertReachability(chain, nodes, edges)
   assertBoundedCycles(chain, nodes, edges)
   assertCompletedPathBudget(chain, nodes, edges)
@@ -70,7 +70,7 @@ function assertVariableAvailability(chain: TaskChain, nodes: ReadonlyMap<string,
     changed = false
     for (const id of nodes.keys()) {
       if (id === chain.entry) continue
-      const sources = incoming.get(id)!.map((edge) => assignedAfter(before.get(edge.from)!, nodes.get(edge.from)!, edge.outcome))
+      const sources = incoming.get(id)!.map((edge) => assignedAfter(before.get(edge.from)!, nodes.get(edge.from)!, chainEdgePort(edge)))
       const next = sources.length ? new Set([...sources[0]!].filter((name) => sources.every((source) => source.has(name)))) : new Set<string>()
       if (!sameSet(before.get(id)!, next)) { before.set(id, next); changed = true }
     }
@@ -90,7 +90,7 @@ function assertVariableAvailability(chain: TaskChain, nodes: ReadonlyMap<string,
   }
 }
 
-function assignedAfter(before: ReadonlySet<string>, node: ChainNode, outcome: ChainEdge["outcome"]) {
+function assignedAfter(before: ReadonlySet<string>, node: ChainNode, outcome: string) {
   const assigned = new Set(before)
   if (outputOutcomes.has(outcome)) for (const write of node.writes) assigned.add(write.variable)
   if (node.kind === "loop" && outputOutcomes.has(outcome)) assigned.add(node.cursorVariable)
@@ -158,7 +158,7 @@ function schemaAtPath(root: ValueSchema, path: (string | number)[]) {
 }
 
 function successors(node: ChainNode, edges: ReadonlyMap<string, ChainEdge>) {
-  return node.outcomes.map((outcome) => edges.get(`${node.id}:${outcome}`)!.to)
+  return nodePorts(node).map((port) => edges.get(`${node.id}:${port}`)!.to)
 }
 
 function assertReachability(chain: TaskChain, nodes: ReadonlyMap<string, ChainNode>, edges: ReadonlyMap<string, ChainEdge>) {
@@ -197,7 +197,7 @@ function assertBoundedCycles(chain: TaskChain, nodes: ReadonlyMap<string, ChainN
   }
   for (const node of nodes.values()) {
     if (node.kind !== "loop") continue
-    for (const outcome of node.outcomes) {
+    for (const outcome of nodePorts(node)) {
       if (outcome !== "body" && reaches(edges.get(`${node.id}:${outcome}`)!.to, node.id)) {
         throw new Error("loop_terminal_outcome_cycles")
       }

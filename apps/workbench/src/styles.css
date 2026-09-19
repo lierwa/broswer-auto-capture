@@ -158,6 +158,21 @@ select { max-width: 100%; width: 100%; background: var(--color-panel); color: va
 .plan-fields dd, .detail-list dd { margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .action-gate { margin-top: 22px; display: flex; gap: 24px; align-items: center; }
 .action-gate p { flex: 1; color: var(--color-text-muted); font-size: 12px; }
+.replay-authorization { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(300px, 1.15fr); align-items: end;
+  padding: 18px; border: 1px solid var(--color-border); border-left: 3px solid var(--amber-9); border-radius: var(--radius-panel);
+  background: linear-gradient(110deg, var(--color-panel-raised), var(--color-panel)); }
+.replay-authorization__copy p { margin-bottom: 0; }
+.replay-authorization > .replay-pacing, .replay-authorization > .error-text { grid-column: 1 / -1; }
+.replay-authorization > button { justify-self: end; }
+.replay-pacing { margin: 14px 0; padding: 15px 16px 12px; border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius-panel) - 2px); background: color-mix(in srgb, var(--amber-3) 32%, var(--color-panel)); }
+.replay-pacing [role="slider"] { cursor: ew-resize; }
+.pacing-value { min-width: 58px; padding: 5px 8px; border: 1px solid var(--amber-7); border-radius: 5px;
+  color: var(--amber-11); background: var(--amber-3); font: 600 12px/1 "Cascadia Code", Consolas, monospace; text-align: center; }
+.pacing-scale { margin-top: 7px; }
+.current-node-strip { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-left: 3px solid var(--amber-9);
+  background: var(--amber-3); color: var(--amber-11); font-size: 12px; }
+.current-node-strip strong { color: var(--color-text); font-family: "Cascadia Code", Consolas, monospace; }
 .step-switcher { display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 0 20px; }
 .mono { font-family: "Cascadia Code", Consolas, monospace; }
 .chain-layout { display: grid; grid-template-columns: minmax(0, 1fr) 246px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); overflow: hidden; }

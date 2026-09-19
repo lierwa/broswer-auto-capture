@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import {
   CONTRACT_VERSION, invokeChainResultSchema, llmNodeCapabilityResultSchema, modelCallAuditSchema, nodeCapabilityResultSchema,
-  parseTaskOutput, parseTaskValue, resumeVerificationResultSchema, sameRunBinding, taskCheckpointSchema,
+  nodePorts, parseTaskOutput, parseTaskValue, resumeVerificationResultSchema, sameRunBinding, taskCheckpointSchema,
   taskResumeRequestSchema, taskRunRequestSchema, taskRunSchema, type ChainNode, type JsonValue, type NodeOutcome,
   type TaskCheckpoint, type TaskOutput, type TaskRun,
 } from "@browser-capture/contracts"
@@ -13,15 +13,17 @@ import { executeDelegatedLlm } from "./delegated-llm.js"
 import { executeBuiltinCapability } from "./capabilities.js"
 import { driveTaskChain } from "./engine.js"
 import { digestJson, executableChainDigest, stableUuid } from "./hash.js"
+import { executeFunctionNode } from "./function.js"
 import { executeLoop } from "./loop.js"
 import { RuntimeBudgetExceededError, type NodeCapabilityResult, type TaskChainCapabilities,
-  type TaskChainRuntimeInput } from "./types.js"
+  type RuntimeNodePacing, type TaskChainRuntimeInput } from "./types.js"
 import { BudgetError, UncertainEffectError, activeNow, assertBudget, executionStableKey, modelCount, now } from "./runtime-support.js"
 import { beginEffect, completeEffect, failRun, finishTerminal, invokedOutput, markEffectUncertain,
   pauseRun, persistRun, recordEvent, syncCheckpoint } from "./run-state.js"
 export type RuntimeState = {
   compiled: CompiledTaskChain; run: TaskRun; context: BindingContext; checkpoint: TaskCheckpoint
   capabilities: TaskChainCapabilities; signal: AbortSignal; pauseAtCheckpoint: boolean
+  pacing: RuntimeNodePacing | null
   resumingNodeId: string | null; resumeObservation: JsonValue | null
 }
 export class TaskChainRuntime {
@@ -39,6 +41,7 @@ export class TaskChainRuntime {
       ? await resumeState(compiled, input.request, input.control.resumeRequest, input.control.checkpoint, capabilities, signal)
       : startState(compiled, input.request, capabilities, signal)
     state.pauseAtCheckpoint = input.control?.pauseAtCheckpoint ?? false
+    state.pacing = input.control?.pacing ?? null
     await persistRun(state)
     try {
       await driveTaskChain(state, {
@@ -47,7 +50,6 @@ export class TaskChainRuntime {
         step: async (current) => {
           signal.throwIfAborted()
           assertBudget(current)
-          current.capabilities.accountConsumption?.({ transitions: 1 })
           await executeNode(current)
           await persistRun(current)
         },
@@ -77,7 +79,7 @@ function startState(compiled: CompiledTaskChain, rawRequest: unknown, capabiliti
     input, budget: compiled.chain.budget, sequence: 0, status: "running", outputs: {}, checkpoint, consumed,
     outcome: null, events: [], modelCalls: [], auditComplete: true, externalFailure: null })
   return { compiled, run, context: { input, nodeOutputs: {}, variables: {} }, checkpoint,
-    capabilities, signal, pauseAtCheckpoint: false, resumingNodeId: null, resumeObservation: null }
+    capabilities, signal, pauseAtCheckpoint: false, pacing: null, resumingNodeId: null, resumeObservation: null }
 }
 async function resumeState(compiled: CompiledTaskChain, rawRequest: unknown, rawResume: unknown, rawCheckpoint: unknown,
   capabilities: TaskChainCapabilities, signal: AbortSignal): Promise<RuntimeState> {
@@ -115,7 +117,7 @@ async function resumeState(compiled: CompiledTaskChain, rawRequest: unknown, raw
       reason: pausedReason, evidence: structuredClone(checkpoint.artifacts) }
   }
   return { compiled, run, context, checkpoint: structuredClone(checkpoint), capabilities, signal,
-    pauseAtCheckpoint: false, resumingNodeId: checkpoint.cursor,
+    pauseAtCheckpoint: false, pacing: null, resumingNodeId: checkpoint.cursor,
     resumeObservation: verification.observation === undefined ? null : verification.observation }
 }
 function assertReferences(compiled: CompiledTaskChain, binding: TaskRun["binding"], input: JsonValue) {
@@ -162,9 +164,16 @@ function validateWrittenVariables(state: RuntimeState, node: ChainNode) {
 }
 async function executeNode(state: RuntimeState) {
   const node = state.compiled.nodes.get(state.checkpoint.cursor)!
-  const started = activeNow(state), stableKey = executionStableKey(state)
+  const stableKey = executionStableKey(state)
   const idempotencyKey = `${state.run.binding.runId}:${state.run.binding.invocationId}:${node.id}:${stableKey ?? "root"}`
   recordEvent(state, node, "planned", null, idempotencyKey, stableKey)
+  if (state.pacing) {
+    await persistRun(state)
+    await state.pacing.beforeNode({ binding: state.run.binding, node, transition: state.run.consumed.transitions, signal: state.signal })
+    state.signal.throwIfAborted()
+  }
+  state.capabilities.accountConsumption?.({ transitions: 1 })
+  const started = activeNow(state)
   recordEvent(state, node, "started", null, idempotencyKey, stableKey)
   let result: NodeCapabilityResult
   const accounting = node.kind === "capability" && node.capability.name.startsWith("browser.")
@@ -173,7 +182,8 @@ async function executeNode(state: RuntimeState) {
     state.run.consumed, accounting, () => dispatchNode(state, node, idempotencyKey, stableKey))) }
   catch (error) {
     if (error instanceof UncertainEffectError || error instanceof RuntimeBudgetExceededError) throw error
-    const failure = node.outcomes.includes("failed") ? "failed" : node.outcomes.includes("blocked") ? "blocked" : null
+    const ports = nodePorts(node)
+    const failure = ports.includes("failed") ? "failed" : ports.includes("blocked") ? "blocked" : null
     if (!failure) throw error
     result = { outcome: failure, output: null, reason: error instanceof Error ? error.message : "node_failed" }
   }
@@ -234,8 +244,16 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
   stableKey: string | null): Promise<NodeCapabilityResult> {
   const context = state.context
   if (node.kind === "capability") return executeCapability(state, node, idempotencyKey, stableKey)
+  if (node.kind === "function") return executeFunctionNode(node, resolveBindings(node.inputs, context), state.signal)
   if (node.kind === "data") return { outcome: "success", output: executeDataOperation(node.operation, resolveBindings(node.arguments, context)) }
-  if (node.kind === "condition" || node.kind === "branch") return { outcome: evaluatePredicate(node.predicate, context) ? "true" : "false", output: null }
+  if (node.kind === "condition") return { outcome: evaluatePredicate(node.predicate, context) ? "true" : "false", output: null }
+  if (node.kind === "branch") {
+    if ("predicate" in node) return { outcome: evaluatePredicate(node.predicate, context) ? "true" : "false", output: null }
+    try {
+      for (const item of node.cases) if (evaluatePredicate(item.predicate, context)) return { outcome: item.id, output: null }
+      return { outcome: "default", output: null }
+    } catch { return { outcome: "failed", output: null, reason: "branch_predicate_failed" } }
+  }
   if (node.kind === "loop") return executeLoop(state, node, writeVariable)
   if (node.kind === "browser") {
     if (!state.capabilities.browser) throw new Error("browser_capability_unavailable")
@@ -364,6 +382,13 @@ async function executeLlm(state: RuntimeState, node: Extract<ChainNode, { kind: 
   try {
     const result = llmNodeCapabilityResultSchema.parse(await state.capabilities.llm({ binding: state.run.binding, mode: state.run.mode, node,
       input: resolveBinding(node.input, state.context), callId, signal: state.signal }))
+    let v2Failure: string | null = null
+    if ("systemPrompt" in node && result.reportedInvocations !== 1) v2Failure = "llm_invocation_count_invalid"
+    if ("systemPrompt" in node && (result.reportedBrowserCommands ?? 0) !== 0) v2Failure = "llm_browser_command_forbidden"
+    if ("systemPrompt" in node && result.outcome === "success") {
+      try { parseTaskValue(node.outputContract, result.output ?? null) }
+      catch { v2Failure = "llm_result_invalid" }
+    }
     audit.status = result.outcome === "success" ? "completed" : result.outcome === "cancelled" ? "interrupted" : "failed"
     audit.reportedInvocations = result.reportedInvocations
     state.capabilities.accountConsumption?.({ llmCalls: result.reportedInvocations === null ? null : result.reportedInvocations - 1 }, "settle")
@@ -371,7 +396,7 @@ async function executeLlm(state: RuntimeState, node: Extract<ChainNode, { kind: 
     state.run.consumed.llmCalls = modelCount(state.run)
     completeEffect(state)
     const { reportedInvocations: _reportedInvocations, ...nodeResult } = result
-    return nodeResult
+    return v2Failure ? { outcome: "failed", output: null, reason: v2Failure } : nodeResult
   } catch (error) {
     if (error instanceof RuntimeBudgetExceededError) throw error
     audit.status = state.signal.aborted ? "interrupted" : "failed"

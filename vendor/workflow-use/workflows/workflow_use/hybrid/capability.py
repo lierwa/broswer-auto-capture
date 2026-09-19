@@ -4,9 +4,13 @@ import asyncio
 from browser_use.tools.service import Tools
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, stop_before_delay, wait_fixed
 
-from .postconditions import SettlePolicy, capture_check_baselines, declared_checks, settle_policy, verify_declared
+from .dialog_event_bridge import DialogEventBridge
+from .postconditions import (PostconditionNotMet, SettlePolicy, capture_check_baselines, declared_checks,
+                             settle_policy, verify_declared)
 from .native_event_capture import NativeEventCapture
+from .physical_input import dispatch_physical_click
 from .registry import ActionRegistry
+from .scroll_observation import inspect_page_scroll, scroll_dispatch_metadata, scroll_failure_code
 from .target_preparation import verify_event_target
 from .target_scroll import TargetScrollParams, register_target_scroll_tool
 from .targets import TARGET_ORDINAL_ARGUMENT, TargetResolver, materialize_target
@@ -22,7 +26,7 @@ TARGET_READY_POLICY = SettlePolicy(maxMs=30000, maxAttempts=100, intervalMs=300)
 RETRYABLE_TARGET_ERRORS = frozenset({
     'missing_history_target', 'missing_item_target', 'missing_stable_target', 'missing_structure_container',
     'page_document_unavailable', 'page_unavailable', 'target_position_unavailable', 'target_scope_mismatch',
-    'target_detached', 'target_disabled', 'target_document_changed', 'target_hit_blocked',
+    'target_detached', 'target_disabled', 'target_document_changed',
     'target_not_in_view', 'target_not_visible', 'target_preparation_invalid',
     'target_preparation_unavailable', 'target_read_only',
 })
@@ -41,17 +45,27 @@ class OrdinaryCapability:
         self.registry = ActionRegistry.from_tools(self.tools)
         self.targets = TargetResolver(browser)
         self.event_capture = NativeEventCapture(browser)
+        self.last_dialog_events = []
         self.target_settle = SettlePolicy.model_validate(target_settle or TARGET_READY_POLICY)
 
-    async def execute_checked(self, action_name, args, target, postconditions):
+    async def execute_checked(self, action_name, args, target, postconditions, *, native_dialog_policy=None):
         checks = declared_checks(postconditions, args, target)
         policy = settle_policy(postconditions)
         await capture_check_baselines(self.browser, checks)
-        result = await self.execute(action_name, args, target)
-        await verify_declared(self.browser, checks, policy)
+        result = await self.execute(action_name, args, target, native_dialog_policy=native_dialog_policy)
+        try:
+            await verify_declared(self.browser, checks, policy)
+        except PostconditionNotMet as error:
+            expects_movement = action_name == 'scroll' and any(
+                item.get('kind') == 'scroll_position' and item.get('changed') is True
+                for item in postconditions if isinstance(item, dict))
+            failure_code = scroll_failure_code(result) if expects_movement else None
+            if failure_code is not None:
+                raise RuntimeError(failure_code) from error
+            raise
         return result.model_dump(mode='json')
 
-    async def execute(self, action_name: str, args: dict, target: dict | None = None):
+    async def execute(self, action_name: str, args: dict, target: dict | None = None, *, native_dialog_policy=None):
         if action_name not in ORDINARY_ACTIONS:
             raise ValueError('unsupported_ordinary_capability')
         if 'index' in args:
@@ -77,28 +91,36 @@ class OrdinaryCapability:
         if prepared is not None and action_name in EVENT_HIT_ACTIONS:
             intended = {'targetId': prepared.target_id, 'frameId': prepared.frame_id,
                         'sessionId': prepared.session_id}
-            await self.event_capture.arm(action_name, intended, prepared.element)
-            result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
-            capture = await self.event_capture.complete()
+            dispatch = (lambda: self._physical_click(prepared, native_dialog_policy)) \
+                if action_name == 'click' else (lambda: self._act(action, native_dialog_policy))
+            result, capture = await self._dispatch_captured(
+                action_name, dispatch, intended, prepared.element)
             if result.error:
                 raise RuntimeError('ordinary_action_failed')
-            event_count = verify_event_target(capture)
+            event_count = verify_event_target(capture, require_trusted=action_name == 'click')
             metadata = result.metadata if isinstance(result.metadata, dict) else {}
             result.metadata = {**metadata, 'batActionPreparation': {
                 'targetId': prepared.target_id, 'scrolled': prepared.scrolled,
                 'hitRelation': prepared.hit_relation, 'eventCount': event_count}}
         elif action_name in EVENT_FOCUS_ACTIONS:
-            await self.event_capture.arm(action_name)
-            result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
-            capture = await self.event_capture.complete()
+            result, capture = await self._dispatch_captured(
+                action_name, lambda: self._act(action, native_dialog_policy))
             events = capture.get('events') if isinstance(capture, dict) else []
             focused = [event for event in events if isinstance(event, dict)
                        and event.get('graph', {}).get('target', {}).get('kind') == 'element']
             metadata = result.metadata if isinstance(result.metadata, dict) else {}
             result.metadata = {**metadata, 'batFocusDispatch': {
                 'captured': bool(focused), 'eventCount': len(focused)}}
+        elif action_name == 'scroll':
+            before = await inspect_page_scroll(self.browser)
+            result, capture = await self._dispatch_captured(
+                action_name, lambda: self._act(action, native_dialog_policy))
+            after = await inspect_page_scroll(self.browser)
+            metadata = result.metadata if isinstance(result.metadata, dict) else {}
+            result.metadata = {**metadata, 'batScrollDispatch': scroll_dispatch_metadata(
+                before, after, capture, bool(parameters.get('down', True)))}
         else:
-            result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
+            result = await self._act(action, native_dialog_policy)
         if result.error:
             raise RuntimeError('ordinary_action_failed')
         return result
@@ -110,7 +132,7 @@ class OrdinaryCapability:
             raise ValueError('target_scroll_target_mismatch')
         await self.targets.assert_scope(resolved.get('scope'))
         action = self.registry.validate_action('bat_scroll_to', parameters)
-        result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
+        result = await self._act(action)
         if result.error:
             raise RuntimeError('ordinary_action_failed')
         return result
@@ -122,7 +144,7 @@ class OrdinaryCapability:
             raise ValueError('visible_wait_target_mismatch')
         await self.targets.assert_scope(resolved.get('scope'))
         action = self.registry.validate_action('bat_wait_for', parameters)
-        result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
+        result = await self._act(action)
         if result.error:
             raise RuntimeError('ordinary_action_failed')
         return result
@@ -157,6 +179,56 @@ class OrdinaryCapability:
             if str(error) in MISSING_TARGET_ERRORS:
                 raise RuntimeError('ordinary_target_missing') from error
             raise
+
+    async def _dispatch_captured(self, action_name, dispatch, target=None, element=None):
+        await self.event_capture.arm(action_name, target, element)
+        failure = None
+        result = None
+        capture = None
+        try:
+            result = await dispatch()
+        except BaseException as error:
+            failure = error
+        try:
+            capture = await self.event_capture.complete()
+        except BaseException as error:
+            if failure is None:
+                failure = error
+        if failure is not None:
+            raise failure
+        return result, capture
+
+    async def _physical_click(self, prepared, dialog_policy):
+        return await self._with_dialog_bridge(
+            lambda: dispatch_physical_click(self.browser, prepared), dialog_policy)
+
+    async def _act(self, action, dialog_policy=None):
+        return await self._with_dialog_bridge(
+            lambda: self.tools.act(action, browser_session=self.browser, page_extraction_llm=None),
+            dialog_policy)
+
+    async def _with_dialog_bridge(self, dispatch, dialog_policy):
+        # Authoring owns a run-scoped bridge. Replay wraps only the native dispatch so the two owners never overlap.
+        dialog_bridge = DialogEventBridge(self.browser, policy=dialog_policy)
+        dialog_bridge.start()
+        failure = None
+        result = None
+        try:
+            result = await dispatch()
+        except BaseException as error:
+            failure = error
+        try:
+            await dialog_bridge.close()
+        except BaseException as error:
+            if failure is None:
+                failure = error
+        self.last_dialog_events = list(dialog_bridge.events)
+        if result is not None:
+            metadata = result.metadata if isinstance(result.metadata, dict) else {}
+            result.metadata = {**metadata, 'batNativeDialogs': list(dialog_bridge.events)}
+        if failure is not None:
+            raise failure
+        return result
 
     async def close(self):
         await self.event_capture.close()

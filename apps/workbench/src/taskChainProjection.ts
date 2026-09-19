@@ -2,7 +2,7 @@ import type { ChainNode, TaskAuthoringJob, TaskChain, TaskRun } from "@browser-c
 import type { TaskChainState } from "@browser-capture/contracts/api"
 
 export const chainFamilyLabels: Record<ChainNode["kind"], string> = {
-  capability: "通用能力", branch: "分支", browser: "浏览器动作", observe: "现场观察", data: "数据处理", condition: "条件", loop: "循环",
+  capability: "通用能力", function: "确定性函数", branch: "分支", browser: "浏览器动作", observe: "现场观察", data: "数据处理", condition: "条件", loop: "循环",
   invoke: "链路调用", human: "人工等待", llm: "显式模型", checkpoint: "检查点", emit: "发布输出", terminal: "终态",
 }
 
@@ -31,19 +31,28 @@ export function projectChainGraph(chain: TaskChain, runs: TaskRun[]) {
         className: `chain-node chain-node-${event?.status ?? "pending"}`,
         type: node.kind === "terminal" ? "output" : "default" }
     }),
-    edges: chain.edges.map((edge, index) => ({ id: `${edge.from}:${edge.outcome}:${index}`,
-      source: edge.from, target: edge.to, label: edge.outcome, type: "smoothstep" })),
+    edges: chain.edges.map((edge, index) => {
+      const port = "port" in edge ? edge.port : edge.outcome
+      return { id: `${edge.from}:${port}:${index}`, source: edge.from, target: edge.to, label: port, type: "smoothstep" }
+    }),
   }
 }
 
 export function chainOperation(node: ChainNode) {
   if (node.kind === "capability") return `${node.capability.name}@${node.capability.version}`
+  if (node.kind === "function") return `javascript · ${node.timeoutMs}ms`
   if (node.kind === "browser" || node.kind === "data") return node.operation
   if (node.kind === "observe") return node.scope
   if (node.kind === "human") return node.reason
-  if (node.kind === "llm") return node.model
+  if (node.kind === "llm") return `${node.model} · 单次 result`
   if (node.kind === "terminal") return node.status
   return node.kind
+}
+
+export async function digestNodeText(value: string) {
+  const bytes = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  return [...new Uint8Array(digest)].map((item) => item.toString(16).padStart(2, "0")).join("")
 }
 
 export function runsForChain(runs: TaskRun[], chain: TaskChain) {

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from .dom_evidence import node_xpath
 from .evidence import digest
 from .history_target import HistoryTargetIdentity, match_history_target
-from .target_preparation import prepare_mapped_target
+from .target_preparation import assert_action_target, inspect_action_target, prepare_mapped_target
 
 TARGET_ORDINAL_ARGUMENT = 'targetOrdinal'
 SCROLL_INTO_VIEW_SCRIPT = "() => this.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'})"
@@ -133,6 +133,11 @@ class TargetResolver:
             if target['strategy'] == 'title' or str(error) not in _PREPARABLE_ERRORS:
                 raise
             element = await self._preparable_element(target, page, target_id)
+            state = await inspect_action_target(element)
+            # WHY：原目标仍唯一存在但中心命中被截获时，保存确定性的 blocked 事实；
+            # 不把 DOM 中存在但被遮挡的目标折叠成 selector missing，更不扫描所谓关闭按钮。
+            if state['inView'] and (state['pointerBlocked'] or state['hitRelation'] == 'outside'):
+                assert_action_target(state, action_name)
             backend = await _element_backend(element)
             if self._mapping_matches(backend, mapping, target_id):
                 raise ValueError('ambiguous_or_inconsistent_stable_target') from error

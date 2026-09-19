@@ -97,6 +97,11 @@ export const taskExecutionStepSchema = z.object({
   output: jsonValueSchema.nullable(), reason: textSchema.nullable(),
 }).strict()
 
+export const taskExecutionPacingSchema = z.object({
+  nodeDelayMs: z.number().int().min(0).max(5000),
+}).strict()
+const immediateExecutionPacing = { nodeDelayMs: 0 } as const
+
 export const taskExecutionSchema = z.object({
   contractVersion: contractVersionSchema, kind: z.literal("execution"), id: identitySchema, taskId: taskIdentitySchema,
   authorizationId: identitySchema, plan: versionReferenceSchema, requirement: requirementReferenceSchema,
@@ -105,6 +110,8 @@ export const taskExecutionSchema = z.object({
   validationRecovery: z.object({ parentExecutionId: identitySchema, attempt: z.literal(1),
     verificationInput: jsonValueSchema.optional() }).strict().optional(),
   input: jsonValueSchema, inputDigest: digestSchema,
+  // WHY：复跑节奏是本次授权的运行控制事实，不进入链版本，也不改变节点预算与语义。
+  pacing: taskExecutionPacingSchema.default(immediateExecutionPacing),
   consumed: consumptionSchema.default({ transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 }),
   status: z.enum(["queued", "running", "completed", "partial", "waiting_for_human", "paused", "blocked", "failed", "cancelled", "stale"]),
   sequence: z.number().int().nonnegative(), currentStepId: keySchema.nullable(), currentRunId: identitySchema.nullable(),
@@ -145,7 +152,10 @@ export const taskChainCommandSchema = z.discriminatedUnion("type", [
     mode: taskRunModeSchema.extract(["sample", "verification"]), input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("validate_plan"), ...request, plan: versionReferenceSchema,
     mode: taskRunModeSchema.extract(["sample", "verification"]), input: jsonValueSchema }).strict(),
-  z.object({ type: z.literal("authorize_plan"), ...request, plan: versionReferenceSchema, input: jsonValueSchema }).strict(),
+  z.object({ type: z.literal("authorize_plan"), ...request, plan: versionReferenceSchema, input: jsonValueSchema,
+    pacing: taskExecutionPacingSchema.default(immediateExecutionPacing) }).strict(),
+  z.object({ type: z.literal("set_execution_pacing"), ...request, executionId: identitySchema,
+    pacing: taskExecutionPacingSchema }).strict(),
   z.object({ type: z.literal("resume_execution"), ...request, executionId: identitySchema,
     expectedSequence: z.number().int().nonnegative() }).strict(),
   z.object({ type: z.literal("cancel_execution"), executionId: identitySchema }).strict(),
