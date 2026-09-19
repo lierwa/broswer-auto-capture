@@ -124,6 +124,7 @@ class Runner:
         self.profile = None
         self.allowed = set()
         self.commands = 0
+        self.capability = None
         self.diagnostic = diagnostic or (lambda _event: None)
 
     async def handle(self, raw):
@@ -228,9 +229,12 @@ class Runner:
 
     async def close(self):
         try:
+            if self.capability is not None:
+                await self.capability.close()
             if self.browser is not None:
                 await self.browser.kill()
         finally:
+            self.capability = None
             self.browser = None
             if self.profile is not None:
                 self.profile.cleanup()

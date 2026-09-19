@@ -23,6 +23,8 @@ export async function finishTerminal(state: RuntimeState, node: Extract<ChainNod
 
 export async function pauseRun(state: RuntimeState,
   cause: "drift" | "budget" | "interrupted" | "requested", reason: string) {
+  // WHY：LangGraph 可能先于正在等待的能力 Promise 响应取消；任何仍在途的外部效果都不能以 started 冒充可确认状态。
+  if (state.checkpoint.pendingEffect) state.checkpoint.pendingEffect.status = "uncertain"
   syncCheckpoint(state); state.checkpoint.id = randomUUID()
   state.run.checkpoint = structuredClone(state.checkpoint); state.run.status = "paused"
   state.run.outcome = { status: "paused", cause, checkpointId: state.checkpoint.id,

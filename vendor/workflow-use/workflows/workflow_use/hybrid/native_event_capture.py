@@ -64,7 +64,7 @@ CAPTURE_SCRIPT = r"""
     if (value === globalThis) return { kind: "window" };
     return { kind: "other", nodeType: typeof value?.nodeType === "number" ? value.nodeType : null };
   };
-  const localGraph = (event) => {
+  const localGraph = (event, intendedElement) => {
     const rawPath = typeof event.composedPath === "function" ? event.composedPath() : [];
     const primary = [];
     const seen = new Set();
@@ -90,7 +90,10 @@ CAPTURE_SCRIPT = r"""
       attributes: attributes(value), properties: properties(value), directText: directText(value),
       root: rootDescriptor(value, refs),
     }));
-    return { targetRef: refs.get(event.target) || null, target: pathEntry(event.target, refs),
+    const intentRelation = !element(intendedElement) ? null
+      : event.target === intendedElement ? 'self'
+      : intendedElement.contains(event.target) ? 'descendant' : 'outside';
+    return { targetRef: refs.get(event.target) || null, target: pathEntry(event.target, refs), intentRelation,
       composedPath: rawPath.map((value) => pathEntry(value, refs)), nodes };
   };
   const eventData = (event) => {
@@ -116,12 +119,12 @@ CAPTURE_SCRIPT = r"""
       event: { type: event.type, isTrusted: event.isTrusted, bubbles: event.bubbles,
         cancelable: event.cancelable, composed: event.composed, defaultPrevented: event.defaultPrevented,
         eventPhase: event.eventPhase, timeStamp: event.timeStamp, data: eventData(event) },
-      graph: localGraph(event),
+      graph: localGraph(event, state.intendedElement),
     };
     try { globalThis[bindingName](JSON.stringify(payload)); } catch (_) {}
   };
   for (const type of eventTypes) document.addEventListener(type, capture, true);
-  const state = { documentId, cleanup: () => {
+  const state = { documentId, intendedElement: null, cleanup: () => {
     for (const type of eventTypes) document.removeEventListener(type, capture, true);
     try { delete globalThis[stateKey]; } catch (_) {}
   }};
@@ -146,7 +149,7 @@ class NativeEventCapture:
         self._binding_handler = self._on_binding_called
         self._context_handler = self._on_context_created
 
-    async def arm(self, action_name, target=None):
+    async def arm(self, action_name, target=None, element=None):
         policy = action_capture_policy(action_name)
         event_types = policy.event_types
         if not event_types:
@@ -175,8 +178,24 @@ class NativeEventCapture:
         self.active = {'eventTypes': frozenset(event_types), 'eventExpectation': policy.event_expectation,
                        'events': [], 'limitations': limitations,
                        'sessionIds': installed, 'intendedFrames': intended, 'seenPayloads': {}}
+        if element is not None:
+            await self._set_intended(element)
         return {'status': 'armed', 'eventExpectation': policy.event_expectation,
                 'events': [], 'limitations': list(limitations)}
+
+    async def _set_intended(self, element):
+        script = """() => {
+          const state = globalThis[%s];
+          if (!state || typeof state.cleanup !== 'function' || !this.isConnected) return {accepted:false};
+          state.intendedElement = this;
+          return {accepted:true};
+        }""" % json.dumps(self.state_key)
+        try:
+            accepted = json.loads(await element.evaluate(script))
+        except Exception as error:
+            raise ValueError('native_event_intended_target_unavailable') from error
+        if accepted != {'accepted': True}:
+            raise ValueError('native_event_intended_target_unavailable')
 
     async def complete(self):
         if self.active is None:

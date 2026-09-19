@@ -1,5 +1,6 @@
 import {
-  CONTRACT_VERSION, legacyTaskChainSchema, requiredNodeOutcomes, type JsonValue, type LegacyChainNode, type LegacyTaskChain,
+  CONTRACT_VERSION, legacyTaskChainSchema, requiredNodeOutcomes, requiredStableNodeOutcomes, stableTaskChainSchema,
+  type JsonValue, type LegacyChainNode, type LegacyTaskChain,
   type TaskChain, type TaskDataContract, type TaskRunRequest, type ValueBinding, type ValueSchema,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "../src/task-chain/index.js"
@@ -119,6 +120,34 @@ export function browserEffectChain(): TaskChain {
   const done = terminal("done", "completed"), error = terminal("error", "failed")
   return chainBase("外部副作用恢复", nullContract, nullContract, [browser, publish, done, error],
     [...edges(browser, publish.id), ...edges(publish, done.id)], browser.id)
+}
+
+export function capabilityEffectChain(): TaskChain {
+  const stableBase = (id: string, kind: keyof typeof requiredStableNodeOutcomes) => ({ id, label: id,
+    outcomes: [...requiredStableNodeOutcomes[kind]], outputContract: nullContract, writes: [] })
+  const observe = { ...stableBase("observe", "capability"), kind: "capability" as const,
+    capability: { name: "browser.read-fields", version: 2 }, input: {}, config: {},
+    effect: "read" as const, timeoutMs: 1000 }
+  const capability = { ...stableBase("capability", "capability"), kind: "capability" as const,
+    capability: { name: "browser.workflow-step", version: 2 }, input: {}, config: {},
+    effect: "idempotent_write" as const, timeoutMs: 1000 }
+  const done = { ...stableBase("done", "terminal"), kind: "terminal" as const, status: "completed" as const,
+    reason: "完成", evidence: [{ source: "node" as const, nodeId: capability.id, path: [] }],
+    result: { name: "result", output: { kind: "value" as const,
+      value: { source: "constant" as const, value: null } }, contract: nullContract } }
+  const error = { ...stableBase("error", "terminal"), kind: "terminal" as const, status: "failed" as const,
+    reason: "失败", evidence: [{ source: "constant" as const, value: "failed" }] }
+  const route = (node: typeof observe | typeof capability, success: string) => node.outcomes.map((outcome) => ({
+    from: node.id, outcome, to: outcome === "success" ? success : error.id }))
+  return stableTaskChainSchema.parse({ contractVersion: CONTRACT_VERSION, kind: "chain", nodeModel: "stable/v1",
+    id: uuids.chain, taskId: uuids.task, version: 1, plan, stepId: "perform", name: "浏览器能力取消恢复",
+    inputContract: nullContract, outputContract: nullContract, variables: {}, entry: observe.id,
+    nodes: [observe, capability, done, error], edges: [...route(observe, capability.id), ...route(capability, done.id)],
+    completion: [{ id: "output-ready", description: "输出已经发布", predicate: { operator: "equals",
+      left: { source: "constant", value: null }, right: { source: "constant", value: null } } }], budget,
+    reuseBoundary: { description: "不同运行输入复用同一结构", assumptions: ["输入符合契约"],
+      invalidationConditions: ["能力合同变化"] }, implementationSummary: "运行时内存夹具",
+    validation: { status: "candidate", evidence: [] } })
 }
 
 export function checkpointChain(): TaskChain {

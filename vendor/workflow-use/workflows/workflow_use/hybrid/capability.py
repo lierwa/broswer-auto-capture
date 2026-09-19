@@ -5,7 +5,9 @@ from browser_use.tools.service import Tools
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, stop_before_delay, wait_fixed
 
 from .postconditions import SettlePolicy, capture_check_baselines, declared_checks, settle_policy, verify_declared
+from .native_event_capture import NativeEventCapture
 from .registry import ActionRegistry
+from .target_preparation import verify_event_target
 from .target_scroll import TargetScrollParams, register_target_scroll_tool
 from .targets import TARGET_ORDINAL_ARGUMENT, TargetResolver, materialize_target
 from .visible_wait import VisibleWaitParams, register_visible_wait_tool
@@ -14,10 +16,15 @@ from .visible_wait import VisibleWaitParams, register_visible_wait_tool
 ORDINARY_ACTIONS = frozenset({'navigate', 'go_back', 'wait', 'click', 'input', 'scroll', 'send_keys',
                               'dropdown_options', 'select_dropdown', 'bat_scroll_to', 'bat_wait_for'})
 TARGET_ACTIONS = frozenset({'click', 'input', 'dropdown_options', 'select_dropdown'})
+EVENT_HIT_ACTIONS = frozenset({'click', 'input', 'select_dropdown'})
+EVENT_FOCUS_ACTIONS = frozenset({'send_keys'})
 TARGET_READY_POLICY = SettlePolicy(maxMs=30000, maxAttempts=100, intervalMs=300)
 RETRYABLE_TARGET_ERRORS = frozenset({
     'missing_history_target', 'missing_item_target', 'missing_stable_target', 'missing_structure_container',
     'page_document_unavailable', 'page_unavailable', 'target_position_unavailable', 'target_scope_mismatch',
+    'target_detached', 'target_disabled', 'target_document_changed', 'target_hit_blocked',
+    'target_not_in_view', 'target_not_visible', 'target_preparation_invalid',
+    'target_preparation_unavailable', 'target_read_only',
 })
 MISSING_TARGET_ERRORS = frozenset({
     'missing_history_target', 'missing_item_target', 'missing_stable_target', 'missing_structure_container',
@@ -33,6 +40,7 @@ class OrdinaryCapability:
             register_visible_wait_tool(self.tools)
         self.registry = ActionRegistry.from_tools(self.tools)
         self.targets = TargetResolver(browser)
+        self.event_capture = NativeEventCapture(browser)
         self.target_settle = SettlePolicy.model_validate(target_settle or TARGET_READY_POLICY)
 
     async def execute_checked(self, action_name, args, target, postconditions):
@@ -49,6 +57,7 @@ class OrdinaryCapability:
         if 'index' in args:
             raise ValueError('ephemeral_target_argument')
         parameters = dict(args)
+        prepared = None
         if action_name == 'bat_scroll_to':
             return await self.execute_target_scroll(parameters, target)
         if action_name == 'bat_wait_for':
@@ -57,14 +66,39 @@ class OrdinaryCapability:
             if target is None:
                 raise ValueError('stable_target_required')
             target = materialize_target(target, parameters)
-            parameters['index'] = await self.resolve_target(target)
+            prepared = await self.resolve_target(target, action_name=action_name)
+            parameters['index'] = prepared.index
         elif target is not None:
             raise ValueError('unexpected_target')
         elif TARGET_ORDINAL_ARGUMENT in parameters:
             raise ValueError('unexpected_target_binding')
         action = self.registry.validate_action(action_name, parameters)
         # WHY: 复用 Tools.act 的浏览器动作、超时和错误语义；普通节点没有模型或文件系统句柄。
-        result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
+        if prepared is not None and action_name in EVENT_HIT_ACTIONS:
+            intended = {'targetId': prepared.target_id, 'frameId': prepared.frame_id,
+                        'sessionId': prepared.session_id}
+            await self.event_capture.arm(action_name, intended, prepared.element)
+            result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
+            capture = await self.event_capture.complete()
+            if result.error:
+                raise RuntimeError('ordinary_action_failed')
+            event_count = verify_event_target(capture)
+            metadata = result.metadata if isinstance(result.metadata, dict) else {}
+            result.metadata = {**metadata, 'batActionPreparation': {
+                'targetId': prepared.target_id, 'scrolled': prepared.scrolled,
+                'hitRelation': prepared.hit_relation, 'eventCount': event_count}}
+        elif action_name in EVENT_FOCUS_ACTIONS:
+            await self.event_capture.arm(action_name)
+            result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
+            capture = await self.event_capture.complete()
+            events = capture.get('events') if isinstance(capture, dict) else []
+            focused = [event for event in events if isinstance(event, dict)
+                       and event.get('graph', {}).get('target', {}).get('kind') == 'element']
+            metadata = result.metadata if isinstance(result.metadata, dict) else {}
+            result.metadata = {**metadata, 'batFocusDispatch': {
+                'captured': bool(focused), 'eventCount': len(focused)}}
+        else:
+            result = await self.tools.act(action, browser_session=self.browser, page_extraction_llm=None)
         if result.error:
             raise RuntimeError('ordinary_action_failed')
         return result
@@ -93,7 +127,7 @@ class OrdinaryCapability:
             raise RuntimeError('ordinary_action_failed')
         return result
 
-    async def resolve_target(self, target, mapping=None):
+    async def resolve_target(self, target, mapping=None, action_name=None):
         if mapping is not None:
             raise ValueError('external_selector_map_forbidden')
         policy = self.target_settle
@@ -101,7 +135,8 @@ class OrdinaryCapability:
         async def resolve_once():
             nonlocal last_error
             try:
-                return await self.targets.resolve_action_index(target)
+                return await (self.targets.resolve_action_index(target) if action_name is None
+                              else self.targets.prepare_action_target(target, action_name))
             except Exception as error:
                 last_error = error
                 raise
@@ -117,10 +152,14 @@ class OrdinaryCapability:
             if isinstance(last_error, ValueError) and str(last_error) in MISSING_TARGET_ERRORS:
                 raise RuntimeError('ordinary_target_missing') from last_error
             raise
+
         except ValueError as error:
             if str(error) in MISSING_TARGET_ERRORS:
                 raise RuntimeError('ordinary_target_missing') from error
             raise
+
+    async def close(self):
+        await self.event_capture.close()
 
 
 def retryable_target_error(error):

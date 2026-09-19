@@ -18,8 +18,8 @@ Product Alignment:
 | --- | --- | --- |
 | [A 动作记录](replay-repair/A_ACTION_CONTEXT.md) | 已通过 | 受控正式入口和真实 GitHub Issues 任务页均通过；来源业务结果及 judge 验证成功 |
 | [B 定位与读取](replay-repair/B_DOM_TARGET_READ.md) | 已通过 | P1–P6 完成；真实 GitHub B 的 E1/E2/E3/E4 已通过，普通复跑模型调用为 0 |
-| [C 交互执行](replay-repair/C_INTERACTION_ORDER.md) | 下一阶段，尚未开始 | B 已通过；不得把 B 内使用的分页切片当作 C 验收 |
-| [D 显式 b-u 节点](replay-repair/D_EXPLICIT_BU_NODE.md) | 未开始 | 需要复用当前 Browser 会话、原生 Agent 与现有模型桥 |
+| [C 交互执行](replay-repair/C_INTERACTION_ORDER.md) | 已通过 | 动作准备/命中、单次派发、具体后态、取消与恢复已通过受控及真实可见 Chrome 独立验收 |
+| [D 显式 b-u 节点](replay-repair/D_EXPLICIT_BU_NODE.md) | 下一阶段，未开始 | 需要复用当前 Browser 会话、原生 Agent 与现有模型桥 |
 | [组合验收](replay-repair/E_INTEGRATION_ACCEPTANCE.md) | 未开始 | 依赖 A–D |
 
 A 的受控 Chromium 验收在一个 Browser 会话中覆盖 37 个动作、120 个真实 DOM 事件和 42 个业务副作用；
@@ -137,8 +137,12 @@ history identity 在动作后 DOM 中唯一重绑定；多个候选立即失败�
 
 ## 下一步
 
-**B · DOM 定位与数据读取已通过**。下一阶段是 C；C、D 和组合验收尚未开始。`RESULT_SPEC_BINDING_IMPLEMENTATION.md`
-中的 P1–P6 是已经关闭的 B 内部开发包。ConsumerReadiness 仍只是 B 分页/导航读取所需的共享基础，不代表 C 已完成。
+**C · 交互执行与异步顺序已通过**。下一阶段是 D；D 和组合验收尚未开始。`RESULT_SPEC_BINDING_IMPLEMENTATION.md`
+中的 P1–P6 是已经关闭的 B 内部开发包，C 直接复用其 ResultBinding 与 ConsumerReadiness。
+
+2026-09-19，A/B 当前实现与验收状态已由本地提交 `8aaa4a8` 固定，未推送远程。C 随后在同一 checkout 完成：
+没有重复实现稳定目标、ConsumerReadiness、缺失目标分支或 ResultBinding，只补齐动作前准备与命中核验、正确滚动、
+单次业务动作派发、具体后态等待，以及取消/恢复时不重复副作用。
 
 [ResultSpec / ResultBinding 开发计划](RESULT_SPEC_BINDING_IMPLEMENTATION.md) 的 P1–P6 已实现：语义计划生成 execution/data
 `ResultSpec`，数据 `count` 通过类型化来源关系降低为既有 `data.transform/count`，E1 后编译器生成只绑定来源的 `ResultBinding`；
@@ -150,4 +154,11 @@ history identity 在动作后 DOM 中唯一重绑定；多个候选立即失败�
 `sourceSuccess=true`、`sourceValidated=true`，第一页/第二页各 5 条且有详情；E2 用同一来源重编译为 0 gap、3 个来源赋值、1 个空列表分支，
 canonical digest 为 `9c406549819ae79d4c8fafab8d08c36bc534562efba54c15857390abbaa5150c`。当前产物 E3 同输入复跑 completed，
 输出 `5/5/有详情`，模型调用 0；E4 不同输入 completed，输出 `1/0/无详情`，模型调用 0。E4 事件证明下一页稳定目标缺失后走
-`missing → page2Issues=[]`，没有执行第二页读取、`[0]` 路径或详情读取。B 阶段门已关闭；后续工作从 C 开始。
+`missing → page2Issues=[]`，没有执行第二页读取、`[0]` 路径或详情读取。B 阶段门已关闭。
+
+2026-09-19，C 已完成并独立验收。受控浏览器覆盖嵌套滚动、5.5 秒延迟后态、永不完成、输入、选择、按键和同 URL
+document 替换；业务动作在后态重试外只派发一次。取消验收在服务器确认一次点击后中断，保留
+`paused/interrupted + pendingEffect=uncertain`，同一运行恢复后副作用总数仍为 1。新的真实可见 Chrome GitHub TaskChain
+完成第一页 5 条、第二页 5 条及第二页首条详情，30 条节点事件闭合、10 次浏览器命令、编译 gaps 为 0，
+`modelCalls=0`、`llmCalls=0`；关闭后测试 runner/Chrome 进程数为 0。详见
+[C 独立验收记录](evidence/browser-replay-repair/C_ACCEPTANCE_CONFORMANCE.md)。D 本轮未进入。

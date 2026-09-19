@@ -5,7 +5,7 @@ import { CONTRACT_VERSION, requiredStableNodeOutcomes, stableTaskChainSchema, ta
   type JsonValue, type StableTaskChain, type TaskCheckpoint, type TaskRun } from "@browser-capture/contracts"
 import { compileTaskChain, TaskChainRuntime, type TaskChainCapabilities } from "@browser-capture/runtime"
 import {
-  alternateInvocationId, alternateRunId, browserEffectChain, checkpointChain, childChainId,
+  alternateInvocationId, alternateRunId, browserEffectChain, capabilityEffectChain, checkpointChain, childChainId,
   humanChain, invokeChain, llmChain, loopChain, requestFor, textContract,
 } from "./task-chain-fixtures.js"
 
@@ -289,6 +289,34 @@ test("未决浏览器副作用不会在恢复时被自动重放", async () => {
   }, control: { checkpoint, resumeRequest: resumeRequest(checkpoint) } })
   assert.equal(resumed.status, "paused")
   assert.equal(resumed.outcome?.status, "paused")
+  assert.equal(calls, 1)
+})
+
+test("浏览器 capability 取消后保留未决效果且同运行恢复不重派", async () => {
+  const chain = capabilityEffectChain(), request = requestFor(chain, null), controller = new AbortController()
+  let calls = 0, resumeChecks = 0
+  const interrupted = await new TaskChainRuntime().execute({ chain, request, capabilities: {
+    capability: async ({ node }) => {
+      if (node.id === "observe") return { outcome: "success", output: null, browser: {
+        sessionId: "session-1", tabId: "tab-1", url: "https://example.test/",
+        observationDigest: "a".repeat(64), observedAt: "2026-09-19T00:00:00.000Z" } }
+      calls += 1; controller.abort("controlled_cancel")
+      return new Promise<never>(() => { /* Simulate a provider request that has not observed cancellation yet. */ })
+    },
+  }, control: { signal: controller.signal } })
+  assert.equal(interrupted.status, "paused")
+  assert.equal(interrupted.outcome?.status, "paused")
+  assert.equal(interrupted.outcome?.cause, "interrupted")
+  assert.equal(interrupted.checkpoint?.pendingEffect?.kind, "capability")
+  assert.equal(interrupted.checkpoint?.pendingEffect?.status, "uncertain")
+  const checkpoint = interrupted.checkpoint!
+  const resumed = await new TaskChainRuntime().execute({ chain, request, capabilities: {
+    capability: async () => { calls += 1; return { outcome: "success", output: null } },
+    verifyResume: async () => { resumeChecks += 1; return { ok: true, browser: checkpoint.browser! } },
+  }, control: { checkpoint, resumeRequest: resumeRequest(checkpoint) } })
+  assert.equal(resumed.status, "paused")
+  assert.equal(resumed.binding.runId, interrupted.binding.runId)
+  assert.equal(resumeChecks, 1)
   assert.equal(calls, 1)
 })
 

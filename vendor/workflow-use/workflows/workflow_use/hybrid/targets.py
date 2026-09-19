@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from .dom_evidence import node_xpath
 from .evidence import digest
 from .history_target import HistoryTargetIdentity, match_history_target
+from .target_preparation import prepare_mapped_target
 
 TARGET_ORDINAL_ARGUMENT = 'targetOrdinal'
 SCROLL_INTO_VIEW_SCRIPT = "() => this.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'})"
@@ -120,8 +121,12 @@ class TargetResolver:
         self.browser = browser
 
     async def resolve_action_index(self, raw):
+        return (await self.prepare_action_target(raw, 'click')).index
+
+    async def prepare_action_target(self, raw, action_name):
         target = validate_target(raw)
         page, mapping, target_id = await self._snapshot(target.get('scope'))
+        scrolled = False
         try:
             index = await self._resolve_index(target, page, mapping, target_id)
         except ValueError as error:
@@ -133,11 +138,13 @@ class TargetResolver:
                 raise ValueError('ambiguous_or_inconsistent_stable_target') from error
             # WHY：只把已唯一定位的当前主文档元素带入原生 selector map；点击仍交给 Tools.act。
             await element.evaluate(SCROLL_INTO_VIEW_SCRIPT)
+            scrolled = True
             await self._assert_page_identity(page, target_id, target.get('scope'))
             page, mapping = await self._refresh_snapshot(target_id, target.get('scope'))
             index = await self._resolve_index(target, page, mapping, target_id)
         await self._assert_page_identity(page, target_id, target.get('scope'))
-        return index
+        return await prepare_mapped_target(
+            self, target, action_name, page, mapping, target_id, index, scrolled)
 
     async def resolve_action_index_from_snapshot(self, raw, mapping, target_id):
         """Resolve against a callback-owned selector map without refreshing it."""

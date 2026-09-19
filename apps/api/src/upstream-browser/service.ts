@@ -155,7 +155,12 @@ export class RunnerProcess {
     this.lines?.close(); this.diagnosticLines?.close(); this.child = null
     this.lines = null; this.diagnosticLines = null
     if (child.exitCode !== 0 && !this.signal.aborted) throw new Error(`upstream_cleanup_unconfirmed:${child.exitCode ?? child.signalCode}`)
-    if (this.temporaryDirectory) { await rm(this.temporaryDirectory, { recursive: true, force: true }); this.temporaryDirectory = null }
+    if (this.temporaryDirectory) {
+      // WHY：Windows 的 taskkill 已确认 runner 树退出后，浏览器临时文件仍可能短暂保持句柄；
+      // 使用 Node 原生有界线性重试，避免清理竞态覆盖已经成立的取消结果。
+      await rm(this.temporaryDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      this.temporaryDirectory = null
+    }
   }
 
   private terminate(child: ChildProcess) {
