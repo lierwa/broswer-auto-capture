@@ -15,12 +15,10 @@ def action_metadata(registry, raw_action, step_number):
     if isinstance(selector, str) and 0 < len(selector) <= 2000:
         metadata['selector'] = selector
     if name == 'bat_read_fields' and isinstance(arguments, dict):
-        output_path, container = arguments.get('outputPath'), arguments.get('container')
+        output_path = arguments.get('outputPath')
         if (isinstance(output_path, list) and len(output_path) <= 32
                 and all(isinstance(item, (str, int)) and not isinstance(item, bool) for item in output_path)):
             metadata['outputPath'] = output_path
-        if isinstance(container, str) and 0 < len(container) <= 2000:
-            metadata['container'] = container
     return metadata
 
 

@@ -1,5 +1,5 @@
 import type {
-  JsonValue, Predicate, TaskPlan, TaskPlanStep, TaskRequirement, ValueBinding, ValueSchema,
+  JsonValue, Predicate, ResultSpec, TaskPlan, TaskPlanStep, TaskRequirement, ValueBinding, ValueSchema,
 } from "@browser-capture/contracts"
 
 const legacyFence = "```bat-compilation/v1"
@@ -46,6 +46,7 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
     "复跑时输入值可以变化，但字段、类型和边界如下：",
     ...describeSchema(step.inputContract.schema, "输入", true),
     "【必须返回的结果】",
+    ...describeResultSpec(requiredResultSpec(step)),
     ...describeSchema(step.outputContract.schema, "结果", true),
     "【完成条件】",
     ...step.completion.map((condition) => `- ${condition.description}；判定为${describePredicate(condition.predicate)}`),
@@ -56,6 +57,32 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
     "遇到登录、验证码、一次性口令、权限确认、访问限制或不可逆外部操作时停止并请求处理，不得绕过。",
     "自行理解页面并选择浏览器动作；不得编造字段、数量、来源或成功结果。",
   ].join("\n")
+}
+
+export function describeResultSpec(spec: ResultSpec) {
+  if (spec.mode === "execution") return [
+    "- 本步骤只执行并核验完成，没有业务数据输出；成功信息由平台执行回执保存。",
+  ]
+  return [
+    "- 本步骤必须返回符合下列合同的业务数据。",
+    ...spec.fields.map((field) => `- 结果${displayPath(field.path)}：${field.description}；逻辑来源 ${field.producerRef}`),
+    ...(spec.derivations.length ? ["- 确定性派生：", ...spec.derivations.map((item) =>
+      `  - ${item.producerRef} 使用普通 ${item.operation} 数据节点，来源 ${item.sourceProducerRef} 的结果${displayPath(item.sourcePath)}`)] : []),
+    ...(spec.edgeCases.length ? ["- 边界流程：", ...spec.edgeCases.map((edge) =>
+      `  - ${edge.description}；逻辑控制 ${edge.controlRef}`)] : []),
+    "- 逻辑引用只说明计划关系；不得生成 CSS、DOM 引用、等待类型或真实 E1 节点 ID。",
+  ]
+}
+
+function requiredResultSpec(step: TaskPlanStep) {
+  if (!step.resultSpec) throw new Error("plan_result_spec_required")
+  return step.resultSpec
+}
+
+function displayPath(path: Array<string | number>) {
+  if (!path.length) return "（整体）"
+  return path.reduce<string>((result, part) => typeof part === "number" ? `${result}[${part}]`
+    : result ? `${result}.${part}` : part, "")
 }
 
 export function describeValue(value: JsonValue, path = "值"): string[] {

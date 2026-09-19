@@ -15,16 +15,11 @@ from .action_dispatch import ActionDispatchAudit, bind_tools_act
 from .capture import EvidenceCollector
 from .dialog_event_bridge import DialogEventBridge
 from .evidence import Contract, EvidenceRef, digest, gap
-from .field_read_tool import register_field_read_tool
 from .invokes import VerifiedChild
 from .lifecycle_diagnostics import action_metadata, observe_lifecycle
 from .native_event_capture import NativeEventCapture
 from .registry import ActionRegistry
-from .request import NaturalCompilationRequest
-from .summary_context import build_summary_context
-from .summary_tool import register_summary_tool
-from .target_scroll import register_target_scroll_tool
-from .visible_wait import register_visible_wait_tool
+from .request import NaturalCompilationRequest, ResultSpec
 
 
 class AuthorInput(Contract):
@@ -32,6 +27,7 @@ class AuthorInput(Contract):
     input: JsonValue
     inputSchema: dict[str, JsonValue]
     outputSchema: dict[str, JsonValue]
+    resultSpec: ResultSpec
     requirementId: str
     requirementVersion: int = Field(gt=0)
     requirementText: str = Field(min_length=1, max_length=100000)
@@ -45,19 +41,21 @@ class AuthorInput(Contract):
     verifiedChildren: list[VerifiedChild] = Field(default_factory=list, max_length=100)
 
 
+AUTHOR_URL_SHORTENING_LIMIT = 2048
+VISIBLE_TEXT_EXTRACTION_GUIDANCE = (
+    ' Return every string as literal browser-visible text: add no Markdown, YAML, bullets, numbering, backticks, '
+    'or link/image syntax unless those characters are visibly present. Collapse every whitespace run to one space '
+    'and concatenate inline element text without adding delimiters.')
+
+
 async def author_step(browser, raw, models, output_model_for: Callable, diagnostic=None):
     request = AuthorInput.model_validate(raw)
     Draft202012Validator(request.inputSchema).validate(request.input)
+    _validate_result_spec(request)
     output_model, unwrap = output_model_for(request.outputSchema, 'HybridAgentOutput')
     # WHY：执行能力缺口保留在 registry/coverage；不允许源码执行和文件操作绕开受控能力。
     collector = None
-    def summary_context():
-        if collector is None:
-            raise ValueError('summary_collector_unavailable')
-        return build_summary_context(task=request.task, runtime_input=request.input,
-            runtime_input_schema=request.inputSchema, observations=collector.observations)
-    tools = author_tools(output_model, request.outputSchema, summary_model=models['semantic_annotation'],
-                         summary_context_provider=summary_context)
+    tools = author_tools(output_model)
     field_read_records, summary_records = tools._bat_field_read_records, tools._bat_summary_records
     target_scroll_records, visible_wait_records = tools._bat_target_scroll_records, tools._bat_visible_wait_records
     event_capture = NativeEventCapture(browser)
@@ -74,7 +72,7 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
                                   field_read_records=field_read_records, target_scroll_records=target_scroll_records,
                                   visible_wait_records=visible_wait_records,
                                   summary_records=summary_records,
-                                  dispatch_audit=dispatch_audit)
+                                  dispatch_audit=dispatch_audit, result_spec=request.resultSpec)
     current_action = {}
     async def before_action(summary, model_output, step):
         try:
@@ -110,41 +108,28 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
             agent = Agent(task=request.task, browser=browser, tools=tools, llm=models['agent'], judge_llm=models['judge'],
                           page_extraction_llm=models['extract'], output_model_schema=output_model,
                           register_new_step_callback=before_action, use_vision=True, use_judge=True,
-                          max_actions_per_step=1, directly_open_url=False, enable_signal_handler=False,
-                          file_system_path=directory, save_conversation_path=None,
+                           max_actions_per_step=1, directly_open_url=False, enable_signal_handler=False,
+                           _url_shortening_limit=AUTHOR_URL_SHORTENING_LIMIT,
+                           file_system_path=directory, save_conversation_path=None,
                           extend_system_message=NATURAL_AGENT_GUIDANCE)
             # Agent finalizes its public registry during construction (including screenshot/output actions).
             registry = ActionRegistry.from_tools(tools)
             collector.registry = registry
             run_failed = False
             try:
-                history = await agent.run(max_steps=request.maxSteps, on_step_end=after_step)
+                history = await _run_business_agent(agent, request.maxSteps, after_step)
             except Exception:
                 # WHY：原生运行异常可能发生在回调之后；保留已采集来源事实但不保存异常正文，也不伪造成功。
                 history = agent.history
                 run_failed = True
-            succeeded = not run_failed and history.is_done() is True and history.is_successful() is True
-            validated = not run_failed and history.is_validated() is True
-            output, output_gaps = None, []
-            if run_failed:
-                output_gaps.append(gap('invalid_source', [], 'native_agent_run_failed', 'reject_trace'))
-            # WHY：符合已确认合同的业务输出也是失败诊断证据；judge 结论仍由 trace/gate 独立拒绝。
-            if succeeded:
-                try:
-                    structured = history.get_structured_output(output_model)
-                    if structured is None:
-                        raise ValueError('hybrid_structured_output_missing')
-                    output = unwrap(structured)
-                    Draft202012Validator(request.outputSchema).validate(output)
-                except Exception:
-                    output = None
-                    output_gaps.append(gap('invalid_source', [], 'business_output_schema_not_proven', 'reject_trace'))
+            succeeded, validated, output, output_gaps = _business_result(
+                history, run_failed, output_model, unwrap, request.outputSchema)
             # WHY：动作参数和选定证据是复跑数据；只省略 raw history，不再按内容来源破坏执行原值。
             redaction = put('redaction-manifest', {'policy': 'execution-values-preserved/v1', 'rawHistorySaved': False})
             collector.redact_action = redactor(request, output)
-            trace, gaps = collector.finish(history, history_ref='normalized-trace:' + str(uuid4()), final_output=output,
-                                           redaction_manifest=redaction, source_judged=validated,
-                                           source_completed=succeeded)
+            trace, gaps, output = collector.finish(
+                history, history_ref='normalized-trace:' + str(uuid4()), final_output=output,
+                redaction_manifest=redaction, source_judged=validated, source_completed=succeeded)
             gaps.extend(output_gaps)
         finally:
             try:
@@ -156,12 +141,70 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
                     restore_tools_act()
     # The normalized trace itself is persisted inside the v2 artifact; raw AgentHistory is never serialized.
     compilation = natural_compilation_request(request, trace, registry)
-    return {'output': output, 'request': compilation.model_dump(mode='json'),
+    return {'output': output, 'request': _public_compilation_request(compilation),
             'response': compilation_response(compilation, registry, request.verifiedChildren, gaps,
                                              output_schema=request.outputSchema),
             'history': {'localRef': trace.source.historyRef, 'digest': trace.digest},
             'sourceSuccess': succeeded, 'sourceValidated': validated,
             'browserCommands': sum(action.name not in ('done', 'bat_summarize') for action in trace.actions)}
+
+
+def _public_compilation_request(compilation):
+    # WHY：Pydantic 内部字段名不能进入跨语言事实源；canonical payload 与普通 request 必须同用公共别名。
+    return compilation.model_dump(mode='json', by_alias=True)
+
+
+async def _run_business_agent(agent, max_steps, after_step):
+    history = await agent.run(max_steps=max_steps, on_step_end=after_step)
+    judgement = history.judgement() or {}
+    retry = (history.is_done() is True and history.is_successful() is True
+             and history.is_validated() is False and not judgement.get('reached_captcha')
+             and not judgement.get('impossible_task'))
+    if not retry:
+        return history
+    # WHY：judge 拒绝的是业务完成，不是编译证据；在同一 Agent/Browser 内只允许一次继续，避免随机重跑和第二浏览器。
+    feedback = judgement.get('failure_reason') or judgement.get('reasoning') or 'required browser work was not fully demonstrated'
+    feedback = ' '.join(str(feedback).split())[:2000]
+    agent.add_new_task(
+        'Restart the same original task from its exact runtime input in the current browser. Your previous success '
+        'report was rejected by the '
+        f'judge. Judge feedback: {feedback}. Complete every required navigation and '
+        'data-reading step from the original task, preserving every input URL query parameter exactly. Use native '
+        'extract on each page that contributes business values, including a conditional detail page, before leaving '
+        'that page or calling done. Verify the resulting page state, and only then call done. Do not invent missing '
+        'values, reconstruct the input query, or return early with placeholder or empty data.')
+    return await agent.run(max_steps=max_steps, on_step_end=after_step)
+
+
+def _business_result(history, run_failed, output_model, unwrap, output_schema):
+    succeeded = not run_failed and history.is_done() is True and history.is_successful() is True
+    validated = not run_failed and history.is_validated() is True
+    output, output_gaps = None, []
+    if run_failed:
+        output_gaps.append(gap('invalid_source', [], 'native_agent_run_failed', 'reject_trace'))
+    # WHY：符合已确认合同的业务输出也是失败诊断证据；judge 结论仍由 trace/gate 独立拒绝。
+    if succeeded:
+        try:
+            structured = history.get_structured_output(output_model)
+            if structured is None:
+                raise ValueError('hybrid_structured_output_missing')
+            output = unwrap(structured)
+            Draft202012Validator(output_schema).validate(output)
+        except Exception:
+            output = None
+            output_gaps.append(gap('invalid_source', [], 'business_output_schema_not_proven', 'reject_trace'))
+    return succeeded, validated, output, output_gaps
+
+
+def _validate_result_spec(request):
+    value = request.resultSpec.model_dump(mode='json', by_alias=True)
+    if value['mode'] == 'execution':
+        if request.outputSchema != {'type': 'null'}:
+            raise ValueError('execution_result_requires_null_output')
+        return
+    Draft202012Validator.check_schema(value['schema'])
+    if value['schema'] != request.outputSchema:
+        raise ValueError('data_result_schema_mismatch')
 
 
 def find_elements_outcome(agent):
@@ -190,7 +233,8 @@ def field_read_outcome(agent):
         if not result.error:
             return {'readOutcome': 'succeeded'}
         error = result.error
-        allowed = ('ambiguous_or_missing_read_field', 'read_', 'natural_read_', 'bat_read_fields_failed')
+        allowed = ('ambiguous_or_missing_read_field', 'read_', 'natural_read_', 'dom_reference_',
+                   'bat_read_fields_failed')
         if not isinstance(error, str) or not error.startswith(allowed) or len(error) > 2000:
             return {'readOutcome': 'unavailable'}
         return {'readOutcome': 'failed', 'readError': error}
@@ -203,6 +247,12 @@ FIND_ELEMENTS_DEFAULT_ATTRIBUTES = ['data-testid', 'class', 'role', 'aria-label'
 
 def normalize_author_action(action):
     """Fill Browser-Use's optional DOM attributes before capture and dispatch."""
+    extract = getattr(action, 'extract', None)
+    query = getattr(extract, 'query', None)
+    if isinstance(query, str) and VISIBLE_TEXT_EXTRACTION_GUIDANCE not in query:
+        # WHY：extract LLM 可能把视觉样式转写成 Markdown；固定为纯可见文本与既有
+        # normalizeWhitespace DOM 投影对齐，业务值仍由页面证明而不是由模型格式决定。
+        extract.query = query.rstrip() + VISIBLE_TEXT_EXTRACTION_GUIDANCE
     params = getattr(action, 'find_elements', None)
     if params is not None and getattr(params, 'attributes', None) is None:
         # WHY：B-A-T 后续要编译相对字段 selector；只有数量和文本不足以证明真实 DOM 属性，
@@ -211,64 +261,29 @@ def normalize_author_action(action):
 
 
 NATURAL_AGENT_GUIDANCE = (
-    'Complete the required browser business traversal; selector investigation must not block reaching later pages or '
-    'required detail views. Native extract may first inspect the current page and retain the source business values. '
-    'Use bat_read_fields for replayable page-derived output evidence, and when possible complete that read before '
-    'navigating away. If selector evidence is not yet proven, continue the business traversal with native extract and '
-    'revisit only the required pages later to add replay evidence before done. Its outputPath must '
-    'be a path in the final output contract, never a temporary or scratch name. Give bat_read_fields only outputPath, '
-    'container, and fields; each field contains selector and an optional attribute. For an object or array of objects, '
-    'include every required field from that contract. For a scalar value, use fields.value. Never supply schema, types, '
-    'cardinality, budgets, or readPath. The container may match the complete ordered collection; bat_read_fields '
-    'deterministically keeps the DOM-order prefix allowed by contract maxItems, so do not encode that prefix with '
-    'nth-child. Use find_elements to discover both the container and each field selector. When a '
-    'field selector is unknown, query inside one known container with include_text=true and request relevant stable '
-    'attributes such as class, data-testid, aria-label, href, and datetime; a count without those values is not enough to '
-    'derive the field selector. Its result includes bounded ancestor chains aligned to each matching result index; use '
-    'those real per-element parent relationships '
-    'instead of guessing with first-child or first-of-type. If bat_read_fields reports an error, use its field name, match '
-    'count, and fixed reason to '
-    'correct that selector at the same final output path. Do not retry the same failed field selector unchanged; inspect '
-    'that field inside one known container before retrying. '
-    'Browser-use element indexes are not DOM ids, and its rendered tree is not proof of actual DOM parent-child structure. '
-    'Do not invent DOM relationships or selectors. Do not embed sample '
-    'values from the current input, such as one title or URL, or use generated runtime element IDs. Native extract is '
-    'allowed to produce the first-exploration business result. Missing replay selectors are a separate compilation '
-    'gap: they must be reported by the compiler and must not block the required browser traversal or final done action. '
-    'A bat_read_fields result is replay evidence when available; do not pretend extract or find_elements is that evidence. '
-    'When bat_read_fields succeeds for an outputPath, pass that returned value unchanged at the same path in done instead '
-    'of an earlier extracted or summarized value. Missing replay evidence alone is not a business limitation and must not '
-    'downgrade an otherwise completed business result to partial; compilation reports replay gaps separately. '
-    'For page-derived output strings, preserve the complete visible source text allowed by the output schema; do not '
-    'replace source text, code, lists, or details with a summary merely because they are long. '
-    'When the task requires filters or ordering, verify the applied state from current-page evidence before reading '
-    'results. A guessed query parameter or navigation URL alone does not prove that a filter or sort was accepted; use '
-    'the site controls or its visible query/state and do not claim completion from an unverified URL convention. '
-    'For a known target, including pagination, first '
-    'discover a local CSS selector and use bat_scroll_to. If a clickable index is already available, native click may be '
-    'used directly. Do not search for a known target by scrolling an arbitrary number of pages. bat_scroll_to does not '
-    'search lazy-loaded content. '
-    'After an asynchronous action, use bat_wait_for with a CSS selector for the actual business-ready signal. Do not use '
-    'fixed seconds, URL changes, title changes, or scroll position as proof that data refreshed. If no reliable ready '
-    'selector exists, leave the completion gap unproven rather than inventing one. '
-    'Use bat_summarize for an explicit report string after bat_read_fields has verified its source values. '
-    'Do not use it to fill missing IDs, links, dates, authors, counts, or other page fields. '
-    'When task order requires returning to a page and reading it again, call done only after a new bat_read_fields result '
-    'from the returned page; do not substitute values cached before returning. '
+    'Complete the required browser business traversal with native Browser-Use actions and return one complete output. '
+    'Navigate from an explicit runtime input URL exactly as supplied; never shorten, rebuild, or replace its query. '
+    'Use native extract on every page that contributes business values, including conditional detail pages, before '
+    'leaving that page or calling done; preserve exact source values allowed by the output schema. '
+    'For string fields return complete visible text only, collapse whitespace runs to one space, and do not add '
+    'Markdown syntax, non-visible media URLs, image URLs, or transient signed URLs absent from the visible text. '
+    'Do not spend steps inventing replay selectors, DOM relationships, wait types, output bindings, or compiler metadata: '
+    'B-A-T records and validates replay evidence outside the model. Missing replay evidence must not block later business '
+    'pages or downgrade an otherwise completed business result; compilation reports that separately. '
+    'For filters and ordering, verify the applied state from current-page evidence instead of trusting a guessed URL. '
+    'After navigation or an asynchronous action, inspect the resulting business state before using it. '
     'Do not invent a separate rules document.')
 
 
 def author_tools(output_model, output_schema=None, *, summary_model=None, summary_context_provider=None):
-    # Agent(use_vision=True) also excludes screenshot through the public API; keep offline registry identical.
+    # WHY：探索模型只使用 Browser-Use 原生能力。投影、等待和输出装配由宿主回调形成，
+    # 不再注册五个 B-A-T 工具让模型二次描述已经发生的浏览器事实。
     tools = Tools(output_model=output_model, exclude_actions=['evaluate', 'read_file', 'write_file', 'replace_file',
                   'upload_file', 'download_file', 'screenshot'])
-    tools._bat_target_scroll_records = register_target_scroll_tool(tools)
-    tools._bat_visible_wait_records = register_visible_wait_tool(tools)
-    if output_schema is not None:
-        tools._bat_field_read_records = register_field_read_tool(tools, output_schema=output_schema)
-        tools._bat_summary_records = register_summary_tool(tools, output_schema=output_schema,
-            model=summary_model, context_provider=summary_context_provider or (lambda: None),
-            occupied_paths=lambda: tools._bat_field_read_records.output_paths)
+    tools._bat_target_scroll_records = None
+    tools._bat_visible_wait_records = None
+    tools._bat_field_read_records = None
+    tools._bat_summary_records = None
     return tools
 
 
@@ -278,7 +293,8 @@ def natural_compilation_request(request, trace, registry):
                    'sourceDigest': request.requirementDigest}
     plan = {'id': request.planId, 'version': request.planVersion, 'sourceDigest': request.planDigest,
             'stepId': request.stepId, 'callMode': request.callMode,
-            'inputSchemaDigest': digest(request.inputSchema), 'outputSchemaDigest': digest(request.outputSchema)}
+            'inputSchemaDigest': digest(request.inputSchema), 'outputSchemaDigest': digest(request.outputSchema),
+            'resultSpec': request.resultSpec.model_dump(mode='json', by_alias=True)}
     return NaturalCompilationRequest.model_validate({'compilerVersion': 'bat-hybrid/2',
         'actionRegistryVersion': registry.schemaDigest,
         'requirement': {**requirement, 'digest': digest(requirement)},

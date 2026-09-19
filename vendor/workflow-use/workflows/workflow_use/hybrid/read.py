@@ -4,18 +4,25 @@ import math
 from typing import Literal
 
 from jsonschema import Draft202012Validator
+from jsonschema import ValidationError as JsonSchemaValidationError
 from pydantic import Field, JsonValue, model_serializer, model_validator
 
 from .evidence import Contract, digest, gap
 from .rendered_field_text import FieldReadError, replace_shadow_text
 from .semantic import bounded_schema
 from .targets import TargetResolver
+from .visible_text import normalize_presentation_text
 
 
 class ReadField(Contract):
     selector: str = Field(min_length=1, max_length=2000)
     attribute: str | None = Field(default=None, pattern=r'^[a-zA-Z][a-zA-Z0-9_-]*$')
+    resolveUrl: bool = False
     valueType: Literal['string', 'number', 'integer', 'boolean'] = 'string'
+    textPrefix: str | None = Field(default=None, min_length=1, max_length=100)
+    textSuffix: str | None = Field(default=None, min_length=1, max_length=100)
+    normalizeWhitespace: bool = False
+    normalizePresentation: bool = False
     multiple: bool = False
     maxValues: int = Field(default=1, gt=0, le=300)
 
@@ -23,6 +30,14 @@ class ReadField(Contract):
     def bounded_cardinality(self):
         if not self.multiple and self.maxValues != 1:
             raise ValueError('single_field_cardinality_required')
+        if self.resolveUrl and self.attribute != 'href':
+            raise ValueError('url_resolution_requires_href')
+        if (self.textPrefix is not None or self.textSuffix is not None) \
+                and (self.valueType not in ('string', 'number', 'integer') or self.attribute is not None):
+            raise ValueError('text_affix_projection_invalid')
+        if self.normalizePresentation and (
+                self.valueType != 'string' or self.attribute is not None or not self.normalizeWhitespace):
+            raise ValueError('presentation_normalization_invalid')
         return self
 
     @model_serializer(mode='wrap')
@@ -31,8 +46,18 @@ class ReadField(Contract):
         value = serialize(self)
         if not self.multiple:
             value.pop('multiple', None)
+        if not self.resolveUrl:
+            value.pop('resolveUrl', None)
         if self.maxValues == 1:
             value.pop('maxValues', None)
+        if self.textPrefix is None:
+            value.pop('textPrefix', None)
+        if self.textSuffix is None:
+            value.pop('textSuffix', None)
+        if not self.normalizeWhitespace:
+            value.pop('normalizeWhitespace', None)
+        if not self.normalizePresentation:
+            value.pop('normalizePresentation', None)
         return value
 
 
@@ -75,6 +100,7 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
     projected[name] = {
       selfMatched,
       values: matches.slice(0, limit).map((node) => {
+        if (field.resolveUrl) return {value: node.href, hasShadow: false};
         if (field.attribute) return {value: node.getAttribute(field.attribute), hasShadow: false};
         const hasShadow = Boolean(node.shadowRoot
           || Array.from(node.querySelectorAll('*')).some((child) => child.shadowRoot));
@@ -115,9 +141,14 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None):
         output.append(record)
     if specification.outputSchema.get('type') == 'object':
         if specification.maxItems != 1 or len(output) != 1:
-            raise ValueError('read_single_object_required')
+            raise FieldReadError('read_single_object_required', field_name='container',
+                                 match_count=len(output), reason='expected_exactly_one_record')
         output = output[0]
-    Draft202012Validator(specification.outputSchema).validate(output)
+    try:
+        Draft202012Validator(specification.outputSchema).validate(output)
+    except JsonSchemaValidationError as error:
+        # WHY：字段类型/长度等投影结果不符合合同是可修复的 selector 结果，不应折叠成未知工具失败。
+        raise FieldReadError('read_output_schema_mismatch', reason='projected_output_invalid') from error
     if scope is not None:
         await resolver.assert_scope(scope, target_id)
     return output
@@ -125,7 +156,8 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None):
 
 async def project_fields(browser, element, fields, native_context):
     projection = [{'name': name, 'selector': field.selector, 'multiple': field.multiple,
-                   'maxValues': field.maxValues, 'attribute': field.attribute}
+                   'maxValues': field.maxValues, 'attribute': field.attribute,
+                   'resolveUrl': field.resolveUrl}
                   for name, field in fields.items()]
     try:
         raw = await element.evaluate(FIELD_PROJECTION_SCRIPT, projection)
@@ -170,6 +202,20 @@ def read_value(name, value, field):
     if not isinstance(value, str):
         raise FieldReadError('read_field_not_text', field_name=name, match_count=1,
                              reason='selected_value_not_text')
+    if field.normalizeWhitespace:
+        value = ' '.join(value.split())
+    if field.normalizePresentation:
+        value = normalize_presentation_text(value)
+    if field.textPrefix is not None:
+        if not value.startswith(field.textPrefix):
+            raise FieldReadError('read_text_affix_invalid', field_name=name, match_count=1,
+                                 reason='text_prefix_mismatch')
+        value = value[len(field.textPrefix):]
+    if field.textSuffix is not None:
+        if not value.endswith(field.textSuffix):
+            raise FieldReadError('read_text_affix_invalid', field_name=name, match_count=1,
+                                 reason='text_suffix_mismatch')
+        value = value[:-len(field.textSuffix)]
     if field.valueType == 'string':
         return value
     if field.valueType == 'integer':

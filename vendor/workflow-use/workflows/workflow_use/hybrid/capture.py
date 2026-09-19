@@ -1,13 +1,14 @@
 """Evidence capture through native Agent callbacks. The Agent remains the sole exploration loop."""
-import json
 import time
 from copy import deepcopy
 
 from browser_use.tools.extraction.views import ExtractionResult
 from jsonschema import Draft202012Validator
-from .action_identity import history_action_refs, provisional_action_ref, resolve_history_step
+
 from .action_dispatch import dispatch_target, public_action_result
+from .action_identity import history_action_refs, provisional_action_ref, resolve_history_step
 from .browser_context import browser_context_value
+from .capture_values import extraction_value, replace_action_identity, schema_reachable, target_value
 from .dom_evidence import (
     attach_query_candidate,
     capture_find_elements_query,
@@ -16,9 +17,11 @@ from .dom_evidence import (
     empty_structure,
     safe_url,
 )
+from .dom_reference_tool import sanitized_inspection_result
 from .evidence import EvidenceRef, NormalizedObservation, ObservationFact, TraceSource, digest, gap
 from .field_read_evidence import FieldReadEvidenceFailure, verified_field_read
 from .history import from_agent_history
+from .host_read_facts import attach_host_read_facts
 from .natural_effects import read_page_effect, read_target_state, read_target_value
 from .natural_facts import binding_facts
 from .natural_output import build_verified_output_assembly
@@ -31,11 +34,14 @@ from .post_action_target import (
     verified_labeled_query,
 )
 from .postconditions import read_fact
+from .prior_read_bindings import attach_prior_read_bindings
+from .record_projection_snapshot import capture_host_snapshots
 from .semantic import bounded_schema
 from .snapshot_consistency import ObservationUrlChanged, capture_consistent_post_snapshot, resolve_closed_target_id
 from .summary_evidence import SummaryEvidenceFailure, verified_summary
 from .target_scroll import TargetScrollEvidenceFailure, verified_target_scroll
 from .visible_wait import VisibleWaitEvidenceFailure, verified_visible_wait
+
 
 class EvidenceCollector:
     """Use max_actions_per_step=1 and register_new_step_callback / on_step_end on the native Agent.
@@ -46,11 +52,13 @@ class EvidenceCollector:
     """
     def __init__(self, browser, registry, *, put_evidence, redact_action, input_value=None, input_schema=None,
                  requirement_text='', output_schema=None, sanitize_evidence_value=None, field_read_records=None,
-                 target_scroll_records=None, visible_wait_records=None, summary_records=None, dispatch_audit=None):
+                 target_scroll_records=None, visible_wait_records=None, summary_records=None, dispatch_audit=None,
+                 result_spec=None):
         self.browser, self.registry = browser, registry
         self.put_evidence, self.redact_action = put_evidence, redact_action
         self.input_value, self.input_schema = input_value, input_schema or {}
         self.requirement_text, self.output_schema = requirement_text, output_schema or {}
+        self.result_spec = result_spec
         self.sanitize_evidence_value = sanitize_evidence_value
         self.field_read_records = field_read_records
         self.target_scroll_records = target_scroll_records
@@ -58,6 +66,7 @@ class EvidenceCollector:
         self.summary_records = summary_records
         self.dispatch_audit = dispatch_audit
         self.observations, self.links, self.results = [], {}, {}
+        self.host_read_captures = []
         self.source_gaps = []
         self.pending = None
 
@@ -144,7 +153,8 @@ class EvidenceCollector:
             facts_before_live.append(self.dom_query_fact(
                 complete_find_elements_query(self.pending['queryEvidence'], item.result)))
         for index, result in enumerate(item.result):
-            value = result.model_dump(mode='json')
+            value = (sanitized_inspection_result(result) if 'bat_inspect_dom' in self.pending['action']
+                     else result.model_dump(mode='json'))
             self.results[(step, index)] = self.put_evidence('action-result', value)
         facts_after_live = []
         if 'extract' in self.pending['action']:
@@ -161,6 +171,9 @@ class EvidenceCollector:
         if 'bat_wait_for' in self.pending['action']:
             after.facts.extend(self.visible_wait_facts(item.result, step, after))
         self.links[(step, 0, 'post')] = after.id
+        for capture in self.host_read_captures:
+            if capture['actionRef'] == self.pending['actionId'] and capture['postObservationRef'] is None:
+                capture['postObservationRef'] = after.id
         self.pending = None
         if self.dispatch_audit is not None:
             self.dispatch_audit.close()
@@ -173,11 +186,20 @@ class EvidenceCollector:
         result, result_ref, facts = results[0], self.results[(step, 0)], []
         structured_claim = (result.metadata or {}).get('structured_extraction') is True
         try:
-            facts.append(self.native_extraction_fact(result, result_ref))
+            native = self.native_extraction_fact(result, result_ref)
+            facts.append(native)
         except Exception:
-            if structured_claim:
+            if structured_claim and not facts:
                 self.source_gaps.append(gap('invalid_source', [self.pending['actionId']],
                                              'native_extraction_evidence_invalid', 'reject_trace'))
+        try:
+            snapshots = await capture_host_snapshots(self.browser)
+            self.host_read_captures.append({
+                'actionRef': self.pending['actionId'], 'resultDigest': result_ref.digest,
+                'snapshots': snapshots, 'postObservationRef': None,
+            })
+        except Exception:
+            pass
         return facts
 
     def field_read_facts(self, results, step):
@@ -376,8 +398,12 @@ class EvidenceCollector:
         completed = ((history.is_done() is True and history.is_successful() is True)
                      if source_completed is None else source_completed)
         if completed and final_output is not None:
+            final_output = self.attach_host_reads(final_output)
+            attach_prior_read_bindings(self, history)
             assembly, assembly_gaps = build_verified_output_assembly(
-                self.observations, final_output, self.output_schema, self.put_evidence)
+                self.observations, final_output, self.output_schema, self.put_evidence,
+                input_value=self.input_value, input_schema=self.input_schema,
+                requirement_text=self.requirement_text, result_spec=self.result_spec)
             capture_gaps.extend(assembly_gaps)
             destination = self.done_post_observation(history)
             if assembly is not None and destination is not None:
@@ -399,7 +425,11 @@ class EvidenceCollector:
                    put_evidence=self.put_evidence, completed=source_completed,
                    dispatch_audit=self.dispatch_audit)
         trace, gaps = normalize_history(imported, self.registry)
-        return trace, sorted([*gaps, *capture_gaps], key=lambda item: item.id)
+        return trace, sorted([*gaps, *capture_gaps], key=lambda item: item.id), final_output
+
+    def attach_host_reads(self, final_output):
+        """Attach one or more mappings emitted by a uniquely proven same-page read."""
+        return attach_host_read_facts(self, final_output)
 
     def align_pending(self, history):
         """Bind one callback to its native history position before publishing its facts."""
@@ -452,46 +482,3 @@ class EvidenceCollector:
             reference = self.links.get((step, 0, 'post'))
             return next((observation for observation in self.observations if observation.id == reference), None)
         return None
-
-
-def extraction_value(result, arguments, url):
-    """Decode only the pinned upstream result envelope; content still needs independent field proof."""
-    metadata = result.metadata or {}
-    if metadata.get('structured_extraction') is True:
-        extracted = ExtractionResult.model_validate(metadata.get('extraction_result'))
-        if extracted.is_partial or extracted.source_url != url:
-            raise ValueError('extraction_source_incomplete')
-        return extracted.data
-    content = result.extracted_content or ''
-    prefix = f"<url>\n{url}\n</url>\n<query>\n{arguments.get('query', '')}\n</query>\n<result>\n"
-    suffix = '\n</result>'
-    if content.startswith(prefix) and content.endswith(suffix):
-        return json.loads(content[len(prefix):-len(suffix)])
-    # Existing normalized pure JSON sources stay readable; unknown wrappers never get searched/trimmed.
-    return json.loads(content)
-
-
-def target_value(action_ref, target_ref, value, sanitizer):
-    safe = sanitizer('value', value) if sanitizer is not None and isinstance(value, str) else value
-    return {'actionRef': action_ref, 'targetRef': target_ref, 'value': safe}
-
-
-def replace_action_identity(value, previous, current):
-    if isinstance(value, dict):
-        return {key: (current if key in ('actionRef', 'nodeId') and item == previous
-                      else replace_action_identity(item, previous, current))
-                for key, item in value.items()}
-    if isinstance(value, list):
-        return [replace_action_identity(item, previous, current) for item in value]
-    return value
-
-
-def schema_reachable(candidate, root):
-    if digest(candidate) == digest(root):
-        return True
-    if not isinstance(root, dict):
-        return False
-    children = list((root.get('properties') or {}).values()) if isinstance(root.get('properties'), dict) else []
-    if isinstance(root.get('items'), dict):
-        children.append(root['items'])
-    return any(schema_reachable(candidate, child) for child in children if isinstance(child, dict))

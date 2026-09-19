@@ -46,7 +46,7 @@ class ActionRegistry(Contract):
 # 未评估动作仍由公开 schema 识别并完整保留；默认按最高效果处理，不能排除。
 EFFECTS = {
     'done': 'none', 'wait': 'none', 'screenshot': 'read', 'find_elements': 'read',
-    'search_page': 'read', 'extract': 'read', 'bat_read_fields': 'read', 'bat_wait_for': 'read',
+    'search_page': 'read', 'extract': 'read', 'bat_inspect_dom': 'read', 'bat_read_fields': 'read', 'bat_wait_for': 'read',
     'bat_summarize': 'read',
     'dropdown_options': 'read',
     'navigate': 'navigation', 'go_back': 'navigation', 'switch': 'navigation', 'close': 'navigation',

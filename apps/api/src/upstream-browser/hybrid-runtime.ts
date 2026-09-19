@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { z } from "zod"
+import type { JsonValue, TaskDataContract } from "@browser-capture/contracts"
 import type { TaskChainCapabilities } from "@browser-capture/runtime"
 import { RunnerProcess } from "./service.js"
 import { verifyForkSource } from "../../../../vendor/workflow-use/verify-source.mjs"
@@ -8,6 +9,11 @@ import { hybridBrowserStateSchema, hybridCommandSchema, hybridExecuteRequestSche
 import { HybridRuntimeScopeState, RUNTIME_SCOPE_FROM, withinHybridSignal } from "./hybrid-runtime-scope.js"
 
 const TARGET_ORDINAL_INPUT = "targetOrdinal"
+
+/** WHY：Browser-Use 动作回执是供应商诊断，不得冒充声明为 unit 的链路节点业务输出。 */
+export function hybridCapabilityOutput(contract: TaskDataContract, output: JsonValue): JsonValue {
+  return contract.schema.type === "null" ? null : output
+}
 
 export function materializeHybridWorkflowCommand(config: Record<string, unknown>, rawInput: Record<string, unknown>) {
   if (Object.hasOwn(config, RUNTIME_SCOPE_FROM)) throw new Error("hybrid_runtime_scope_unresolved")
@@ -32,7 +38,7 @@ export function materializeHybridWorkflowCommand(config: Record<string, unknown>
   } else if (marker !== undefined || hasReserved) {
     throw new Error("hybrid_reserved_target_input")
   }
-  const { targetOrdinalInput: _marker, ...commandConfig } = config
+  const { targetOrdinalInput: _marker, missingTargetOutcome: _missingTargetOutcome, ...commandConfig } = config
   return { ...commandConfig, target, args: input }
 }
 
@@ -52,9 +58,11 @@ export async function withHybridCapabilities<T>(input: { root: string; signal: A
       hybridObserveRequestSchema.parse({ id: randomUUID(), type: "hybrid_observe" })))
     return await work({ browserCommandCount: () => commands,
       capability: async (invocation) => {
+        let missingTargetOutcome = false
         try {
           return await withinHybridSignal(invocation.signal, owner, async () => {
             const config = z.record(z.string(), z.unknown()).parse(invocation.config)
+            missingTargetOutcome = config.missingTargetOutcome === true
             const scoped = await runtimeScope.commandConfig(invocation.node.capability.name, config, async () => {
               commands++
               return observe()
@@ -69,10 +77,15 @@ export async function withHybridCapabilities<T>(input: { root: string; signal: A
               id: randomUUID(), type: "hybrid_execute", command })))
             invocation.signal.throwIfAborted()
             runtimeScope.succeed(invocation.node.id, result.browser)
-            return { outcome: "success", output: result.output, browser: result.browser }
+            return { outcome: "success", output: hybridCapabilityOutput(invocation.node.outputContract, result.output),
+              browser: result.browser }
           })
         } catch (error) {
           runtimeScope.clear()
+          if (missingTargetOutcome && error instanceof Error
+            && error.message === "hybrid_runner_failed:RuntimeError:ordinary_target_missing") {
+            return { outcome: "missing", output: null, reason: "ordinary_target_missing" }
+          }
           throw error
         }
       },

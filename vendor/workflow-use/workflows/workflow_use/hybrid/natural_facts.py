@@ -5,10 +5,10 @@ from typing import Literal
 from pydantic import Field, JsonValue
 
 from .evidence import Contract, digest
-from .field_read_params import FieldReadSelector
+from .field_read_params import FieldReadRecordSelection
 
 NATIVE_PARAMETERS = {
-    'bat_read_fields': frozenset({'outputPath', 'container', 'fields'}),
+    'bat_read_fields': frozenset({'outputPath', 'records'}),
     'bat_scroll_to': frozenset({'selector'}),
     'bat_wait_for': frozenset({'selector'}),
     'navigate': frozenset({'new_tab'}),
@@ -40,8 +40,9 @@ class NaturalBindingFact(Contract):
     actionRef: str = Field(pattern=r'^a-\d{4,}$')
     argumentPath: str = Field(min_length=1)
     binding: dict[str, JsonValue]
-    provenance: Literal['runtime_input', 'native_parameter', 'task_literal']
+    provenance: Literal['runtime_input', 'native_parameter', 'task_literal', 'node_output']
     taskQuote: str | None = None
+    sourceReadRef: str | None = None
 
 
 def binding_facts(action_ref, action_name, arguments, input_value, input_schema, requirement_text):
@@ -86,13 +87,11 @@ def is_native_parameter(action_name, argument_path, value):
 def is_field_read_parameter(argument_path, value):
     if argument_path == 'outputPath':
         return isinstance(value, list) and all(isinstance(item, str) or type(item) is int for item in value)
-    if argument_path == 'container':
-        return isinstance(value, str) and 0 < len(value) <= 2000
-    if not isinstance(value, dict) or not 0 < len(value) <= 100 or not all(isinstance(key, str) for key in value):
+    if argument_path != 'records' or not isinstance(value, list) or not 0 < len(value) <= 300:
         return False
     try:
-        for field in value.values():
-            FieldReadSelector.model_validate(field)
+        for record in value:
+            FieldReadRecordSelection.model_validate(record)
     except Exception:
         return False
     return True

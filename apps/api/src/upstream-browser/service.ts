@@ -17,6 +17,7 @@ import { runnerAuthorRequestSchema, runnerAuthorResultSchema, runnerCloseRequest
 import { hybridStartRequestSchema, type HybridRunnerRequest } from "./hybrid-protocol.js"
 import { withHybridAuthoring, recompileHybridSource, type HybridAuthoringProgress,
   type HybridAuthorSession } from "./hybrid-exploration.js"
+import { verifyForkSource } from "../../../../vendor/workflow-use/verify-source.mjs"
 
 export type UpstreamAuthorResult = ReturnType<typeof runnerAuthorResultSchema.parse> & { modelCalls: ModelCallReport[] }
 export type UpstreamReplayResult = ReturnType<typeof runnerReplayResultSchema.parse> & { modelCalls: ModelCallReport[] }
@@ -27,6 +28,7 @@ export interface UpstreamBrowserSession {
     outputSchema: ValueSchema; artifactKey: string; onModelCall?(report: ModelCallReport): Promise<void> }): Promise<UpstreamReplayResult>
 }
 export interface UpstreamBrowserRuntime {
+  sourceDigest?(): Promise<string>
   recompile?(input: Omit<Parameters<typeof recompileHybridSource>[0], "root">): ReturnType<typeof recompileHybridSource>
   withSession<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string },
     work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T>
@@ -40,6 +42,8 @@ export interface UpstreamBrowserRuntime {
 /** WHY：Python 只拥有上游 Browser/Agent/Workflow；B-A-T 通过独立 fd3 协议保留取消、审计和产物边界。 */
 export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
   constructor(private readonly options: { root: string; directory: string; subject: ReturnType<AI["forSubject"]> }) {}
+
+  sourceDigest() { return verifyForkSource(this.options.root) }
 
   recompile(input: Omit<Parameters<typeof recompileHybridSource>[0], "root">) {
     return recompileHybridSource({ ...input, root: this.options.root })

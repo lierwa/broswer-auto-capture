@@ -4,7 +4,8 @@ import unittest
 from browser_use.tools.service import Tools
 
 from workflow_use.hybrid.compiler import compile_request
-from workflow_use.hybrid.evidence import EvidenceRef, NormalizedObservation, TraceSource, digest
+from workflow_use.hybrid.evidence import EvidenceRef, NormalizedObservation, ObservationFact, TraceSource, digest
+from workflow_use.hybrid.history import retain_not_dispatched_action_facts
 from workflow_use.hybrid.normalize import HistoryInput, HistoryRecord, ResultEvidence, normalize_history
 from workflow_use.hybrid.registry import ActionRegistry
 from workflow_use.hybrid.request import CompilationRequest
@@ -55,6 +56,23 @@ class CompilerTests(unittest.TestCase):
         self.assertNotIn('fixture.invalid', str(result.segments))
         self.assertNotIn('outputAssembly', result.model_dump(mode='json'))
         self.assertEqual(result.canonicalDigest, compile_request(request, self.registry).canonicalDigest)
+
+    def test_not_dispatched_failure_gets_an_auditable_pre_observation(self):
+        facts = [ObservationFact(id='fact-dispatch', kind='native_action_dispatch', value={
+            'actionRef': 'a-0001'}, sourceRefs=[REF])]
+        state = type('State', (), {'url': 'https://fixture.invalid/issues', 'tabs': [
+            type('Tab', (), {'url': 'https://fixture.invalid/issues', 'target_id': 'tab-1'})(),
+        ]})()
+        observations, links = [], {}
+
+        attached = retain_not_dispatched_action_facts(
+            0, 0, type('Item', (), {'state': state})(), facts, observations, links,
+            lambda _kind, value: EvidenceRef(ref='fixture:observation', digest=digest(value)))
+
+        self.assertTrue(attached)
+        self.assertEqual(links[(0, 0, 'pre')], observations[0].id)
+        self.assertEqual(observations[0].facts, facts)
+        self.assertEqual(observations[0].tabId, 'tab-1')
 
     def test_missing_binding_is_never_replaced_by_sample(self):
         raw = navigation_request(self.registry)

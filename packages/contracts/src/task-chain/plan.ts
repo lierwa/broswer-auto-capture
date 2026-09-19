@@ -3,7 +3,7 @@ import { budgetSchema, contractVersionSchema, entityVersionReferenceSchema, iden
 import { completionConditionSchema, valueBindingSchema, valuePathSchema, type ValueBinding } from "./binding.js"
 import { invocationModeSchema, predicateBindings } from "./node.js"
 import { requirementReferenceSchema } from "./requirement.js"
-import { parseTaskValue, taskDataContractSchema, type TaskDataContract, type ValueSchema } from "./value.js"
+import { parseTaskValue, taskDataContractSchema, valueSchemaSchema, type TaskDataContract, type ValueSchema } from "./value.js"
 
 const taskPlanBatchAggregateSchema = z.object({
   outputPath: valuePathSchema, stableKeyPath: valuePathSchema.optional(),
@@ -14,13 +14,73 @@ const taskPlanInvocationSchema = z.union([invocationModeSchema, z.object({ mode:
   // WHY：同一协议版本的早期 batch 记录没有 aggregates；读取时补空数组以保留导出能力，执行门仍会拒绝复跑。
   maxItems: z.number().int().positive(), aggregates: z.array(taskPlanBatchAggregateSchema).default([]) }).strict()])
 
+export const resultSpecSchema = z.discriminatedUnion("mode", [
+  z.object({ contractVersion: z.literal("bat-result-spec/v1"), mode: z.literal("execution") }).strict(),
+  z.object({
+    contractVersion: z.literal("bat-result-spec/v1"), mode: z.literal("data"), schema: valueSchemaSchema,
+    fields: z.array(z.object({ path: valuePathSchema, description: textSchema, producerRef: keySchema }).strict()).min(1).max(100),
+    derivations: z.array(z.object({ producerRef: keySchema, operation: z.literal("count"),
+      sourceProducerRef: keySchema, sourcePath: valuePathSchema }).strict()).max(100).default([]),
+    edgeCases: z.array(z.object({ description: textSchema, controlRef: keySchema }).strict()).max(20),
+  }).strict().superRefine((spec, context) => {
+    const paths = spec.fields.map((field) => field.path)
+    for (const [index, path] of paths.entries()) {
+      if (schemaAtPath(spec.schema, path) === undefined) {
+        context.addIssue({ code: "custom", path: ["fields", index, "path"], message: "result_spec_path_missing" })
+      }
+      if (paths.some((other, otherIndex) => otherIndex !== index && pathPrefix(path, other))) {
+        context.addIssue({ code: "custom", path: ["fields", index, "path"], message: "result_spec_path_conflict" })
+      }
+    }
+    if (!requiredPathsCovered(spec.schema, paths)) {
+      context.addIssue({ code: "custom", path: ["fields"], message: "result_spec_required_path_missing" })
+    }
+    if (!spec.edgeCases.length) {
+      const optional = spec.fields.findIndex((field) => pathCrossesOptionalProperty(spec.schema, field.path))
+      if (optional >= 0) context.addIssue({ code: "custom", path: ["edgeCases"],
+        message: "result_spec_optional_field_edge_case_required" })
+    }
+    const derived = new Set<string>()
+    for (const [index, derivation] of spec.derivations.entries()) {
+      const targets = spec.fields.filter((field) => field.producerRef === derivation.producerRef)
+      const sources = spec.fields.filter((field) => field.producerRef === derivation.sourceProducerRef
+        && canonical(field.path) === canonical(derivation.sourcePath))
+      const sourceSchema = schemaAtPath(spec.schema, derivation.sourcePath)
+      const targetSchema = targets.length === 1 ? schemaAtPath(spec.schema, targets[0]!.path) : undefined
+      if (derived.has(derivation.producerRef) || derivation.producerRef === derivation.sourceProducerRef
+        || targets.length !== 1 || sources.length !== 1 || sourceSchema?.type !== "array" || targetSchema?.type !== "integer") {
+        context.addIssue({ code: "custom", path: ["derivations", index], message: "result_spec_derivation_invalid" })
+      }
+      derived.add(derivation.producerRef)
+    }
+    for (const [index, derivation] of spec.derivations.entries()) {
+      if (derived.has(derivation.sourceProducerRef)) {
+        context.addIssue({ code: "custom", path: ["derivations", index, "sourceProducerRef"],
+          message: "result_spec_derivation_chain_forbidden" })
+      }
+    }
+  }),
+])
+export type ResultSpec = z.infer<typeof resultSpecSchema>
+
 export const taskPlanStepSchema = z.object({
   id: keySchema, title: textSchema, goal: textSchema, dependsOn: z.array(keySchema),
   inputContract: taskDataContractSchema, outputContract: taskDataContractSchema,
   input: valueBindingSchema, invocation: taskPlanInvocationSchema,
   chain: entityVersionReferenceSchema, budget: budgetSchema,
   completion: z.array(completionConditionSchema).min(1), risks: z.array(textSchema),
-}).strict()
+  // 旧计划允许缺失；新的语义计划 schema 会把它提升为必填，禁止从旧输出合同猜测结果形态。
+  resultSpec: resultSpecSchema.optional(),
+}).strict().superRefine((step, context) => {
+  if (!step.resultSpec) return
+  if (step.resultSpec.mode === "execution" && step.outputContract.schema.type !== "null") {
+    context.addIssue({ code: "custom", path: ["resultSpec"], message: "execution_result_requires_null_output" })
+  }
+  if (step.resultSpec.mode === "data" && (step.outputContract.schema.type === "null"
+    || canonical(step.resultSpec.schema) !== canonical(step.outputContract.schema))) {
+    context.addIssue({ code: "custom", path: ["resultSpec", "schema"], message: "data_result_schema_mismatch" })
+  }
+})
 export const taskPlanSchema = z.object({
   contractVersion: contractVersionSchema, kind: z.literal("plan"),
   id: identitySchema, taskId: taskIdentitySchema, version: z.number().int().positive(),
@@ -169,6 +229,42 @@ function schemaAtPath(root: ValueSchema, path: (string | number)[]) {
     if (schema === undefined) return undefined
   }
   return schema
+}
+
+function pathPrefix(left: (string | number)[], right: (string | number)[]) {
+  return left.length <= right.length && left.every((part, index) => part === right[index])
+}
+
+function pathCrossesOptionalProperty(root: ValueSchema, path: (string | number)[]) {
+  let schema: ValueSchema = root
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      if (schema.type !== "array") return false
+      schema = schema.items; continue
+    }
+    if (schema.type !== "object") return false
+    if (!schema.required.includes(segment)) return true
+    const child = schema.properties[segment]
+    if (!child) return false
+    schema = child
+  }
+  return false
+}
+
+function requiredPathsCovered(schema: ValueSchema, owners: (string | number)[][], path: (string | number)[] = []): boolean {
+  if (owners.some((owner) => pathPrefix(owner, path))) return true
+  if (schema.type !== "object") return false
+  return schema.required.every((name) => {
+    const child = schema.properties[name]
+    return child !== undefined && requiredPathsCovered(child, owners, [...path, name])
+  })
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) =>
+    `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`
+  return JSON.stringify(value)
 }
 
 function schemaAssignable(actual: ValueSchema, expected: ValueSchema): boolean {

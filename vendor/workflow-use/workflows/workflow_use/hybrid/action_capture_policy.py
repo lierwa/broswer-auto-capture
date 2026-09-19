@@ -12,7 +12,6 @@ Product Alignment:
 from dataclasses import dataclass
 from typing import Literal
 
-
 EventExpectation = Literal['none', 'optional', 'required']
 Boundary = Literal['terminal', 'read', 'artifact', 'document', 'tab', 'target', 'scroll']
 
@@ -49,6 +48,7 @@ ACTION_CAPTURE_POLICIES = {
     'extract': ActionCapturePolicy('read'),
     'search_page': ActionCapturePolicy('read'),
     'find_elements': ActionCapturePolicy('read'),
+    'bat_inspect_dom': ActionCapturePolicy('read'),
     'bat_read_fields': ActionCapturePolicy('read'),
     'bat_wait_for': ActionCapturePolicy('read'),
     'bat_summarize': ActionCapturePolicy('read'),

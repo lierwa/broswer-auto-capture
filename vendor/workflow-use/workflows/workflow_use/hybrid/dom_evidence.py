@@ -6,6 +6,7 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import Field, JsonValue, model_serializer
 
 from .evidence import Contract, digest
+from .history_target import HistoryTargetIdentity, capture_history_target
 
 SCHEMA_VERSION = 'bat.dom-structure/v1'
 STRUCTURAL_ATTRIBUTES = frozenset({
@@ -98,6 +99,7 @@ class DomStructureEvidence(Contract):
     actionRef: str = Field(pattern=r'^a-\d{4,}$')
     scope: DomScope
     targetRef: str | None
+    historyTarget: HistoryTargetIdentity | None = None
     nodes: list[DomNodeEvidence]
     queryCandidate: DomQueryCandidate | None
     coverage: DomCoverage
@@ -190,7 +192,13 @@ def capture_selector_structure(summary, action_ref: str, selector_index: int,
     root = ancestors[0]
     scope = scope_from_node(summary, tab_id, target, root, not cycled and not ancestor_boundary)
     query = query_candidate(query_target, scope, target_ref, query_verified)
+    try:
+        history_target = capture_history_target(target)
+    except Exception:
+        history_target = None
     limitations = ['upstream_dom_coverage_not_proven']
+    if history_target is None:
+        limitations.append('history_target_identity_unavailable')
     if query_target is None:
         limitations.append('query_candidate_unavailable')
     if safe_url(getattr(summary, 'url', None)) != getattr(summary, 'url', None):
@@ -210,7 +218,8 @@ def capture_selector_structure(summary, action_ref: str, selector_index: int,
         directChildrenTruncated=target_children.truncated if target_children else False,
         childSets=child_sets, complete=False)
     return DomStructureEvidence(actionRef=action_ref, scope=scope, targetRef=target_ref,
-                                nodes=nodes, queryCandidate=query, coverage=coverage,
+                                historyTarget=history_target, nodes=nodes,
+                                queryCandidate=query, coverage=coverage,
                                 limitations=sorted(set(limitations)))
 
 
@@ -226,7 +235,8 @@ def attach_query_candidate(evidence, target, verified):
 
 def empty_structure(action_ref, summary, tab_id, selector_index, limitation):
     return DomStructureEvidence(actionRef=action_ref,
-        scope=scope_from_summary(summary, tab_id), targetRef=None, nodes=[], queryCandidate=None,
+        scope=scope_from_summary(summary, tab_id), targetRef=None, historyTarget=None,
+        nodes=[], queryCandidate=None,
         coverage=DomCoverage(source='callback_selector_map', selectorIndex=selector_index,
             ancestorsCaptured=0, ancestorsTruncated=False, directChildrenTotal=None,
             directChildrenCaptured=0, directChildrenTruncated=False, childSets=[], complete=False),

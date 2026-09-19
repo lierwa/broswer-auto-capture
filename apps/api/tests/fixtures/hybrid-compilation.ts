@@ -23,6 +23,10 @@ export function hybridPlan(raw: ReturnType<typeof hybridFixture>): TaskPlan {
   plan.outputContract = { id: schema.type === "null" ? "unit" : "hybrid-result", version: 1, dialect: "bat-value-schema/v1", schema }
   plan.steps[0]!.inputContract = plan.inputContract
   plan.steps[0]!.outputContract = plan.outputContract
+  plan.steps[0]!.resultSpec = schema.type === "null"
+    ? { contractVersion: "bat-result-spec/v1", mode: "execution" }
+    : { contractVersion: "bat-result-spec/v1", mode: "data", schema,
+      fields: [{ path: [], description: "返回当前步骤的完整业务结果", producerRef: "perform" }], derivations: [], edgeCases: [] }
   plan.steps[0]!.completion = [{ id: "result", description: "动作完成", predicate: schema.type === "null" ? {
     operator: "equals", left: { source: "node", nodeId: "perform", path: [] }, right: { source: "constant", value: null } }
     : { operator: "exists", value: { source: "node", nodeId: "perform", path: [] } } }]

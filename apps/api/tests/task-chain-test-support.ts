@@ -29,6 +29,8 @@ export function planCandidate() {
   return { summary: "执行一个可复用确认步骤", inputContract: openContract,
     outputContract: { ...openContract, id: "task-output" }, steps: [{ id: "perform", title: "完成确认", goal: "返回可观察结果",
     dependsOn: [], inputContract: openContract, outputContract: { ...openContract, id: "task-output" }, input,
+    resultSpec: { contractVersion: "bat-result-spec/v1" as const, mode: "data" as const,
+      schema: openContract.schema, fields: [{ path: [], description: "返回确认结果", producerRef: "perform" }], edgeCases: [] },
     invocation: { mode: "once" as const }, completion: [completion], risks: ["需要人工确认"] }],
     output: completion.predicate.value, completion: [completion], authorizationScope: "仅限本次已确认任务" }
 }
@@ -45,6 +47,8 @@ export function historyPlanCandidate() {
   return { summary: "读取目标页标题", inputContract, outputContract, steps: [{ id: "perform", title: "读取标题",
     goal: "打开输入中的目标页并返回页面标题", dependsOn: [], inputContract, outputContract,
     input: { source: "input" as const, path: [] }, invocation: { mode: "once" as const },
+    resultSpec: { contractVersion: "bat-result-spec/v1" as const, mode: "data" as const,
+      schema: outputContract.schema, fields: [{ path: [], description: "返回页面标题", producerRef: "perform" }], edgeCases: [] },
     completion: [completion], risks: [] }], output: { source: "node" as const, nodeId: "perform", path: [] },
     completion: [completion], authorizationScope: "仅访问输入中的公开页面" }
 }
@@ -103,9 +107,14 @@ function twoStepPlanCandidate() {
   return { summary: "发现集合后逐项读取", inputContract: openContract,
     outputContract: taskOutputContract, steps: [
       { id: "discover", title: "发现输入", goal: "得到待处理集合", dependsOn: [], inputContract: openContract,
-        outputContract: collectionContract, input, invocation: { mode: "once" as const }, completion: [discoverDone], risks: [] },
+        outputContract: collectionContract, input, invocation: { mode: "once" as const },
+        resultSpec: { contractVersion: "bat-result-spec/v1" as const, mode: "data" as const,
+          schema: collectionContract.schema, fields: [{ path: [], description: "返回候选集合", producerRef: "discover" }], edgeCases: [] },
+        completion: [discoverDone], risks: [] },
       { id: "detail", title: "逐项处理", goal: "处理集合中的每一项", dependsOn: ["discover"], inputContract: itemContract,
         outputContract: detailContract, input: { source: "variable" as const, name: "item", path: [] },
+        resultSpec: { contractVersion: "bat-result-spec/v1" as const, mode: "data" as const,
+          schema: detailContract.schema, fields: [{ path: [], description: "返回单项详情", producerRef: "detail" }], edgeCases: [] },
     invocation: { mode: "each" as const, collection: { source: "node" as const, nodeId: "discover", path: [] },
           itemVariable: "item", stableKeyPath: ["key"], maxItems: 2, onItemFailure: "stop" as const }, completion: [detailDone], risks: [] },
     ], output: { source: "node" as const, nodeId: "detail", path: [] }, completion: [detailDone],

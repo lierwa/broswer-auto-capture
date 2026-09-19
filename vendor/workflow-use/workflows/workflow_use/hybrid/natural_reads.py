@@ -4,7 +4,7 @@ from jsonschema import Draft202012Validator
 from pydantic import Field, JsonValue, model_validator
 
 from .evidence import Contract, EvidenceRef, digest, gap
-from .field_read_params import FieldReadToolParams, expand_field_read_params
+from .field_read_params import FieldReadMapping, FieldReadToolParams, revalidate_field_read_mapping
 from .read import ReadSpec, read_fields
 from .targets import TargetResolver
 
@@ -12,12 +12,15 @@ from .targets import TargetResolver
 class NaturalReadProposal(Contract):
     specification: ReadSpec
     outputPath: list[str | int]
-    readPath: list[str]
+    readPath: list[str | int]
     expected: JsonValue
 
     @model_validator(mode='after')
     def supported_read_path(self):
-        if self.readPath not in ([], ['value']):
+        if (len(self.readPath) > 40 or any(
+                not ((isinstance(item, str) and item
+                      and item not in ('__proto__', 'constructor', 'prototype'))
+                     or (type(item) is int and item >= 0)) for item in self.readPath)):
             raise ValueError('natural_read_path_unsupported')
         return self
 
@@ -50,15 +53,14 @@ def validate_proposal(proposal, output_schema, proven_paths):
     if any(paths_conflict(proposal.outputPath, path) for path in proven_paths):
         raise NaturalReadFailure('natural_read_output_path_conflict')
     specification = proposal.specification
-    if proposal.readPath == []:
-        if specification.outputSchema != target or not deterministic_read_schema(specification.outputSchema):
-            raise NaturalReadFailure('natural_read_schema_mismatch')
-    else:
-        wrapper = {'type': 'object', 'properties': {'value': target},
-                   'required': ['value'], 'additionalProperties': False}
-        if (specification.outputSchema != wrapper or set(specification.fields) != {'value'}
-                or not deterministic_read_schema(wrapper) or not deterministic_field_schema(target)):
-            raise NaturalReadFailure('natural_read_value_wrapper_required')
+    if not deterministic_read_schema(specification.outputSchema):
+        raise NaturalReadFailure('natural_read_schema_mismatch')
+    try:
+        source = schema_at_path(specification.outputSchema, proposal.readPath)
+    except Exception as error:
+        raise NaturalReadFailure('natural_read_path_unsupported') from error
+    if source != target or (proposal.readPath and not deterministic_field_schema(target)):
+        raise NaturalReadFailure('natural_read_schema_mismatch')
     validate_read_field_mapping(specification)
     return target
 
@@ -124,9 +126,12 @@ def paths_conflict(left, right):
 
 def value_at_path(value, path):
     for item in path:
-        if not isinstance(value, dict) or item not in value:
+        if isinstance(value, dict) and isinstance(item, str) and item in value:
+            value = value[item]
+        elif isinstance(value, list) and type(item) is int and 0 <= item < len(value):
+            value = value[item]
+        else:
             raise NaturalReadFailure('natural_read_value_path_missing')
-        value = value[item]
     return value
 
 
@@ -193,21 +198,26 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
     if not facts:
         return None, None, [gap('missing_effect_proof', [action.id],
                               'natural_field_read_evidence_missing', 'collect_evidence')]
-    if len(facts) != 1:
-        return None, None, [gap('invalid_source', [action.id],
-                              'multiple_verified_natural_reads', 'reject_trace')]
     if not isinstance(output_schema, dict) or digest(output_schema) != request.plan.outputSchemaDigest:
         return None, None, [gap('missing_effect_proof', [action.id],
                               'natural_output_schema_required', 'collect_evidence')]
-    fact = facts[0]
     try:
-        value = VerifiedNaturalRead.model_validate(fact.value)
-        validate_compiled_read(value, output_schema, action, pre, post, prior_paths)
+        values = [VerifiedNaturalRead.model_validate(fact.value) for fact in facts]
+        shared = {(digest(value.specification), digest(value.output), value.resultDigest,
+                   value.urlDigest, value.targetId, value.containerIdsDigest, value.stable)
+                  for value in values}
+        if len(shared) != 1:
+            raise ValueError('multiple_verified_natural_reads_disagree')
+        paths = []
+        for value in values:
+            validate_compiled_read(value, output_schema, action, pre, post, [*prior_paths, *paths])
+            paths.append(value.outputPath)
     except Exception:
         return None, None, [gap('invalid_source', [action.id],
                               'verified_natural_read_invalid', 'reject_trace')]
-    refs = unique_evidence([action.resultRef, *pre.sourceRefs, *post.sourceRefs, *fact.sourceRefs])
-    specification = value.specification.model_dump(mode='json')
+    refs = unique_evidence([action.resultRef, *pre.sourceRefs, *post.sourceRefs,
+                            *(reference for fact in facts for reference in fact.sourceRefs)])
+    specification = values[0].specification.model_dump(mode='json')
     segment = {'id': 's-' + action.id, 'kind': 'deterministic',
         'operation': {'name': 'browser.read-fields', 'version': 2, 'specification': specification},
         'target': {'strategy': 'css', 'value': value.specification.container,
@@ -216,9 +226,9 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
         'expectedEffect': {'kind': 'read'},
         'postconditions': [{'kind': 'output_schema',
                             'schemaDigest': digest(value.specification.outputSchema)}],
-        'outputs': [{'schema': value.specification.outputSchema, 'sourceRef': fact.id}],
+        'outputs': [{'schema': values[0].specification.outputSchema, 'sourceRef': fact.id} for fact in facts],
         'proofRefs': [ref.model_dump(mode='json') for ref in refs]}
-    return segment, value.outputPath, []
+    return segment, paths, []
 
 
 def validate_compiled_read(value, output_schema, action, pre, post, prior_paths):
@@ -246,7 +256,9 @@ def validate_action_read_mapping(value, output_schema, action):
     try:
         params = FieldReadToolParams.model_validate(action.args)
         target = schema_at_path(output_schema, params.outputPath)
-        expected = expand_field_read_params(params, target)
+        mapping = FieldReadMapping(specification=value.specification, outputPath=value.outputPath,
+                                   readPath=value.readPath)
+        expected = revalidate_field_read_mapping(params, target, mapping)
     except Exception as error:
         raise ValueError('verified_read_mapping_invalid') from error
     if (expected.outputPath != value.outputPath or expected.readPath != value.readPath

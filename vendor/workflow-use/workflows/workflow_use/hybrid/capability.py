@@ -1,7 +1,10 @@
 """Single-action adapter over browser-use Tools and workflow-use target matching. No loop or model port."""
-from browser_use.tools.service import Tools
+import asyncio
 
-from .postconditions import capture_check_baselines, declared_checks, settle_policy, verify_declared
+from browser_use.tools.service import Tools
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, stop_before_delay, wait_fixed
+
+from .postconditions import SettlePolicy, capture_check_baselines, declared_checks, settle_policy, verify_declared
 from .registry import ActionRegistry
 from .target_scroll import TargetScrollParams, register_target_scroll_tool
 from .targets import TARGET_ORDINAL_ARGUMENT, TargetResolver, materialize_target
@@ -11,10 +14,18 @@ from .visible_wait import VisibleWaitParams, register_visible_wait_tool
 ORDINARY_ACTIONS = frozenset({'navigate', 'go_back', 'wait', 'click', 'input', 'scroll', 'send_keys',
                               'dropdown_options', 'select_dropdown', 'bat_scroll_to', 'bat_wait_for'})
 TARGET_ACTIONS = frozenset({'click', 'input', 'dropdown_options', 'select_dropdown'})
+TARGET_READY_POLICY = SettlePolicy(maxMs=30000, maxAttempts=100, intervalMs=300)
+RETRYABLE_TARGET_ERRORS = frozenset({
+    'missing_history_target', 'missing_item_target', 'missing_stable_target', 'missing_structure_container',
+    'page_document_unavailable', 'page_unavailable', 'target_position_unavailable', 'target_scope_mismatch',
+})
+MISSING_TARGET_ERRORS = frozenset({
+    'missing_history_target', 'missing_item_target', 'missing_stable_target', 'missing_structure_container',
+})
 
 
 class OrdinaryCapability:
-    def __init__(self, browser, tools=None):
+    def __init__(self, browser, tools=None, *, target_settle=None):
         self.browser = browser
         self.tools = tools if tools is not None else Tools()
         if tools is None:
@@ -22,6 +33,7 @@ class OrdinaryCapability:
             register_visible_wait_tool(self.tools)
         self.registry = ActionRegistry.from_tools(self.tools)
         self.targets = TargetResolver(browser)
+        self.target_settle = SettlePolicy.model_validate(target_settle or TARGET_READY_POLICY)
 
     async def execute_checked(self, action_name, args, target, postconditions):
         checks = declared_checks(postconditions, args, target)
@@ -84,4 +96,32 @@ class OrdinaryCapability:
     async def resolve_target(self, target, mapping=None):
         if mapping is not None:
             raise ValueError('external_selector_map_forbidden')
-        return await self.targets.resolve_action_index(target)
+        policy = self.target_settle
+        last_error = None
+        async def resolve_once():
+            nonlocal last_error
+            try:
+                return await self.targets.resolve_action_index(target)
+            except Exception as error:
+                last_error = error
+                raise
+        try:
+            async with asyncio.timeout(policy.maxMs / 1000):
+                # Leave one interval before the hard timeout so the final concrete resolver error survives.
+                retry_window = max((policy.maxMs - policy.intervalMs) / 1000, 0.001)
+                return await AsyncRetrying(
+                    stop=stop_after_attempt(policy.maxAttempts) | stop_before_delay(retry_window),
+                    wait=wait_fixed(policy.intervalMs / 1000), retry=retry_if_exception(retryable_target_error),
+                    reraise=True)(resolve_once)
+        except TimeoutError:
+            if isinstance(last_error, ValueError) and str(last_error) in MISSING_TARGET_ERRORS:
+                raise RuntimeError('ordinary_target_missing') from last_error
+            raise
+        except ValueError as error:
+            if str(error) in MISSING_TARGET_ERRORS:
+                raise RuntimeError('ordinary_target_missing') from error
+            raise
+
+
+def retryable_target_error(error):
+    return isinstance(error, ValueError) and str(error) in RETRYABLE_TARGET_ERRORS

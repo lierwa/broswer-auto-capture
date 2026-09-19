@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { jsonValueSchema } from "@browser-capture/contracts"
+import { jsonValueSchema, resultSpecSchema } from "@browser-capture/contracts"
 import { hybridTargetSchema, readSpecificationSchema, targetScopeSchema } from "./hybrid-schema.js"
 import { valueSchemaSchema } from "@browser-capture/contracts"
 import { hybridCompilerResponseSchema } from "./hybrid-schema.js"
@@ -32,7 +32,8 @@ export const hybridCompileRequestSchema = z.object({ id, type: z.literal("hybrid
   outputSchema: valueSchemaSchema, verifiedChildren: z.array(hybridVerifiedChildSchema).max(100).default([]) }).strict()
 
 export const hybridAuthorSourceSchema = z.object({ task: z.string().min(1).max(100000), input: jsonValueSchema,
-  inputSchema: valueSchemaSchema, outputSchema: valueSchemaSchema, requirementId: z.string(), requirementVersion: z.number().int().positive(),
+  inputSchema: valueSchemaSchema, outputSchema: valueSchemaSchema, resultSpec: resultSpecSchema,
+  requirementId: z.string(), requirementVersion: z.number().int().positive(),
   planId: z.string(), planVersion: z.number().int().positive(), stepId: z.string(), callMode: z.enum(["once", "each", "batch"]),
   requirementText: z.string().min(1).max(100000), requirementDigest: hash, planDigest: hash,
   maxSteps: z.number().int().min(1).max(100),

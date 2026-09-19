@@ -10,13 +10,14 @@
 
 | 模块 | 交付结果 | 依赖 | 验收状态 |
 | --- | --- | --- | --- |
-| [A 动作记录](replay-repair/A_ACTION_CONTEXT.md) | 可还原的动作参数、真实命中上下文和动作结果 | 原生 Browser/Tools | 受控正式入口通过；实际页受 provider 传输阻塞 |
-| [B 定位与读取](replay-repair/B_DOM_TARGET_READ.md) | 可重新解析的目标与有来源的字段数据 | 原生 DOM 查询；A 的目标上下文 | 待验收 |
+| [A 动作记录](replay-repair/A_ACTION_CONTEXT.md) | 可还原的动作参数、真实命中上下文和动作结果 | 原生 Browser/Tools | 已通过 |
+| [B 定位与读取](replay-repair/B_DOM_TARGET_READ.md) | 可重新解析的目标与有来源的字段数据 | 原生 DOM 查询；A 的目标上下文 | 当前阶段；内部 P1–P6 和真实 B E1–E4 待完成 |
 | [C 交互执行](replay-repair/C_INTERACTION_ORDER.md) | 滚动、操作、异步等待、读取按条件顺序衔接 | B 的目标/读取接口 | 待验收 |
 | [D b-u 节点](replay-repair/D_EXPLICIT_BU_NODE.md) | 在当前浏览器中完成指定局部任务的显式 LLM 节点 | 原生 Agent、模型桥、现有 llm 节点 | 待实现及验收 |
 | [组合验收](replay-repair/E_INTEGRATION_ACCEPTANCE.md) | 保存加载、同链换输入、弹窗差异及完整业务验证 | A–D | 待验收 |
 
-从 A 开始。每个模块交付正式入口可调用的版本，完成独立验收后再组合。D 的会话复用接口可提前核验。每次实施只修改当前模块所需文件及直接消费边界。
+唯一主线仍是 A → B → C → D → 组合验收。当前位于 B；[ResultSpec / ResultBinding 开发计划](RESULT_SPEC_BINDING_IMPLEMENTATION.md)
+中的 P1–P6 只是 B 的内部开发包。ConsumerReadiness 的提前实现只算 B 所需的 C 共享基础，不替代 C 的完整独立验收。D 的会话复用接口可提前核验。每次实施只修改当前模块所需文件及直接消费边界。
 
 ## 代码入口
 

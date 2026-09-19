@@ -8,6 +8,7 @@ import {
   createInterviewMainAuthoring,
   interviewCanonicalMessages,
   parseInterviewAuthoringOutput,
+  parseInterviewOutput,
   settleInterviewMessageParts,
 } from "../src/interview/protocol.js"
 
@@ -88,7 +89,7 @@ test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草�
     "# 任务目标", "播放指定内容并定位到目标时间。",
     "# 已知上下文与输入", "目标由用户给出。",
     "# 范围与约束", "不替换为其他内容。",
-    "# 结果与步骤依赖", "先核实内容身份，再播放并定位。",
+    "# 结果与完成", "本任务没有业务数据输出；先核实内容身份，再播放并以播放状态和当前位置核验完成。",
     "# 可观察完成标准", "目标内容正在播放且当前位置为 180 秒。",
     "# 需要现场调查", "核实最新内容身份和访问条件。",
     "# 执行权限与确认点", "本草稿确认不授权浏览器操作。",
@@ -123,6 +124,25 @@ test("实际 composed prompt 只提供一个通用 raw Markdown 草稿示例", (
   assert.equal(generic.draft?.title, "short title")
   assert.equal(generic.draft?.brief, null)
   assert.match(generic.draft?.markdown ?? "", /Complete browser-automation requirement/)
+  assert.match(authored.prompt, /完整对话语境/)
+  assert.match(authored.prompt, /不得按关键词、网站或预设任务类别判断/)
+})
+
+test("动作型与数据型草稿都明确结果形态且继续写 brief=null", () => {
+  const state = structuredClone(emptyInterview)
+  const action = parseInterviewOutput({ assistantText: "已整理播放完成条件。", question: null, draft: {
+    title: "播放任务", brief: null,
+    markdown: "# 任务目标\n播放目标内容。\n\n# 结果与完成\n没有业务数据输出；以目标内容正在播放作为完成事实。",
+  } }, state)
+  const data = parseInterviewOutput({ assistantText: "已整理列表结果。", question: null, draft: {
+    title: "列表任务", brief: null,
+    markdown: "# 任务目标\n读取列表。\n\n# 结果与完成\n返回标题与链接；空列表返回空数组且不进入详情页。",
+  } }, state)
+  assert.equal(action.draft?.brief, null)
+  assert.equal(data.draft?.brief, null)
+  assert.throws(() => parseInterviewOutput({ assistantText: "缺少结果段。", question: null, draft: {
+    title: "无效草稿", brief: null, markdown: "# 任务目标\n播放目标内容。",
+  } }, state), /interview_result_and_completion_required/)
 })
 
 test("访谈注册 choice 与 multi_choice，缺失或未启用 free_form 都不进入业务状态", () => {

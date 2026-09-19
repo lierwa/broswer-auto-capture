@@ -2,6 +2,7 @@
 from .capability import TARGET_ACTIONS
 from .dom_evidence import DomQueryCandidate
 from .evidence import gap
+from .history_target import HistoryTargetIdentity
 
 
 def natural_target(action, pre):
@@ -30,6 +31,18 @@ def natural_target(action, pre):
         return None, [], [gap('unsupported_capability', [action.id],
                               'natural_target_xpath_unavailable', 'add_capability')]
     target_scope = {'url': pre.url, **({'urlDigest': url_digest} if isinstance(url_digest, str) else {})}
+    raw_history = value.get('historyTarget')
+    if raw_history is not None:
+        try:
+            history = HistoryTargetIdentity.model_validate(raw_history)
+        except Exception:
+            return None, [], [gap('invalid_source', [action.id],
+                                  'natural_history_target_invalid', 'reject_trace')]
+        if history.nodeName != nodes[0].get('tag') or history.xPath != nodes[0].get('xpath'):
+            return None, [], [gap('invalid_source', [action.id],
+                                  'natural_history_target_mismatch', 'reject_trace')]
+        return {'strategy': 'history', 'identity': history.model_dump(mode='json'),
+                'scope': target_scope}, fact.sourceRefs, []
     raw_candidate = value.get('queryCandidate')
     if raw_candidate is not None:
         candidate = _validated_candidate(raw_candidate, value, pre)

@@ -30,6 +30,8 @@ class HybridCompilation(Contract):
 
 class NaturalHybridCompilation(HybridCompilation):
     outputAssembly: dict | None
+    resultBinding: dict | None
+    resultBranches: list[dict]
 
 
 def compile_request(request: CompilationRequest | NaturalCompilationRequest, registry: ActionRegistry,

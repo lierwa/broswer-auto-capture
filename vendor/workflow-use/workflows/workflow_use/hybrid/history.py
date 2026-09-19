@@ -48,6 +48,10 @@ def from_agent_history(history: AgentHistoryList, *, source: TraceSource, judged
                                               observations, put_evidence)
                 attached = attach_action_facts(observations, observation_links, step_index,
                                                action_index, facts)
+                if (not attached and value['entered'] is False and value['resultReceived'] is False
+                        and raw_result is not None and getattr(raw_result, 'error', None)):
+                    attached = retain_not_dispatched_action_facts(
+                        step_index, action_index, item, facts, observations, observation_links, put_evidence)
                 if not attached:
                     import_gaps.append(gap('missing_observation', [value['actionRef']],
                                            'native_action_dispatch_observation_unavailable', 'reject_trace'))
@@ -152,6 +156,24 @@ def attach_action_facts(observations, observation_links, step_index, action_inde
 
 def linked_observation(observations, observation_ref):
     return next((item for item in observations if item.id == observation_ref), None)
+
+
+def retain_not_dispatched_action_facts(step_index, action_index, item, facts, observations,
+                                       observation_links, put_evidence):
+    """Retain a proven pre-dispatch failure without pretending that a browser post-state exists."""
+    state = getattr(item, 'state', None)
+    url, tab_id = safe_url(getattr(state, 'url', None)), history_tab_id(state)
+    if not url or not tab_id:
+        return False
+    source = {'stepIndex': step_index, 'actionIndex': action_index,
+              'disposition': 'native_action_not_dispatched', 'url': url, 'tabId': tab_id}
+    reference = put_evidence('observation', source)
+    sequence = len(observations)
+    observation = NormalizedObservation(id=f'o-{sequence + 1:04d}', sequence=sequence, url=url,
+        tabId=tab_id, facts=facts, sourceRefs=[reference], documentDigest=None)
+    observations.append(observation)
+    observation_links[(step_index, action_index, 'pre')] = observation.id
+    return True
 
 
 def retain_auxiliary_results(step_index, item, results, observations, put_evidence):

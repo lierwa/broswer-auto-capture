@@ -77,11 +77,11 @@ function assertRawFact(rawTrace: Record<string, unknown>, fact: NaturalFact, obs
     throw new Error("hybrid_natural_fact_payload_mismatch")
   }
   for (const rawFact of rawFacts) {
-    // WHY：capture.fact 的 url_digest 与 monotonic_ms 基础事实摘要固定覆盖 {kind,value}；其他验证事实仍只覆盖 value。
-    const digestSource = fact.kind === "url_digest" || fact.kind === "monotonic_ms"
-      ? { kind: rawFact.kind, value: rawFact.value } : rawFact.value
-    const digest = createHash("sha256").update(canonicalRaw(digestSource)).digest("hex")
-    if (fact.sourceRefs.some((reference) => reference.digest !== digest)) {
+    // WHY：capture.fact 覆盖 {kind,value}，value_fact 覆盖 value；二者都是显式来源端口，
+    // 必须用原始词法载荷分别重算，不能靠事实名称猜测生产方式。
+    const digests = [rawFact.value, { kind: rawFact.kind, value: rawFact.value }]
+      .map((source) => createHash("sha256").update(canonicalRaw(source)).digest("hex"))
+    if (fact.sourceRefs.some((reference) => !digests.includes(reference.digest))) {
       throw new Error("hybrid_natural_fact_digest_mismatch")
     }
   }

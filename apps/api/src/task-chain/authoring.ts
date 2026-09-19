@@ -1,6 +1,6 @@
 import { z } from "zod"
 import {
-  CONTRACT_VERSION, parseTaskValue, taskPlanExecutionIssues, taskPlanSchema, taskPlanStepSchema,
+  CONTRACT_VERSION, parseTaskValue, resultSpecSchema, taskPlanExecutionIssues, taskPlanSchema, taskPlanStepSchema,
   type AuthoringProgressEvent, type JsonValue, type TaskAuthoringJob, type TaskChain, type TaskDataContract,
   type TaskPlan, type TaskRequirement,
 } from "@browser-capture/contracts"
@@ -18,7 +18,8 @@ import type { TaskContractRepository } from "./repository.js"
 import { planCorrectionPrompt, planPrompt } from "./authoring-prompts.js"
 import { reusableHybridSources } from "./hybrid-source-reuse.js"
 
-const semanticPlanStepSchema = taskPlanStepSchema.omit({ chain: true, budget: true })
+const semanticPlanStepSchema = taskPlanStepSchema.omit({ chain: true, budget: true, resultSpec: true })
+  .extend({ resultSpec: resultSpecSchema })
   .refine((step) => step.invocation.mode !== "batch", "workflow_batch_input_unsupported")
 export const semanticPlanSchema = taskPlanSchema.omit({ contractVersion: true, kind: true, id: true, taskId: true,
   version: true, requirement: true, evidence: true, steps: true, budget: true })
@@ -91,8 +92,10 @@ export class TaskChainAuthoring {
       consumption: { explorationToolCalls: 0, explorationSessions: 1,
         compilationCalls: priorCompilationCalls, providerInvocations: null } }
     job.browserRunId = stableUuid(job.id, "upstream-browser"); this.touch(job)
+    const currentForkSourceDigest = this.upstream.sourceDigest ? await this.upstream.sourceDigest() : undefined
     const reusable = this.upstream.recompile
-      ? reusableHybridSources(this.repository, job, requirement, plan, plannedProgression(plan, input)) : undefined
+      ? reusableHybridSources(this.repository, job, requirement, plan, plannedProgression(plan, input),
+          currentForkSourceDigest) : undefined
     // WHY：历史 v1 来源只读保留；自然任务生产入口不得把旧 authority 请求送入新编译器。
     const reused = reusable?.sources.every((source) => hybridNaturalRequestSchema.safeParse(source.result.request).success)
       ? reusable : undefined
@@ -148,10 +151,12 @@ export class TaskChainAuthoring {
       onProgress: (event) => this.recordProgress(job, event) }, async (session) => {
       try { for (const step of plan.steps) {
         signal.throwIfAborted()
+        if (!step.resultSpec) throw new Error("plan_result_spec_required")
         const stepInput = progression.resolve(step)
         const task = browserUseTask({ requirement, plan, step, resolvedInput: stepInput })
         const result = await session.author({ task, input: stepInput,
           inputSchema: step.inputContract.schema, outputSchema: step.outputContract.schema,
+          resultSpec: step.resultSpec,
           requirementId: requirement.id, requirementVersion: requirement.version, planId: plan.id, planVersion: plan.version,
           requirementText, requirementDigest: digestJson(requirement), planDigest: digestJson(plan),
           stepId: step.id, callMode: step.invocation.mode,
@@ -339,8 +344,9 @@ export function normalizeBoundStepContracts(candidate: PlanCandidate): PlanCandi
   if (output.source === "node" && output.path.length === 0) {
     const step = normalized.steps.find((item) => item.id === output.nodeId)
     // WHY：计划公开输出是最终结果的唯一合同；整值透传时由宿主同步末步 schema，避免模型重复抄写产生漂移。
-    if (step && step.invocation.mode !== "each") step.outputContract = {
-      ...step.outputContract, schema: structuredClone(normalized.outputContract.schema),
+    if (step && step.invocation.mode !== "each") {
+      step.outputContract = { ...step.outputContract, schema: structuredClone(normalized.outputContract.schema) }
+      if (step.resultSpec?.mode === "data") step.resultSpec.schema = structuredClone(normalized.outputContract.schema)
     }
   }
   return normalized

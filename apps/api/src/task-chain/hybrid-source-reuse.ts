@@ -12,7 +12,7 @@ type Progression = { resolve(step: TaskPlan["steps"][number]): JsonValue;
 
 /** WHY：只复用编译阶段失败且完整关闭的同版本来源；部分探索不能在新 Browser 中假装接着执行。 */
 export function reusableHybridSources(repository: TaskContractRepository, job: TaskAuthoringJob,
-  requirement: TaskRequirement, plan: TaskPlan, progression: Progression) {
+  requirement: TaskRequirement, plan: TaskPlan, progression: Progression, currentForkSourceDigest?: string) {
   const previous = repository.jobs(job.taskId).findLast((candidate) => candidate.id !== job.id && candidate.key === job.key
     && candidate.status === "failed" && candidate.authoring?.stage === "compiling")
   if (!previous) return undefined
@@ -27,6 +27,8 @@ export function reusableHybridSources(repository: TaskContractRepository, job: T
       throw new Error("hybrid_source_artifact_digest_mismatch")
     }
     const artifact = readHybridSourceArtifact(row.body), stepInput = progression.resolve(step)
+    // WHY：同一 fork 下旧编译 gap 可以重新判定；fork 变化则可能改过 authoring 工具或采集语义，旧 trace 不再是当前来源。
+    if (currentForkSourceDigest !== undefined && artifact.forkSourceDigest !== currentForkSourceDigest) return undefined
     if (!artifact.closed || !artifact.result.sourceSuccess || !artifact.result.sourceValidated
       || artifact.requirementDigest !== digestJson(requirement) || artifact.planDigest !== digestJson(plan)
       || artifact.stepId !== step.id || artifact.inputDigest !== digestJson(stepInput)) return undefined

@@ -5,11 +5,11 @@ from dataclasses import dataclass
 
 from .dom_evidence import node_xpath
 from .evidence import digest
+from .history_target import HistoryTargetIdentity, match_history_target
 
 TARGET_ORDINAL_ARGUMENT = 'targetOrdinal'
 SCROLL_INTO_VIEW_SCRIPT = "() => this.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'})"
-_PREPARABLE_ERRORS = frozenset({'ambiguous_or_missing_stable_target',
-                                'ambiguous_or_missing_item_target'})
+_PREPARABLE_ERRORS = frozenset({'missing_stable_target', 'missing_item_target'})
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,9 @@ def validate_target(raw, allow_binding=False):
         _nonempty(raw.get('name'), 'target_name_required')
     elif strategy == 'structure':
         _validate_structure(raw)
+    elif strategy == 'history':
+        _exact_keys(raw, {'strategy', 'identity', 'scope'})
+        HistoryTargetIdentity.model_validate(raw.get('identity'))
     else:
         raise ValueError('unsupported_stable_target')
     if raw.get('ordinalBinding') is not None and not allow_binding:
@@ -150,26 +153,35 @@ class TargetResolver:
     async def _resolve_index(self, target, page, mapping, target_id):
         if target['strategy'] == 'title':
             matches = self._title_matches(target, mapping, target_id)
+        elif target['strategy'] == 'history':
+            index, node = match_history_target(target['identity'], mapping, target_id)
+            matches = [ResolvedTarget(None, node, index, _node_value(node, 'target_id'),
+                                      _node_value(node, 'frame_id'))]
         elif target['strategy'] == 'xpath':
             matches = self._xpath_matches(target['value'], mapping, target_id)
         else:
             backend_id = await self._resolve_backend(target, page, mapping, target_id)
             matches = self._mapping_matches(backend_id, mapping, target_id)
-        if len(matches) != 1:
-            raise ValueError('ambiguous_or_missing_stable_target')
+        if not matches:
+            raise ValueError('missing_stable_target')
+        if len(matches) > 1:
+            raise ValueError('ambiguous_stable_target')
         return matches[0].index
 
     async def resolve_element(self, raw):
         target = validate_target(raw)
         if target['strategy'] == 'title':
             raise ValueError('postcondition_locator_required')
-        needs_mapping = target['strategy'] in ('xpath', 'structure')
+        needs_mapping = target['strategy'] in ('xpath', 'structure', 'history')
         page, mapping, target_id = await self._snapshot(target.get('scope'), require_mapping=needs_mapping)
         if target['strategy'] == 'xpath':
             matches = self._xpath_matches(target['value'], mapping, target_id)
             if len(matches) != 1:
                 raise ValueError('ambiguous_or_missing_stable_target')
             return await element_from_backend(page, _backend_id(matches[0].node), target_id)
+        if target['strategy'] == 'history':
+            _index, node = match_history_target(target['identity'], mapping, target_id)
+            return await element_from_backend(page, _backend_id(node), target_id)
         backend_id = await self._resolve_backend(target, page, mapping, target_id)
         return await page.get_element(backend_id)
 
@@ -242,7 +254,9 @@ class TargetResolver:
         strategy = target['strategy']
         if strategy == 'css':
             elements = await page.get_elements_by_css_selector(target['value'])
-            if len(elements) != 1:
+            if not elements:
+                raise ValueError('missing_stable_target')
+            if len(elements) > 1:
                 raise ValueError('ambiguous_stable_target')
             return await _element_backend(elements[0])
         if strategy == 'ordinal':
@@ -255,8 +269,10 @@ class TargetResolver:
         if strategy == 'xpath':
             nodes = await self._main_document_nodes(page, target_id)
             matches = [node for node in nodes if node_xpath(node) == target['value']]
-            if len(matches) != 1:
-                raise ValueError('ambiguous_or_missing_stable_target')
+            if not matches:
+                raise ValueError('missing_stable_target')
+            if len(matches) > 1:
+                raise ValueError('ambiguous_stable_target')
             backend = _backend_id(matches[0])
             if type(backend) is not int:
                 raise ValueError('element_identity_unavailable')
@@ -265,7 +281,9 @@ class TargetResolver:
             return await self._preparable_structure_element(target, page, target_id)
         selector = target['value'] if strategy == 'css' else target['container']
         elements = await page.get_elements_by_css_selector(selector)
-        if strategy == 'css' and len(elements) != 1:
+        if strategy == 'css' and not elements:
+            raise ValueError('missing_stable_target')
+        if strategy == 'css' and len(elements) > 1:
             raise ValueError('ambiguous_stable_target')
         element = elements[0] if strategy == 'css' else _ordinal_element(elements, target['ordinal'])
         nodes = await self._main_document_nodes(page, target_id)
@@ -275,7 +293,9 @@ class TargetResolver:
     async def _preparable_structure_element(self, target, page, target_id):
         container_selector = target['container']['value']
         containers = await page.get_elements_by_css_selector(container_selector)
-        if len(containers) != 1:
+        if not containers:
+            raise ValueError('missing_structure_container')
+        if len(containers) > 1:
             raise ValueError('ambiguous_structure_container')
         item_selector = _descendant_selector(container_selector, target['items']['value'])
         items = await page.get_elements_by_css_selector(item_selector)
@@ -285,7 +305,7 @@ class TargetResolver:
         _unique_backend_node(nodes, container_backend, target_id)
         item_node = _unique_backend_node(nodes, item_backend, target_id)
         if not _ancestor_has(item_node, container_backend, target_id, None):
-            raise ValueError('ambiguous_or_missing_item_target')
+            raise ValueError('missing_item_target')
         if target['withinItem'] is None:
             return item
         selector = _descendant_selector(item_selector, target['withinItem']['value'])
@@ -295,8 +315,10 @@ class TargetResolver:
             node = _unique_backend_node(nodes, backend, target_id)
             if _ancestor_has(node, item_backend, target_id, None):
                 matches.append(element)
-        if len(matches) != 1:
-            raise ValueError('ambiguous_or_missing_item_target')
+        if not matches:
+            raise ValueError('missing_item_target')
+        if len(matches) > 1:
+            raise ValueError('ambiguous_item_target')
         return matches[0]
 
     async def _main_document_nodes(self, page, target_id):
@@ -306,7 +328,9 @@ class TargetResolver:
     async def _structure_backend(self, target, page, mapping, target_id):
         container_selector = target['container']['value']
         containers = await page.get_elements_by_css_selector(container_selector)
-        if len(containers) != 1:
+        if not containers:
+            raise ValueError('missing_structure_container')
+        if len(containers) > 1:
             raise ValueError('ambiguous_structure_container')
         container_backend = await _element_backend(containers[0])
         item_selector = _descendant_selector(container_selector, target['items']['value'])
@@ -320,8 +344,10 @@ class TargetResolver:
             candidates = await self._contained_candidates(elements, mapping, target_id, item_backend)
         candidates = [item for item in candidates if _ancestor_has(
             item.node, container_backend, target_id, item.frame_id)]
-        if len(candidates) != 1:
-            raise ValueError('ambiguous_or_missing_item_target')
+        if not candidates:
+            raise ValueError('missing_item_target')
+        if len(candidates) > 1:
+            raise ValueError('ambiguous_item_target')
         return _backend_id(candidates[0].node)
 
     async def _contained_candidates(self, elements, mapping, target_id, item_backend):

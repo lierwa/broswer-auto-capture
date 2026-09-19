@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass, replace
 
 from .dom_evidence import node_tag, node_value
+from .history_target import HistoryTargetIdentity, capture_history_target, match_history_target
 from .targets import element_from_backend
 
 IDENTITY_ATTRIBUTES = ('type', 'role', 'id', 'name', 'data-testid', 'aria-label', 'title')
@@ -26,6 +27,7 @@ class CapturedTargetIdentity:
     tag: str
     attributes: dict[str, str]
     backend: int
+    history: HistoryTargetIdentity
     selector: str | None = None
 
 
@@ -49,7 +51,8 @@ def capture_target_identity(summary, selector_index, target_id):
         raise ValueError('target_refresh_identity_unavailable')
     backend = _node_backend(node)
     return CapturedTargetIdentity(target_id=target_id, url=url, tag=tag,
-                                  attributes=attributes, backend=backend)
+                                  attributes=attributes, backend=backend,
+                                  history=capture_history_target(node))
 
 
 async def verified_labeled_query(browser, summary, identity):
@@ -74,31 +77,16 @@ async def callback_target_element(browser, summary, selector_index, target_id):
 
 
 async def refreshed_target_element(browser, summary, identity):
-    if not isinstance(identity, CapturedTargetIdentity) or identity.selector is None:
+    if not isinstance(identity, CapturedTargetIdentity):
         raise ValueError('target_refresh_identity_unavailable')
-    page = await _same_page(browser, summary, identity)
+    await _same_page(browser, summary, identity)
     mapping = getattr(getattr(summary, 'dom_state', None), 'selector_map', {}) or {}
-    elements = await page.get_elements_by_css_selector(identity.selector)
-    if len(elements) != 1:
-        raise ValueError('target_refresh_not_unique')
-    backend = await _element_backend(elements[0])
-    matches = [node for node in mapping.values()
-               if _node_backend_or_none(node) == backend and _matches_semantic(node, identity)]
-    if len(matches) != 1:
-        raise ValueError('target_refresh_not_unique')
-    return await _element(browser, matches[0], identity.target_id)
-
-
-def _matches_semantic(node, identity):
     try:
-        _require_main_document(node, identity.target_id)
+        _index, node = match_history_target(
+            identity.history.model_dump(mode='json'), mapping, identity.target_id)
     except ValueError:
-        return False
-    attributes = node_value(node, 'attributes') or {}
-    names = ('aria-label', 'type', 'role')
-    return (node_tag(node) == identity.tag and isinstance(attributes, dict)
-            and all(attributes.get(name) == identity.attributes[name]
-                    for name in names if name in identity.attributes))
+        raise ValueError('target_refresh_not_unique') from None
+    return await _element(browser, node, identity.target_id)
 
 
 def _selector_node(summary, selector_index):

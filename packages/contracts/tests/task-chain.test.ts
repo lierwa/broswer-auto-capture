@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 import { CONTRACT_VERSION, chainNodeSchema, parseTaskValue, requiredStableNodeOutcomes, stableChainNodeSchema,
-  taskChainSchema, taskDataContractSchema, taskPlanExecutionIssues, taskPlanSchema, taskRequirementSchema,
+  resultSpecSchema, taskChainSchema, taskDataContractSchema, taskPlanExecutionIssues, taskPlanSchema, taskPlanStepSchema, taskRequirementSchema,
   valueBindingSchema, type ChainNode, type StableChainNode } from "@browser-capture/contracts"
 import { budget, condition, dataContract, digest, extractionFixture, ids, inputBinding, nodeBase, nodeBinding,
   nullContract, playbackFixture, reference } from "./task-chain-fixtures.js"
@@ -162,6 +162,49 @@ test("组合计划逐项调用同一链路，拒绝未声明依赖和预算扩�
   const legacyBatchPlan = { ...batchPlan, steps: [first, { ...batch, invocation: legacyBatchInvocation }] }
   assert.deepEqual(taskPlanSchema.parse(legacyBatchPlan).steps[1]!.invocation, { ...legacyBatchInvocation, aggregates: [] })
   assert.deepEqual(taskPlanExecutionIssues(legacyBatchPlan), ["plan_batch_aggregate_required"])
+})
+
+test("ResultSpec 兼容旧计划读取并约束 execution/data 输出合同", () => {
+  const base = extractionFixture.plan.steps[0]!
+  assert.equal(taskPlanStepSchema.safeParse(base).success, true)
+  const execution = { contractVersion: "bat-result-spec/v1" as const, mode: "execution" as const }
+  assert.equal(taskPlanStepSchema.safeParse({ ...base, outputContract: nullContract, resultSpec: execution }).success, true)
+  assert.equal(taskPlanStepSchema.safeParse({ ...base, resultSpec: execution }).success, false)
+  const data = { contractVersion: "bat-result-spec/v1" as const, mode: "data" as const,
+    schema: base.outputContract.schema, fields: [{ path: [], description: "返回完整业务结果", producerRef: "business-result" }],
+    edgeCases: [{ description: "空集合不进入详情", controlRef: "has-records" }] }
+  assert.deepEqual(resultSpecSchema.parse(data), { ...data, derivations: [] })
+  assert.equal(taskPlanStepSchema.safeParse({ ...base, resultSpec: data }).success, true)
+  const optional = { ...data, schema: { type: "object" as const, properties: {
+    records: { type: "array" as const, items: { type: "string" as const } },
+    detail: { type: "string" as const },
+  }, required: ["records"], additionalProperties: false }, fields: [
+    { path: ["records"], description: "记录", producerRef: "records" },
+    { path: ["detail"], description: "可选详情", producerRef: "detail" },
+  ], edgeCases: [] }
+  assert.equal(resultSpecSchema.safeParse(optional).success, false)
+  assert.equal(taskPlanStepSchema.safeParse({ ...base, resultSpec: { ...data,
+    schema: { type: "string" }, formula: "records.length" } }).success, false)
+  assert.equal(resultSpecSchema.safeParse({ ...data, fields: [
+    { path: [], description: "整体", producerRef: "whole" },
+    { path: ["title"], description: "标题", producerRef: "title" },
+  ] }).success, false)
+  assert.equal(resultSpecSchema.safeParse({ ...data, fields: [
+    { path: ["title"], description: "只声明标题", producerRef: "title" },
+  ] }).success, false)
+  const counted = { contractVersion: "bat-result-spec/v1" as const, mode: "data" as const,
+    schema: { type: "object" as const, properties: {
+      records: { type: "array" as const, items: { type: "string" as const }, maxItems: 5 },
+      recordCount: { type: "integer" as const, minimum: 0, maximum: 5 },
+    }, required: ["records", "recordCount"], additionalProperties: false },
+    fields: [
+      { path: ["records"], description: "记录", producerRef: "read-records" },
+      { path: ["recordCount"], description: "记录数", producerRef: "count-records" },
+    ], derivations: [{ producerRef: "count-records", operation: "count" as const,
+      sourceProducerRef: "read-records", sourcePath: ["records"] }], edgeCases: [] }
+  assert.equal(resultSpecSchema.safeParse(counted).success, true)
+  assert.equal(resultSpecSchema.safeParse({ ...counted, derivations: [{ ...counted.derivations[0],
+    sourcePath: ["recordCount"] }] }).success, false)
 })
 
 test("包出口只暴露通用 IR，不再保留旧运行合同入口", async () => {

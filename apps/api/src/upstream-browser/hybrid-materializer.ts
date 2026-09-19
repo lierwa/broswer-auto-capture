@@ -5,12 +5,14 @@ import { CONTRACT_VERSION, jsonValueSchema, predicateSchema, requiredNodeOutcome
   valueBindingSchema, valueSchemaSchema, type JsonValue, type StableChainNode, type TaskChain, type TaskDataContract,
   type TaskPlan, type TaskPlanStep, type ValueBinding, type ValueSchema } from "@browser-capture/contracts"
 import { compileTaskChain, digestJson } from "@browser-capture/runtime"
-import { hybridAuthoritySchema, hybridCompilerResponseSchema, hybridNaturalRequestSchema, hybridOutputAssemblySchema,
+import { hybridAuthoritySchema, hybridCompilerResponseSchema, hybridNaturalRequestSchema, hybridResultBranchSchema,
   naturalBindingFactValueSchema, naturalSummarySegmentSchema, readSpecificationSchema,
   type HybridCompilation, type HybridSegment } from "./hybrid-schema.js"
-import { materializeHybridOutput, materializeOutputAssembly } from "./hybrid-output.js"
+import { materializeHybridOutput } from "./hybrid-output.js"
 import { assertHybridChild, type ResolveHybridChild } from "./hybrid-invoke.js"
+import { jsonValueAtPath } from "./hybrid-json-path.js"
 import { naturalPayloadContext, validateHybridRequestSources } from "./hybrid-natural-payload.js"
+import { materializeNaturalResult } from "./hybrid-result.js"
 import { RUNTIME_SCOPE_FROM, classifyRuntimeScopeDecisions } from "./hybrid-runtime-scope.js"
 import { materializeNaturalSummary } from "./hybrid-summary.js"
 
@@ -56,6 +58,11 @@ export function materializeHybridChain(input: { response: unknown; request: unkn
   const runtimeScopes = new Map(context.version === 2 ? classifyRuntimeScopeDecisions({
     compilation, trace: context.request.trace, assertFact: context.payload.assertFact,
   }).flatMap((decision) => decision.runtimeScopeFrom ? [[decision.segmentId, decision.runtimeScopeFrom] as const] : []) : [])
+  const missingTargetProducers = new Set(compilation.compilerVersion === "bat-hybrid/2"
+    ? (compilation.resultBranches ?? []).flatMap((raw) => {
+      const branch = hybridResultBranchSchema.parse(raw)
+      return branch.missingProducerSegmentId ? [branch.missingProducerSegmentId] : []
+    }) : [])
   const summaries = new Map<string, ReturnType<typeof materializeNaturalSummary>>()
   const nodes: StableChainNode[] = compilation.segments.flatMap((segment) => {
     if (context.version === 2 && compilation.compilerVersion === "bat-hybrid/2" && segment.kind === "explicit_llm") {
@@ -65,7 +72,8 @@ export function materializeHybridChain(input: { response: unknown; request: unkn
       summaries.set(segment.id, summary)
       return summary.nodes
     }
-    return [materializeSegment(segment, context, input.model, compilation, input.resolveChild, runtimeScopes.get(segment.id))]
+    return [materializeSegment(segment, context, input.model, compilation, input.resolveChild,
+      runtimeScopes.get(segment.id), missingTargetProducers.has(segment.id))]
   })
   const variables: Record<string, TaskDataContract> = {}
   const edges = structuredClone(compilation.controlGraph.edges)
@@ -80,6 +88,16 @@ export function materializeHybridChain(input: { response: unknown; request: unkn
   const control = authority ? effectiveControl(request) : { selections: [], branches: [], loops: [], invokes: [] }
   const loops = materializeLoops(control, compilation, variables)
   nodes.push(...materializeBranches(control))
+  if (context.version === 2 && compilation.compilerVersion === "bat-hybrid/2") {
+    const resultBranches = (compilation.resultBranches ?? []).map((raw) => {
+      const branch = hybridResultBranchSchema.parse(raw)
+      return { id: branch.id, label: branch.controlRef, kind: "branch" as const, predicate: branch.predicate,
+        writes: [], outputContract: unit, outcomes: [...requiredNodeOutcomes.branch] }
+    })
+    nodes.push(...resultBranches)
+    // WHY：编译证据只声明业务分支 true/false；稳定 TaskChain 仍要求显式失败出口。
+    edges.push(...resultBranches.map((branch) => ({ from: branch.id, outcome: "failed" as const, to: "failed" })))
+  }
   for (const loop of loops) {
     const initializer = initializeCursor(loop)
     for (const edge of edges) if (edge.to === loop.id && !loop.body.exits.includes(edge.from)) edge.to = initializer.id
@@ -104,6 +122,12 @@ export function materializeHybridChain(input: { response: unknown; request: unkn
     for (const edge of edges) if (edge.to === "completed") edge.to = assembly.entry
     if (entry === "completed") entry = assembly.entry
     nodes.push(...assembly.nodes); edges.push(...assembly.edges)
+    for (const alternate of assembly.alternates ?? []) {
+      for (const edge of edges) if (edge.to === alternate.terminalId) edge.to = alternate.entry
+      if (entry === alternate.terminalId) entry = alternate.entry
+      nodes.push(...alternate.nodes); edges.push(...alternate.edges)
+    }
+    if (assembly.alternates?.length) variables.result = contract("result", assembly.schema)
     outputSchema = assembly.schema; output = assembly.binding
   }
   if (!isDeepStrictEqual(outputSchema, input.step.outputContract.schema)) throw new Error("hybrid_final_output_contract_mismatch")
@@ -171,13 +195,14 @@ function sourceContext(compilation: HybridCompilation, request: Record<string, J
     || natural.requirement.version !== plan.requirement.version || natural.requirement.sourceDigest !== plan.requirement.digest
     || natural.plan.inputSchemaDigest !== digestCanonicalJson(jsonValueSchema.parse(step.inputContract.schema))
     || natural.plan.outputSchemaDigest !== digestCanonicalJson(jsonValueSchema.parse(step.outputContract.schema))
+    || !step.resultSpec || !isDeepStrictEqual(natural.plan.resultSpec, step.resultSpec)
     || !isDeepStrictEqual(natural.runtimeInputSchema, step.inputContract.schema)) throw new Error("hybrid_natural_source_mismatch")
   if (!payload) throw new Error("hybrid_natural_source_payloads_missing")
   return { authority: null, context: { version: 2, request: natural, payload } }
 }
 
 function materializeSegment(segment: HybridSegment, context: SourceContext, model: string, compilation: HybridCompilation,
-  resolveChild?: ResolveHybridChild, runtimeScopeFrom?: string): StableChainNode {
+  resolveChild?: ResolveHybridChild, runtimeScopeFrom?: string, missingTargetOutcome = false): StableChainNode {
   const base = { id: segment.id, label: segment.id, writes: [] }
   if (segment.kind === "explicit_llm") return { ...base, kind: "llm", model, instruction: semanticInstruction(segment.purpose),
     input: rewriteBinding(segment.inputBindings[0]!, compilation), timeoutMs: segment.budget.timeoutMs,
@@ -187,6 +212,22 @@ function materializeSegment(segment: HybridSegment, context: SourceContext, mode
     const child = assertHybridChild(operation.chain, operation.budget, segment.outputs[0]?.schema, resolveChild)
     return { ...base, kind: "invoke", chain: operation.chain, input: rewriteBinding(operation.input, compilation),
       iteration: { mode: "once" }, outputContract: contract(segment.id, child.outputSchema), outcomes: [...requiredNodeOutcomes.invoke] }
+  }
+  const operation = segment.operation
+  if (operation.name === "data.transform") {
+    if (context.version !== 2) throw new Error("hybrid_result_derivation_source_invalid")
+    const source = assertResultDataSegment(segment, context, compilation)
+    return { ...base, kind: "capability", capability: { name: "data.transform", version: 1 },
+      input: { source: rewriteBinding(source, compilation) },
+      config: { operation: "count", arguments: { source: "source" } }, effect: "read", timeoutMs: 1000,
+      outputContract: contract(segment.id, segment.outputs[0]!.schema), outcomes: [...requiredNodeOutcomes.capability] }
+  }
+  const anchorNavigation = segment.bindings.filter((decision) =>
+    "derivation" in decision && decision.derivation === "anchor_navigation")
+  if (anchorNavigation.length > 0 && (anchorNavigation.length !== 1 || segment.bindings.length !== 1
+    || operation.name !== "browser.workflow-step" || operation.actionName !== "navigate"
+    || segment.target !== null || segment.expectedEffect.kind !== "navigation")) {
+    throw new Error("hybrid_anchor_navigation_segment_invalid")
   }
   const bindings: Record<string, ValueBinding> = {}
   for (const decision of segment.bindings) {
@@ -203,7 +244,6 @@ function materializeSegment(segment: HybridSegment, context: SourceContext, mode
     if (expression.argumentPath !== decision.argumentPath) throw new Error("hybrid_binding_mismatch")
     bindings[decision.argumentPath] = rewriteBinding(expression.binding, compilation)
   }
-  const operation = segment.operation
   if (context.version === 2 && operation.name === "browser.read-fields") {
     assertNaturalReadSegment(segment, context, compilation)
   }
@@ -221,6 +261,7 @@ function materializeSegment(segment: HybridSegment, context: SourceContext, mode
     ...(readScope ? { scope: readScope } : {}), ...(runtimeScopeFrom ? { [RUNTIME_SCOPE_FROM]: runtimeScopeFrom } : {}) }
     : { actionName: operation.actionName, target, postconditions: segment.postconditions,
       ...(targetOrdinalInput ? { targetOrdinalInput } : {}),
+      ...(missingTargetOutcome ? { missingTargetOutcome: true } : {}),
       ...(runtimeScopeFrom ? { [RUNTIME_SCOPE_FROM]: runtimeScopeFrom } : {}) }
   return { ...base, kind: "capability", capability: { name: operation.name, version: operation.version }, input: bindings,
     config: jsonValueSchema.parse(config), effect: segment.expectedEffect.kind === "external_write" ? "external_write"
@@ -233,7 +274,11 @@ function assertNaturalBinding(raw: unknown, trace: z.infer<typeof hybridNaturalR
   payload: ReturnType<typeof naturalPayloadContext>): ValueBinding {
   const decision = z.object({ actionRef: z.string(), argumentPath: z.string(), sourceRef: z.string(),
     binding: valueBindingSchema, proofRefs: z.array(z.object({ ref: z.string(),
-      digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()) }).passthrough().parse(raw)
+      digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
+    derivation: z.literal("anchor_navigation").optional() }).passthrough().parse(raw)
+  if (decision.derivation === "anchor_navigation") {
+    return assertAnchorNavigationBinding(decision, trace, payload)
+  }
   const matches = trace.observations.flatMap((observation) => observation.facts
     .filter((fact) => fact.id === decision.sourceRef && fact.kind === "natural_binding")
     .map((fact) => ({ observation, fact })))
@@ -246,30 +291,145 @@ function assertNaturalBinding(raw: unknown, trace: z.infer<typeof hybridNaturalR
   }
   const value = naturalBindingFactValueSchema.parse(fact.value)
   if (value.actionRef !== decision.actionRef || value.argumentPath !== decision.argumentPath
-    || !isDeepStrictEqual(value.binding, decision.binding) || !isDeepStrictEqual(fact.sourceRefs, decision.proofRefs)) {
+    || !isDeepStrictEqual(value.binding, decision.binding)) {
     throw new Error("hybrid_natural_binding_mismatch")
   }
+  const proofRefs = value.provenance === "node_output"
+    ? assertNaturalNodeBinding(value, fact.sourceRefs, action, trace, payload)
+    : fact.sourceRefs
+  if (!isDeepStrictEqual(proofRefs, decision.proofRefs)) throw new Error("hybrid_natural_binding_proof_mismatch")
   return value.binding
+}
+
+function assertAnchorNavigationBinding(decision: { actionRef: string; argumentPath: string; sourceRef: string;
+  binding: ValueBinding; proofRefs: Array<{ ref: string; digest: string }> },
+  trace: z.infer<typeof hybridNaturalRequestSchema>["trace"], payload: ReturnType<typeof naturalPayloadContext>) {
+  const action = trace.actions.find((item) => item.id === decision.actionRef)
+  const parsedAction = z.object({ id: z.string(), name: z.string(), preObservationRef: z.string().nullable(),
+    postObservationRef: z.string().nullable() }).passthrough().safeParse(action)
+  if (!parsedAction.success || parsedAction.data.name !== "click" || decision.argumentPath !== "url"
+    || decision.binding.source !== "node") throw new Error("hybrid_anchor_navigation_action_invalid")
+  const nodeBinding = decision.binding
+  const pre = trace.observations.find((item) => item.id === parsedAction.data.preObservationRef)
+  const post = trace.observations.find((item) => item.id === parsedAction.data.postObservationRef)
+  const domMatches = pre?.facts.filter((fact) => fact.id === decision.sourceRef && fact.kind === "dom_structure") ?? []
+  const urlMatches = post?.facts.filter((fact) => fact.kind === "url" && typeof fact.value === "string") ?? []
+  if (domMatches.length !== 1 || urlMatches.length !== 1) throw new Error("hybrid_anchor_navigation_evidence_missing")
+  const dom = domMatches[0]!, url = urlMatches[0]!
+  payload.assertFact(dom, pre!.id); payload.assertFact(url, post!.id)
+  const structure = z.object({ actionRef: z.string(), targetRef: z.string(),
+    historyTarget: z.object({ nodeName: z.string(), xPath: z.string() }).passthrough(),
+    nodes: z.array(z.object({ id: z.string(), tag: z.string(), xpath: z.string().nullable() }).passthrough()),
+  }).passthrough().parse(dom.value)
+  const targetNodes = structure.nodes.filter((item) => item.id === structure.targetRef)
+  if (structure.actionRef !== decision.actionRef || structure.historyTarget.nodeName !== "a"
+    || targetNodes.length !== 1 || targetNodes[0]!.tag !== "a"
+    || targetNodes[0]!.xpath !== structure.historyTarget.xPath) {
+    throw new Error("hybrid_anchor_navigation_target_invalid")
+  }
+  const readMatches = trace.observations.flatMap((observation) => observation.facts
+    .filter((fact) => fact.kind === "verified_natural_read")
+    .map((fact) => ({ observation, fact }))).filter(({ fact }) => {
+      const value = z.object({ actionRef: z.string(), output: jsonValueSchema }).passthrough().safeParse(fact.value)
+      return value.success && value.data.actionRef === nodeBinding.nodeId
+    })
+  if (readMatches.length !== 1) throw new Error("hybrid_anchor_navigation_read_missing")
+  const read = readMatches[0]!, readValue = z.object({ actionRef: z.string(), output: jsonValueSchema }).passthrough().parse(read.fact.value)
+  payload.assertFact(read.fact, read.observation.id)
+  const sourceAction = trace.actions.find((item) => item.id === readValue.actionRef)
+  const sourceIndex = trace.actions.findIndex((item) => item.id === readValue.actionRef)
+  const actionIndex = trace.actions.findIndex((item) => item.id === decision.actionRef)
+  if (!sourceAction || sourceIndex < 0 || sourceIndex >= actionIndex
+    || ![sourceAction.preObservationRef, sourceAction.postObservationRef].includes(read.observation.id)
+    || !isDeepStrictEqual(jsonValueAtPath(readValue.output, nodeBinding.path), url.value)) {
+    throw new Error("hybrid_anchor_navigation_read_mismatch")
+  }
+  const unique = new Map([...dom.sourceRefs, ...url.sourceRefs, ...read.fact.sourceRefs]
+    .map((item) => [`${item.ref}\0${item.digest}`, item]))
+  if (!isDeepStrictEqual([...unique.values()], decision.proofRefs)) {
+    throw new Error("hybrid_anchor_navigation_proof_mismatch")
+  }
+  return decision.binding
+}
+
+function assertResultDataSegment(segment: Extract<HybridSegment, { kind: "deterministic" }>,
+  context: Extract<SourceContext, { version: 2 }>, compilation: HybridCompilation) {
+  const operation = segment.operation, spec = context.request.plan.resultSpec
+  const derivation = spec.mode === "data" ? spec.derivations.find((item) =>
+    `result-${item.producerRef}` === segment.id) : undefined
+  const target = derivation && spec.mode === "data"
+    ? spec.fields.filter((field) => field.producerRef === derivation.producerRef) : []
+  const sourceOwner = derivation && spec.mode === "data" ? spec.fields.filter((field) =>
+    field.producerRef === derivation.sourceProducerRef && isDeepStrictEqual(field.path, derivation.sourcePath)) : []
+  const assembly = compilation.compilerVersion === "bat-hybrid/2" ? compilation.outputAssembly : undefined
+  const sources = derivation && assembly ? assembly.fields.filter((field) =>
+    isDeepStrictEqual(field.path, derivation.sourcePath)) : []
+  const decision = segment.bindings[0], parsed = valueBindingSchema.safeParse(
+    decision && "binding" in decision ? decision.binding : undefined)
+  const targetSchema = target.length === 1 ? schemaAtPath(context.request.plan.resultSpec.mode === "data"
+    ? context.request.plan.resultSpec.schema : { type: "null" }, target[0]!.path) : null
+  if (operation.name !== "data.transform" || operation.dataOperation !== "count" || !derivation
+    || segment.target !== null || segment.bindings.length !== 1 || segment.outputs.length !== 1
+    || segment.expectedEffect.kind !== "read" || target.length !== 1 || sourceOwner.length !== 1 || sources.length !== 1
+    || !parsed.success || decision?.argumentPath !== "source" || decision.kind === "sample_evidence"
+    || !isDeepStrictEqual(parsed.data, sources[0]!.binding) || decision.sourceRef !== assembly?.sourceRef
+    || !isDeepStrictEqual(decision.proofRefs, assembly?.proofRefs) || !isDeepStrictEqual(segment.proofRefs, assembly?.proofRefs)
+    || segment.outputs[0]!.sourceRef !== assembly?.sourceRef || !targetSchema
+    || !isDeepStrictEqual(segment.outputs[0]!.schema, targetSchema)) {
+    throw new Error("hybrid_result_derivation_invalid")
+  }
+  return parsed.data
+}
+
+function assertNaturalNodeBinding(value: z.infer<typeof naturalBindingFactValueSchema>, directRefs: Array<{ ref: string; digest: string }>,
+  action: z.infer<typeof hybridNaturalRequestSchema>["trace"]["actions"][number],
+  trace: z.infer<typeof hybridNaturalRequestSchema>["trace"], payload: ReturnType<typeof naturalPayloadContext>) {
+  if (value.binding.source !== "node" || !value.sourceReadRef) throw new Error("hybrid_natural_node_binding_source_missing")
+  const matches = trace.observations.flatMap((observation) => observation.facts
+    .filter((candidate) => candidate.id === value.sourceReadRef && candidate.kind === "verified_natural_read")
+    .map((candidate) => ({ observation, candidate })))
+  if (matches.length !== 1) throw new Error("hybrid_natural_node_binding_source_missing")
+  const { observation, candidate } = matches[0]!
+  payload.assertFact(candidate, observation.id)
+  const source = z.object({ actionRef: z.string(), output: jsonValueSchema }).passthrough().parse(candidate.value)
+  const sourceAction = trace.actions.find((item) => item.id === source.actionRef)
+  const sourceIndex = trace.actions.findIndex((item) => item.id === source.actionRef)
+  const actionIndex = trace.actions.findIndex((item) => item.id === action.id)
+  const args = z.record(z.string(), jsonValueSchema).parse(action.args)
+  if (source.actionRef !== value.binding.nodeId || !sourceAction || sourceIndex < 0 || sourceIndex >= actionIndex
+    || ![sourceAction.preObservationRef, sourceAction.postObservationRef].includes(observation.id)
+    || !isDeepStrictEqual(jsonValueAtPath(source.output, value.binding.path), args[value.argumentPath])) {
+    throw new Error("hybrid_natural_node_binding_mismatch")
+  }
+  const unique = new Map([...directRefs, ...candidate.sourceRefs].map((item) => [`${item.ref}\0${item.digest}`, item]))
+  return [...unique.values()]
 }
 
 function assertNaturalReadSegment(segment: Extract<HybridSegment, { kind: "deterministic" }>,
   context: Extract<SourceContext, { version: 2 }>, compilation: HybridCompilation) {
   if (segment.operation.name !== "browser.read-fields") throw new Error("hybrid_natural_read_operation_mismatch")
   const coverage = compilation.coverage.filter((item) => item.ownerSegmentId === segment.id && item.disposition === "compiled")
-  if (coverage.length !== 1 || segment.outputs.length !== 1) throw new Error("hybrid_natural_read_coverage_mismatch")
-  const matches = context.request.trace.observations.flatMap((observation) => observation.facts
-    .filter((fact) => fact.id === segment.outputs[0]!.sourceRef && fact.kind === "verified_natural_read")
-    .map((fact) => ({ observation, fact })))
-  if (matches.length !== 1) throw new Error("hybrid_natural_read_fact_missing")
-  const { observation, fact } = matches[0]!, actionRef = coverage[0]!.actionRef
-  const action = context.request.trace.actions.find((item) => item.id === actionRef)
-  if (!action || ![action.preObservationRef, action.postObservationRef].includes(observation.id)) {
-    throw new Error("hybrid_natural_read_observation_mismatch")
+  if (coverage.length !== 1 || segment.outputs.length === 0
+    || new Set(segment.outputs.map((item) => item.sourceRef)).size !== segment.outputs.length) {
+    throw new Error("hybrid_natural_read_coverage_mismatch")
   }
-  context.payload.assertFact(fact, observation.id)
-  const value = z.object({ actionRef: z.string(), specification: readSpecificationSchema }).passthrough().parse(fact.value)
-  if (value.actionRef !== actionRef || !isDeepStrictEqual(value.specification, segment.operation.specification)) {
-    throw new Error("hybrid_natural_read_mismatch")
+  const actionRef = coverage[0]!.actionRef
+  const action = context.request.trace.actions.find((item) => item.id === actionRef)
+  for (const output of segment.outputs) {
+    const matches = context.request.trace.observations.flatMap((observation) => observation.facts
+      .filter((fact) => fact.id === output.sourceRef && fact.kind === "verified_natural_read")
+      .map((fact) => ({ observation, fact })))
+    if (matches.length !== 1) throw new Error("hybrid_natural_read_fact_missing")
+    const { observation, fact } = matches[0]!
+    if (!action || ![action.preObservationRef, action.postObservationRef].includes(observation.id)) {
+      throw new Error("hybrid_natural_read_observation_mismatch")
+    }
+    context.payload.assertFact(fact, observation.id)
+    const value = z.object({ actionRef: z.string(), specification: readSpecificationSchema }).passthrough().parse(fact.value)
+    if (value.actionRef !== actionRef || !isDeepStrictEqual(value.specification, segment.operation.specification)
+      || !isDeepStrictEqual(output.schema, value.specification.outputSchema)) {
+      throw new Error("hybrid_natural_read_mismatch")
+    }
   }
 }
 
@@ -291,79 +451,19 @@ function materializeSelectedOutput(authority: Authority | null, context: SourceC
   if (context.version !== 2 || compilation.compilerVersion !== "bat-hybrid/2") {
     throw new Error("hybrid_natural_source_mismatch")
   }
-  return materializeNaturalOutput(compilation, context, outputSchema)
-}
-
-function materializeNaturalOutput(compilation: Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>,
-  context: Extract<SourceContext, { version: 2 }>, outputSchema: ValueSchema) {
-  const assembly = compilation.outputAssembly
-  if (!assembly) return null
-  assertNaturalOutputAssembly(assembly, compilation, context, outputSchema)
-  return materializeOutputAssembly({ fields: assembly.fields, schema: assembly.schema },
-    (binding) => rewriteBinding(binding, compilation))
-}
-
-function assertNaturalOutputAssembly(raw: unknown, compilation: Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>,
-  context: Extract<SourceContext, { version: 2 }>, outputSchema: ValueSchema) {
-  const assembly = hybridOutputAssemblySchema.parse(raw)
-  if (!isDeepStrictEqual(assembly.schema, outputSchema)) throw new Error("hybrid_natural_output_schema_mismatch")
-  assertDistinctOutputPaths(assembly.fields.map((field) => field.path))
-  const matches = context.request.trace.observations.flatMap((observation) => observation.facts
-    .filter((fact) => fact.id === assembly.sourceRef && fact.kind === "verified_output_assembly")
-    .map((fact) => ({ observation, fact })))
-  if (matches.length !== 1) throw new Error("hybrid_natural_output_fact_missing")
-  const { observation, fact } = matches[0]!, value = hybridOutputAssemblySchema.pick({ fields: true, schema: true }).extend({
-    outputDigest: z.string().regex(/^[a-f0-9]{64}$/) }).strict().parse(fact.value)
-  context.payload.assertFact(fact, observation.id)
-  const finalResult = z.object({ digest: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough()
-    .safeParse(context.request.trace.finalResultRef)
-  if (!finalResult.success || value.outputDigest !== finalResult.data.digest
-    || !isDeepStrictEqual(value.fields, assembly.fields) || !isDeepStrictEqual(value.schema, assembly.schema)
-    || !isDeepStrictEqual(fact.sourceRefs, assembly.proofRefs)) throw new Error("hybrid_natural_output_fact_mismatch")
-  for (const field of assembly.fields) {
-    const sourceSchema = assertNaturalOutputBinding(field.binding, compilation)
-    const targetSchema = schemaAtPath(assembly.schema, field.path)
-    if (!targetSchema) throw new Error("hybrid_natural_output_target_path_missing")
-    if (!isDeepStrictEqual(sourceSchema, targetSchema)) {
-      throw new Error("hybrid_natural_output_field_schema_mismatch")
-    }
-  }
-}
-
-function assertNaturalOutputBinding(binding: ValueBinding,
-  compilation: Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>) {
-  if (binding.source !== "node") throw new Error("hybrid_natural_output_binding_dynamic_required")
-  const row = compilation.coverage.find((item) => item.actionRef === binding.nodeId)
-  if (row?.disposition !== "compiled" || !row.ownerSegmentId) throw new Error("hybrid_natural_output_node_missing")
-  const segment = compilation.segments.find((item) => item.id === row.ownerSegmentId)
-  const schema = segment?.kind === "explicit_llm" ? segment.outputSchema : segment?.outputs[0]?.schema
-  const selected = schema && schemaAtPath(schema, binding.path)
-  if (!selected) throw new Error("hybrid_natural_output_source_path_missing")
-  return selected
+  return materializeNaturalResult({ compilation, request: context.request, payload: context.payload, outputSchema,
+    rewrite: (binding) => rewriteBinding(binding, compilation) })
 }
 
 function schemaAtPath(schema: ValueSchema, path: Array<string | number>): ValueSchema | null {
   let current: ValueSchema | undefined = schema
   for (const part of path) {
     if (typeof part === "string" && current.type === "object") current = current.properties[part]
-    else if (typeof part === "number" && current.type === "array") {
-      if (current.maxItems !== undefined && part >= current.maxItems) return null
-      current = current.items
-    }
+    else if (typeof part === "number" && current.type === "array") current = current.items
     else return null
     if (!current) return null
   }
   return current
-}
-
-function assertDistinctOutputPaths(paths: Array<Array<string | number>>) {
-  const prefix = (left: Array<string | number>, right: Array<string | number>) => left.length <= right.length
-    && left.every((part, index) => part === right[index])
-  for (let left = 0; left < paths.length; left++) for (let right = left + 1; right < paths.length; right++) {
-    if (prefix(paths[left]!, paths[right]!) || prefix(paths[right]!, paths[left]!)) {
-      throw new Error("hybrid_natural_output_path_conflict")
-    }
-  }
 }
 
 function rewriteBinding(raw: unknown, compilation: HybridCompilation): ValueBinding {
@@ -372,6 +472,8 @@ function rewriteBinding(raw: unknown, compilation: HybridCompilation): ValueBind
     path: z.array(z.union([z.string(), z.number().int().nonnegative()])) }).strict().safeParse(raw)
   const binding = clauseBinding.success ? clauseBinding.data : valueBindingSchema.parse(raw)
   if (binding.source !== "node") return binding
+  const direct = compilation.segments.find((segment) => segment.id === binding.nodeId)
+  if (direct?.kind === "deterministic" && direct.operation.name === "data.transform") return binding
   if (binding.nodeId.startsWith("clause:")) {
     const clause = binding.nodeId.slice("clause:".length)
     const matches = compilation.segments.filter((segment) => segment.kind === "deterministic"

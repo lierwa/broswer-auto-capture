@@ -78,22 +78,25 @@ def classify_binding(binding, runtime_schema, prior_actions):
     if binding.get('source') == 'constant' and set(binding) == {'source', 'value'}:
         return 'authorized_constant'
     if binding.get('source') == 'input' and set(binding) == {'source', 'path'}:
-        path, schema = binding['path'], runtime_schema
-        if not isinstance(path, list):
-            return None
-        for item in path:
-            if not isinstance(item, str) or item in ('__proto__', 'constructor', 'prototype'):
-                return None
-            schema = schema.get('properties', {}).get(item, {})
+        schema = _schema_at_path(runtime_schema, binding['path'])
         return 'runtime_input' if schema else None
     if binding.get('source') == 'node' and set(binding) == {'source', 'nodeId', 'path'}:
-        schema = prior_actions.get(binding['nodeId'])
-        path = binding['path']
-        if not schema or not isinstance(path, list):
-            return None
-        for item in path:
-            if not isinstance(item, str) or item in ('__proto__', 'constructor', 'prototype'):
-                return None
-            schema = schema.get('properties', {}).get(item, {})
+        schema = _schema_at_path(prior_actions.get(binding['nodeId']), binding['path'])
         return 'prior_output' if schema else None
     return None
+
+
+def _schema_at_path(schema, path):
+    if not isinstance(schema, dict) or not isinstance(path, list) or len(path) > 40:
+        return None
+    for item in path:
+        if type(item) is int and item >= 0 and schema.get('type') == 'array':
+            schema = schema.get('items')
+        elif (isinstance(item, str) and item not in ('__proto__', 'constructor', 'prototype')
+              and schema.get('type') == 'object'):
+            schema = schema.get('properties', {}).get(item)
+        else:
+            return None
+        if not isinstance(schema, dict):
+            return None
+    return schema

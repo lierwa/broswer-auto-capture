@@ -10,7 +10,6 @@ from .evidence import Contract
 from .field_read_params import (
     FieldReadMapping,
     FieldReadToolParams,
-    expand_field_read_params,
     field_read_contract_fields,
 )
 from .natural_reads import (
@@ -47,17 +46,17 @@ class FieldReadRecords:
         return [record.mapping.outputPath for record in self.records]
 
 
-def register_field_read_tool(tools, *, output_schema):
+def register_field_read_tool(tools, *, output_schema, dom_references):
     Draft202012Validator.check_schema(output_schema)
     successful = FieldReadRecords()
 
     @tools.action(
-        'Read one real final output-contract path from a scoped DOM container, not an arbitrary temporary variable. '
-        'Provide only outputPath, container, and fields; each field contains selector and optional attribute. Object '
+        'Read one real final output-contract path only from opaque dom-* refs returned by bat_inspect_dom on the current '
+        'page. Provide outputPath and DOM-order records containing only fields whose refs point to the real field nodes. '
+        'Do not choose a parent container or provide CSS; B-A-T derives the bounded record scope from those nodes. Object '
         'and object-array targets need every required field; scalar and scalar-array targets use the field name value. '
-        'When the container matches more records than contract maxItems, its DOM-order prefix is selected. Output schema, '
-        'types, cardinality, budgets, and read path are derived. A zero-match collection cannot validate an authoring '
-        'sample and fails even when the output contract allows an empty runtime result.',
+        'Output schema, types, cardinality, generated locators, budgets, and read path are derived and verified against '
+        'the selected live nodes.',
         param_model=FieldReadToolParams,
     )
     async def bat_read_fields(params: FieldReadToolParams, browser_session: BrowserSession) -> ActionResult:
@@ -67,7 +66,7 @@ def register_field_read_tool(tools, *, output_schema):
                 target_schema = schema_at_path(output_schema, params.outputPath)
             except Exception as error:
                 raise NaturalReadFailure(_output_path_error(output_schema)) from error
-            mapping = expand_field_read_params(params, target_schema)
+            mapping = await dom_references.mapping(params, target_schema, browser_session)
             target_schema = validate_proposal(mapping, output_schema, successful.output_paths)
             page = await current_page(browser_session)
             identity = await page_identity(page)
@@ -116,9 +115,20 @@ _READ_ERRORS = frozenset({
     'read_container_resolution_failed',
     'read_input_limit',
     'read_number_not_finite',
+    'read_text_affix_invalid',
+    'read_output_schema_mismatch',
     'read_single_object_required',
     'natural_read_schema_mismatch',
     'natural_read_schema_unsupported',
+    'dom_reference_attribute_mismatch',
+    'dom_reference_container_mismatch',
+    'dom_reference_duplicate_record',
+    'dom_reference_field_mismatch',
+    'dom_reference_identity_unavailable',
+    'dom_reference_missing',
+    'dom_reference_outside_container',
+    'dom_reference_page_changed',
+    'dom_reference_record_scope_mismatch',
 })
 
 

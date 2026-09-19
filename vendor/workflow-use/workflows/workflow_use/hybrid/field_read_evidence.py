@@ -2,7 +2,7 @@
 import json
 
 from .evidence import digest
-from .field_read_params import FieldReadToolParams, expand_field_read_params
+from .field_read_params import FieldReadToolParams, revalidate_field_read_mapping
 from .natural_reads import VerifiedNaturalRead, value_at_path
 
 
@@ -70,7 +70,7 @@ def validate_record_mapping(record):
     else:
         target = None
     try:
-        expected = expand_field_read_params(record.parameters, target)
+        expected = revalidate_field_read_mapping(record.parameters, target, mapping)
     except Exception as error:
         raise FieldReadEvidenceFailure('natural_field_read_mapping_invalid') from error
     if expected.model_dump(mode='json') != mapping.model_dump(mode='json'):

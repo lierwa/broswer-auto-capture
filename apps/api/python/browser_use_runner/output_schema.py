@@ -5,7 +5,9 @@ from pydantic import ConfigDict, create_model
 def output_model_for(schema, name):
     if schema['type'] == 'object':
         model = object_model(schema, name)
-        return model, lambda value: value.model_dump(mode='json', exclude_unset=True)
+        # Browser-Use serializes an omitted optional structured-output field as null. JSON Schema
+        # optional means absent, not nullable, so restore the public contract at the adapter boundary.
+        return model, lambda value: value.model_dump(mode='json', exclude_unset=True, exclude_none=True)
     model = create_model(name, value=(python_type(schema, name + 'Value'), ...), __config__=ConfigDict(extra='forbid'))
     return model, lambda value: value.value
 

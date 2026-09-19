@@ -158,8 +158,8 @@ class Runner:
             self.browser.browser_profile.keep_alive = True
             self.diagnostic({'phase': 'author', 'status': 'started'})
             try:
-                result = await author_step(self.browser, request.source.model_dump(), models, output_model_for,
-                                           diagnostic=self.diagnostic)
+                result = await author_step(self.browser, request.source.model_dump(mode='json', by_alias=True), models, output_model_for,
+                                            diagnostic=self.diagnostic)
             except asyncio.CancelledError:
                 self.diagnostic({'phase': 'author', 'status': 'cancelled'})
                 raise

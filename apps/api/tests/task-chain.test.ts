@@ -71,7 +71,7 @@ test("完整确认需求和嵌套输入进入原生来源适配，正式 author_
     assert.equal(job.status, "completed", job.reason ?? "")
     assert.deepEqual(h.log.inputs, [h.source])
     assert.match(h.log.tasks[0]!, /# 通用确认任务/)
-    assert.match(h.log.tasks[0]!, /【完成标准】/)
+    assert.match(h.log.tasks[0]!, /【完成条件】/)
     assert.doesNotMatch(h.log.tasks[0]!, /primitive 输入/)
     const chain = h.repository.chains(h.taskId)[0]!
     assert.ok(chain.nodes.some((node) => node.kind === "capability" && node.capability.name === "browser.workflow-step"))

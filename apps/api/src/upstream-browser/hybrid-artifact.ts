@@ -137,6 +137,7 @@ function assertNaturalSourceIdentity(raw: Record<string, JsonValue>, requirement
     || source.plan.stepId !== step.id || source.plan.callMode !== step.invocation.mode
     || source.plan.inputSchemaDigest !== digestCanonicalJson(jsonValueSchema.parse(step.inputContract.schema))
     || source.plan.outputSchemaDigest !== digestCanonicalJson(jsonValueSchema.parse(step.outputContract.schema))
+    || !step.resultSpec || !isDeepStrictEqual(source.plan.resultSpec, step.resultSpec)
     || !isDeepStrictEqual(source.runtimeInputSchema, step.inputContract.schema)) {
     throw new Error("hybrid_natural_host_source_mismatch")
   }

@@ -18,6 +18,13 @@ export function planPrompt(requirement: TaskRequirement, representativeInput?: J
     `步骤只声明业务目标、输入输出、依赖、binding、调用模式、完成条件和风险；不得声明 DOM、选择器、点击顺序、滚动策略、页面 target 或节点图。` +
     `登录、验证码和访问限制由运行现场判断，不能由输入布尔值声称已经满足。` +
     `网站名称和业务字段只能存在于版本化任务合同与文字中，不能变成平台类型。` +
+    `根据已确认需求的完整语境为每个步骤生成 resultSpec；禁止按关键词、网站或任务类别判断是否有业务数据输出。` +
+    `只执行并核验的步骤使用 bat-result-spec/v1 execution，outputContract 必须为 null；数据步骤使用 data，schema 必须与 outputContract 一致。` +
+    `data.fields 为每个结果路径声明稳定逻辑 producerRef；edgeCases 用 controlRef 指向计划中的普通条件流程。` +
+    `普通数组计数用 derivations 声明 count、目标 producerRef、来源 producerRef 和来源结果路径；没有派生值时返回空数组。` +
+    `producerRef/controlRef 不是 DOM 或 E1 节点 ID，不得包含 CSS、选择器、等待类型、脚本、公式或任意表达式。` +
+    `计数、筛选、条件和分支只表达为现有 TaskChain 数据/条件语义；空列表控制必须早于任何第 0 项路径及详情动作。` +
+    `只有实际需要普通 branch 的边界才写 edgeCases，并按首次读取受保护列表的执行顺序排列；false 路径省略的输出字段必须在 schema 中可选。` +
     `binding 路径必须存在于合同中。合同只保留跨步骤传值、完成判断和最终输出必需的字段。` +
     `各项互相独立且部分结果仍有价值时 each 使用 continue；任一项失败使全部无效时使用 stop。` +
     `候选通常一至四步且最多六步；链路引用和预算由宿主生成，不要输出。\n\n` +

@@ -81,13 +81,58 @@ test("模型普通返回之后取消仍返回 cancelled，重复 request id 不�
   } finally { await bridge.close() }
 })
 
+// 不变量：Pydantic 的内部字段名不能泄漏回二次校验边界；ResultSpec 始终使用公共契约的 schema 别名。
+test("上游 author 二次校验保留 ResultSpec schema 别名",
+  { skip: !process.env.BAT_UPSTREAM_PYTHON && "requires the pinned BAT_UPSTREAM_PYTHON environment" }, async () => {
+  const root = process.cwd()
+  const result = await python(root, `
+import asyncio,json,sys
+from types import SimpleNamespace
+import browser_use_runner.hybrid_main as hybrid
+from workflow_use.hybrid.author import AuthorInput
+
+raw=json.load(sys.stdin)
+captured={}
+async def author_step(_browser, source, _models, _output_model_for, diagnostic=None):
+    captured.update(source)
+    AuthorInput.model_validate(source)
+    return {'resultSpecKeys': sorted(source['resultSpec'])}
+
+async def run():
+    hybrid.author_step=author_step
+    runner=hybrid.Runner()
+    runner.browser=SimpleNamespace(browser_profile=SimpleNamespace(keep_alive=False))
+    result=await runner.handle(raw)
+    assert result['resultSpecKeys']==['contractVersion','edgeCases','fields','mode','schema']
+    assert 'schemaValue' not in captured['resultSpec']
+
+asyncio.run(run())
+`, {
+    id: randomUUID(), type: "hybrid_author",
+    model: { model: "fixture", endpoint: "http://127.0.0.1:12345", token: "fixture" },
+    source: {
+      task: "read records", input: {}, inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      outputSchema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } },
+        required: ["items"], additionalProperties: false },
+      resultSpec: { contractVersion: "bat-result-spec/v1", mode: "data",
+        schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } },
+          required: ["items"], additionalProperties: false },
+        fields: [{ path: ["items"], description: "visible records", producerRef: "visible-records" }], edgeCases: [] },
+      requirementId: randomUUID(), requirementVersion: 1, requirementText: "read records", requirementDigest: "a".repeat(64),
+      planId: randomUUID(), planVersion: 1, planDigest: "b".repeat(64), stepId: "read-records", callMode: "once", maxSteps: 10,
+    },
+  })
+  assert.equal(result.code, 0, result.stderr)
+})
+
 async function python(root: string, script: string, input: unknown) {
   const executable = process.env.BAT_UPSTREAM_PYTHON
   assert.ok(executable, "BAT_UPSTREAM_PYTHON must select the verified upstream environment")
   const configDir = await mkdtemp(path.join(tmpdir(), "bat-model-bridge-"))
   try { return await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(executable, ["-c", script], { cwd: root, env: {
-      PATH: process.env.PATH, LANG: "en_US.UTF-8", PYTHONPATH: path.join(root, "apps/api/python"),
+      PATH: process.env.PATH, LANG: "en_US.UTF-8", PYTHONPATH: [path.join(root, "vendor/workflow-use/workflows"),
+        path.join(root, "apps/api/python")].join(path.delimiter),
       BROWSER_USE_CONFIG_DIR: configDir,
       ANONYMIZED_TELEMETRY: "false", BROWSER_USE_CLOUD_SYNC: "false", BROWSER_USE_SETUP_LOGGING: "false",
     }, stdio: ["pipe", "pipe", "pipe"] })

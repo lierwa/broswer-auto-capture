@@ -1,4 +1,4 @@
-"""Expand the model-visible field-read arguments into the existing internal mapping."""
+"""Expand model-selected DOM node refs into the existing internal read mapping."""
 from pydantic import Field, JsonValue
 
 from .evidence import Contract
@@ -7,20 +7,22 @@ from .read import ReadSpec
 _SCALAR_TYPES = frozenset({'string', 'number', 'integer', 'boolean'})
 
 
-class FieldReadSelector(Contract):
-    selector: str = Field(min_length=1, max_length=2000)
+class FieldReadNodeRefs(Contract):
+    refs: list[str] = Field(min_length=1, max_length=300)
     attribute: str | None = Field(default=None, pattern=r'^[a-zA-Z][a-zA-Z0-9_-]*$')
+
+
+class FieldReadRecordSelection(Contract):
+    fields: dict[str, FieldReadNodeRefs] = Field(min_length=1, max_length=100)
 
 
 class FieldReadToolParams(Contract):
     outputPath: list[str | int] = Field(description=(
         'Real final location inside the confirmed output contract, not an arbitrary temporary variable.'))
-    container: str = Field(min_length=1, max_length=2000, description=(
-        'CSS selector for the ordered record collection. When it matches more records than the output contract '
-        'maxItems, the DOM-order prefix is selected deterministically.'))
-    fields: dict[str, FieldReadSelector] = Field(min_length=1, max_length=100, description=(
-        'Object and object-array targets require every required contract field; scalar and scalar-array '
-        'targets use the single field name value. Each field contains selector and optional attribute.'))
+    records: list[FieldReadRecordSelection] = Field(min_length=1, max_length=300, description=(
+        'DOM-order records selected only from refs returned by bat_inspect_dom. B-A-T derives each record scope '
+        'from the selected field nodes; the model does not choose a parent container. Object and object-array targets '
+        'require every required contract field; scalar and scalar-array targets use the field name value.'))
 
 
 class FieldReadMapping(Contract):
@@ -29,19 +31,21 @@ class FieldReadMapping(Contract):
     readPath: list[str]
 
 
-def field_read_mapping_payload(params: FieldReadToolParams, target_schema: dict[str, JsonValue]):
+def field_read_mapping_payload(params: FieldReadToolParams, target_schema: dict[str, JsonValue], *,
+                               container: str, fields: dict[str, dict[str, JsonValue]]):
     """Return the exact ReadSpec-shaped payload implied by one confirmed output field."""
     output_schema, properties, required, max_items, read_path = _read_shape(target_schema)
-    if not set(params.fields) <= set(properties) or not required <= set(params.fields):
+    selected = [set(record.fields) for record in params.records]
+    if (not selected or any(names != selected[0] for names in selected[1:])
+            or not selected[0] <= set(properties) or not required <= selected[0]
+            or set(fields) != selected[0] or len(params.records) > max_items
+            or (target_schema.get('type') == 'object' and len(params.records) != 1)):
         raise ValueError('natural_read_schema_mismatch')
-    fields = {
-        name: _expanded_field(selector, properties[name])
-        for name, selector in params.fields.items()
-    }
+    expanded = {name: _expanded_field(fields[name], properties[name]) for name in fields}
     return {
         'specification': {
-            'container': params.container,
-            'fields': fields,
+            'container': container,
+            'fields': expanded,
             'maxItems': max_items,
             'outputSchema': output_schema,
         },
@@ -50,9 +54,20 @@ def field_read_mapping_payload(params: FieldReadToolParams, target_schema: dict[
     }
 
 
-def expand_field_read_params(params: FieldReadToolParams, target_schema: dict[str, JsonValue]):
+def expand_field_read_params(params: FieldReadToolParams, target_schema: dict[str, JsonValue], *,
+                             container: str, fields: dict[str, dict[str, JsonValue]]):
     """Validate the derived payload against the existing FieldReadMapping contract."""
-    return FieldReadMapping.model_validate(field_read_mapping_payload(params, target_schema))
+    return FieldReadMapping.model_validate(field_read_mapping_payload(
+        params, target_schema, container=container, fields=fields))
+
+
+def revalidate_field_read_mapping(params: FieldReadToolParams, target_schema: dict[str, JsonValue], mapping):
+    """Rebuild a generated mapping without trusting model-visible arguments to contain locators."""
+    specification = mapping.specification
+    fields = {name: {'selector': field.selector, 'attribute': field.attribute}
+              for name, field in specification.fields.items()}
+    return expand_field_read_params(
+        params, target_schema, container=specification.container, fields=fields)
 
 
 def field_read_contract_fields(target_schema):
@@ -94,12 +109,12 @@ def _required_fields(schema):
     return set(required)
 
 
-def _expanded_field(selector, schema):
+def _expanded_field(locator, schema):
     multiple = schema.get('type') == 'array'
     scalar = schema.get('items') if multiple else schema
     maximum = _field_cardinality(schema) if multiple else 1
     return {
-        **selector.model_dump(mode='json'),
+        **locator,
         'valueType': scalar['type'],
         'multiple': multiple,
         'maxValues': maximum,

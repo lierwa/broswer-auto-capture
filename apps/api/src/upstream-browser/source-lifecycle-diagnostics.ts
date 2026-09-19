@@ -5,7 +5,7 @@ import type { ModelCallReport } from "@browser-capture/runtime"
 import { z } from "zod"
 
 const actionNameSchema = z.enum([
-  "bat_read_fields", "bat_scroll_to", "bat_summarize", "bat_wait_for", "click", "close", "done",
+  "bat_inspect_dom", "bat_read_fields", "bat_scroll_to", "bat_summarize", "bat_wait_for", "click", "close", "done",
   "dropdown_options", "extract", "find_elements", "find_text", "go_back", "input", "navigate", "save_as_pdf",
   "scroll", "search", "search_page", "select_dropdown", "send_keys", "switch", "wait",
 ])

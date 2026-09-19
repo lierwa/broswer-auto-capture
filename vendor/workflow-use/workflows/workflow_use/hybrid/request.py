@@ -1,5 +1,5 @@
 """Authority and control inputs. Request digests cover their full normalized projections."""
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue, model_validator
 
@@ -161,6 +161,86 @@ class NaturalRequirement(Contract):
         return self
 
 
+class ResultField(Contract):
+    path: list[str | int] = Field(max_length=40)
+    description: str = Field(min_length=1, max_length=10000)
+    producerRef: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,39}$')
+
+
+class ResultEdgeCase(Contract):
+    description: str = Field(min_length=1, max_length=10000)
+    controlRef: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,39}$')
+
+
+class ResultDerivation(Contract):
+    producerRef: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,39}$')
+    operation: Literal['count']
+    sourceProducerRef: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,39}$')
+    sourcePath: list[str | int] = Field(max_length=40)
+
+
+class ExecutionResultSpec(Contract):
+    contractVersion: Literal['bat-result-spec/v1']
+    mode: Literal['execution']
+
+
+class DataResultSpec(Contract):
+    contractVersion: Literal['bat-result-spec/v1']
+    mode: Literal['data']
+    schemaValue: dict[str, JsonValue] = Field(alias='schema')
+    fields: list[ResultField] = Field(min_length=1, max_length=100)
+    derivations: list[ResultDerivation] = Field(default_factory=list, max_length=100)
+    edgeCases: list[ResultEdgeCase] = Field(max_length=20)
+
+    @model_validator(mode='after')
+    def validate_derivations(self):
+        if not self.edgeCases and any(_path_optional(self.schemaValue, field.path) for field in self.fields):
+            raise ValueError('result_spec_optional_field_edge_case_required')
+        derived = {item.producerRef for item in self.derivations}
+        if len(derived) != len(self.derivations):
+            raise ValueError('result_spec_derivation_invalid')
+        for item in self.derivations:
+            targets = [field for field in self.fields if field.producerRef == item.producerRef]
+            sources = [field for field in self.fields if field.producerRef == item.sourceProducerRef
+                       and field.path == item.sourcePath]
+            source_schema = _schema_at(self.schemaValue, item.sourcePath)
+            target_schema = _schema_at(self.schemaValue, targets[0].path) if len(targets) == 1 else None
+            if (item.producerRef == item.sourceProducerRef or item.sourceProducerRef in derived
+                    or len(targets) != 1 or len(sources) != 1
+                    or source_schema.get('type') != 'array' or target_schema.get('type') != 'integer'):
+                raise ValueError('result_spec_derivation_invalid')
+        return self
+
+
+ResultSpec = Annotated[ExecutionResultSpec | DataResultSpec, Field(discriminator='mode')]
+
+
+def _schema_at(schema, path):
+    current = schema
+    for item in path:
+        if isinstance(item, str) and current.get('type') == 'object':
+            current = current.get('properties', {}).get(item, {})
+        elif type(item) is int and current.get('type') == 'array':
+            current = current.get('items', {})
+        else:
+            return {}
+    return current
+
+
+def _path_optional(schema, path):
+    current = schema
+    for item in path:
+        if isinstance(item, str) and current.get('type') == 'object':
+            if item not in current.get('required', []):
+                return True
+            current = current.get('properties', {}).get(item, {})
+        elif type(item) is int and current.get('type') == 'array':
+            current = current.get('items', {})
+        else:
+            return False
+    return False
+
+
 class NaturalPlan(Contract):
     id: str = Field(min_length=1)
     version: int = Field(gt=0)
@@ -170,10 +250,11 @@ class NaturalPlan(Contract):
     inputSchemaDigest: str = Field(pattern=r'^[a-f0-9]{64}$')
     outputSchemaDigest: str = Field(pattern=r'^[a-f0-9]{64}$')
     callMode: Literal['once', 'each', 'batch']
+    resultSpec: ResultSpec
 
     @model_validator(mode='after')
     def verify_digest(self):
-        if self.digest != digest(self.model_dump(exclude={'digest'})):
+        if self.digest != digest(self.model_dump(exclude={'digest'}, by_alias=True)):
             raise ValueError('natural_plan_digest_mismatch')
         return self
 

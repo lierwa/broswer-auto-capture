@@ -2,14 +2,18 @@
 import json
 
 from .action_dispatch import not_dispatched_coverage
-from .bindings import classify_binding
 from .capability import TARGET_ACTIONS
-from .causal import delayed_post_for_conditions, supporting_wait
-from .coverage import (failed_native_dom_lookup_coverage, native_extraction_coverage,
-                       search_page_coverage, validate_coverage)
+from .causal import delayed_post_for_conditions, supporting_wait, waits_owned_by_next_target
+from .coverage import (
+    dom_inspection_coverage,
+    failed_native_dom_lookup_coverage,
+    native_extraction_coverage,
+    search_page_coverage,
+)
 from .evidence import ActionCoverage, EvidenceRef, digest, gap
-from .natural_facts import IGNORED_TECHNICAL_PARAMETERS, NaturalBindingFact, is_native_parameter
-from .natural_output import compile_natural_output_assembly
+from .natural_binding_compile import anchored_navigation_binding, natural_bindings
+from .natural_compile_result import finalize_natural_compilation
+from .natural_readiness import NATURAL_SETTLE, consumer_readiness_by_action, with_consumer_readiness
 from .natural_reads import compile_verified_read
 from .natural_target_compile import natural_target
 from .postconditions import declared_checks
@@ -27,7 +31,6 @@ NATURAL_EFFECT_KINDS = {
     'scroll': ('scroll_position',),
     'send_keys': ('visible_overlays',),
 }
-NATURAL_SETTLE = {'maxMs': 30000, 'maxAttempts': 100, 'intervalMs': 300}
 TARGET_STATE_KEYS = frozenset({'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
                                'checked', 'selected', 'disabled'})
 EMPTY_OVERLAYS = digest([])
@@ -41,6 +44,7 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
     if not trace.judged or not trace.completed or trace.finalResultRef is None:
         issues.append(gap('invalid_source', [], 'successful_judged_business_result_required', 'reject_trace'))
     observations = {item.id: item for item in trace.observations}
+    consumer_readiness = consumer_readiness_by_action(trace, NATURAL_SETTLE)
     for action in trace.actions:
         not_dispatched = not_dispatched_coverage(trace, action) if valid_native_action(registry, action) else None
         if not_dispatched is not None:
@@ -74,6 +78,10 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
         if text_lookup is not None:
             ledger.append(text_lookup)
             continue
+        inspection = dom_inspection_coverage(registry, action, pre, post)
+        if inspection is not None:
+            ledger.append(inspection)
+            continue
         extraction = native_extraction_coverage(registry, action, pre, post)
         if extraction is not None:
             ledger.append(extraction)
@@ -90,7 +98,8 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
         if delayed is not None:
             post = delayed
         segment, path, action_issues = classify_natural_action(
-            request, registry, action, pre, post, output_schema, output_paths, segments)
+            request, registry, action, pre, post, output_schema, output_paths, segments,
+            consumer_readiness.get(action.id))
         issues.extend(action_issues)
         if segment is not None:
             segments.append(segment)
@@ -100,37 +109,21 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
                 segment['proofRefs'].extend(ref.model_dump(mode='json') for ref in
                                             [wait.resultRef, *before.sourceRefs, *after.sourceRefs])
         if path is not None:
-            output_paths.append(path)
+            if action.name in ('extract', 'bat_read_fields'):
+                output_paths.extend(path)
+            else:
+                output_paths.append(path)
         ledger.append(ActionCoverage(actionRef=action.id, disposition='compiled' if segment else 'not_compilable',
             ownerSegmentId=segment['id'] if segment else None, exclusionRule=None,
             evidenceRefs=[action.resultRef] if action.resultRef else []))
-    seen = set()
-    for segment in segments:
-        signature = reuse_digest(segment)
-        if signature in seen:
-            issues.append(gap('unsupported_capability', [segment['id'][2:]],
-                              'repeated_operation_reuse_unproven', 'collect_evidence'))
-        seen.add(signature)
-    assembly = None
-    if request.plan.outputSchemaDigest != digest({'type': 'null'}):
-        if isinstance(output_schema, dict) and digest(output_schema) == request.plan.outputSchemaDigest:
-            assembly, assembly_issues = compile_natural_output_assembly(trace, output_schema, segments)
-            issues.extend(assembly_issues)
-        else:
-            issues.append(gap('missing_effect_proof', [],
-                              'natural_output_schema_required', 'collect_evidence'))
-    issues.extend(validate_coverage(trace, ledger, {segment['id'] for segment in segments}, registry=registry))
-    issues = sorted({item.id: item for item in issues}.values(), key=lambda item: item.id)
-    graph = linear_graph(segments) if not issues else {'entry': '', 'edges': [], 'terminals': []}
-    body = {'mediaType': 'application/vnd.bat.hybrid-compilation+json;version=1',
-            'compilerVersion': request.compilerVersion,
-            'sourceDigests': [request.requirement.digest, request.plan.digest, trace.digest,
-                              digest(request.runtimeInputSchema), digest([]), registry.schemaDigest],
-            'segments': segments, 'controlGraph': graph,
-            'outputAssembly': assembly,
-            'coverage': [item.model_dump(mode='json') for item in ledger],
-            'gaps': [item.model_dump(mode='json') for item in issues]}
-    return compilation_type.model_validate({**body, 'canonicalDigest': digest(body)})
+    waits = waits_owned_by_next_target(request, registry, segments)
+    if waits:
+        ledger = [waits.get(item.actionRef, item) for item in ledger]
+        issues = [item for item in issues if not (
+            len(item.actionRefs) == 1 and item.actionRefs[0] in waits
+            and item.reason == 'natural_postcondition_evidence_missing')]
+    return finalize_natural_compilation(
+        request, registry, compilation_type, linear_graph, output_schema, segments, ledger, issues)
 
 
 def valid_native_action(registry, action):
@@ -156,7 +149,7 @@ def failed_bat_field_read_coverage(registry, action):
 
 
 def classify_natural_action(request, registry, action, pre, post, output_schema=None, prior_paths=(),
-                            prior_segments=()):
+                            prior_segments=(), consumer_readiness=None):
     if action.name not in registry.names or action.effect != action_effect(action.name):
         return None, None, [gap('unsupported_action', [action.id], 'unregistered_or_mismatched_action', 'reject_trace')]
     try:
@@ -184,9 +177,31 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
     target, target_refs, target_issues = natural_target(action, pre)
     if target_issues:
         return None, None, target_issues
-    bindings, binding_issues = natural_bindings(request, action, pre, target is not None)
+    bindings, binding_issues = natural_bindings(
+        request, action, pre, target is not None, prior_segments)
+    anchored = anchored_navigation_binding(request, action, pre, post, target, prior_segments)
+    if anchored is not None and not binding_issues:
+        binding, url_fact = anchored
+        conditions, readiness_refs = with_consumer_readiness(
+            [{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': url_fact.id,
+              'settle': NATURAL_SETTLE}], url_fact.sourceRefs, consumer_readiness, NATURAL_SETTLE)
+        try:
+            declared_checks(conditions, {**action.args, 'url': url_fact.value}, None,
+                            allow_unresolved_target=True)
+        except ValueError:
+            return None, None, [gap('unsupported_capability', [action.id],
+                                    'anchor_navigation_postcondition_not_admitted', 'add_capability')]
+        proof_refs = unique_refs([action.resultRef, *pre.sourceRefs, *post.sourceRefs,
+                                  *target_refs, *readiness_refs,
+                                  *(ref for ref in binding['proofRefs'])])
+        return {'id': 's-' + action.id, 'kind': 'deterministic',
+                'operation': {'name': 'browser.workflow-step', 'version': 2, 'actionName': 'navigate'},
+                'target': None, 'bindings': [binding],
+                'preconditions': [{'kind': 'source_observation', 'evidenceRef': pre.id}],
+                'expectedEffect': {'kind': 'navigation'}, 'postconditions': conditions,
+                'outputs': [], 'proofRefs': [ref.model_dump(mode='json') for ref in proof_refs]}, None, []
     postconditions, post_refs, post_issues = natural_postconditions(
-        action, pre, post, target, bindings)
+        action, pre, post, target, bindings, consumer_readiness)
     issues = [*target_issues, *binding_issues, *post_issues]
     if issues:
         return None, None, issues
@@ -250,38 +265,6 @@ def compile_target_scroll(request, action, pre, post):
     return segment, None, []
 
 
-def natural_bindings(request, action, pre, has_target):
-    args = action.args if isinstance(action.args, dict) else {}
-    decisions, issues = [], []
-    facts = [fact for fact in pre.facts if fact.kind == 'natural_binding'
-             and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
-    for key in sorted(args):
-        if has_target and key in ('index', 'element_index', 'xpath'):
-            continue
-        if key in IGNORED_TECHNICAL_PARAMETERS.get(action.name, frozenset()):
-            continue
-        matches = [fact for fact in facts if fact.value.get('argumentPath') == key]
-        if len(matches) != 1:
-            issues.append(gap('missing_binding', [action.id],
-                              'natural_binding_evidence_missing:' + key, 'collect_evidence'))
-            continue
-        fact = matches[0]
-        try:
-            value = NaturalBindingFact.model_validate(fact.value)
-        except Exception:
-            issues.append(gap('invalid_source', [action.id], 'invalid_natural_binding_fact', 'reject_trace'))
-            continue
-        kind = classify_binding(value.binding, request.runtimeInputSchema, {})
-        if not binding_matches(request, action, key, value, kind):
-            issues.append(gap('missing_binding', [action.id],
-                              'natural_binding_provenance_mismatch:' + key, 'collect_evidence'))
-            continue
-        decisions.append({'id': f'b-{action.id}-{key}', 'actionRef': action.id, 'argumentPath': key,
-            'kind': kind, 'sourceRef': fact.id, 'transform': None,
-            'proofRefs': [ref.model_dump(mode='json') for ref in fact.sourceRefs], 'binding': value.binding})
-    return decisions, issues
-
-
 def natural_dom_lookup_coverage(registry, action, pre, post):
     if action.name != 'find_elements' or action.status != 'succeeded' or action.resultRef is None:
         return None
@@ -307,30 +290,28 @@ def natural_dom_lookup_coverage(registry, action, pre, post):
                           exclusionRule='native_dom_lookup_observation/v1', evidenceRefs=references)
 
 
-def binding_matches(request, action, key, fact, kind):
-    if fact.provenance == 'runtime_input':
-        return kind == 'runtime_input'
-    if fact.provenance == 'native_parameter':
-        return (kind == 'authorized_constant' and is_native_parameter(action.name, key, action.args[key])
-                and digest(fact.binding.get('value')) == digest(action.args[key]))
-    return (fact.provenance == 'task_literal' and kind == 'authorized_constant'
-            and fact.taskQuote == fact.binding.get('value') == action.args[key]
-            and isinstance(fact.taskQuote, str) and fact.taskQuote in request.requirement.text)
-
-
-def natural_postconditions(action, pre, post, target, bindings):
+def natural_postconditions(action, pre, post, target, bindings, consumer=None):
     if action.name == 'navigate':
         facts = natural_facts(post, 'natural_postcondition', action.id)
         matched = [fact for fact in facts if fact.value == {'actionRef': action.id, 'kind': 'url',
                                                             'bindingArgument': 'url', 'matched': True}]
-        return ([{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': matched[0].id,
-                  'settle': NATURAL_SETTLE}],
-                matched[0].sourceRefs, []) if len(matched) == 1 else (
-                [], [], [gap('missing_effect_proof', [action.id],
-                             'navigate_url_binding_not_observed', 'collect_evidence')])
+        if len(matched) != 1:
+            return [], [], [gap('missing_effect_proof', [action.id],
+                                'navigate_url_binding_not_observed', 'collect_evidence')]
+        conditions, refs = with_consumer_readiness(
+            [{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': matched[0].id,
+              'settle': NATURAL_SETTLE}], matched[0].sourceRefs, consumer, NATURAL_SETTLE)
+        return conditions, refs, []
     target_condition = target_value_condition(action, post, target, bindings)
     if target_condition is not None:
-        return target_condition
+        conditions, refs, issues = target_condition
+        if consumer is not None:
+            conditions, refs = with_consumer_readiness(
+                conditions, refs, consumer, NATURAL_SETTLE)
+        return conditions, refs, issues
+    if consumer is not None:
+        conditions, refs = with_consumer_readiness([], [], consumer, NATURAL_SETTLE)
+        return conditions, refs, []
     effect_condition, effect_limitation = natural_effect_condition(action, pre, post)
     if effect_condition is not None:
         return effect_condition
@@ -465,13 +446,3 @@ def unique_refs(refs):
                 ref = EvidenceRef.model_validate(ref)
             found[(ref.ref, ref.digest)] = ref
     return list(found.values())
-
-
-def reuse_digest(segment):
-    if segment['kind'] == 'explicit_llm':
-        return digest({key: value for key, value in segment.items() if key != 'id'})
-    return digest({'operation': segment['operation'], 'target': segment['target'],
-        'bindings': [{'argumentPath': item['argumentPath'], 'kind': item['kind'], 'binding': item['binding']}
-                     for item in segment['bindings']],
-        'postconditions': [{key: value for key, value in item.items() if key != 'clauseRef'}
-                           for item in segment['postconditions']], 'outputs': segment['outputs']})

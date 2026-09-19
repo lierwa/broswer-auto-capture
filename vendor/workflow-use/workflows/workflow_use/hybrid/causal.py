@@ -131,6 +131,44 @@ def supporting_wait(request, registry, action, owner):
                           exclusionRule='unchanged_wait_after_proven_effect/v1', evidenceRefs=[action.resultRef])
 
 
+def waits_owned_by_next_target(request, registry, segments):
+    """Treat fixed waits as exploration scaffolding when the next compiled target owns readiness."""
+    observations = {item.id: item for item in request.trace.observations}
+    owners = {segment['id'][2:]: segment for segment in segments
+              if segment.get('kind') == 'deterministic'
+              and segment.get('operation', {}).get('name') == 'browser.workflow-step'
+              and segment.get('target') is not None}
+    supported = {}
+    for index, action in enumerate(request.trace.actions):
+        if action.name != 'wait' or action.status != 'succeeded' or action.effect != 'none' \
+                or action.resultRef is None:
+            continue
+        try:
+            registry.validate_action(action.name, action.args)
+        except Exception:
+            continue
+        owner = _next_target_owner(request.trace.actions[index + 1:], owners)
+        before, after = observations.get(action.preObservationRef), observations.get(action.postObservationRef)
+        if owner is None or before is None or after is None or before.url != after.url \
+                or before.tabId != after.tabId:
+            continue
+        owner['proofRefs'].extend(reference.model_dump(mode='json') for reference in
+                                  [action.resultRef, *before.sourceRefs, *after.sourceRefs])
+        supported[action.id] = ActionCoverage(
+            actionRef=action.id, disposition='supporting', ownerSegmentId=owner['id'],
+            exclusionRule='fixed_wait_before_bounded_target_resolution/v1',
+            evidenceRefs=[action.resultRef])
+    return supported
+
+
+def _next_target_owner(following, owners):
+    for action in following:
+        if action.name == 'wait' and action.status == 'succeeded' and action.effect == 'none':
+            continue
+        return owners.get(action.id)
+    return None
+
+
 def same_url_digest(*observations):
     values = []
     for observation in observations:

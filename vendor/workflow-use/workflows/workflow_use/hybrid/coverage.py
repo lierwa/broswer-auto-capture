@@ -7,6 +7,7 @@ from .dom_evidence import DomQueryEvidence
 from .evidence import ActionCoverage, NormalizedTrace, gap
 
 NATIVE_TEXT_LOOKUP_RULE = 'native_text_lookup_observation/v1'
+DOM_NODE_INSPECTION_RULE = 'dom_node_inspection_observation/v1'
 NATIVE_EXTRACTION_RULE = 'native_extraction_observation/v1'
 FAILED_NATIVE_DOM_LOOKUP_RULE = 'failed_native_dom_lookup_observation/v1'
 URL_DIGEST = re.compile(r'^[a-f0-9]{64}$')
@@ -37,6 +38,30 @@ def search_page_coverage(registry, action, pre, post):
                           exclusionRule=NATIVE_TEXT_LOOKUP_RULE, evidenceRefs=list(refs.values()))
 
 
+def dom_inspection_coverage(registry, action, pre, post):
+    """Admit one same-page authoring-only DOM neighborhood inspection."""
+    if (registry is None or action.name != 'bat_inspect_dom' or action.effect != 'read'
+            or action.status != 'succeeded' or action.resultRef is None
+            or pre is None or post is None or pre.id != action.preObservationRef
+            or post.id != action.postObservationRef or not pre.tabId or pre.tabId != post.tabId
+            or pre.url != post.url):
+        return None
+    try:
+        registry.validate_action(action.name, action.args)
+    except Exception:
+        return None
+    before = [fact for fact in pre.facts if fact.kind == 'url_digest']
+    after = [fact for fact in post.facts if fact.kind == 'url_digest']
+    if (len(before) != 1 or len(after) != 1
+            or not isinstance(before[0].value, str) or not URL_DIGEST.fullmatch(before[0].value)
+            or before[0].value != after[0].value):
+        return None
+    refs = _unique_refs([action.resultRef, *pre.sourceRefs, *post.sourceRefs,
+                         *before[0].sourceRefs, *after[0].sourceRefs])
+    return ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
+                          exclusionRule=DOM_NODE_INSPECTION_RULE, evidenceRefs=refs)
+
+
 # WHY: 原生 extract 只帮助首次 Agent 理解页面和继续业务导航；最终输出仍由 verified read/summary
 # 独立装配，因此它不能成为复跑节点，也不能因为缺少 selector 证据反过来阻塞首次探索。
 def native_extraction_coverage(registry, action, pre, post):
@@ -49,6 +74,11 @@ def native_extraction_coverage(registry, action, pre, post):
     try:
         registry.validate_action(action.name, action.args)
     except Exception:
+        return None
+    # WHY：宿主若已把同一次 extract 反读为正式记录投影，该动作应由读取节点拥有，
+    # 不能再先被“仅供探索”规则吞掉。
+    if any(fact.kind == 'verified_natural_read' and isinstance(fact.value, dict)
+           and fact.value.get('actionRef') == action.id for fact in post.facts):
         return None
     before = [fact for fact in pre.facts if fact.kind == 'url_digest']
     after = [fact for fact in post.facts if fact.kind == 'url_digest']
@@ -136,6 +166,10 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
                 registry, action, observations.get(action.preObservationRef),
                 observations.get(action.postObservationRef))
             text_lookup = text_lookup is not None and row == text_lookup
+            inspection = dom_inspection_coverage(
+                registry, action, observations.get(action.preObservationRef),
+                observations.get(action.postObservationRef))
+            inspection = inspection is not None and row == inspection
             extraction = native_extraction_coverage(
                 registry, action, observations.get(action.preObservationRef),
                 observations.get(action.postObservationRef))
@@ -145,7 +179,7 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
                        and row.evidenceRefs == dispatch.evidenceRefs)
             field_probe = failed_bat_field_read_probe(registry, action, row)
             wait_probe = failed_bat_wait_probe(registry, trace, action, row)
-            if (not done and not lookup and not failed_lookup and not text_lookup and not extraction
+            if (not done and not lookup and not failed_lookup and not text_lookup and not inspection and not extraction
                     and not skipped and not field_probe and not wait_probe):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'invalid_exclusion', 'reject_trace'))
         if row.disposition == 'supporting':

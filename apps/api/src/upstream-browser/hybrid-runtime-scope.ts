@@ -15,7 +15,7 @@ type NaturalTrace = { actions: NaturalAction[]; observations: NaturalObservation
 type Compilation = {
   compilerVersion: string
   segments: Array<{ id: string; kind: string; operation?: { name: string; actionName?: string }; target?: unknown;
-    postconditions?: Array<Record<string, JsonValue>>; proofRefs?: EvidenceReference[] }>
+    proofRefs?: EvidenceReference[] }>
   controlGraph: { edges: Array<{ from: string; outcome: string; to: string }> }
   coverage: Array<{ actionRef: string; disposition: string; ownerSegmentId: string | null;
     exclusionRule: string | null; evidenceRefs?: EvidenceReference[] }>
@@ -70,7 +70,8 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
     }
     if (row.disposition === "agent_internal"
       && (row.exclusionRule === "native_dom_lookup_observation/v1"
-        || row.exclusionRule === "native_text_lookup_observation/v1")) {
+        || row.exclusionRule === "native_text_lookup_observation/v1"
+        || row.exclusionRule === "dom_node_inspection_observation/v1")) {
       boundary = advanceReadOnlyBoundary(boundary, action, observations, assertFact, "read")
       if (!boundary) return limited(segmentId, "runtime_scope_read_exclusion_discontinuous")
       continue

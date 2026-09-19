@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { budgetSchema, versionReferenceSchema, jsonValueSchema, nodeOutcomeSchema, valueBindingSchema, valuePathSchema,
+import { budgetSchema, versionReferenceSchema, jsonValueSchema, nodeOutcomeSchema, resultSpecSchema, valueBindingSchema, valuePathSchema,
   valueSchemaSchema } from "@browser-capture/contracts"
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
@@ -8,15 +8,39 @@ const record = z.record(z.string(), jsonValueSchema)
 const binding = z.object({ id: z.string(), actionRef: z.string(), argumentPath: z.string(),
   kind: z.enum(["runtime_input", "prior_output", "authorized_constant", "sample_evidence"]),
   sourceRef: z.string(), transform: z.null(), proofRefs: z.array(reference) }).strict()
-const naturalBinding = binding.extend({ binding: valueBindingSchema.optional() }).strict()
+const naturalBinding = binding.extend({ binding: valueBindingSchema.optional(),
+  derivation: z.literal("anchor_navigation").optional() }).strict()
 export const naturalBindingFactValueSchema = z.object({ actionRef: z.string(), argumentPath: z.string(),
-  binding: valueBindingSchema, provenance: z.enum(["runtime_input", "native_parameter", "task_literal"]),
-  taskQuote: z.string().nullable().optional() }).strict()
+  binding: valueBindingSchema, provenance: z.enum(["runtime_input", "native_parameter", "task_literal", "node_output"]),
+  taskQuote: z.string().nullable().optional(), sourceReadRef: z.string().nullable().optional() }).strict()
 export const hybridOutputAssemblySchema = z.object({ sourceRef: z.string().min(1),
   fields: z.array(z.object({ binding: valueBindingSchema, path: valuePathSchema }).strict()).min(1).max(100),
   schema: valueSchemaSchema, proofRefs: z.array(reference).min(1) }).strict()
+export const hybridResultBindingSchema = z.object({ contractVersion: z.literal("bat-result-binding/v1"),
+  schema: valueSchemaSchema, assignments: z.array(z.object({ to: valuePathSchema, from: valueBindingSchema,
+    producerRef: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/) }).strict()).min(1).max(100),
+  sourceRef: z.string().min(1), proofRefs: z.array(reference).min(1) }).strict()
+export const hybridResultBranchSchema = z.object({ id: z.string().min(1),
+  controlRef: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/), sourceActionRef: z.string().min(1),
+  sourceSegmentId: z.string().min(1), consumerSegmentId: z.string().min(1),
+  missingProducerSegmentId: z.string().min(1).optional(),
+  skippedSegmentIds: z.array(z.string().min(1)).min(1), predicate: z.object({
+    operator: z.literal("array_length_at_least"), value: valueBindingSchema,
+    minimum: valueBindingSchema,
+  }).strict(), falseResult: hybridResultBindingSchema,
+  falseTerminalId: z.string().min(1) }).strict()
 export const targetScopeSchema = z.object({ url: z.string().min(1), urlDigest: hash.optional() }).strict()
 const targetQuerySchema = z.object({ kind: z.literal("css"), value: z.string().min(1) }).strict()
+const historyTargetIdentitySchema = z.object({
+  schemaVersion: z.literal("browser-use.dom-interacted-element/v1"), nodeName: z.string().min(1),
+  xPath: z.string().min(1), elementHash: z.string().regex(/^-?\d+$/),
+  stableHash: z.string().regex(/^-?\d+$/).nullable(), axNameDigest: hash.nullable(),
+  attributes: z.array(z.object({ name: z.enum(["name", "id", "aria-label"]), digest: hash }).strict()).max(3),
+}).strict().superRefine((value, context) => {
+  if (new Set(value.attributes.map((item) => item.name)).size !== value.attributes.length) {
+    context.addIssue({ code: "custom", message: "duplicate_history_target_attribute" })
+  }
+})
 const targetOrdinalBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("input"), path: valuePathSchema }).strict(),
   z.object({ source: z.literal("constant"), value: jsonValueSchema }).strict(),
@@ -30,26 +54,76 @@ export const hybridTargetSchema = z.discriminatedUnion("strategy", [
   z.object({ strategy: z.literal("structure"), scope: targetScopeSchema, container: targetQuerySchema,
     items: targetQuerySchema, ordinal: z.number().int().positive(), ordinalBinding: targetOrdinalBindingSchema.optional(),
     withinItem: targetQuerySchema.nullable() }).strict(),
+  z.object({ strategy: z.literal("history"), scope: targetScopeSchema,
+    identity: historyTargetIdentitySchema }).strict(),
 ])
+const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.string().nullable(),
+  resolveUrl: z.boolean().optional(), valueType: z.enum(["string", "number", "integer", "boolean"]),
+  textPrefix: z.string().min(1).max(100).optional(), textSuffix: z.string().min(1).max(100).optional(),
+  normalizeWhitespace: z.boolean().optional(), normalizePresentation: z.boolean().optional(),
+  multiple: z.boolean().optional(),
+  maxValues: z.number().int().min(1).max(300).optional() }).strict()
+  .superRefine((value, context) => {
+    if (value.resolveUrl === true && value.attribute !== "href") {
+      context.addIssue({ code: "custom", message: "url_resolution_requires_href" })
+    }
+    if ((value.textPrefix !== undefined || value.textSuffix !== undefined)
+      && (!["string", "number", "integer"].includes(value.valueType) || value.attribute !== null)) {
+      context.addIssue({ code: "custom", message: "text_affix_projection_invalid" })
+    }
+    if (value.normalizePresentation === true
+      && (value.valueType !== "string" || value.attribute !== null || value.normalizeWhitespace !== true)) {
+      context.addIssue({ code: "custom", message: "presentation_normalization_invalid" })
+    }
+  })
 export const readSpecificationSchema = z.object({ container: z.string().min(1),
-  fields: z.record(z.string().min(1), z.object({ selector: z.string().min(1), attribute: z.string().nullable(),
-    valueType: z.enum(["string", "number", "integer", "boolean"]),
-    multiple: z.boolean().optional(), maxValues: z.number().int().min(1).max(300).optional() }).strict()),
+  fields: z.record(z.string().min(1), readFieldSchema),
   maxItems: z.number().int().min(1).max(300), maxInputBytes: z.number().int().min(1).optional(),
   outputSchema: valueSchemaSchema }).strict()
+const settlePolicySchema = z.object({ maxMs: z.number().int().min(1).max(30000),
+  maxAttempts: z.number().int().min(1).max(100), intervalMs: z.number().int().min(10).max(1000) }).strict()
+const factPostconditionSchema = z.object({
+  kind: z.enum(["url", "url_digest", "title", "target_value", "target_text", "target_state",
+    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "read_fields"]),
+  bindingArgument: z.string().min(1).optional(), equals: jsonValueSchema.optional(),
+  changed: z.literal(true).optional(), ready: z.literal(true).optional(), transition: z.literal(true).optional(),
+  clauseRef: z.string().min(1).optional(), read: readSpecificationSchema.optional(),
+  scope: targetScopeSchema.optional(), settle: settlePolicySchema.optional(), consumerRef: z.string().min(1).optional(),
+}).strict().superRefine((value, context) => {
+  const authorityCount = [value.bindingArgument !== undefined, value.equals !== undefined && value.equals !== null,
+    value.changed === true,
+    value.ready === true, value.transition === true].filter(Boolean).length
+  if (authorityCount !== 1) context.addIssue({ code: "custom", message: "one_postcondition_authority_required" })
+  if (value.equals === null) context.addIssue({ code: "custom", message: "postcondition_equals_must_not_be_null" })
+  const read = value.kind === "read_fields"
+  if (read !== (value.read !== undefined)) context.addIssue({ code: "custom", message: "postcondition_read_specification_required" })
+  const consumer = value.ready === true || value.transition === true
+  if (consumer && (!read || !value.consumerRef || !value.settle)) {
+    context.addIssue({ code: "custom", message: "consumer_readiness_owner_and_settle_required" })
+  }
+  if (!read && (value.scope !== undefined || value.consumerRef !== undefined || consumer)) {
+    context.addIssue({ code: "custom", message: "consumer_readiness_requires_read_projection" })
+  }
+})
+export const hybridPostconditionSchema = z.union([
+  factPostconditionSchema,
+  z.object({ kind: z.literal("output_schema"), schemaDigest: hash.nullable() }).strict(),
+])
+const workflowStepOperation = z.object({ name: z.literal("browser.workflow-step"), version: z.literal(2),
+  actionName: z.enum(["navigate", "go_back", "wait", "click", "input", "scroll", "send_keys", "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for"]) }).strict()
+const readFieldsOperation = z.object({ name: z.literal("browser.read-fields"), version: z.literal(2), specification: readSpecificationSchema }).strict()
+const invokeOperation = z.object({ name: z.literal("task-chain.invoke"), version: z.literal(1), chain: versionReferenceSchema,
+  input: valueBindingSchema, budget: budgetSchema }).strict()
+const resultDataOperation = z.object({ name: z.literal("data.transform"), version: z.literal(1), dataOperation: z.literal("count") }).strict()
+const deterministicOperation = z.discriminatedUnion("name", [workflowStepOperation, readFieldsOperation, invokeOperation])
+const naturalOperation = z.discriminatedUnion("name", [workflowStepOperation, readFieldsOperation, invokeOperation, resultDataOperation])
 const deterministicBase = { id: z.string(), kind: z.literal("deterministic"),
-  operation: z.discriminatedUnion("name", [
-    z.object({ name: z.literal("browser.workflow-step"), version: z.literal(2),
-      actionName: z.enum(["navigate", "go_back", "wait", "click", "input", "scroll", "send_keys", "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for"]) }).strict(),
-    z.object({ name: z.literal("browser.read-fields"), version: z.literal(2), specification: readSpecificationSchema }).strict(),
-    z.object({ name: z.literal("task-chain.invoke"), version: z.literal(1), chain: versionReferenceSchema,
-      input: valueBindingSchema, budget: budgetSchema }).strict(),
-  ]), target: hybridTargetSchema.nullable(),
+  operation: deterministicOperation, target: hybridTargetSchema.nullable(),
   preconditions: z.array(record), expectedEffect: z.object({ kind: z.enum(["none", "read", "ui_state", "navigation", "external_write"]) }).strict(),
-  postconditions: z.array(record).min(1), outputs: z.array(z.object({ schema: valueSchemaSchema, sourceRef: z.string() }).strict()),
+  postconditions: z.array(hybridPostconditionSchema).min(1), outputs: z.array(z.object({ schema: valueSchemaSchema, sourceRef: z.string() }).strict()),
   proofRefs: z.array(reference).min(1), requirementClauseRefs: z.array(z.string()).optional() }
 const deterministic = z.object({ ...deterministicBase, bindings: z.array(binding) }).strict()
-const naturalDeterministic = z.object({ ...deterministicBase, bindings: z.array(naturalBinding) }).strict()
+const naturalDeterministic = z.object({ ...deterministicBase, operation: naturalOperation, bindings: z.array(naturalBinding) }).strict()
 const semantic = z.object({ id: z.string(), kind: z.literal("explicit_llm"),
   purpose: z.enum(["classify", "extract_semantics", "summarize", "rank_candidates", "semantic_dedupe"]),
   requirementClauseRefs: z.array(z.string()).min(1), inputSchema: valueSchemaSchema,
@@ -75,7 +149,9 @@ const compilationBody = {
 const legacyCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/1") }).strict()
 const naturalCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/2"),
   segments: z.array(z.discriminatedUnion("kind", [naturalDeterministic, naturalSummarySegmentSchema])).max(500),
-  outputAssembly: hybridOutputAssemblySchema.nullable().optional() }).strict()
+  outputAssembly: hybridOutputAssemblySchema.nullable().optional(),
+  resultBinding: hybridResultBindingSchema.nullable().optional(),
+  resultBranches: z.array(hybridResultBranchSchema).max(20).optional() }).strict()
 export const hybridCompilationSchema = z.discriminatedUnion("compilerVersion", [legacyCompilationSchema, naturalCompilationSchema])
 export const hybridCompilerResponseSchema = z.object({ compilation: hybridCompilationSchema, canonicalPayload: z.string(),
   sourcePayloads: z.array(z.string()).length(5) }).strict()
@@ -95,7 +171,7 @@ export const hybridNaturalRequestSchema = z.object({ compilerVersion: z.literal(
     taskText: z.string().min(1), sourceDigest: hash, digest: hash }).strict(),
   plan: z.object({ id: z.string(), version: z.number().int().positive(), sourceDigest: hash, digest: hash,
     stepId: z.string(), inputSchemaDigest: hash, outputSchemaDigest: hash,
-    callMode: z.enum(["once", "each", "batch"]) }).strict(),
+    callMode: z.enum(["once", "each", "batch"]), resultSpec: resultSpecSchema }).strict(),
   runtimeInputSchema: valueSchemaSchema,
   trace: z.object({ digest: hash, source: z.object({ historyRef: z.string().min(1) }).passthrough(),
     actions: z.array(z.object({ id: z.string(), preObservationRef: z.string().nullable(),
