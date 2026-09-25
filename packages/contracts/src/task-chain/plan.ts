@@ -63,6 +63,10 @@ export const resultSpecSchema = z.discriminatedUnion("mode", [
 ])
 export type ResultSpec = z.infer<typeof resultSpecSchema>
 
+export const taskPlanEntryUrlsSchema = z.array(z.string().url().refine((value) => {
+  try { return ["http:", "https:"].includes(new URL(value).protocol) } catch { return false }
+}, "plan_entry_url_protocol_invalid")).min(1).max(32)
+
 export const taskPlanStepSchema = z.object({
   id: keySchema, title: textSchema, goal: textSchema, dependsOn: z.array(keySchema),
   inputContract: taskDataContractSchema, outputContract: taskDataContractSchema,
@@ -85,6 +89,8 @@ export const taskPlanSchema = z.object({
   contractVersion: contractVersionSchema, kind: z.literal("plan"),
   id: identitySchema, taskId: taskIdentitySchema, version: z.number().int().positive(),
   requirement: requirementReferenceSchema, summary: textSchema,
+  // WHY：入口由需求和规划确定，不是用户每次复跑填写的业务输入；optional 只用于读取旧计划。
+  entryUrls: taskPlanEntryUrlsSchema.optional(),
   inputContract: taskDataContractSchema, outputContract: taskDataContractSchema,
   steps: z.array(taskPlanStepSchema).min(1).max(100), output: valueBindingSchema, budget: budgetSchema,
   completion: z.array(completionConditionSchema).min(1),

@@ -1,9 +1,9 @@
 import { z } from "zod"
 import { budgetSchema, contractVersionSchema, digestSchema, identitySchema, keySchema, taskIdentitySchema, textSchema, versionReferenceSchema } from "./common.js"
 import { completionConditionSchema } from "./binding.js"
-import { legacyChainNodeSchema, nodeBindings, nodeOutcomeSchema, nodePorts, predicateBindings, requiredNodeOutcomes,
+import { legacyChainNodeSchema, nodeBindings, nodeOutcomeSchema, nodePorts, predicateBindings, requiredNodeOutcomes, requiredNodePorts,
   stableChainNodeSchema, stableChainNodeV2Schema, type ChainNode } from "./node.js"
-import { taskDataContractSchema } from "./value.js"
+import { taskDataContractSchema, taskInputRequiresVariation } from "./value.js"
 
 export const chainEdgeSchema = z.object({ from: keySchema, outcome: nodeOutcomeSchema, to: keySchema }).strict()
 export const chainEdgeV2Schema = z.object({ from: keySchema, port: keySchema, to: keySchema }).strict()
@@ -47,7 +47,7 @@ export const taskChainSchema = z.union([stableTaskChainV2Schema, stableTaskChain
     edgeKeys.add(edgeKey)
   }
   for (const node of nodes.values()) {
-    const ports = nodePorts(node)
+    const ports = requiredNodePorts(node)
     if ("outcomes" in node) {
       const required = requiredNodeOutcomes[node.kind]
       if (new Set(node.outcomes).size !== node.outcomes.length || required.length !== node.outcomes.length
@@ -86,9 +86,11 @@ export const taskChainSchema = z.union([stableTaskChainV2Schema, stableTaskChain
   }
   if (chain.validation.status !== "verified") return
   const passed = chain.validation.evidence.filter((evidence) => evidence.passed && evidence.modelCalls !== null)
+  const distinctRequired = taskInputRequiresVariation(chain.inputContract)
   const verified = passed.some((sample) => sample.phase === "sample" && passed.some((verification) =>
     verification.phase === "verification" && sample.runId !== verification.runId
-    && sample.inputDigest !== verification.inputDigest && sample.chainDigest === verification.chainDigest))
+    && (!distinctRequired || sample.inputDigest !== verification.inputDigest)
+    && sample.chainDigest === verification.chainDigest))
   if (!verified) issue("distinct_input_validation_required")
 })
 

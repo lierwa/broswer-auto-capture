@@ -1,7 +1,7 @@
 """Versioned, strict evidence contracts. These are compile inputs, never executable steps."""
 import hashlib
 import json
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -60,11 +60,9 @@ class TraceSource(Contract):
     historyRef: str
 
 
-class NormalizedTrace(Contract):
-    mediaType: Literal['application/vnd.bat.browser-use-trace+json;version=1'] = 'application/vnd.bat.browser-use-trace+json;version=1'
+class NormalizedTraceBase(Contract):
     source: TraceSource
     digest: str = Field(pattern=r'^[a-f0-9]{64}$')
-    judged: bool
     completed: bool
     actions: list[NormalizedAction]
     observations: list[NormalizedObservation]
@@ -85,7 +83,8 @@ class NormalizedTrace(Contract):
                 if fact.kind in {'dom_structure', 'dom_query', 'natural_binding', 'native_extraction',
                                  'native_action_dispatch', 'native_action_result', 'native_dom_event', 'browser_context',
                                  'verified_natural_read', 'verified_target_scroll', 'verified_visible_wait',
-                                 'verified_natural_summary', 'verified_output_assembly'}:
+                                 'verified_natural_summary', 'verified_output_assembly', 'selection_function',
+                                 'observation_diagnostic', 'document_identity'}:
                     value_digest = digest(fact.value)
                     if any(reference.digest != value_digest for reference in fact.sourceRefs):
                         raise ValueError('fact_source_digest_mismatch')
@@ -115,6 +114,19 @@ class NormalizedTrace(Contract):
             seen.add(action.id)
             previous = position
         return self
+
+
+class LegacyNormalizedTrace(NormalizedTraceBase):
+    """Read-only compatibility for persisted v1 sources; its judge verdict is never an execution gate."""
+    mediaType: Literal['application/vnd.bat.browser-use-trace+json;version=1'] = 'application/vnd.bat.browser-use-trace+json;version=1'
+    judged: bool
+
+
+class NormalizedTrace(NormalizedTraceBase):
+    mediaType: Literal['application/vnd.bat.browser-use-trace+json;version=2'] = 'application/vnd.bat.browser-use-trace+json;version=2'
+
+
+NormalizedTraceContract = Annotated[LegacyNormalizedTrace | NormalizedTrace, Field(discriminator='mediaType')]
 
 
 class CompilationGap(Contract):

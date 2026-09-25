@@ -18,17 +18,33 @@ export function retireWorkflowV1(reference?: { artifactId?: string; chainId?: st
   throw new LegacyWorkflowRetiredError(reference)
 }
 
+const hybridCapabilities = new Map([
+  ["browser.workflow-step", 2], ["browser.read-fields", 2], ["browser.target-readiness", 1],
+])
+
+export function usesHybridBrowserRuntime(chains: readonly TaskChain[]) {
+  return chains.some((chain) => chain.nodes.some((node) => node.kind === "capability"
+    && hybridCapabilities.get(node.capability.name) === node.capability.version))
+}
+
+export function assertExecutionBrowserSupported(chains: readonly TaskChain[], headless: boolean) {
+  // WHY：BrowserSkill 会话没有 headless 启动合同；接单前拒绝，不能默默按可见模式运行。
+  if (headless && !usesHybridBrowserRuntime(chains)) {
+    throw new DomainError("headless_runtime_unsupported", "此链路的浏览器能力不支持无界面运行。")
+  }
+}
+
 /** WHY：先检查整个调用闭包，避免前面的普通节点已产生副作用才发现子链退休。 */
 export function assertWorkflowRuntimeSupported(chains: readonly TaskChain[]) {
   if (chains.some((chain) => chain.nodes.some((node) => node.kind === "capability"
-    && ["browser.workflow-step", "browser.read-fields"].includes(node.capability.name) && node.capability.version !== 2))) {
+    && hybridCapabilities.has(node.capability.name)
+    && node.capability.version !== hybridCapabilities.get(node.capability.name)))) {
     throw new DomainError("hybrid_capability_version_unsupported", "hybrid_capability_version_unsupported")
   }
-  const hybrid = chains.some((chain) => chain.nodes.some((node) => node.kind === "capability"
-    && ["browser.workflow-step", "browser.read-fields"].includes(node.capability.name)))
+  const hybrid = usesHybridBrowserRuntime(chains)
   if (hybrid && chains.some((chain) => chain.nodes.some((node) => node.kind === "browser" || node.kind === "observe"
     || node.kind === "human" || node.kind === "capability" && node.capability.name.startsWith("browser.")
-      && !["browser.workflow-step", "browser.read-fields"].includes(node.capability.name)))) {
+      && !hybridCapabilities.has(node.capability.name)))) {
     throw new DomainError("mixed_browser_runtime_unsupported", "mixed_browser_runtime_unsupported")
   }
   const legacy = chains.find((chain) => chain.nodes.some((node) =>

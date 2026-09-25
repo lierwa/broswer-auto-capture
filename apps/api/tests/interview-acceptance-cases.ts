@@ -137,7 +137,10 @@ export const interviewAcceptanceCases: readonly InterviewAcceptanceCase[] = [
     title: "B站最新集定位180秒",
     initialInput: "在哔哩哔哩搜索《凡人修仙传》，播放当前最新正片并定位到3分钟；先核实哪一集是最新，不能用预告或剪辑。",
     intentProfile: "核实最新正片是执行步骤，最终结果是正确视频播放并到180秒。",
-    choiceRules: [],
+    choiceRules: [
+      { promptIncludes: ["当前最新正片", "范围"], preferredOptionIncludes: ["全系列", "跨所有季度"] },
+      { promptIncludes: ["定位到 3 分钟", "播放器"], preferredOptionIncludes: ["暂停在 3:00", "便于确认"] },
+    ],
     freeTextRules: [],
     fallbackAnswer: "最新指官方正片的最高已更新集数，排除预告、花絮和剪辑；最终播放位置为180秒。",
     draftMustContain: ["凡人修仙传", "最新", "正片", "180", "播放"],

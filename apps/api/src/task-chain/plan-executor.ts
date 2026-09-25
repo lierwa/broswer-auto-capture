@@ -1,28 +1,38 @@
 import { executionBudget } from "./execution-budget.js"
 import {
-  CONTRACT_VERSION, parseTaskValue, taskPlanExecutionIssues, type JsonValue, type TaskChain, type TaskExecution,
+  CONTRACT_VERSION, DEFAULT_TASK_EXECUTION_BROWSER, parseTaskValue, taskPlanExecutionIssues, type JsonValue, type TaskChain, type TaskExecution,
   type TaskExecutionStep, type TaskOutput, type TaskPlan, type TaskPlanStep, type TaskRun, type TaskRunRequest,
 } from "@browser-capture/contracts"
-import { evaluatePredicate, readPath, resolveBinding, digestJson, executableChainDigest, stableUuid,
+import { readPath, resolveBinding, digestJson, executableChainDigest, stableUuid,
   RuntimeBudgetExceededError, type BindingContext, type RuntimeControl, type RuntimeNodePacing } from "@browser-capture/runtime"
 import type { ProductStore } from "../database/store.js"
 import type { TaskContractRepository } from "./repository.js"
 import type { TaskRuntimeHost } from "./runtime-host.js"
+import { projectExecutionResult, type FailureHint } from "./execution-result.js"
+import { executionCleanupAuditSchema, RuntimeCleanupRequiredError, type RunnerCleanupReport } from "../upstream-browser/cleanup.js"
 
 export class TaskPlanExecutor {
   constructor(private readonly store: ProductStore, private readonly repository: TaskContractRepository,
     private readonly host: TaskRuntimeHost) {}
 
   async execute(record: TaskExecution, signal: AbortSignal, resume = false, pacing?: RuntimeNodePacing) {
+    const cleanupObservation: { value: { ownerId: string; report: RunnerCleanupReport } | null } = { value: null }
     try {
       const plan = this.repository.plan(record.taskId, record.plan.id, record.plan.version, record.plan.digest)
-      if (!this.isCurrent(record, plan)) return this.finish(record, "stale", "需求或计划版本已变化，原授权不能继续执行。")
-      if (taskPlanExecutionIssues(plan).length) return this.finish(record, "blocked", "计划输入输出合同不再满足执行约束，需要生成新计划。")
+      if (!this.isCurrent(record, plan)) return this.finish(record, "stale", "需求或计划版本已变化，原授权不能继续执行。",
+        { classification: "version", code: "execution_version_stale", repairable: false })
+      if (taskPlanExecutionIssues(plan).length) return this.finish(record, "blocked", "计划输入输出合同不再满足执行约束，需要生成新计划。",
+        { classification: "version", code: "plan_contract_invalid", repairable: false })
       const chains = this.boundChains(record, plan)
-      record.status = "running"; record.sequence++; record.reason = "正在执行本次计划固定的链路版本。"; this.save(record)
+      record.status = "running"; record.sequence++; record.reason = "正在执行本次计划固定的链路版本。"
+      record.cleanup = { status: "pending", attempt: record.cleanup.attempt + 1, code: null,
+        evidenceDigest: null, updatedAt: new Date().toISOString() }
+      record.cleanupResume = null
+      record.result = projectExecutionResult(this.repository, record); this.save(record)
       const browserRunId = stableUuid(record.id, "browser", String(record.sequence))
       await this.host.group({ taskId: record.taskId, authorizationId: record.authorizationId, browserRunId,
         requirementVersion: record.requirement.version, purpose: record.mode ?? "replay", chains, input: record.input, signal,
+        ...(!record.mode || record.mode === "replay" ? { browser: record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER } : {}),
         ...executionBudget(plan, chains), consumed: record.consumed, ...(pacing ? { pacing } : {}),
         scopeConsumption: Object.fromEntries(record.steps.map((step) => [step.stepId, step.consumed])),
         onConsumption: (scopeId, snapshot) => {
@@ -30,22 +40,92 @@ export class TaskPlanExecutor {
           if (!progress) throw new Error("task_budget_scope_unknown")
           record.consumed = snapshot.total; progress.consumed = snapshot.scope
           record.sequence++; record.updatedAt = new Date().toISOString(); this.save(record)
-        } },
+        }, onCleanup: (report) => { cleanupObservation.value = { ownerId: browserRunId, report } } },
       async (execute) => this.runSteps(record, plan, chains, execute, signal, resume))
+      const observedCleanup = cleanupObservation.value
+      if (observedCleanup) this.saveCleanupAudit(record, observedCleanup.ownerId, observedCleanup.report)
+      this.confirmCleanup(record, observedCleanup?.report.evidenceDigest
+        ?? this.saveOwnerVerification(record, browserRunId, true, null))
     } catch (error) {
-      if (signal.aborted) {
-        const current = this.repository.execution(record.taskId, record.id)
-        // WHY：取消命令已经持久化 cancelled 时，异步执行栈晚到的 abort 不能把它降级覆盖成 paused。
-        if (current.status === "cancelled") return current
-        this.finish(record, "paused", "运行已中断，已完成步骤和检查点保留。")
+      if (error instanceof RuntimeCleanupRequiredError) {
+        this.saveCleanupAudit(record, error.ownerId, error.report)
+        if (error.primary.status === "failed") this.finishPrimaryFailure(record, error.primary.error, signal)
+        this.requireCleanup(record, error.report.code ?? "runtime_cleanup_unconfirmed", error.report.evidenceDigest)
+      } else {
+        this.finishPrimaryFailure(record, error, signal)
+        if (record.cleanup.status === "pending") {
+          const observedCleanup = cleanupObservation.value
+          if (observedCleanup?.report.status === "confirmed") {
+            this.saveCleanupAudit(record, observedCleanup.ownerId, observedCleanup.report)
+            this.confirmCleanup(record, observedCleanup.report.evidenceDigest)
+          } else {
+            const evidence = this.saveOwnerVerification(record, stableUuid(record.id, "cleanup-owner"), false,
+              "runtime_cleanup_report_missing")
+            this.requireCleanup(record, "runtime_cleanup_report_missing", evidence)
+          }
+        }
       }
-      else if (error instanceof Error && error.message === "authorized_chain_unavailable") {
-        this.finish(record, "blocked", "授权时固定的链路版本不再可用；原授权不会切换到其他版本。")
-      } else if (error instanceof RuntimeBudgetExceededError || error instanceof Error && error.message === "plan_item_limit_exceeded") {
-        this.finish(record, "blocked", error.message)
-      } else this.finish(record, "failed", `运行失败：${error instanceof Error ? error.message : "execution_failed"}`)
     }
     return record
+  }
+
+  private finishPrimaryFailure(record: TaskExecution, error: unknown, signal: AbortSignal) {
+    if (signal.aborted) {
+      const current = this.repository.execution(record.taskId, record.id)
+      // WHY：取消命令已经持久化 cancelled 时，异步执行栈晚到的 abort 不能把它降级覆盖成 paused。
+      if (current.status === "cancelled") { Object.assign(record, current); return current }
+      return this.finish(record, "paused", "运行已中断，已完成步骤和检查点保留。")
+    }
+    if (error instanceof Error && error.message === "authorized_chain_unavailable") {
+      return this.finish(record, "blocked", "授权时固定的链路版本不再可用；原授权不会切换到其他版本。",
+        { classification: "version", code: "authorized_chain_unavailable", repairable: false })
+    }
+    if (error instanceof RuntimeBudgetExceededError || error instanceof Error && error.message === "plan_item_limit_exceeded") {
+      return this.finish(record, "blocked", error.message,
+        { classification: "budget", code: "execution_budget_exceeded", repairable: false })
+    }
+    return this.finish(record, "failed", `运行失败：${error instanceof Error ? error.message : "execution_failed"}`,
+      { classification: "deterministic", code: "execution_failed", repairable: true })
+  }
+
+  private confirmCleanup(record: TaskExecution, evidenceDigest: string) {
+    record.cleanup = { status: "confirmed", attempt: record.cleanup.attempt, code: null, evidenceDigest,
+      updatedAt: new Date().toISOString() }
+    record.cleanupResume = null
+    this.bump(record)
+  }
+
+  private requireCleanup(record: TaskExecution, code: string, evidenceDigest: string) {
+    if (record.status !== "cleanup_required") {
+      record.cleanupResume = { status: record.status, reason: record.reason, result: record.result ?? null }
+    }
+    record.cleanup = { status: "unconfirmed", attempt: record.cleanup.attempt, code, evidenceDigest,
+      updatedAt: new Date().toISOString() }
+    record.status = "cleanup_required"
+    record.reason = "本次运行的业务结论已保留，但运行资源清理尚未确认。"
+    if (record.result) record.result = { ...record.result, status: "cleanup_required",
+      summary: record.reason, nextAction: "cleanup" }
+    this.bump(record)
+  }
+
+  private saveCleanupAudit(record: TaskExecution, ownerId: string, report: RunnerCleanupReport) {
+    this.repository.saveCleanupAudit(executionCleanupAuditSchema.parse({
+      id: stableUuid(record.id, "cleanup-audit", String(record.cleanup.attempt)), taskId: record.taskId,
+      executionId: record.id, ownerId, attempt: record.cleanup.attempt, source: "runner",
+      status: report.status, code: report.code, activeResources: report.activeResources,
+      evidenceDigest: report.evidenceDigest, stages: report.stages, createdAt: new Date().toISOString(),
+    }))
+  }
+
+  private saveOwnerVerification(record: TaskExecution, ownerId: string, confirmed: boolean, code: string | null) {
+    const facts = { executionId: record.id, ownerId, attempt: record.cleanup.attempt,
+      status: confirmed ? "confirmed" as const : "unconfirmed" as const, code,
+      activeResources: confirmed ? false : null, stages: [] }
+    const evidenceDigest = digestJson(facts)
+    this.repository.saveCleanupAudit(executionCleanupAuditSchema.parse({ id: stableUuid(record.id, "cleanup-audit",
+      String(record.cleanup.attempt)), taskId: record.taskId, ...facts, source: "owner_verification",
+      evidenceDigest, createdAt: new Date().toISOString() }))
+    return evidenceDigest
   }
 
   private boundChains(record: TaskExecution, plan: TaskPlan) {
@@ -54,7 +134,7 @@ export class TaskPlanExecutor {
       if (!progress) throw new Error("authorized_chain_unavailable")
       try {
         const chain = this.repository.chain(record.taskId, progress.chain.id, progress.chain.version, progress.chain.digest)
-        if ((record.mode ?? "replay") === "replay" && chain.validation.status !== "verified"
+        if ((record.mode ?? "replay") === "replay" && !record.release && chain.validation.status !== "verified"
           || chain.stepId !== step.id || chain.plan.id !== plan.id
           || chain.plan.version !== plan.version || chain.plan.digest !== record.plan.digest) throw new Error()
         return chain
@@ -79,19 +159,12 @@ export class TaskPlanExecutor {
       if (!outcome.continue) return
       progress.output = outcome.output; progress.status = outcome.partial ? "partial" : "completed"
       context.nodeOutputs[step.id] = outcome.output
-      if (step.completion.some((condition) => !evaluatePredicate(condition.predicate, context))) {
-        progress.status = "blocked"
-        this.finish(record, "blocked", `步骤“${step.title}”未满足完成条件。`); return
-      }
       this.bump(record)
-    }
-    if (plan.completion.some((condition) => !evaluatePredicate(condition.predicate, context))) {
-      this.finish(record, "partial", "计划步骤已结束，但整体完成条件未全部满足。"); return
     }
     const value = parseTaskValue(plan.outputContract, resolveBinding(plan.output, context))
     record.output = { kind: "value", contract: { id: plan.outputContract.id, version: plan.outputContract.version }, value }
     this.finish(record, record.steps.some((step) => step.status === "partial") ? "partial" : "completed",
-      record.steps.some((step) => step.status === "partial") ? "运行保留了部分输出和明确缺口。" : "所有计划步骤与完成条件均已通过。")
+      record.steps.some((step) => step.status === "partial") ? "运行保留了部分输出和明确缺口。" : "所有计划步骤均已沿合法控制流完成。")
   }
 
   private async runStep(record: TaskExecution, step: TaskPlanStep, chain: TaskChain, progress: TaskExecutionStep,
@@ -118,35 +191,43 @@ export class TaskPlanExecutor {
       if (run.status === "partial" && output) { outputs.push(outputValue(output)); partial = true; continue }
       if (run.status === "waiting_for_human" || run.status === "paused") {
         if (run.outcome?.status === "paused" && run.outcome.cause === "budget") {
-          this.finish(record, "blocked", run.outcome.reason)
+          this.finish(record, "blocked", run.outcome.reason,
+            { classification: "budget", code: "run_budget_exceeded", repairable: false })
           return { continue: false, output: null, partial: false }
         }
         progress.status = run.status; progress.reason = run.outcome?.reason ?? "运行已暂停。"
-        record.status = run.status; record.reason = progress.reason; this.bump(record); return { continue: false, output: null, partial: false }
+        record.status = run.status; record.reason = progress.reason
+        record.result = projectExecutionResult(this.repository, record); this.bump(record); return { continue: false, output: null, partial: false }
       }
       if (run.externalFailure) {
         progress.status = "blocked"; progress.reason = externalFailureReason(run.externalFailure)
-        this.finish(record, "blocked", progress.reason)
+        this.finish(record, "blocked", progress.reason,
+          { classification: "external", code: run.externalFailure.code, repairable: false })
         return { continue: false, output: null, partial }
       }
       // WHY：blocked/cancelled 是执行边界，不属于可由业务 onItemFailure=continue 忽略的数据缺失。
       if (run.status === "blocked" || run.status === "cancelled") {
         progress.status = run.status; progress.reason = run.outcome?.reason ?? "输入执行被阻断。"
-        this.finish(record, run.status, progress.reason)
+        this.finish(record, run.status, progress.reason, run.status === "cancelled"
+          ? { classification: "cancelled", code: "run_cancelled", repairable: false }
+          : { classification: "deterministic", code: "run_blocked", repairable: true })
         return { continue: false, output: null, partial }
       }
       partial = true; progress.reason = run.outcome?.reason ?? "输入未完成。"
       // WHY：验证必须暴露每个真实失败，不能用业务 continue 策略把缺失输入算成验证完成。
       if ((record.mode ?? "replay") !== "replay") {
-        progress.status = "failed"; this.finish(record, "failed", progress.reason)
+        progress.status = "failed"; this.finish(record, "failed", progress.reason,
+          { classification: "deterministic", code: "validation_run_failed", repairable: true })
         return { continue: false, output: null, partial }
       }
       if (step.invocation.mode !== "each" || step.invocation.onItemFailure === "stop") {
-        this.finish(record, "failed", progress.reason)
+        this.finish(record, "failed", progress.reason,
+          { classification: "deterministic", code: "run_failed", repairable: true })
         return { continue: false, output: null, partial }
       }
       if (step.invocation.onItemFailure === "pause") {
-        progress.status = "paused"; record.status = "paused"; record.reason = progress.reason; this.bump(record)
+        progress.status = "paused"; record.status = "paused"; record.reason = progress.reason
+        record.result = projectExecutionResult(this.repository, record); this.bump(record)
         return { continue: false, output: null, partial }
       }
     }
@@ -163,9 +244,10 @@ export class TaskPlanExecutor {
       && plan.requirement.version === requirement.version && plan.requirement.revision === requirement.revision
   }
   private bump(record: TaskExecution) { record.sequence++; record.updatedAt = new Date().toISOString(); this.save(record) }
-  private finish(record: TaskExecution, status: TaskExecution["status"], reason: string) {
+  private finish(record: TaskExecution, status: TaskExecution["status"], reason: string, failure: FailureHint | null = null) {
     record.status = status; record.reason = reason; record.currentStepId = status === "completed" ? null : record.currentStepId
-    record.currentRunId = status === "completed" ? null : record.currentRunId; this.bump(record); return record
+    record.currentRunId = status === "completed" ? null : record.currentRunId
+    record.result = projectExecutionResult(this.repository, record, failure); this.bump(record); return record
   }
   private save(record: TaskExecution) { this.repository.saveExecution(record) }
 }

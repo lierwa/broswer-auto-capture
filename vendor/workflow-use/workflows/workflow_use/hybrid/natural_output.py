@@ -1,4 +1,5 @@
 """Verified natural reads may assemble dynamic output; final values never become executable constants."""
+import json
 from jsonschema import Draft202012Validator
 from pydantic import Field, JsonValue, model_validator
 
@@ -42,6 +43,12 @@ class VerifiedOutputAssembly(Contract):
     outputDigest: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
+class UncoveredOutputPaths(ValueError):
+    def __init__(self, paths):
+        self.paths = paths
+        super().__init__('natural_output_leaf_uncovered')
+
+
 def build_verified_output_assembly(observations, final_output, output_schema, put_evidence, *,
                                    input_value=None, input_schema=None, requirement_text='', result_spec=None):
     """Build one fact only when verified reads cover every final-output leaf exactly once."""
@@ -75,6 +82,11 @@ def build_verified_output_assembly(observations, final_output, output_schema, pu
             if digest(actual) != digest(_value_at(final_output, field['path'])):
                 raise ValueError('natural_output_value_mismatch')
         _assert_leaf_coverage(final_output, [field['path'] for field in fields])
+    except UncoveredOutputPaths as error:
+        # WHY：只暴露合同路径，不把页面读取值或模型最终文本塞进诊断。
+        paths = json.dumps(error.paths, ensure_ascii=False, separators=(',', ':'))
+        return None, [_assembly_gap(actions, 'natural_output_assembly_incomplete'),
+                      _assembly_gap([], 'natural_output_uncovered_paths:' + paths)]
     except Exception:
         return None, [_assembly_gap(actions, 'natural_output_assembly_incomplete')]
     value = {'fields': fields, 'schema': output_schema, 'outputDigest': digest(final_output)}
@@ -286,9 +298,10 @@ def _leaf_paths(value, path=None):
 
 
 def _assert_leaf_coverage(value, fields):
-    for leaf in _leaf_paths(value):
-        if sum(leaf[:len(path)] == path for path in fields) != 1:
-            raise ValueError('natural_output_leaf_uncovered')
+    missing = [leaf for leaf in _leaf_paths(value)
+               if sum(leaf[:len(path)] == path for path in fields) != 1]
+    if missing:
+        raise UncoveredOutputPaths(missing)
 
 
 def _assemble_verified_output(schema, compiled):

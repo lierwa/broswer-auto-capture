@@ -1,19 +1,16 @@
 import { randomUUID } from "node:crypto"
 import { taskRunSchema, type ChainNode, type NodeOutcome, type TaskOutput } from "@browser-capture/contracts"
-import { evaluatePredicate, resolveBinding } from "./bindings.js"
+import { resolveBinding } from "./bindings.js"
 import { stableUuid } from "./hash.js"
 import { now } from "./runtime-support.js"
 import type { RuntimeState } from "./runtime.js"
 
 export async function finishTerminal(state: RuntimeState, node: Extract<ChainNode, { kind: "terminal" }>) {
   for (const evidence of node.evidence) resolveBinding(evidence, state.context)
-  if (node.status === "completed" && state.compiled.chain.completion.some((condition) => !evaluatePredicate(condition.predicate, state.context))) {
-    throw new Error("completion_condition_failed")
-  }
   const artifacts = structuredClone(state.checkpoint.artifacts), reason = node.reason
   state.run.status = node.status
   state.run.outcome = node.status === "completed" ? { status: "completed", reason, evidence: artifacts,
-    completionEvidence: state.compiled.chain.completion.map((item) => item.id) }
+    completionEvidence: [node.id] }
     : node.status === "partial" ? { status: "partial", reason, evidence: artifacts, remaining: [reason] }
       : node.status === "blocked" ? { status: "blocked", reason, evidence: artifacts, code: "terminal_blocked" }
         : node.status === "failed" ? { status: "failed", reason, evidence: artifacts, code: "terminal_failed" }

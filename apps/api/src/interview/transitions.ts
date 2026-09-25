@@ -7,8 +7,14 @@ import {
   type CommonSurfaceQuestion,
   type CommonSurfaceSubmitPayload,
 } from "@agent-platform/ai-connect/integration/authoring/question"
-import { currentDraft, type InterviewCommand, type InterviewOutput, type InterviewState } from "@browser-capture/contracts/interview"
+import { currentDraft, type InterviewCommand, type InterviewOutput, type InterviewState, type SourceResolution } from "@browser-capture/contracts/interview"
 import { conflict } from "../errors.js"
+import {
+  applySourceResolutionAnswer,
+  assertRequirementReady,
+  recordSourceResolution,
+  recordUserProvidedSources,
+} from "./source-resolution.js"
 
 export type ModelCommand = Extract<InterviewCommand, { type: "message" | "retry" }>
 export function beginRound(state: InterviewState, command: ModelCommand) {
@@ -19,6 +25,7 @@ export function beginRound(state: InterviewState, command: ModelCommand) {
     const accepted = command.answer ? acceptAnswer(state, command, userMessageId) : undefined
     state.messages.push({ id: userMessageId, role: "user", text: command.text, status: "complete", question: null,
       draftVersion: null, aiEvents: [], ...(accepted?.interactionReply ? { interactionReply: accepted.interactionReply } : {}) })
+    recordUserProvidedSources(state, command.text, state.revision + 1)
   }
   if (!userMessageId) conflict("没有可以继续处理的用户原文。")
   state.revision += 1; state.confirmedVersion = null; state.active = true; state.cancellationRequested = false
@@ -82,6 +89,7 @@ function acceptCommonQuestionAnswer(
     kind: surface.questions[0]!.type === "free_form" ? "free_text" : "option", text: answerText, messageId,
     questionId: item.id, draftVersion: null, createdAt: new Date().toISOString(),
   })
+  applySourceResolutionAnswer(state, item.id, normalized, messageId)
   return { interactionReply: buildCommonSurfaceReplyPayload({ surface, submit: surfaceSubmit }) }
 }
 
@@ -119,13 +127,16 @@ function commonAnswerText(question: CommonSurfaceQuestion, answer: Record<string
 export function confirmDraft(state: InterviewState, version: number) {
   if (currentDraft(state)?.version !== version) conflict("只能确认当前对话对应的最新草稿。")
   if (state.confirmedVersion === version) return
+  try { assertRequirementReady(state, currentDraft(state)!.markdown) }
+  catch { conflict("仍有重要待决事项或来源尚未确认，不能确认需求草稿。") }
   state.confirmedVersion = version
   state.decisions.push({ id: randomUUID(), revision: state.revision, kind: "draft_confirmation", text: `确认需求草稿 v${version}`,
     messageId: null, questionId: null, draftVersion: version, createdAt: new Date().toISOString(),
   })
   for (const question of state.unresolved) question.status = "resolved"
 }
-export function finishRound(state: InterviewState, id: string, outcome: "succeeded" | "failed" | "cancelled", output?: InterviewOutput, reason?: string) {
+export function finishRound(state: InterviewState, id: string, outcome: "succeeded" | "failed" | "cancelled", output?: InterviewOutput,
+  reason?: string, sourceResolution?: SourceResolution) {
   if (state.activeTurnId !== id) return
   const turn = state.turns.find((item) => item.id === id)!
   const assistant = state.messages.find((item) => item.id === turn.assistantMessageId)!
@@ -138,6 +149,7 @@ export function finishRound(state: InterviewState, id: string, outcome: "succeed
     assistant.text = output.assistantText; assistant.question = output.question; assistant.parts = output.parts
     for (const question of state.unresolved) if (question.status === "open") question.status = "superseded"
     if (output.question) state.unresolved.push({ id: assistant.id, revision: state.revision, question: output.question, status: "open", answerMessageId: null })
+    if (sourceResolution) recordSourceResolution(state, sourceResolution)
     if (output.draft) {
       const version = (state.drafts.at(-1)?.version ?? 0) + 1
       state.drafts.push({ ...output.draft, version, revision: state.revision }); assistant.draftVersion = version

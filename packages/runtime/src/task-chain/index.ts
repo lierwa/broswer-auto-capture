@@ -1,6 +1,7 @@
 export * from "./bindings.js"
 export * from "./capabilities.js"
 export * from "./compiler.js"
+export { compactGeneratedFailureRoutes } from "./compact-failure-routes.js"
 export * from "./data.js"
 export * from "./hash.js"
 export * from "./function.js"

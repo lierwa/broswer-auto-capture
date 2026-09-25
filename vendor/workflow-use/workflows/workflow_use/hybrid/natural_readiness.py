@@ -2,20 +2,25 @@
 
 from .causal import DELAYED_EFFECTS
 from .evidence import EvidenceRef, digest, gap
-from .natural_reads import VerifiedNaturalRead
+from .natural_reads import VerifiedNaturalRead, runtime_read_specification
 
 NATURAL_SETTLE = {'maxMs': 30000, 'maxAttempts': 100, 'intervalMs': 300}
 
 
-def consumer_readiness_by_action(trace, settle=NATURAL_SETTLE):
+def consumer_readiness_by_action(trace, settle=NATURAL_SETTLE, *, allowed_consumer_ids=None,
+                                 proven_not_dispatched_ids=frozenset()):
     """Bind a producer to the next proven structured consumer, not to a page scenario."""
     observations, output = {item.id: item for item in trace.observations}, {}
     for index, producer in enumerate(trace.actions):
         if producer.status != 'succeeded' or producer.effect not in DELAYED_EFFECTS:
             continue
         for consumer in trace.actions[index + 1:]:
-            if consumer.name == 'done' or consumer.effect in DELAYED_EFFECTS:
+            # WHY：失败但已派发的动作仍可能改变页面；只有审计证明未派发，才能跨过它继续找消费者。
+            if (consumer.name == 'done' or consumer.effect in DELAYED_EFFECTS
+                    and consumer.id not in proven_not_dispatched_ids):
                 break
+            if allowed_consumer_ids is not None and consumer.id not in allowed_consumer_ids:
+                continue
             readiness = _verified_consumer_readiness(producer, consumer, observations, settle)
             if readiness is not None:
                 output[producer.id] = readiness
@@ -24,7 +29,7 @@ def consumer_readiness_by_action(trace, settle=NATURAL_SETTLE):
 
 
 def _verified_consumer_readiness(producer, consumer, observations, settle):
-    if consumer.name not in ('extract', 'bat_read_fields') or consumer.status != 'succeeded':
+    if consumer.name not in ('extract', 'bat_read_fields', 'find_elements') or consumer.status != 'succeeded':
         return None
     pre, post = observations.get(consumer.preObservationRef), observations.get(consumer.postObservationRef)
     if pre is None or post is None or pre.tabId != post.tabId:
@@ -47,7 +52,7 @@ def _verified_consumer_readiness(producer, consumer, observations, settle):
         return None
     authority = 'ready' if producer.effect == 'navigation' else 'transition'
     condition = {'kind': 'read_fields', authority: True, 'consumerRef': 's-' + consumer.id,
-                 'clauseRef': facts[0].id, 'read': value.specification.model_dump(mode='json'),
+                 'clauseRef': facts[0].id, 'read': runtime_read_specification(value.specification),
                  'scope': {'url': pre.url, 'urlDigest': value.urlDigest}, 'settle': settle}
     refs = _unique_refs([consumer.resultRef, *pre.sourceRefs, *post.sourceRefs,
                          *(reference for fact in facts for reference in fact.sourceRefs)])

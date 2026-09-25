@@ -15,6 +15,7 @@ import { driveTaskChain } from "./engine.js"
 import { digestJson, executableChainDigest, stableUuid } from "./hash.js"
 import { executeFunctionNode } from "./function.js"
 import { executeLoop } from "./loop.js"
+import { resolveNodeResultRoute } from "./result-routing.js"
 import { RuntimeBudgetExceededError, type NodeCapabilityResult, type TaskChainCapabilities,
   type RuntimeNodePacing, type TaskChainRuntimeInput } from "./types.js"
 import { BudgetError, UncertainEffectError, activeNow, assertBudget, executionStableKey, modelCount, now } from "./runtime-support.js"
@@ -49,7 +50,8 @@ export class TaskChainRuntime {
         shouldContinue: (current) => current.run.status === "running",
         step: async (current) => {
           signal.throwIfAborted()
-          assertBudget(current)
+          // WHY：人工处理后的现场核验成功时，当前 capability 不会再次派发；不能因原调用已用满命令预算而阻止这次无副作用恢复。
+          if (!resumesCapabilityFromObservation(current)) assertBudget(current)
           await executeNode(current)
           await persistRun(current)
         },
@@ -213,18 +215,8 @@ async function executeNode(state: RuntimeState) {
     await finishTerminal(state, node)
     return
   }
-  if (node.kind === "capability" && result.outcome === "human_required") {
-    waitForCapabilityHuman(state, node, result.reason)
-    return
-  }
-  if (state.run.status === "waiting_for_human") {
-    state.checkpoint.resumeWhen = state.checkpoint.browser && node.kind === "human" ? node.resumeWhen : null
-    syncCheckpoint(state)
-    state.run.checkpoint = structuredClone(state.checkpoint)
-    return
-  }
-  const edge = state.compiled.edges.get(`${node.id}:${result.outcome}`)
-  if (!edge) throw new Error("runtime_outcome_unbound")
+  const edge = resolveNodeResultRoute(state, node, result)
+  if (!edge) return
   state.checkpoint.cursor = edge.to
   state.checkpoint.resumeWhen = node.kind === "checkpoint" && state.checkpoint.browser ? node.resumeWhen : null
   state.checkpoint.sequence = state.run.sequence
@@ -301,9 +293,10 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
 
 async function executeCapability(state: RuntimeState, node: Extract<ChainNode, { kind: "capability" }>,
   idempotencyKey: string, stableKey: string | null): Promise<NodeCapabilityResult> {
-  if (state.resumingNodeId === node.id && state.resumeObservation !== null && node.human
-    && observationMatches(node.human.resumeWhen, state.resumeObservation, state.context)) {
-    return { outcome: "success", output: structuredClone(state.resumeObservation), browser: state.checkpoint.browser ?? undefined }
+  if (resumesCapabilityFromObservation(state)) {
+    // WHY：无数据 capability 在人工处理后只消费现场核验，不重新派发原副作用；带数据输出仍必须重新执行并校验合同。
+    return { outcome: "success", output: node.outputContract.schema.type === "null"
+      ? null : structuredClone(state.resumeObservation), browser: state.checkpoint.browser ?? undefined }
   }
   const invocation = { binding: state.run.binding, node, input: resolveBindings(node.input, state.context),
     config: structuredClone(node.config), idempotencyKey,
@@ -320,6 +313,8 @@ async function executeCapability(state: RuntimeState, node: Extract<ChainNode, {
     result = nodeCapabilityResultSchema.parse(await state.capabilities.capability(invocation))
   } catch (error) {
     if (effect) await markEffectUncertain(state)
+    // WHY：保留未决副作用事实，但预算拒绝仍由既有预算暂停分支处理，不能改写成普通动作失败。
+    if (error instanceof RuntimeBudgetExceededError) throw error
     throw effect ? new UncertainEffectError(error instanceof Error ? error.message : "capability_effect_uncertain") : error
   }
   if (effect) completeEffect(state)
@@ -328,14 +323,13 @@ async function executeCapability(state: RuntimeState, node: Extract<ChainNode, {
   return result
 }
 
-function waitForCapabilityHuman(state: RuntimeState, node: Extract<ChainNode, { kind: "capability" }>, reason?: string) {
-  syncCheckpoint(state); state.checkpoint.id = randomUUID()
-  state.checkpoint.resumeWhen = node.human?.resumeWhen ?? null
-  state.run.checkpoint = structuredClone(state.checkpoint); state.run.status = "waiting_for_human"
-  state.run.outcome = { status: "waiting_for_human", waitpointId: stableUuid(state.run.binding.runId, node.id, "waitpoint"),
-    checkpointId: state.checkpoint.id, reason: reason ?? node.human?.prompt ?? "需要用户处理当前浏览器页面。",
-    evidence: structuredClone(state.checkpoint.artifacts) }
+function resumesCapabilityFromObservation(state: RuntimeState) {
+  const node = state.compiled.nodes.get(state.checkpoint.cursor)
+  return node?.kind === "capability" && state.resumingNodeId === node.id && state.resumeObservation !== null
+    && (node.human && observationMatches(node.human.resumeWhen, state.resumeObservation, state.context)
+      || !node.human && node.outputContract.schema.type === "null")
 }
+
 function resolveTarget(target: Extract<ChainNode, { kind: "browser" | "observe" }>["target"], context: BindingContext) {
   if (!target) return undefined
   return target.kind === "semantic" ? { kind: target.kind,

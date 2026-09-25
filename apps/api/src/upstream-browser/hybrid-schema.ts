@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { budgetSchema, versionReferenceSchema, jsonValueSchema, resultSpecSchema, valueBindingSchema, valuePathSchema,
+import { budgetSchema, versionReferenceSchema, jsonValueSchema, keySchema, resultSpecSchema, valueBindingSchema, valuePathSchema,
   valueSchemaSchema } from "@browser-capture/contracts"
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
@@ -27,19 +27,25 @@ const binding = z.object({ id: z.string(), actionRef: z.string(), argumentPath: 
   kind: z.enum(["runtime_input", "prior_output", "authorized_constant", "sample_evidence"]),
   sourceRef: z.string(), transform: z.null(), proofRefs: z.array(reference) }).strict()
 const naturalBinding = binding.extend({ binding: valueBindingSchema.optional(),
-  derivation: z.literal("anchor_navigation").optional() }).strict()
+  derivation: z.enum(["anchor_navigation", "prior_verified_read"]).optional() }).strict()
 export const naturalBindingFactValueSchema = z.object({ actionRef: z.string(), argumentPath: z.string(),
-  binding: valueBindingSchema, provenance: z.enum(["runtime_input", "native_parameter", "task_literal", "node_output"]),
+  binding: valueBindingSchema, provenance: z.enum(["runtime_input", "native_parameter", "task_literal", "plan_entry_url", "node_output"]),
   taskQuote: z.string().nullable().optional(), sourceReadRef: z.string().nullable().optional() }).strict()
 export const hybridOutputAssemblySchema = z.object({ sourceRef: z.string().min(1),
   fields: z.array(z.object({ binding: valueBindingSchema, path: valuePathSchema }).strict()).min(1).max(100),
   schema: valueSchemaSchema, proofRefs: z.array(reference).min(1) }).strict()
+// 来源事实保留代表值用于证明 input/constant 绑定；编译产物使用上面的 schema，绝不携带样本值。
+export const hybridOutputAssemblyEvidenceSchema = z.object({
+  fields: z.array(z.object({ binding: valueBindingSchema, path: valuePathSchema,
+    sampleValue: jsonValueSchema.optional() }).strict()).min(1).max(100),
+  schema: valueSchemaSchema, outputDigest: hash,
+}).strict()
 export const hybridResultBindingSchema = z.object({ contractVersion: z.literal("bat-result-binding/v1"),
   schema: valueSchemaSchema, assignments: z.array(z.object({ to: valuePathSchema, from: valueBindingSchema,
-    producerRef: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/) }).strict()).min(1).max(100),
+    producerRef: keySchema }).strict()).min(1).max(100),
   sourceRef: z.string().min(1), proofRefs: z.array(reference).min(1) }).strict()
 export const hybridResultBranchSchema = z.object({ id: z.string().min(1),
-  controlRef: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/), sourceActionRef: z.string().min(1),
+  controlRef: keySchema, sourceActionRef: z.string().min(1),
   sourceSegmentId: z.string().min(1), consumerSegmentId: z.string().min(1),
   missingProducerSegmentId: z.string().min(1).optional(),
   skippedSegmentIds: z.array(z.string().min(1)).min(1), predicate: z.object({
@@ -62,6 +68,7 @@ const historyTargetIdentitySchema = z.object({
 const targetOrdinalBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("input"), path: valuePathSchema }).strict(),
   z.object({ source: z.literal("constant"), value: jsonValueSchema }).strict(),
+  z.object({ source: z.literal("node"), nodeId: z.string().min(1), path: valuePathSchema }).strict(),
 ])
 export const hybridTargetSchema = z.discriminatedUnion("strategy", [
   z.object({ strategy: z.literal("ordinal"), container: z.string().min(1), ordinal: z.number().int().positive(),
@@ -76,14 +83,22 @@ export const hybridTargetSchema = z.discriminatedUnion("strategy", [
     identity: historyTargetIdentitySchema }).strict(),
 ])
 const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.string().nullable(),
+  optionalAttribute: z.boolean().optional(),
+  textSource: z.enum(["rendered", "textContent"]).optional(),
   resolveUrl: z.boolean().optional(), valueType: z.enum(["string", "number", "integer", "boolean"]),
   textPrefix: z.string().min(1).max(100).optional(), textSuffix: z.string().min(1).max(100).optional(),
   normalizeWhitespace: z.boolean().optional(), normalizePresentation: z.boolean().optional(),
   multiple: z.boolean().optional(),
   maxValues: z.number().int().min(1).max(300).optional() }).strict()
   .superRefine((value, context) => {
-    if (value.resolveUrl === true && value.attribute !== "href") {
-      context.addIssue({ code: "custom", message: "url_resolution_requires_href" })
+    if (value.optionalAttribute === true && (value.attribute === null || value.multiple === true)) {
+      context.addIssue({ code: "custom", message: "optional_attribute_requires_single_attribute" })
+    }
+    if (value.resolveUrl === true && value.attribute !== "href" && value.attribute !== "src") {
+      context.addIssue({ code: "custom", message: "url_resolution_requires_link_attribute" })
+    }
+    if (value.textSource === "textContent" && value.attribute !== null) {
+      context.addIssue({ code: "custom", message: "text_source_requires_text_field" })
     }
     if ((value.textPrefix !== undefined || value.textSuffix !== undefined)
       && (!["string", "number", "integer"].includes(value.valueType) || value.attribute !== null)) {
@@ -96,20 +111,22 @@ const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.str
   })
 export const readSpecificationSchema = z.object({ container: z.string().min(1),
   fields: z.record(z.string().min(1), readFieldSchema),
+  includeOrdinal: z.boolean().optional(),
   maxItems: z.number().int().min(1).max(300), maxInputBytes: z.number().int().min(1).optional(),
   outputSchema: valueSchemaSchema }).strict()
 const settlePolicySchema = z.object({ maxMs: z.number().int().min(1).max(30000),
   maxAttempts: z.number().int().min(1).max(100), intervalMs: z.number().int().min(10).max(1000) }).strict()
 const factPostconditionSchema = z.object({
   kind: z.enum(["url", "url_digest", "title", "target_value", "target_text", "target_state",
-    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "read_fields"]),
+    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "read_fields"]),
   bindingArgument: z.string().min(1).optional(), equals: jsonValueSchema.optional(),
-  changed: z.literal(true).optional(), ready: z.literal(true).optional(), transition: z.literal(true).optional(),
+  changed: z.literal(true).optional(), unchanged: z.literal(true).optional(),
+  ready: z.literal(true).optional(), transition: z.literal(true).optional(),
   clauseRef: z.string().min(1).optional(), read: readSpecificationSchema.optional(),
   scope: targetScopeSchema.optional(), settle: settlePolicySchema.optional(), consumerRef: z.string().min(1).optional(),
 }).strict().superRefine((value, context) => {
   const authorityCount = [value.bindingArgument !== undefined, value.equals !== undefined && value.equals !== null,
-    value.changed === true,
+    value.changed === true, value.unchanged === true,
     value.ready === true, value.transition === true].filter(Boolean).length
   if (authorityCount !== 1) context.addIssue({ code: "custom", message: "one_postcondition_authority_required" })
   if (value.equals === null) context.addIssue({ code: "custom", message: "postcondition_equals_must_not_be_null" })
@@ -169,7 +186,7 @@ const compilationBody = {
   canonicalDigest: hash }
 const legacyCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/1") }).strict()
 const naturalCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/2"),
-  segments: z.array(z.discriminatedUnion("kind", [naturalDeterministic, naturalSummarySegmentSchema])).max(500),
+  segments: z.array(z.discriminatedUnion("kind", [naturalDeterministic, naturalSummarySegmentSchema, functionSegmentSchema])).max(500),
   outputAssembly: hybridOutputAssemblySchema.nullable().optional(),
   resultBinding: hybridResultBindingSchema.nullable().optional(),
   resultBranches: z.array(hybridResultBranchSchema).max(20).optional() }).strict()
@@ -193,7 +210,7 @@ export const hybridNaturalRequestSchema = z.object({ compilerVersion: z.literal(
     taskText: z.string().min(1), sourceDigest: hash, digest: hash }).strict(),
   plan: z.object({ id: z.string(), version: z.number().int().positive(), sourceDigest: hash, digest: hash,
     stepId: z.string(), inputSchemaDigest: hash, outputSchemaDigest: hash,
-    callMode: z.enum(["once", "each", "batch"]), resultSpec: resultSpecSchema,
+    callMode: z.enum(["once", "each", "batch"]), entryUrls: z.array(z.url()).max(32), resultSpec: resultSpecSchema,
     semanticOperations: z.array(semanticOperationSchema).default([]) }).strict(),
   runtimeInputSchema: valueSchemaSchema,
   trace: z.object({ digest: hash, source: z.object({ historyRef: z.string().min(1) }).passthrough(),

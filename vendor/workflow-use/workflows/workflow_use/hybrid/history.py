@@ -10,7 +10,7 @@ from .evidence import EvidenceRef, NormalizedObservation, ObservationFact, Trace
 from .normalize import HistoryInput, HistoryRecord, ResultEvidence
 
 
-def from_agent_history(history: AgentHistoryList, *, source: TraceSource, judged: bool,
+def from_agent_history(history: AgentHistoryList, *, source: TraceSource,
                        redaction_manifest: EvidenceRef, redact_action: Callable[[dict], dict],
                        store_result: Callable[[int, int, ActionResult], EvidenceRef],
                        observations: list[NormalizedObservation],
@@ -73,7 +73,7 @@ def from_agent_history(history: AgentHistoryList, *, source: TraceSource, judged
                                             for index in range(len(actions)) if (step_index, index, 'post') in observation_links},
                        resultDisposition=disposition))
     actual_completed = bool(history.is_done() and history.is_successful()) if completed is None else completed
-    return HistoryInput(source=source, judged=judged, completed=actual_completed,
+    return HistoryInput(source=source, completed=actual_completed,
                         records=records, observations=observations, finalResultRef=final_result_ref,
                         redactionManifestRef=redaction_manifest, importGaps=import_gaps)
 

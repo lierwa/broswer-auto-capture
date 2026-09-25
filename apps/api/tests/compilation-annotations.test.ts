@@ -2,8 +2,9 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { validateAnnotations } from "../src/task-chain/compilation-annotations.js"
 import { normalizeBoundStepContracts, normalizeEachCompletionBindings, requirePlannedChainShape,
-  semanticPlanSchema } from "../src/task-chain/authoring.js"
+  semanticPlanSchema, authoringFailureMessage } from "../src/task-chain/authoring.js"
 import { planPrompt } from "../src/task-chain/authoring-prompts.js"
+import { browserUseTask } from "../src/upstream-browser/task-request.js"
 import { traceEvent, type ExplorationTrace } from "../src/task-chain/exploration-trace.js"
 const trace: ExplorationTrace = { jobId: "job", browserRunId: "browser", input: { url: "https://example.org/" },
   events: [traceEvent("nav", { type: "navigate", url: "https://example.org/" }, null, null),
@@ -66,16 +67,55 @@ test("语义计划 schema 从模型输入中移除技术预算", () => {
   const step = semanticPlanSchema.shape.steps.element
   assert.equal(Object.hasOwn(step.shape, "budget"), false)
   assert.equal(Object.hasOwn(semanticPlanSchema.shape, "budget"), false)
+  assert.deepEqual(semanticPlanSchema.shape.entryUrls.parse(["https://www.bilibili.com/"]), ["https://www.bilibili.com/"])
+  assert.throws(() => semanticPlanSchema.shape.entryUrls.parse([]))
+  assert.throws(() => semanticPlanSchema.shape.entryUrls.parse(["file:///tmp/task.html"]))
+})
+
+test("规划从已确认来源生成预执行入口而不要求用户填写 URL", () => {
+  const prompt = planPrompt({ definition: { body: "打开 Bilibili 播放目标内容" } } as never)
+  assert.match(prompt, /entryUrls 是预执行使用的完整 http\/https 入口/)
+  assert.match(prompt, /不是运行输入/)
+  assert.match(prompt, /不得扩展到需求未授权的网站/)
+  assert.match(prompt, /首页、站内搜索、登录或内容子域/)
+})
+
+test("浏览器探索明确接收计划入口且禁止换网站碰运气", () => {
+  const task = browserUseTask({
+    requirement: { definition: { body: "播放目标内容" } },
+    plan: { summary: "播放内容", authorizationScope: "目标站点", entryUrls: ["https://video.example/"],
+      outputContract: { schema: { type: "null" } } },
+    step: { title: "播放", goal: "开始播放", dependsOn: [], invocation: { mode: "once" }, risks: [],
+      inputContract: { schema: { type: "null" } }, outputContract: { schema: { type: "null" } },
+      resultSpec: { mode: "execution" }, completion: [] }, resolvedInput: null,
+  } as never)
+  assert.match(task, /入口 1：https:\/\/video\.example\//)
+  assert.match(task, /不得改用搜索引擎/)
+})
+
+test("准备失败只向产品界面返回可执行说明，不暴露内部错误码", () => {
+  const aggregate = new AggregateError([
+    new Error("hybrid_completed_source_required"),
+    new Error("upstream_cleanup_unconfirmed:1"),
+  ], "hybrid_source_and_cleanup_failed")
+  const message = authoringFailureMessage(aggregate)
+  assert.match(message, /代表任务没有正常结束或输出不符合已确认合同/)
+  assert.doesNotMatch(message, /hybrid_|cleanup|upstream/)
+  assert.doesNotMatch(authoringFailureMessage(new Error("unknown_internal_code")), /unknown_internal_code/)
+  const sourceMismatch = authoringFailureMessage(new Error("workflow_fork_source_mismatch:workflows/private.py"))
+  assert.match(sourceMismatch, /受管 workflow-use 源码与已登记摘要不一致/)
+  assert.doesNotMatch(sourceMismatch, /private\.py|workflow_fork_source_mismatch/)
+  const runnerClosed = authoringFailureMessage(new Error("upstream_runner_closed:1"))
+  assert.match(runnerClosed, /受管浏览器运行环境未能启动/)
+  assert.doesNotMatch(runnerClosed, /upstream_runner_closed/)
 })
 
 test("任务预执行把真实代表输入交给规划且禁止冻结样本值", () => {
   const prompt = planPrompt({ definition: { body: "采集页面结果" } } as never,
     { startUrl: "https://example.org/", searchQuery: "portable value", targetCount: 3 })
-  assert.match(prompt, /"searchQuery":"portable value"/)
+  assert.match(prompt, /输入\.searchQuery：“portable value”/)
   assert.match(prompt, /字段名和基础类型保持一致/)
-  assert.match(prompt, /不得用 enum 或相同上下界把样本值冻结为常量/)
-  assert.match(prompt, /不能把 url\/href 声明为必填/)
-  assert.match(prompt, /12000 字符/)
+  assert.match(prompt, /不得把样本值冻结为 enum 或相同上下界/)
 })
 
 test("宿主把 each 的单次输出完成条件规范为聚合输出路径", () => {

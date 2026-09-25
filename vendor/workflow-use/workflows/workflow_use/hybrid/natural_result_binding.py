@@ -86,17 +86,26 @@ def compile_result_binding(result_spec, assembly, output_schema):
     try:
         _distinct_paths([field['path'] for field in fields])
         _assert_required_coverage(output_schema, [field['path'] for field in fields])
-        owned = {field['producerRef']: 0 for field in fields}
         for source in assembly['fields']:
             owners = [field for field in fields if _prefix(field['path'], source['path'])]
-            if len(owners) != 1:
+            if len(owners) > 1:
                 raise ValueError('natural_result_binding_owner_ambiguous')
-            owner = owners[0]
-            owned[owner['producerRef']] += 1
-            assignments.append({'to': source['path'], 'from': source['binding'],
-                                'producerRef': owner['producerRef']})
-        if any(count == 0 for count in owned.values()):
-            raise ValueError('natural_result_binding_source_missing')
+            if len(owners) == 1:
+                owner = owners[0]
+                assignments.append({'to': source['path'], 'from': source['binding'],
+                                    'producerRef': owner['producerRef']})
+                continue
+            covered = [field for field in fields if _prefix(source['path'], field['path'])]
+            if not covered:
+                raise ValueError('natural_result_binding_owner_missing')
+            # WHY: one verified root-object read may satisfy several plan-owned fields. Preserve each
+            # producerRef and lower it to a child ValueBinding instead of inventing a shared producer.
+            for owner in covered:
+                relative = owner['path'][len(source['path']):]
+                assignments.append({'to': owner['path'], 'from': _binding_at_path(source['binding'], relative),
+                                    'producerRef': owner['producerRef']})
+        # WHY：可选字段未在本次真实结果中出现时没有可绑定来源；只核验实际赋值覆盖全部必需路径。
+        _assert_required_coverage(output_schema, [assignment['to'] for assignment in assignments])
     except Exception:
         return None, [_binding_gap('natural_result_binding_invalid', invalid=True)]
     return {'contractVersion': 'bat-result-binding/v1', 'schema': output_schema,
@@ -204,7 +213,7 @@ def _indexed_consumers(segments):
                 continue
             source = segments[source_index]
             source_schema = source.get('outputs', [{}])[0].get('schema') if source.get('outputs') else None
-            guarded = _first_array_index(source_schema, binding.get('path'))
+            guarded = _first_unproven_array_index(source_schema, binding.get('path'))
             if guarded is None:
                 continue
             collection_path, minimum = guarded
@@ -219,17 +228,20 @@ def _indexed_consumers(segments):
     return sorted(guards.values(), key=lambda item: item['consumerIndex'])
 
 
-def _first_array_index(schema, path):
+def _first_unproven_array_index(schema, path):
     if not isinstance(schema, dict) or not isinstance(path, list):
         return None
     current, prefix = schema, []
     for item in path:
         if current.get('type') == 'array' and type(item) is int:
-            return prefix, item + 1
-        if current.get('type') == 'object' and isinstance(item, str):
-            current = current.get('properties', {}).get(item, {})
-        elif current.get('type') == 'array' and type(item) is int:
+            minimum = item + 1
+            bound = current.get('minItems')
+            # WHY：输出合同已保证该索引时，空集合必须由运行时合同判失败，不能走正常完成分支。
+            if type(bound) is not int or bound < minimum:
+                return prefix, minimum
             current = current.get('items', {})
+        elif current.get('type') == 'object' and isinstance(item, str):
+            current = current.get('properties', {}).get(item, {})
         else:
             return None
         prefix.append(item)
@@ -296,6 +308,16 @@ def _value_at(value, path):
         else:
             raise ValueError('natural_result_derivation_value_missing')
     return value
+
+
+def _binding_at_path(binding, path):
+    if not path:
+        return binding
+    if binding.get('source') in ('node', 'input'):
+        return {**binding, 'path': [*binding.get('path', []), *path]}
+    if binding.get('source') == 'constant':
+        return {'source': 'constant', 'value': _value_at(binding.get('value'), path)}
+    raise ValueError('natural_result_binding_source_invalid')
 
 
 def _schema_at(schema, path):

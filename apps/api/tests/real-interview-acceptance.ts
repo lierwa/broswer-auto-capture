@@ -160,7 +160,7 @@ async function runScenario(
     } else {
       const open = state.unresolved.find((item) => item.status === "open")
       if (!open) throw new Error("恢复的隔离任务没有待回答 Question")
-      answer = resolveAnswer(scenario, open)
+      answer = resolveAnswer(scenario, state, open)
       result.questionKinds.push(answer.kind)
       input = answer.text
     }
@@ -215,7 +215,7 @@ async function runScenario(
       exactRepeatCount = questionFingerprint === previousQuestion ? exactRepeatCount + 1 : 0
       previousQuestion = questionFingerprint
       if (exactRepeatCount >= 2) throw new Error("quality:连续两轮产生完全相同的问题")
-      const resolved = resolveAnswer(scenario, open, usedFollowUps)
+      const resolved = resolveAnswer(scenario, state, open, usedFollowUps)
       if (resolved.kind === "selection" && resolved.followUp) usedFollowUps.add(resolved.followUp)
       input = resolved.text; answer = resolved
     }
@@ -256,8 +256,19 @@ async function submitMessage(app: NonNullable<typeof service>, base: string, tas
   return state
 }
 
-function resolveAnswer(scenario: InterviewAcceptanceCase, item: InterviewState["unresolved"][number], usedFollowUps = new Set<string>()): Answer {
+function resolveAnswer(
+  scenario: InterviewAcceptanceCase,
+  state: InterviewState,
+  item: InterviewState["unresolved"][number],
+  usedFollowUps = new Set<string>(),
+): Answer {
   const question = normalizeQuestion(item.question)
+  const source = state.sourceResolutions.findLast((resolution) => resolution.questionId === item.id && resolution.status === "open")
+  if (source?.candidates[0]) {
+    const candidate = source.candidates[0]
+    return { kind: "selection", mode: "choice", questionId: item.id, labels: [candidate.title], optionIds: [candidate.id],
+      text: candidate.title, source: "read_only_source_candidate" }
+  }
   if (question.kind === "free_form") {
     const rule = scenario.freeTextRules.find((candidate) => includesAny(question.prompt, candidate.promptIncludes))
     if (!rule) throw new Error(`冻结 persona 未定义自由输入事实：${question.prompt}`)
@@ -386,7 +397,7 @@ async function readLiveSelection(base: string) {
 async function digestLiveUserState(base: string) {
   const tasks = await liveJson(`${base}/api/tasks`) as { tasks?: Array<{ id: string }> } | Array<{ id: string }>
   const list = Array.isArray(tasks) ? tasks : tasks.tasks ?? []
-  const surfaces = ["interview", "browser", "plan", "chains"]
+  const surfaces = ["interview", "browser", "task-chain"]
   const values: string[] = []
   for (const task of [...list].sort((left, right) => left.id.localeCompare(right.id))) {
     for (const surface of surfaces) values.push(`${task.id}:${surface}:${digest(await liveJson(`${base}/api/${surface}?taskId=${task.id}`))}`)

@@ -1,91 +1,156 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
-import { Badge, Button, Callout, Flex, Select, TextArea } from "@radix-ui/themes"
-import { Background, Controls, ReactFlow } from "@xyflow/react"
-import type { ChainNode, TaskChain, TaskRun } from "@browser-capture/contracts"
-import { DetailPane } from "./DetailPane.js"
-import { sha256 } from "./Plan.js"
-import { chainFamilyLabels, chainOperation, digestNodeText, isStaleVersion, projectChainGraph, runsForChain } from "./taskChainProjection.js"
-import { TaskChainConnection } from "./taskChainConnection.js"
+import { useState } from "react"
+import { Badge, Button, Callout, Dialog, DropdownMenu, Select } from "@radix-ui/themes"
+import { Ellipsis, History, MessageSquare, Play, RefreshCw, Wrench } from "lucide-react"
+import { DraftControls } from "./ChainRevisionEditor.js"
+import { ChainRunDialog } from "./ChainRunDialog.js"
+import { LiveChainCanvas, LiveChainCanvasToolbar } from "./LiveChainCanvas.js"
+import { WorkbenchContext } from "./WorkbenchContext.js"
+import { preparationActivityLabel, useLiveChain, type LiveChainModel } from "./useLiveChain.js"
+import type { TaskChainConnection } from "./taskChainConnection.js"
 
-export function LiveChain({ connection, active, theme, onPlan }: { connection: TaskChainConnection; active: boolean;
-  theme: "light" | "dark"; onPlan(): void }) {
-  const view = useSyncExternalStore(connection.subscribe, connection.snapshot, connection.snapshot)
-  const [planKey, setPlanKey] = useState<string | null>(null), [stepId, setStepId] = useState<string | null>(null)
-  const [version, setVersion] = useState<number | null>(null), [nodeId, setNodeId] = useState<string | null>(null)
-  const [validationInput, setValidationInput] = useState("{}"), [inputError, setInputError] = useState("")
-  useEffect(() => {
-    if (!active) return
-    const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>
-    const poll = async () => { await connection.reload(controller.signal); if (!controller.signal.aborted) timer = setTimeout(() => { void poll() }, 1000) }
-    void poll(); return () => { controller.abort(); clearTimeout(timer) }
-  }, [active, connection])
-  const state = view.state, plans = state?.plans.toSorted((left, right) => right.version - left.version) ?? []
-  const plan = plans.find((item) => `${item.id}:${item.version}` === planKey) ?? plans[0]
-  const step = plan?.steps.find((item) => item.id === stepId) ?? plan?.steps[0]
-  const versions = state && plan && step ? state.chains.filter((chain) => chain.plan.id === plan.id
-    && chain.plan.version === plan.version && chain.stepId === step.id).toSorted((left, right) => right.version - left.version) : []
-  const chain = versions.find((item) => item.version === version) ?? versions[0]
-  const stale = chain ? isStaleVersion(state!, "chain", chain.id, chain.version) : false
-  const graph = useMemo(() => chain ? projectChainGraph(chain, state?.runs ?? []) : { nodes: [], edges: [] }, [chain, state?.runs])
-  const chainRuns = chain ? runsForChain(state?.runs ?? [], chain) : [], latestChainRun = chainRuns.at(-1)
-  const selectedNode = chain?.nodes.find((node) => node.id === nodeId)
-  if (!state) return <section className="artifact-view"><p role="status">{view.error || "正在读取任务链路…"}</p><Button onClick={() => void connection.reload()}>重新连接</Button></section>
-  return <section className="artifact-view chain-view" aria-label="任务链路工作区">
-    <header className="view-heading"><h2>任务链路</h2><Button variant="ghost" onClick={onPlan}>查看计划</Button></header>
-    {view.error && <Callout.Root color="red"><Callout.Text>{view.error}</Callout.Text><Button onClick={() => void connection.reload()}>重新连接</Button></Callout.Root>}
-    {!plan || !step ? <div className="stage-empty"><h3>尚无计划步骤</h3><p>确认需求并生成计划后，这里显示真实候选链路和验证证据。</p></div> : <>
-      <Flex gap="2" wrap="wrap" my="3"><Select.Root value={`${plan.id}:${plan.version}`} onValueChange={(value) => { setPlanKey(value); setStepId(null); setVersion(null); setNodeId(null) }}><Select.Trigger aria-label="链路所属计划" /><Select.Content>{plans.map((item) => <Select.Item key={`${item.id}:${item.version}`} value={`${item.id}:${item.version}`}>计划 v{item.version}</Select.Item>)}</Select.Content></Select.Root>
-        <Select.Root value={step.id} onValueChange={(value) => { setStepId(value); setVersion(null); setNodeId(null) }}><Select.Trigger aria-label="计划步骤" /><Select.Content>{plan.steps.map((item) => <Select.Item key={item.id} value={item.id}>{item.title}</Select.Item>)}</Select.Content></Select.Root></Flex>
-      {!chain ? <div className="empty-chain-canvas"><h3>“{step.title}”尚无候选链路</h3><p>回到计划生成该步骤的参数化候选链路。</p></div> : <>
-        <Flex gap="2" wrap="wrap" my="3"><Select.Root value={String(chain.version)} onValueChange={(value) => { setVersion(Number(value)); setNodeId(null) }}><Select.Trigger aria-label="链路版本" /><Select.Content>{versions.map((item) => <Select.Item key={item.version} value={String(item.version)}>链路 v{item.version}</Select.Item>)}</Select.Content></Select.Root>
-          <Badge color={chain.validation.status === "verified" ? "green" : "amber"}>{chain.validation.status === "verified" ? "不同输入验证通过" : "候选链路"}</Badge>
-          {stale && <Badge color="amber">历史只读</Badge>}</Flex>
-        <p>编译结构说明：{chain.implementationSummary}</p>
-        <p>底层浏览器命令以每次运行事实为准{latestChainRun ? `；最近一次实际消费 ${latestChainRun.consumed.browserCommands} 条。` : "。"}</p>
-        <div className="chain-layout view-with-detail"><div className="canvas-shell"><div className="canvas-heading"><span>{chain.reuseBoundary.description}</span></div>
-          <div className="flow-canvas" aria-label="任务链路节点画布">{active && <ReactFlow key={`${chain.id}:${chain.version}`} nodes={graph.nodes.map((item) => ({ ...item, selected: item.id === nodeId }))} edges={graph.edges} colorMode={theme} fitView minZoom={0.2} maxZoom={1.8} nodesDraggable={false} nodesConnectable={false} onNodeClick={(_, item) => setNodeId(item.id)}><Background gap={24} /><Controls showInteractive={false} /></ReactFlow>}</div>
-          <div className="canvas-footer">{chain.completion.map((item) => item.description).join(" · ")}</div></div>
-          <DetailPane title="节点详情" open={active && Boolean(selectedNode)} onClose={() => setNodeId(null)}>{selectedNode && <NodeDetail node={selectedNode} runs={chainRuns} />}</DetailPane></div>
-        {plan.steps.length > 1 ? <div className="action-gate"><h3>验证完整计划</h3>
-          <p>此链路依赖其他步骤的浏览器现场，请从计划入口验证所有步骤。</p><Button onClick={onPlan}>前往计划验证</Button></div>
-          : <div className="action-gate"><h3>验证可复用边界</h3><p>预执行完成后系统会立即复跑代表输入；本地链路失败会复用原证据修复新版本并再次验证。这里再用不同输入证明绑定生效。</p>
-          <TextArea aria-label="链路验证输入 JSON" value={validationInput} onChange={(event) => setValidationInput(event.target.value)} rows={5} />{inputError && <p className="error-text">{inputError}</p>}
-          <Flex gap="2"><Button disabled={view.busy || stale} onClick={() => validate(connection, chain, "sample", validationInput, setInputError)}>运行代表样本</Button>
-            <Button variant="soft" disabled={view.busy || stale || !chain.validation.evidence.some((item) => item.phase === "sample" && item.passed)} onClick={() => validate(connection, chain, "verification", validationInput, setInputError)}>用不同输入验证</Button></Flex></div>}
-        <ValidationEvidence chain={chain} runs={chainRuns} />
-      </>}
-    </>}
+export function LiveChain({ connection, active, theme, onInterview, onRequirementRevision }: {
+  connection: TaskChainConnection
+  active: boolean
+  theme: "light" | "dark"
+  onInterview(): void
+  onRequirementRevision(summary: string, feedback: string): Promise<void>
+}) {
+  const model = useLiveChain(connection, active)
+  const [publishOpen, setPublishOpen] = useState(false)
+  const { view, workspace } = model
+  if (!workspace) return <section className="chain-workbench chain-loading"><p role="status">
+    {view.error || "正在读取任务工作区…"}</p><Button onClick={() => void connection.reload()}>重新连接</Button></section>
+  return <section className="chain-workbench" aria-label="链路画布">
+    <WorkbenchToolbar model={model} connection={connection} onInterview={onInterview}
+      onPublish={() => setPublishOpen(true)} />
+    {view.error && <Callout.Root className="workbench-alert" color="red"><Callout.Text>{view.error}</Callout.Text>
+      {view.pending && <Button size="1" onClick={() => void connection.retry()}>重试同一请求</Button>}
+      {view.errorCode === "browser_profile_busy" && <Button size="1" variant="soft"
+        onClick={() => void connection.closeBrowserProfileAndRetry()}>关闭账号浏览器后重试</Button>}
+    </Callout.Root>}
+    {model.editorError && <Callout.Root className="workbench-alert" color="amber"><Callout.Text>{model.editorError}</Callout.Text></Callout.Root>}
+    <ExecutionStrip model={model} />
+    {!model.chain || !model.presentation ? <div className="chain-layout"
+      data-inspector-open={Boolean(model.contextMode)}>
+        <EmptyCanvas model={model} connection={connection} onInterview={onInterview} />
+        <WorkbenchContext model={model} connection={connection} active={active}
+          onRequirementRevision={onRequirementRevision} />
+      </div>
+      : <div className="chain-layout" data-inspector-open={Boolean(model.selectedNode || model.selectedStage || model.contextMode)}>
+        <LiveChainCanvas model={model} active={active} theme={theme} />
+        <WorkbenchContext model={model} connection={connection} active={active}
+          onRequirementRevision={onRequirementRevision} />
+      </div>}
+    {model.runDialogMode && <ChainRunDialog open mode={model.runDialogMode} workspace={workspace} connection={connection}
+      onOpenChange={(open) => { if (!open) model.setRunDialogMode(null) }} />}
+    <PublishDialog open={publishOpen} onOpenChange={setPublishOpen} model={model} connection={connection} />
   </section>
 }
 
-function NodeDetail({ node, runs }: { node: ChainNode; runs: TaskRun[] }) {
-  const protectedText = node.kind === "function" ? node.source : node.kind === "llm" && "systemPrompt" in node ? node.systemPrompt : null
-  const [digest, setDigest] = useState<string | null>(null)
-  useEffect(() => { let live = true; if (protectedText) void digestNodeText(protectedText).then((value) => { if (live) setDigest(value) })
-    else setDigest(null); return () => { live = false } }, [protectedText])
-  const events = runs.flatMap((run) => run.events.filter((event) => event.nodeId === node.id)).slice(-12)
-  const visible = node.kind === "function" ? { ...node, source: "（默认折叠；显式展开后可查看）" }
-    : node.kind === "llm" && "systemPrompt" in node ? { ...node, systemPrompt: "（固定 prompt；见下方显式展开）" } : node
-  return <div className="detail-content node-inspector"><Badge>{chainFamilyLabels[node.kind]}</Badge><Badge color="gray">{chainOperation(node)}</Badge><h3>{node.label}</h3>
-    {digest && <p>{node.kind === "function" ? "源码" : "systemPrompt"} SHA-256：<code>{digest}</code></p>}
-    <pre className="chain-json">{JSON.stringify(visible, null, 2)}</pre>
-    {protectedText && <details><summary>展开完整{node.kind === "function" ? "源码" : "systemPrompt"}</summary><pre className="chain-json">{protectedText}</pre></details>}
-    {events.map((event) => <p key={`${event.invocationId}:${event.sequence}`}>{event.status} · {event.outcome ?? "等待结果"} · {event.at}</p>)}</div>
+function WorkbenchToolbar({ model, connection, onInterview, onPublish }: {
+  model: LiveChainModel
+  connection: TaskChainConnection
+  onInterview(): void
+  onPublish(): void
+}) {
+  const { workspace, draft, release, steps, step, activityRunning, executionRunning, view } = model
+  if (!workspace) return null
+  const activity = workspace.activity
+  return <header className="chain-command-bar">
+    <div className="chain-surface-identity">
+      <Badge color={draft ? "amber" : release ? "green" : "gray"} variant="soft">
+        {draft ? "工作草稿" : release ? `已发布 V${release.reference.version}` : "等待生成"}
+      </Badge>
+      {activity && <button className="activity-chip" data-status={activity.status}
+        onClick={() => model.openContext("preparation")}>
+        <i aria-hidden="true" />{preparationActivityLabel(activity.phase, activity.status)}</button>}
+      {steps.length > 1 && step && <Select.Root value={step.stepId} onValueChange={model.setStepId}>
+        <Select.Trigger aria-label="任务步骤" /><Select.Content>{steps.map((item) =>
+          <Select.Item value={item.stepId} key={item.stepId}>{model.plan?.steps.find((entry) => entry.id === item.stepId)?.title
+            ?? item.stepId}</Select.Item>)}</Select.Content>
+      </Select.Root>}
+      {model.presentation && <LiveChainCanvasToolbar model={model} />}
+    </div>
+    <div className="chain-run-controls">
+      {!draft && !release && workspace.requirement && !activity && <Button size="1" disabled={view.busy}
+        onClick={() => void connection.dispatch({ type: "prepare_task", requestId: crypto.randomUUID(),
+          requirementVersion: workspace.requirement!.version })}><RefreshCw size={13} />生成草稿</Button>}
+      {activity?.status === "waiting_for_human" && <Button size="1" onClick={() => model.openContext("preparation")}>继续生成</Button>}
+      {activity && ["failed", "interrupted"].includes(activity.status) && <Button size="1" variant="soft"
+        onClick={() => model.openContext("preparation")}>查看原因与继续操作</Button>}
+      {draft && <DraftControls readiness={workspace.draftReadiness} busy={view.busy || activityRunning} running={executionRunning}
+        onTrial={() => model.setRunDialogMode("trial")} onPublish={onPublish} />}
+      {!draft && release && <Button size="1" disabled={view.busy || executionRunning}
+        onClick={() => model.setRunDialogMode("run")}><Play size={13} fill="currentColor" />运行</Button>}
+      <DropdownMenu.Root><DropdownMenu.Trigger><Button size="1" variant="ghost" color="gray" aria-label="更多操作">
+        <Ellipsis size={15} /></Button></DropdownMenu.Trigger><DropdownMenu.Content align="end">
+        {draft && release && <DropdownMenu.Item onSelect={() => model.setRunDialogMode("run")}>
+          <Play size={13} />运行已发布任务</DropdownMenu.Item>}
+        <DropdownMenu.Item onSelect={() => model.openContext("history")}><History size={13} />历史记录</DropdownMenu.Item>
+        <DropdownMenu.Item onSelect={() => model.openContext("diagnostics")}><Wrench size={13} />诊断详情</DropdownMenu.Item>
+        <DropdownMenu.Separator /><DropdownMenu.Item onSelect={onInterview}><MessageSquare size={13} />返回需求对话</DropdownMenu.Item>
+      </DropdownMenu.Content></DropdownMenu.Root>
+    </div>
+  </header>
 }
-function ValidationEvidence({ chain, runs }: { chain: TaskChain; runs: TaskRun[] }) {
-  return <details className="supporting-detail"><summary>验证、预算与审计</summary>{chain.validation.evidence.length ? chain.validation.evidence.map((item) => {
-    const run = runs.find((candidate) => candidate.binding.runId === item.runId)
-    return <p key={item.runId}>{item.phase === "sample" ? "代表样本" : "不同输入"} · {item.passed ? "通过" : "未通过"} · 浏览器命令 {run?.consumed.browserCommands ?? "未知"} · 模型调用 {item.modelCalls === null ? "未知" : item.modelCalls}</p>
-  }) : <p>尚无真实运行证据。</p>}
-    <p>复用假设：{chain.reuseBoundary.assumptions.join("；")}</p><p>失效条件：{chain.reuseBoundary.invalidationConditions.join("；")}</p>
-    {runs.flatMap((run) => run.modelCalls).map((audit) => <p key={audit.callId}>显式模型 · {audit.model} · {audit.status} · {audit.reportedInvocations ?? "调用数未知"}</p>)}</details>
+
+function ExecutionStrip({ model }: { model: LiveChainModel }) {
+  const execution = model.selectedExecution
+  const accepted = model.acceptedExecutionId
+  if (!execution && !accepted) return null
+  return <button className="execution-strip" data-tone={execution?.status ?? "accepted"}
+    onClick={() => model.openContext("execution")} aria-live="polite">
+    <i aria-hidden="true" /><span><strong>{execution ? executionStatus(execution.status) : "服务端已接受"}</strong>
+      <small>{execution?.result?.summary ?? (execution ? "查看本次运行上下文" : "正在建立本次运行")}</small></span>
+    <span className="execution-strip-action">查看</span>
+  </button>
 }
-function validate(connection: TaskChainConnection, chain: TaskChain, mode: "sample" | "verification", raw: string,
-  setError: (value: string) => void) {
-  try {
-    const input: unknown = JSON.parse(raw); setError("")
-    const executable = { ...chain, validation: { status: "candidate", evidence: [] } }
-    void sha256(JSON.stringify(executable)).then((digest) => connection.dispatch({ type: "validate_chain", requestId: crypto.randomUUID(),
-      chain: { id: chain.id, version: chain.version, digest }, mode, input }))
-  } catch { setError("请输入有效 JSON。") }
+
+function EmptyCanvas({ model, connection, onInterview }: {
+  model: LiveChainModel; connection: TaskChainConnection; onInterview(): void
+}) {
+  const workspace = model.workspace
+  return <div className="empty-chain-canvas"><div className="empty-chain-index">00</div>
+    <h3>{workspace?.activity ? preparationActivityLabel(workspace.activity.phase, workspace.activity.status) : "还没有链路草稿"}</h3>
+    <p>{workspace?.activity?.reason ?? (workspace?.requirement
+      ? "从已确认需求生成当前草稿；生成完成后直接进入同一张画布编辑和试跑。"
+      : "先在需求对话中确认目标、来源和结果预期。")}</p>
+    {workspace?.activity?.status === "waiting_for_human" ? <Button onClick={() => model.openContext("preparation")}>处理所需输入</Button>
+      : workspace?.activity && ["failed", "interrupted"].includes(workspace.activity.status)
+        ? <Button onClick={() => model.openContext("preparation")}>查看原因与继续操作</Button>
+      : workspace?.requirement && !workspace.activity ? <Button disabled={model.view.busy}
+        onClick={() => void connection.dispatch({ type: "prepare_task", requestId: crypto.randomUUID(),
+          requirementVersion: workspace.requirement!.version })}>生成草稿</Button>
+        : !workspace?.activity && <Button variant="soft" onClick={onInterview}>前往需求对话</Button>}
+  </div>
+}
+
+function PublishDialog({ open, onOpenChange, model, connection }: {
+  open: boolean
+  onOpenChange(open: boolean): void
+  model: LiveChainModel
+  connection: TaskChainConnection
+}) {
+  const draft = model.draft
+  async function publish() {
+    if (!draft) return
+    const accepted = await connection.dispatch({ type: "publish_task_draft", requestId: crypto.randomUUID(),
+      draftId: draft.id, expectedRevision: draft.revision, expectedChecksum: draft.checksum })
+    if (accepted) onOpenChange(false)
+  }
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Content maxWidth="460px">
+    <Dialog.Title>发布当前草稿</Dialog.Title><Dialog.Description>
+      发布会冻结当前计划、全部步骤、画布布局和有效试跑证据。之后的调整进入新的工作草稿，不会改写本次发布。</Dialog.Description>
+    <div className="dialog-actions"><Button variant="soft" color="gray" onClick={() => onOpenChange(false)}>取消</Button>
+      <Button disabled={!draft || workspaceReadiness(model) !== "ready" || connection.snapshot().busy}
+        onClick={() => void publish()}>确认发布</Button></div>
+  </Dialog.Content></Dialog.Root>
+}
+
+function workspaceReadiness(model: LiveChainModel) { return model.workspace?.draftReadiness?.phase }
+
+function executionStatus(status: string) {
+  return ({ queued: "已排队", running: "正在运行", completed: "运行完成", partial: "部分完成",
+    waiting_for_human: "等待人工处理", paused: "已暂停", cleanup_required: "动作完成，待清理",
+    failed: "运行失败", blocked: "运行受阻", cancelled: "已取消", stale: "历史运行" } as Record<string, string>)[status] ?? status
 }

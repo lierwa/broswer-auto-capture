@@ -89,10 +89,10 @@
   --color-background: var(--bac-sand-2);
 }
 
-/* WHY：焦点由共享 Composer 外框统一表达，textarea 不再叠加宿主的第二条边框。 */
+/* WHY：即使共享 Composer 外框样式未加载，键盘焦点也必须保持可见。 */
 .ai-connect [data-interactive-timeline-composer-textarea]:focus-visible {
-  outline: none;
-  box-shadow: none;
+  outline: 2px solid var(--bac-amber-8);
+  outline-offset: -2px;
 }
 
 .ai-connect[data-ai-connect-dialog-overlay="true"] {

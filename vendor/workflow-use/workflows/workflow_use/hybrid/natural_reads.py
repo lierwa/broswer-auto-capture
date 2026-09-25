@@ -5,7 +5,8 @@ from pydantic import Field, JsonValue, model_validator
 
 from .evidence import Contract, EvidenceRef, digest, gap
 from .field_read_params import FieldReadMapping, FieldReadToolParams, revalidate_field_read_mapping
-from .read import ReadSpec, read_fields
+from .dom_evidence import DomQueryEvidence
+from .read import ReadField, ReadSpec, read_fields
 from .targets import TargetResolver
 
 
@@ -151,6 +152,51 @@ async def read_fields_with_proof(browser, specification, expected_identity):
     return first, digest(before['ids'])
 
 
+def find_elements_read_spec(query):
+    """Project one complete native DOM query into the existing deterministic read capability."""
+    value = query if isinstance(query, DomQueryEvidence) else DomQueryEvidence.model_validate(query)
+    if (value.complete is not True or value.query.kind != 'css' or not value.includeText
+            or value.truncated is not False or value.total is None or value.total < 1
+            or value.showing != value.total or value.total > value.maxResults
+            or 'query_selector_redacted' in value.limitations):
+        raise NaturalReadFailure('find_elements_read_query_incomplete')
+    # WHY：原生 find_elements 查询全部匹配元素并读取 textContent，包括隐藏控件；
+    # 不得用可见 innerText 重读同一查询，否则有效候选会变成缺值。业务字段仍默认 rendered。
+    fields = {'text': ReadField(selector=':scope', textSource='textContent', normalizeWhitespace=True)}
+    properties = {'text': {'type': 'string'},
+                  'ordinal': {'type': 'integer', 'minimum': 1, 'maximum': value.maxResults}}
+    for attribute in value.requestedAttributes:
+        name = 'attribute_' + attribute
+        fields[name] = ReadField(selector=':scope', attribute=attribute, optionalAttribute=True,
+                                 resolveUrl=attribute in ('href', 'src'))
+        properties[name] = {'type': 'string'}
+    item_schema = {'type': 'object', 'properties': properties,
+                   'required': ['text', 'ordinal'], 'additionalProperties': False}
+    return ReadSpec(container=value.query.value,
+        fields=fields, maxItems=value.maxResults, includeOrdinal=True,
+        outputSchema={'type': 'array', 'items': item_schema,
+                      'minItems': 1, 'maxItems': value.maxResults})
+
+
+def runtime_read_specification(specification):
+    """Apply the host byte budget without rewriting the captured source fact."""
+    value = specification if isinstance(specification, ReadSpec) else ReadSpec.model_validate(specification)
+    if value.maxInputBytes is None:
+        value = value.model_copy(update={'maxInputBytes': 128000})
+    return value.model_dump(mode='json')
+
+
+async def capture_find_elements_read(browser, query, expected_identity, result_digest, action_ref):
+    specification = find_elements_read_spec(query)
+    output, identities_digest = await read_fields_with_proof(browser, specification, expected_identity)
+    if not isinstance(output, list) or len(output) != query.total:
+        raise NaturalReadFailure('find_elements_read_cardinality_changed')
+    return VerifiedNaturalRead(actionRef=action_ref, specification=specification,
+        outputPath=[], readPath=[], output=output, resultDigest=result_digest,
+        urlDigest=digest(expected_identity['url']), targetId=expected_identity['targetId'],
+        containerIdsDigest=identities_digest, stable=True)
+
+
 async def collection_identity(browser, selector, max_items=None):
     page = await current_page(browser)
     identity = await page_identity(page)
@@ -198,7 +244,9 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
     if not facts:
         return None, None, [gap('missing_effect_proof', [action.id],
                               'natural_field_read_evidence_missing', 'collect_evidence')]
-    if not isinstance(output_schema, dict) or digest(output_schema) != request.plan.outputSchemaDigest:
+    internal_query = action.name == 'find_elements'
+    if not internal_query and (not isinstance(output_schema, dict)
+                               or digest(output_schema) != request.plan.outputSchemaDigest):
         return None, None, [gap('missing_effect_proof', [action.id],
                               'natural_output_schema_required', 'collect_evidence')]
     try:
@@ -210,14 +258,17 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
             raise ValueError('multiple_verified_natural_reads_disagree')
         paths = []
         for value in values:
-            validate_compiled_read(value, output_schema, action, pre, post, [*prior_paths, *paths])
+            if internal_query:
+                validate_compiled_query_read(value, action, pre, post)
+            else:
+                validate_compiled_read(value, output_schema, action, pre, post, [*prior_paths, *paths])
             paths.append(value.outputPath)
     except Exception:
         return None, None, [gap('invalid_source', [action.id],
                               'verified_natural_read_invalid', 'reject_trace')]
     refs = unique_evidence([action.resultRef, *pre.sourceRefs, *post.sourceRefs,
                             *(reference for fact in facts for reference in fact.sourceRefs)])
-    specification = values[0].specification.model_dump(mode='json')
+    specification = runtime_read_specification(values[0].specification)
     segment = {'id': 's-' + action.id, 'kind': 'deterministic',
         'operation': {'name': 'browser.read-fields', 'version': 2, 'specification': specification},
         'target': {'strategy': 'css', 'value': value.specification.container,
@@ -228,10 +279,37 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
                             'schemaDigest': digest(value.specification.outputSchema)}],
         'outputs': [{'schema': values[0].specification.outputSchema, 'sourceRef': fact.id} for fact in facts],
         'proofRefs': [ref.model_dump(mode='json') for ref in refs]}
-    return segment, paths, []
+    return segment, None if internal_query else paths, []
+
+
+def validate_compiled_query_read(value, action, pre, post):
+    validate_compiled_read_identity(value, action, pre, post)
+    queries = [fact for fact in post.facts if fact.kind == 'dom_query'
+               and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
+    if len(queries) != 1:
+        raise ValueError('verified_query_read_query_missing')
+    query = DomQueryEvidence.model_validate(queries[0].value)
+    expected = find_elements_read_spec(query)
+    if (value.outputPath or value.readPath or value.specification.model_dump(mode='json')
+            != expected.model_dump(mode='json')):
+        raise ValueError('verified_query_read_specification_mismatch')
+    Draft202012Validator(value.specification.outputSchema).validate(value.output)
+    if not isinstance(value.output, list) or len(value.output) != query.total:
+        raise ValueError('verified_query_read_cardinality_mismatch')
 
 
 def validate_compiled_read(value, output_schema, action, pre, post, prior_paths):
+    validate_compiled_read_identity(value, action, pre, post)
+    if action.name == 'bat_read_fields':
+        validate_action_read_mapping(value, output_schema, action)
+    proposal = NaturalReadProposal(specification=value.specification, outputPath=value.outputPath,
+                                   readPath=value.readPath, expected=value_at_path(value.output, value.readPath))
+    target = validate_proposal(proposal, output_schema, prior_paths)
+    Draft202012Validator(value.specification.outputSchema).validate(value.output)
+    Draft202012Validator(target).validate(value_at_path(value.output, value.readPath))
+
+
+def validate_compiled_read_identity(value, action, pre, post):
     if (value.actionRef != action.id or action.resultRef is None
             or value.resultDigest != action.resultRef.digest or value.stable is not True):
         raise ValueError('verified_read_action_mismatch')
@@ -241,13 +319,6 @@ def validate_compiled_read(value, output_schema, action, pre, post, prior_paths)
     after = observation_fact(post, 'url_digest')
     if before != value.urlDigest or after != value.urlDigest:
         raise ValueError('verified_read_url_mismatch')
-    if action.name == 'bat_read_fields':
-        validate_action_read_mapping(value, output_schema, action)
-    proposal = NaturalReadProposal(specification=value.specification, outputPath=value.outputPath,
-                                   readPath=value.readPath, expected=value_at_path(value.output, value.readPath))
-    target = validate_proposal(proposal, output_schema, prior_paths)
-    Draft202012Validator(value.specification.outputSchema).validate(value.output)
-    Draft202012Validator(target).validate(value_at_path(value.output, value.readPath))
 
 
 def validate_action_read_mapping(value, output_schema, action):

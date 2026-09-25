@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from workflow_use.hybrid.evidence import EvidenceRef, ObservationFact, digest
 from workflow_use.hybrid.natural_binding_compile import anchored_navigation_binding, natural_bindings
+from workflow_use.hybrid.natural_facts import binding_facts
 from workflow_use.hybrid.prior_read_bindings import binding_from_prior_reads
 from workflow_use.hybrid.read import ReadField, ReadSpec
 
@@ -17,9 +18,9 @@ SPECIFICATION = ReadSpec(
     }, maxItems=5, outputSchema=READ_SCHEMA)
 
 
-def read_fact(identity, output):
+def read_fact(identity, output, action_ref='a-0001'):
     value = {
-        'actionRef': 'a-0001', 'specification': SPECIFICATION.model_dump(mode='json'),
+        'actionRef': action_ref, 'specification': SPECIFICATION.model_dump(mode='json'),
         'outputPath': ['issues'], 'readPath': [], 'output': output,
         'resultDigest': '1' * 64, 'urlDigest': '2' * 64, 'targetId': 'tab-1',
         'containerIdsDigest': '3' * 64, 'stable': True,
@@ -29,6 +30,28 @@ def read_fact(identity, output):
 
 
 class PriorReadBindingTests(unittest.TestCase):
+    def test_plan_entry_url_is_an_authorized_navigation_constant(self):
+        entry = 'https://example.test/'
+        facts = binding_facts('a-0001', 'navigate', {'url': entry, 'new_tab': False},
+                              {}, {'type': 'object'}, 'Open Example.', [entry])
+        observed_facts = []
+        for index, item in enumerate(facts):
+            value = item.model_dump(mode='json')
+            observed_facts.append(ObservationFact(id=f'fact-entry-{index}', kind='natural_binding', value=value,
+                sourceRefs=[EvidenceRef(ref=f'fixture:entry-{index}', digest=digest(value))]))
+        request = SimpleNamespace(runtimeInputSchema={'type': 'object'},
+            requirement=SimpleNamespace(text='Open Example.'),
+            plan=SimpleNamespace(entryUrls=[entry]), trace=SimpleNamespace(actions=[], observations=[]))
+        action = SimpleNamespace(id='a-0001', name='navigate', args={'url': entry, 'new_tab': False})
+
+        decisions, issues = natural_bindings(
+            request, action, SimpleNamespace(facts=observed_facts), False)
+
+        self.assertEqual(issues, [])
+        decision = next(item for item in decisions if item['argumentPath'] == 'url')
+        self.assertEqual(decision['kind'], 'authorized_constant')
+        self.assertEqual(decision['binding'], {'source': 'constant', 'value': entry})
+
     def test_host_links_exact_later_argument_to_one_prior_output_path(self):
         source = read_fact('fact-read', [
             {'title': 'One', 'url': 'https://example.test/1'},
@@ -51,6 +74,19 @@ class PriorReadBindingTests(unittest.TestCase):
         ])
 
         self.assertIsNone(binding_from_prior_reads('a-0002', 'text', 'Same', [source]))
+
+    def test_recent_unique_read_resolves_value_repeated_in_older_broad_read(self):
+        destination = 'https://example.test/series'
+        broad = read_fact('fact-broad', [
+            {'title': 'Card A', 'url': destination}, {'title': 'Card B', 'url': destination},
+        ])
+        exact = read_fact('fact-exact', [{'title': 'Series', 'url': destination}], 'a-0002')
+        binding = binding_from_prior_reads('a-0003', 'url', destination, [broad, exact])
+        self.assertEqual(binding.binding, {
+            'source': 'node', 'nodeId': 'a-0002', 'path': [0, 'url']})
+        self.assertEqual(binding.sourceReadRef, 'fact-exact')
+        self.assertIsNone(binding_from_prior_reads(
+            'a-0003', 'url', destination, [exact, broad]))
 
     def test_compiler_revalidates_node_path_value_and_source_read_fact(self):
         source = read_fact('fact-read', [
@@ -86,6 +122,28 @@ class PriorReadBindingTests(unittest.TestCase):
             'source': 'node', 'nodeId': 'a-0001', 'path': [1, 'url'],
         })
         self.assertEqual(len(decisions[0]['proofRefs']), 2)
+
+    def test_offline_compiler_derives_missing_binding_from_immutable_read(self):
+        destination = 'https://example.test/series'
+        broad = read_fact('fact-broad', [
+            {'title': 'Card A', 'url': destination}, {'title': 'Card B', 'url': destination}])
+        exact = read_fact('fact-exact', [{'title': 'Series', 'url': destination}], 'a-0002')
+        observations = [SimpleNamespace(id='o-broad', facts=[broad]),
+                        SimpleNamespace(id='o-exact', facts=[exact]),
+                        SimpleNamespace(id='o-navigate', facts=[])]
+        actions = [SimpleNamespace(id='a-0001', preObservationRef=None, postObservationRef='o-broad'),
+                   SimpleNamespace(id='a-0002', preObservationRef=None, postObservationRef='o-exact')]
+        action = SimpleNamespace(id='a-0003', name='navigate', args={'url': destination})
+        actions.append(action)
+        request = SimpleNamespace(runtimeInputSchema={'type': 'null'},
+            trace=SimpleNamespace(actions=actions, observations=observations))
+        segments = [{'id': 's-a-0001', 'outputs': [{'sourceRef': broad.id, 'schema': READ_SCHEMA}]},
+                    {'id': 's-a-0002', 'outputs': [{'sourceRef': exact.id, 'schema': READ_SCHEMA}]}]
+        decisions, issues = natural_bindings(request, action, observations[-1], False, segments)
+        self.assertEqual(issues, [])
+        self.assertEqual(decisions[0]['derivation'], 'prior_verified_read')
+        self.assertEqual(decisions[0]['sourceRef'], exact.id)
+        self.assertEqual(decisions[0]['binding'], {'source': 'node', 'nodeId': 'a-0002', 'path': [0, 'url']})
 
     def test_anchor_navigation_uses_the_unique_prior_read_url(self):
         destination = 'https://example.test/2'

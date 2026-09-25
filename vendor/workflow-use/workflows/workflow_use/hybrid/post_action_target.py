@@ -2,8 +2,10 @@
 import re
 from dataclasses import dataclass, replace
 
-from .dom_evidence import node_tag, node_value
+from .dom_evidence import CollectionReadRequired, node_tag, node_value, structural_children
+from .evidence import digest
 from .history_target import HistoryTargetIdentity, capture_history_target, match_history_target
+from .natural_reads import read_fields_with_proof
 from .targets import element_from_backend
 
 IDENTITY_ATTRIBUTES = ('type', 'role', 'id', 'name', 'data-testid', 'aria-label', 'title')
@@ -70,6 +72,66 @@ async def verified_labeled_query(browser, summary, identity):
     return replace(identity, selector=selector), target
 
 
+async def verified_collection_query(browser, summary, identity, queries, selector_index):
+    """Find a complete query whose clicked item belongs to a local repeated collection."""
+    page = await _same_page(browser, summary, identity)
+    unscoped_match = False
+    for query, verified in reversed(queries):
+        scope = query.scope
+        if (query.complete is not True or query.query.kind != 'css' or query.truncated is not False
+                or scope.tabId != identity.target_id or scope.frameId is not None
+                or scope.urlDigest != digest(identity.url) or verified.actionRef != query.actionRef
+                or verified.targetId != identity.target_id or verified.urlDigest != scope.urlDigest
+                or verified.stable is not True):
+            continue
+        elements = await page.get_elements_by_css_selector(query.query.value)
+        if len(elements) != query.total:
+            continue
+        backends = [await _element_backend(element) for element in elements]
+        matches = [index + 1 for index, backend in enumerate(backends)
+                   if backend == identity.backend]
+        if len(matches) == 1:
+            # WHY：全页控件查询即使完整，也不证明点击的是该业务列表的一项。
+            # 单例精确查询可以独立成立；多项查询须有当前 DOM 中同父、同类的候选。
+            if query.total > 1 and not _has_matching_peer(
+                    summary, selector_index, set(backends)):
+                unscoped_match = True
+                continue
+            try:
+                output, ids_digest = await read_fields_with_proof(browser, verified.specification,
+                    {'targetId': identity.target_id, 'url': identity.url})
+            except Exception as error:
+                raise CollectionReadRequired() from error
+            if ids_digest != verified.containerIdsDigest or digest(output) != digest(verified.output):
+                raise CollectionReadRequired()
+            target = {'strategy': 'structure', 'container': {'kind': 'css', 'value': 'html'},
+                      'items': {'kind': 'css', 'value': query.query.value},
+                      'ordinal': matches[0], 'withinItem': None, 'readActionRef': query.actionRef}
+            return replace(identity, selector=query.query.value), target
+    if unscoped_match:
+        raise CollectionReadRequired()
+    return identity, None
+
+
+def _has_matching_peer(summary, selector_index, backends):
+    target = _selector_node(summary, selector_index)
+    parent = node_value(target, 'parent_node')
+    if parent is None:
+        return False
+    target_tag = node_tag(target)
+    target_classes = set(str((node_value(target, 'attributes') or {}).get('class') or '').split())
+    for sibling in structural_children(parent):
+        if sibling is target or node_tag(sibling) != target_tag:
+            continue
+        sibling_backend = _node_backend_or_none(sibling)
+        sibling_classes = set(str((node_value(sibling, 'attributes') or {}).get('class') or '').split())
+        if (sibling_backend in backends
+                and (not target_classes and not sibling_classes
+                     or bool(target_classes.intersection(sibling_classes)))):
+            return True
+    return False
+
+
 async def callback_target_element(browser, summary, selector_index, target_id):
     node = _selector_node(summary, selector_index)
     _require_main_document(node, target_id)
@@ -87,6 +149,16 @@ async def refreshed_target_element(browser, summary, identity):
     except ValueError:
         raise ValueError('target_refresh_not_unique') from None
     return await _element(browser, node, identity.target_id)
+
+
+async def retained_action_target_element(browser, summary, identity, element):
+    """Return only the exact pre-dispatch element while the document identity is unchanged."""
+    if element is None or not isinstance(identity, CapturedTargetIdentity):
+        raise ValueError('target_refresh_identity_unavailable')
+    # WHY：动作后出现的 overlay 会把原控件移出交互 selector map，但不应抹掉
+    # 对刚派发目标的只读完成核验。这里只复用同一回调元素；后续动作仍重新解析并检查命中。
+    await _same_page(browser, summary, identity)
+    return element
 
 
 def _selector_node(summary, selector_index):

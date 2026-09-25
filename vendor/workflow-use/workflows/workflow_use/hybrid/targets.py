@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from .dom_evidence import node_xpath
 from .evidence import digest
 from .history_target import HistoryTargetIdentity, match_history_target
+from .target_document import target_frame_matches
 from .target_preparation import assert_action_target, inspect_action_target, prepare_mapped_target
 
 TARGET_ORDINAL_ARGUMENT = 'targetOrdinal'
@@ -230,7 +231,8 @@ class TargetResolver:
         if not isinstance(target_id, str) or not target_id:
             raise ValueError('page_identity_unavailable')
         if require_mapping:
-            await self.browser.get_browser_state_summary()
+            # WHY：普通目标解析只消费新鲜 selector map；截图无消费者，不能让截图等待阻塞定位。
+            await self.browser.get_browser_state_summary(include_screenshot=False)
         mapping = await self.browser.get_selector_map() if require_mapping else {}
         page = await self.browser.get_current_page()
         if page is None:
@@ -239,7 +241,7 @@ class TargetResolver:
         return page, mapping, target_id
 
     async def _refresh_snapshot(self, target_id, scope):
-        await self.browser.get_browser_state_summary()
+        await self.browser.get_browser_state_summary(include_screenshot=False)
         mapping = await self.browser.get_selector_map()
         page = await self.browser.get_current_page()
         if page is None:
@@ -471,7 +473,7 @@ def _node_value(node, *names):
 
 def _current_target(node, target_id):
     return (isinstance(target_id, str) and _node_value(node, 'target_id') == target_id
-            and _node_value(node, 'frame_id') is None
+            and target_frame_matches(node, target_id, None)
             and _node_value(node, 'shadow_root_type') is None)
 
 
@@ -479,7 +481,7 @@ def _ancestor_has(node, backend_id, target_id, frame_id):
     current, seen = node, set()
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        if (_node_value(current, 'target_id') != target_id or _node_value(current, 'frame_id') != frame_id
+        if (_node_value(current, 'target_id') != target_id or not target_frame_matches(current, target_id, frame_id)
                 or _node_value(current, 'shadow_root_type') is not None):
             return False
         if _backend_id(current) == backend_id:

@@ -180,6 +180,13 @@ export function nodePorts(node: ChainNode): readonly string[] {
   return stableV2Ports[node.kind]
 }
 
+/** WHY：正常与业务分支必须接线；稳定 v2 的通用异常由运行器收束，不重复保存终态边。 */
+export function requiredNodePorts(node: ChainNode): readonly string[] {
+  if ("outcomes" in node) return node.outcomes
+  if (node.kind === "branch") return [...node.cases.map((item) => item.id), "default"]
+  return nodePorts(node).filter((port) => !["missing", "timeout", "blocked", "human_required", "failed", "cancelled"].includes(port))
+}
+
 /** 只遍历协议内 binding，不把 config 中的任务数据误识别为平台指令。 */
 export function nodeBindings(node: ChainNode): z.infer<typeof valueBindingSchema>[] {
   const own = node.kind === "capability" ? Object.values(node.input)

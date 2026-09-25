@@ -122,7 +122,9 @@ def register_visible_wait_tool(tools, *, settle_policy=None):
         except TimeoutError:
             return ActionResult(error='bat_wait_for_timeout')
         except RuntimeError as error:
-            code = 'bat_wait_for_timeout' if str(error) == 'ordinary_postcondition_failed' else 'bat_wait_for_failed'
+            reason = str(error)
+            code = ('bat_wait_for_timeout' if reason == 'ordinary_postcondition_failed'
+                    or reason.startswith('ordinary_postcondition_failed_') else 'bat_wait_for_failed')
             return ActionResult(error=code)
         except ValueError as error:
             return ActionResult(error=_fixed_wait_error(error))

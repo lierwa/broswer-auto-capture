@@ -3,7 +3,9 @@
 ## 前置条件
 
 A、B、C 已完成各自能力验收；D1–D5 已完成当前产品平台范围的独立验收；
-[产品最小闭环](../MINIMUM_PRODUCT_LOOP.md) P1–P5 已完成。源码版本、`stable/v2` 兼容范围、Function 平台准入、
+[产品最小闭环](../MINIMUM_PRODUCT_LOOP.md) 已有 P1–P6 历史实现；2026-09-20 的产品边界修订曾在 2026-09-21 取得一轮正式组合证据，
+但同一真实任务第三次正式复跑随后暴露 runner 清理误分类，实际链路画布也不可读。R2、R3、R5 已按
+[正式复跑恢复与链路工作台开发基准](../EXECUTION_LIFECYCLE_AND_CHAIN_WORKBENCH_ITERATION.md) 重新打开，当前组合验收未通过。源码版本、`stable/v2` 兼容范围、Function 平台准入、
 Branch port、显式 LLM 审计及未测边界均有记录。延期平台继续写作未测，不阻塞已经明确收缩的平台范围，也不得冒充通过。
 
 ## 接线范围
@@ -12,7 +14,7 @@ Branch port、显式 LLM 审计及未测边界均有记录。延期平台继续�
 - API `upstream-browser/`：来源核验、图物化、持久化、运行作用域和结果恢复。
 - API `task-chain/`：正式 authoring、版本、运行、恢复和结果发布。
 - contracts/runtime：`stable/v2`、值绑定、LangGraph 推进、QuickJS 执行和模型调用审计。
-- Workbench：任务状态投影、可运行版本、运行预设、任务列表直接运行、保存加载、节点详情、case port、固定 prompt、运行事件和业务结果展示。
+- Workbench：任务状态投影、可运行版本、运行预设、链路画布直接运行、单次 execution 实时运行流、阶段总览/临时摘要/同画布聚焦动作子图、保存加载、上下文节点详情、case port、固定 prompt、运行事件和业务结果展示。
 
 ## 接线要求
 
@@ -27,13 +29,21 @@ Branch port、显式 LLM 审计及未测边界均有记录。延期平台继续�
 
 | 阶段 | 使用方式 | 通过条件 |
 | --- | --- | --- |
-| 产品生命周期 | 正式 Workbench 新建并确认需求，完成准备，重启服务后从任务列表直接运行 | 发布版本和预设保持一致；主路径没有 JSON 或内部验证按钮；创建独立正式运行 |
+| 需求对话与来源 | 正式 Workbench 连续澄清多个歧义；对无 URL 目标由访谈 LLM 决定搜索词并判断原始结果 | 宿主不含来源语义排名；候选 ID 均来自本次搜索；待决未清零不能确认；唯一、多候选和无可靠候选经 Question Panel 保存用户选择，不要求技术 URL |
+| 准备边界 | 从已确认需求启动准备，现场故意出现一个新的业务歧义 | 技术事实由准备处理；业务歧义暂停并返回需求对话，不由探索模型猜测 |
+| 产品生命周期 | 完成准备，重启服务后从左侧选择任务并在发布链路画布直接运行 | 左侧点击只选择且立即反馈；发布版本和预设保持一致；主路径没有 JSON 或内部验证按钮；点击运行立即进入 submitting/accepted 并创建唯一独立正式 execution |
+| 运行完成 | 让发布链路无真实节点错误到达终点，并另造真实节点与输出合同失败样本 | 正常链路 completed，完成证据引用实际 terminal，chain/step/plan 历史 predicate 和来源 judge 均不再链外改判；真实错误准确 failed |
+| 资源清理 | 分别覆盖链路完成后的正常 cleanup 和 cleanup unconfirmed | TaskRun 结论不被清理覆盖；未确认时 execution cleanup_required、无 repair/model；清理确认后恢复原业务下一步，重启后事实一致 |
 | 小链保存加载 | 正式入口生成含点击、等待、读取、Function 和 Branch 的候选，重新加载后运行 | 同一版本执行正确，结果来自当前页面，模型调用 0 |
 | 干扰差异 | 在 D1 测试站切换预执行/运行时的干扰组合 | 已证明准备动作可跳过或执行；未知干扰证据化失败；没有 LLM 兜底 |
 | 显式 LLM | 运行一条普通读取 → LLM → N 路 Branch → 普通动作链 | prompt 未变；LLM 恰好一次调用并只产出 `result`；未经过节点时 0 调用 |
 | 同链换输入 | 更换合法入口、记录输入及页面数据 | 复用同一链版本，Function/Branch/业务输出随实际输入变化，不重新生成整链 |
 | 取消恢复 | 在动作完成但结果等待中取消，再恢复 | 继续同一 run，无重复业务副作用、重复 Function 或重复 LLM 调用 |
-| 完整业务 | 当前已确认需求、可运行版本、运行预设和输出格式 | 所有要求、输出来源、运行审计、产品回执和资源清理通过 |
+| 展示事实持久化 | 从正式 API 创建带多个阶段的修订草稿，重启后读取并发布 | exact chain reference 解析唯一 ChainPresentation；阶段覆盖/入口/出口有效；presentation/executable digest 分离；旧版本布局不被覆盖；unknown descriptor 只读 |
+| 局部链路修订 | 从一次实际运行进入聚焦动作子图，修改一个节点或受影响连线并验证发布 | 修改后旧验证立即失效且发布禁用；聚焦验证证明阶段出口可达后创建新不可变版本；旧版本与历史运行不变；再次运行消费新 digest |
+| 链路运行与可读性 | 用当前真实复杂链在画布启动复跑，观察本次运行流；单击阶段查看一个临时摘要，再进入同画布聚焦动作子图和上下文详情 | 画布只绑定该 execution，节点/边按持久化事件流转且刷新后续接；总览可读，摘要不改变布局，聚焦图无节点重叠、边穿节点或主路径交叉；全部异常边可审计；首屏无 JSON 墙；键盘、窄屏和 reduced-motion 可用 |
+| 需求回流 | 从实际运行选择“重新梳理需求”，修改目标或范围并重新准备 | 运行摘要进入对话；新需求版本独立确认；画布没有偷偷改变需求 |
+| 完整业务 | 当前已确认需求、可运行版本、运行预设和输出格式 | 所有要求、输出来源、运行审计、用户验收、产品回执和资源清理通过 |
 
 受控页面用于复现延迟、布局、弹窗、iframe、滚动和焦点竞态；实际任务页面用于验证产品可用性。两者都使用正式 TaskChain 入口。手填正确 selector、mock 返回值、fixture oracle、native judge 或退出码不能单独构成通过证据。
 
@@ -56,3 +66,46 @@ Branch port、显式 LLM 审计及未测边界均有记录。延期平台继续�
 每次验收记录：源码、任务、可运行版本、预设及链版本、正式入口、输入、真实输出或执行回执、字段来源、动作次数、Function 结果、实际验收平台与架构证据、Branch port、LLM prompt digest/调用数、运行标识、浏览器证据、会话关闭结果和未测边界。
 
 代码修复后只运行相关最小验证；不运行根级全量测试。保留原始来源、账号/profile 和无关工作区改动，vendor 变更同步来源清单。组合验收完成前不得把“夹具通过”“链可保存”或“模型返回成功”单独写成产品完成。
+
+## 修订后的验收门（2026-09-20）
+
+以下路径必须分别从正式 Workbench/API 取得结果；它们是验收维度，不是任务类型：
+
+1. 连续多轮需求澄清与用户纠正；
+2. 无 URL 的唯一候选、多候选 Question Panel 和无可靠候选；
+3. 准备阶段发现业务歧义并回到需求对话；
+4. 无真实错误的链路 completed，以及真实节点错误 failed；
+5. 结果页“符合预期 / 调整链路 / 重新梳理需求”；
+6. 自由画布节点修订、聚焦验证、新版本发布和旧版本保留；
+7. 携带运行摘要形成新需求版本并重新准备；
+8. 数据换输入、人工等待同 run 恢复、外部阻断、显式修复、重启持久化和桌面/窄屏/键盘路径。
+
+修订后的组合验收曾完成一轮，结构化结果位于 Git 忽略目录 `work/minimum-product-loop-1789921035029/result.json`，顶层 `completed=true`；
+它保留为历史证据，但没有覆盖之后暴露的 cleanup unconfirmed 恢复和真实复杂链可读性，不能再代表当前组合验收通过。
+
+同一工作区随后用真实任务 `e99c66f6-873e-40cf-a1c9-bebca8d05540` 补证自然语言站点名入口。准备 sample 与 verification 完成后发布 release `eefe5eb7-a4be-42f2-836b-66867d67ecd9` v1；前两个独立正式 run 均 completed，各消费 6 个浏览器命令、0 个模型调用。旧需求、计划、链路版本及历史运行均保留。
+
+第三次正式 execution `d5a86b0c-a30b-48ef-8a0c-6e7f92c5daa6` 的 1/1 步骤和 TaskRun `5f6abc37-6108-459c-8c4f-3337753e5040`
+同样 completed，消费 6 个浏览器命令、0 个模型调用；但 runner 清理退出码 1 被外层误写为可修复的确定性链路失败，产品进入 `needs_repair`，
+无法普通复跑。这使“稳定可再次运行”结论失效。当前必须完成 I1–I7，并分别取得真实任务正常 cleanup、受控 cleanup_required 恢复、ChainPresentation/CapabilityDescriptor 持久化和可读画布证据，
+才允许恢复组合验收通过。
+
+## 历史验收结果（2026-09-20，修订前）
+
+当时 Windows x64 产品范围的最小闭环组合验收曾通过。验收从正式 Workbench/API 产品入口驱动；自动化只负责操作产品入口和保存证据，没有直接调用 runtime、mock 返回值、fixture oracle、类型检查或临时拼装结果冒充产品闭环。该结果保留为历史证据，但不满足上节新增的需求对话、运行完成、画布修订和需求回流门。
+
+后续真实新任务曾发现验收覆盖缺口：受控输入已经包含完整 URL，没有覆盖“需求只确认站点名称、预执行自行确定入口”。该任务两次在浏览器动作和探索模型调用前因空 `allowedOrigins` 失败。入口现由规划阶段保存的通用 `entryUrls` 授权，并已由上节同一真实任务的准备、发布和两次零模型正式复跑关闭该缺口；本节继续只保留修订前的历史七类结果。
+
+| 历史验收维度 | 正式结果 |
+| --- | --- |
+| 执行型任务 | 自然语言需求完成确认、准备、发布和服务重启；任务列表绑定 release v1 直接运行及再次运行均完成 |
+| 数据型任务 | 同一 release 分别输入 `alpha`、`beta`，得到对应业务结果；普通运行 `llmCalls=0`、`modelCalls=[]` |
+| 人工等待 | 服务重启后恢复同一 execution 与同一 run；已确认副作用未重复派发 |
+| 确定性修复 | 真实失败证据经用户授权后形成 repair job；两组输入验证通过才发布 release v2，旧 release 和失败运行保留 |
+| 外部阻断 | HTTP 429 投影为 `external/rate_limited`、`repairable=false`；修复授权被服务端拒绝 |
+| 持久化 | 重启后 release、preset、历史 execution 和待恢复运行一致 |
+| 交互与视觉 | headless Chromium 完成 1440×1000、390×844、键盘、reduced-motion、双击保护、断网恢复和截图 |
+
+修复后发布的 release 为 `f3c940a9-182a-44f2-820b-0d537b6fdc38` v2，digest 为 `7ddf95dfbf361b1548805d3e30a6a7551f5d4117494ee25c48aeb89d4b6bc914`；其 chain v3 digest 为 `a5008ec3e49cb8bb805a89da89b18cbabe070a5be21bd749a556ea3b1d99739c`。遮挡输入运行完成并产生 `alpha` 业务结果，正常输入运行完成并产生 `beta` 业务结果；两者均没有模型调用。
+
+历史结构化证据位于 Git 忽略的 `work/minimum-product-loop-1789843205619/result.json`，修订后 R1–R5 证据位于 `work/minimum-product-loop-1789921035029/result.json`；两者均可追溯 task/release/requirement/plan/chain/execution/run id 与 digest、输入摘要、浏览器命令、模型审计和清理状态。稳定摘要见 [产品最小闭环验收记录](../evidence/browser-replay-repair/MINIMUM_PRODUCT_LOOP_ACCEPTANCE.md)。隔离 Browser、runner 和临时服务均已关闭。macOS arm64 由用户延期，仍为未测，不包含在本结论中。

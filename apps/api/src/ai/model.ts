@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto"
+import { createRequire } from "node:module"
+import path from "node:path"
 import type { AI, AIEvent, ModelSelection } from "@agent-platform/ai-connect/server"
 import {
   createPiAgentSessionAdapter,
@@ -10,6 +12,17 @@ import {
 } from "@agent-platform/pi-agent-session"
 import type { ProductStore } from "../database/store.js"
 import { DomainError } from "../errors.js"
+
+const require = createRequire(import.meta.url)
+
+function interviewExtensionTools() {
+  // WHY：搜索工具属于 Pi AgentSession 的受控 extension 能力；这里只声明准确 package 来源与活动工具，
+  // 不按模型供应商分支，也不把搜索能力伪装成模型设置。
+  return {
+    sources: [path.dirname(require.resolve("pi-web-access/package.json"))],
+    activeTools: ["web_search"],
+  } as const
+}
 
 export type PreparedAIModel = Readonly<{
   selection: ModelSelection
@@ -103,6 +116,7 @@ export function createAIModelProvider(
         agentId: purpose === "exploration" ? "browser-capture.task-exploration" : "browser-capture.requirement-interview",
         binding,
         stateDir: options.stateDir,
+        ...(purpose === "interview" ? { extensionTools: interviewExtensionTools() } : {}),
       })
       return Object.freeze({
         selection: Object.freeze({ ...selection }),
@@ -120,7 +134,8 @@ export function createAIModelProvider(
               name: PI_AGENT_SESSION_ACTIVE_TASK_MESSAGE_NAME,
               content: [{ type: "text", text: input.activeTask }],
             }],
-            tools: purpose === "exploration" ? input.tools ?? [] : [],
+            // WHY：需求访谈只获得宿主显式传入的只读来源工具；浏览器工具仍只属于 exploration。
+            tools: input.tools ?? [],
             settings: { reasoningEffort: selection.reasoningEffort },
             signal: input.signal,
             onEvent: bridge.onRuntimeEvent,

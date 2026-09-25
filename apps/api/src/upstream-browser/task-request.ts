@@ -1,5 +1,5 @@
 import type {
-  JsonValue, Predicate, ResultSpec, TaskPlan, TaskPlanStep, TaskRequirement, ValueBinding, ValueSchema,
+  JsonValue, Predicate, ResultSpec, TaskExecutionFailureEvidence, TaskPlan, TaskPlanStep, TaskRequirement, ValueBinding, ValueSchema,
 } from "@browser-capture/contracts"
 
 const legacyFence = "```bat-compilation/v1"
@@ -23,9 +23,10 @@ export function naturalRequirementText(requirement: TaskRequirement) {
 
 /** WHY：上游 Agent 接收完整业务请求；页面寻找、滚动、定位和抽取策略仍由 browser-use 决定。 */
 export function browserUseTask(input: { requirement: TaskRequirement; plan: TaskPlan; step: TaskPlanStep;
-  resolvedInput: JsonValue }) {
+  resolvedInput: JsonValue; repair?: TaskExecutionFailureEvidence }) {
   const { requirement, plan, step } = input
   const requirementText = naturalRequirementText(requirement)
+  const entryUrls = plan.entryUrls ?? []
   const mode = step.invocation.mode === "each" ? "这是集合中一个独立项目的完整执行。" : "这是本步骤的完整执行。"
   const origin = requirementText.legacyMachineBlockRemoved
     ? "以下内容来自已确认的历史需求正文；历史机器规则块已经排除，不属于本次业务指令。"
@@ -41,10 +42,21 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
     `在总任务中的作用：${plan.summary}`,
     `已完成的前置步骤：${step.dependsOn.length ? step.dependsOn.join("、") : "无"}`,
     mode,
+    "【预执行入口】",
+    ...(entryUrls.length ? entryUrls.map((url, index) => `- 入口 ${index + 1}：${url}`)
+      : ["- 当前计划没有可用入口；不得自行改用其他网站。"]),
+    "必须从上述入口开始，只能在计划授权的网站范围内完成任务；安全策略拒绝导航时立即停止，不得改用搜索引擎、其他协议或移动站碰运气。",
     "【本次真实输入】",
     ...describeValue(input.resolvedInput, "输入"),
     "复跑时输入值可以变化，但字段、类型和边界如下：",
     ...describeSchema(step.inputContract.schema, "输入", true),
+    ...(input.repair ? ["【本次显式修复依据】",
+      `用户已授权修复运行 ${input.repair.executionId} 中已保存的确定性失败。`,
+      `失败代码：${input.repair.code}`,
+      `失败原因：${input.repair.reason}`,
+      `失败证据摘要：${input.repair.digest}`,
+      `失败位置：步骤 ${input.repair.stepId ?? "未知"}，运行 ${input.repair.runId ?? "未知"}，事件序号 ${input.repair.eventSequence ?? "未知"}。`,
+      "必须针对这份失败事实重新完成真实任务并形成新候选；不得声称旧链路已被原地修改。"] : []),
     "【必须返回的结果】",
     ...describeResultSpec(requiredResultSpec(step)),
     ...describeSchema(step.outputContract.schema, "结果", true),

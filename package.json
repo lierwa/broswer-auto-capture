@@ -32,7 +32,9 @@
     "dev:web": "npm run dev --workspace @browser-capture/workbench -- --host 127.0.0.1 --port 4173 --strictPort",
     "build": "npm run build --workspaces --if-present",
     "check": "npm run check --workspaces --if-present",
-    "test": "node --import tsx --test tests/*.test.mjs && npm run test --workspaces --if-present"
+    "test": "node --import tsx --test tests/*.test.mjs && npm run test --workspaces --if-present",
+    "accept:requirement-dialogue": "npm run accept:requirement-dialogue --workspace @browser-capture/api",
+    "accept:workbench-simplification": "npm run accept:workbench-simplification --workspace @browser-capture/api"
   },
   "aiConnect": {
     "vendorDirectory": "vendor/agent-platform",

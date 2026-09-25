@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { JsonValue, TaskCheckpoint } from "@browser-capture/contracts"
 
 export const RUNTIME_SCOPE_FROM = "runtimeScopeFrom"
+export const RUNTIME_SCOPE_READ_ONLY = "runtimeScopeReadOnlySameDocument"
 
 type EvidenceReference = { ref: string; digest: string }
 type NaturalFact = { id: string; kind: string; value: JsonValue; sourceRefs: EvidenceReference[] }
@@ -22,7 +23,8 @@ type Compilation = {
 }
 type AssertFact = (fact: NaturalFact, observationId: string) => void
 
-export type RuntimeScopeDecision = Readonly<{ segmentId: string; runtimeScopeFrom?: string; limitation?: string }>
+export type RuntimeScopeDecision = Readonly<{ segmentId: string; runtimeScopeFrom?: string;
+  readOnlySameDocument?: true; limitation?: string }>
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
 const browserOperations = new Set(["browser.workflow-step", "browser.read-fields"])
@@ -42,7 +44,7 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
   const { compilation, trace, assertFact } = input
   const incoming = compilation.controlGraph.edges.filter((edge) => edge.to === segmentId)
   if (incoming.length !== 1 || incoming[0]!.outcome !== "success") return limited(segmentId, "runtime_scope_direct_predecessor_unproven")
-  const predecessorId = incoming[0]!.from
+  const predecessorId = browserPredecessor(incoming[0]!.from, compilation)
   const predecessor = compilation.segments.find((item) => item.id === predecessorId)
   if (!predecessor || predecessor.kind !== "deterministic" || !browserOperations.has(predecessor.operation?.name ?? "")) {
     return limited(segmentId, "runtime_scope_predecessor_not_browser")
@@ -91,11 +93,58 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
     return limited(segmentId, "runtime_scope_intermediate_action_unsafe")
   }
   const before = observations.get(currentAction.preObservationRef)
-  if (!before || !sameUrlIdentity(boundary, before, assertFact)) return limited(segmentId, "runtime_scope_source_boundary_changed")
+  if (!before) return limited(segmentId, "runtime_scope_source_boundary_changed")
+  const readOnlySameDocument = !sameUrlIdentity(boundary, before, assertFact)
+  if (readOnlySameDocument && !sameDocumentReadBoundary(boundary, before, currentAction, assertFact)) {
+    return limited(segmentId, "runtime_scope_source_boundary_changed")
+  }
   const scope = segmentScope(compilation.segments.find((item) => item.id === segmentId)!)
   const sourceDigest = urlIdentity(before, assertFact)?.urlDigest
   if (!scope?.urlDigest || scope.urlDigest !== sourceDigest) return limited(segmentId, "runtime_scope_static_scope_unproven")
-  return { segmentId, runtimeScopeFrom: predecessorId }
+  return { segmentId, runtimeScopeFrom: predecessorId, ...(readOnlySameDocument ? { readOnlySameDocument: true } : {}) }
+}
+
+function sameDocumentReadBoundary(previous: NaturalObservation, current: NaturalObservation,
+  action: NaturalAction, assertFact: AssertFact) {
+  if (action.name !== "find_elements" || action.effect !== "read" || action.status !== "succeeded"
+    || !previous.tabId || previous.tabId !== current.tabId) return false
+  const identity = z.object({ targetId: z.string().min(1), documentDigest: hash }).strict()
+  const left = soleFact(previous, "document_identity"), right = soleFact(current, "document_identity")
+  if (!left || !right) return false
+  assertFact(left, previous.id); assertFact(right, current.id)
+  const a = identity.safeParse(left.value), b = identity.safeParse(right.value)
+  if (!a.success || !b.success || a.data.targetId !== previous.tabId
+    || b.data.targetId !== current.tabId || a.data.documentDigest !== b.data.documentDigest) return false
+  const matches = current.facts.filter((fact) => fact.kind === "observation_diagnostic" && isRecord(fact.value)
+    && fact.value.actionRef === action.id && fact.value.phase === "before_action_read_refresh"
+    && fact.value.outcome === "readonly_observation_refreshed")
+  if (matches.length !== 1) return false
+  const fact = matches[0]!
+  assertFact(fact, current.id)
+  const sample = z.object({ targetId: z.string(), documentDigest: hash, urlDigest: hash, stable: z.literal(true) }).passthrough()
+  const parsed = z.object({ baseline: sample, current: sample }).passthrough().safeParse(fact.value)
+  if (!parsed.success) return false
+  const { baseline, current: refreshed } = parsed.data
+  // WHY：只读重新观察必须有同文档因果证据；不能把样本 URL 固化，也不能授权点击跨页。
+  return baseline.targetId === a.data.targetId && refreshed.targetId === b.data.targetId
+    && baseline.documentDigest === a.data.documentDigest && refreshed.documentDigest === b.data.documentDigest
+    && baseline.urlDigest === urlIdentity(previous, assertFact)?.urlDigest
+    && refreshed.urlDigest === urlIdentity(current, assertFact)?.urlDigest
+}
+
+function browserPredecessor(initial: string, compilation: Compilation) {
+  let current = initial
+  const seen = new Set<string>()
+  while (!seen.has(current)) {
+    seen.add(current)
+    const segment = compilation.segments.find((item) => item.id === current)
+    if (segment?.kind !== "function" && segment?.operation?.name !== "data.transform") return current
+    // WHY：纯 JSON 计算不改变浏览器页面；来源仍由前一实际浏览器动作和原轨迹边界证明。
+    const incoming = compilation.controlGraph.edges.filter((edge) => edge.to === current)
+    if (incoming.length !== 1 || incoming[0]!.outcome !== "success") return current
+    current = incoming[0]!.from
+  }
+  return current
 }
 
 function ownerAction(compilation: Compilation, segmentId: string) {
@@ -218,7 +267,7 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
 }
 
 export type HybridBrowserState = Readonly<{ sessionId: string; tabId: string; url: string;
-  observationDigest: string; observedAt: string }>
+  documentId?: string | undefined; observationDigest: string; observedAt: string }>
 
 /** 当前运行 scope 只存在于一个 capability 闭包内；失败会清空，实例之间不会共享。 */
 export class HybridRuntimeScopeState {
@@ -231,7 +280,10 @@ export class HybridRuntimeScopeState {
 
   private async resolveCommandConfig(name: string, config: Record<string, unknown>, observe: () => Promise<HybridBrowserState>) {
     const marker = config[RUNTIME_SCOPE_FROM]
-    const { [RUNTIME_SCOPE_FROM]: _marker, ...plain } = config
+    const readOnlySameDocument = config[RUNTIME_SCOPE_READ_ONLY]
+    const { [RUNTIME_SCOPE_FROM]: _marker, [RUNTIME_SCOPE_READ_ONLY]: _mode, ...plain } = config
+    if (readOnlySameDocument !== undefined && (readOnlySameDocument !== true
+      || name !== "browser.read-fields" || marker === undefined)) throw new Error("hybrid_runtime_read_scope_invalid")
     if (marker === undefined) return plain
     if (typeof marker !== "string" || !marker) throw new Error("hybrid_runtime_scope_marker_invalid")
     if (!browserOperations.has(name)) throw new Error("hybrid_runtime_scope_command_unsupported")
@@ -239,7 +291,12 @@ export class HybridRuntimeScopeState {
     if (this.previous.nodeId !== marker) throw new Error("hybrid_runtime_scope_predecessor_mismatch")
     assertExistingScope(name, plain)
     const browser = await observe()
-    if (!sameBrowserPage(this.previous.browser, browser)) throw new Error("hybrid_runtime_scope_page_changed")
+    const sameDocument = Boolean(this.previous.browser.documentId && browser.documentId
+      && this.previous.browser.documentId === browser.documentId
+      && this.previous.browser.sessionId === browser.sessionId && this.previous.browser.tabId === browser.tabId)
+    if (readOnlySameDocument === true ? !sameDocument : !sameBrowserPage(this.previous.browser, browser)) {
+      throw new Error("hybrid_runtime_scope_page_changed")
+    }
     return replaceScope(name, plain, { url: browser.url, urlDigest: digestRuntimeUrl(browser.url) })
   }
 
@@ -277,6 +334,7 @@ function sameBrowserPage(left: HybridBrowserState, right: HybridBrowserState) {
 
 function sameCheckpointBrowser(left: HybridBrowserState, right: HybridBrowserState) {
   return sameBrowserPage(left, right) && left.observationDigest === right.observationDigest
+    && (!left.documentId || left.documentId === right.documentId)
 }
 
 export function digestRuntimeUrl(url: string) {

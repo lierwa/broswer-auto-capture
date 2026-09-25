@@ -205,7 +205,7 @@ export function ChatTimeline({
             : {}),
           emptyStateFooter: (
             <p className="composer-caption">
-              先确认需求，再制定计划；计划会按需核验来源。发送消息不会启动浏览器操作。
+              先确认需求，再生成链路草稿；系统会按需核验来源。发送消息不会启动浏览器操作。
             </p>
           ),
         }}
@@ -233,7 +233,7 @@ function Welcome() {
   return (
     <div className="thread-welcome">
       <h2>描述这次要采集的内容</h2>
-      <p>说明对象、范围和期望字段；需求确认后可制定计划，计划会按需核验来源。</p>
+      <p>说明对象、范围和期望字段；需求确认后即可生成链路草稿，系统会按需核验来源。</p>
     </div>
   );
 }

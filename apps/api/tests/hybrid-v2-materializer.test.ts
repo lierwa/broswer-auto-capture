@@ -41,12 +41,13 @@ test("准备动作只有同 document 三段因果证据时物化，且动作最�
     { phase: "dispatch", ...proofRefs[1], documentId: "doc-1", dispatches: 1 },
     { phase: "after", ...proofRefs[2], documentId: "doc-1", status: "ready", unique: true },
   ]
-  const graph = materializePreparationGraph({ preparation, evidence })
+  const consumer = { actionName: "click", target: { strategy: "title", role: "button", name: "Submit" } }
+  const graph = materializePreparationGraph({ preparation, evidence, consumer })
   assert.equal(graph.nodes.filter((node) => node.kind === "branch").length, 2)
   assert.equal(graph.edges.filter((edge) => edge.from === "dismiss" && edge.port === "success").length, 1)
   assert.ok(graph.edges.some((edge) => edge.from.endsWith("-verify") && edge.port === "default"
     && edge.to.endsWith("-ineffective")))
   assert.throws(() => materializePreparationGraph({ preparation,
-    evidence: evidence.map((item, index) => index === 2 ? { ...item, documentId: "doc-2" } : item) }),
+    evidence: evidence.map((item, index) => index === 2 ? { ...item, documentId: "doc-2" } : item), consumer }),
   /optional_preparation_document_changed/)
 })

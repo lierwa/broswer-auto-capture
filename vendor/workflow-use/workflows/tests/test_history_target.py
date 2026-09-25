@@ -7,7 +7,11 @@ from browser_use.dom.views import NodeType
 
 from workflow_use.hybrid.history_target import capture_history_target, match_history_target
 from workflow_use.hybrid.natural_target_compile import natural_target
-from workflow_use.hybrid.post_action_target import CapturedTargetIdentity, refreshed_target_element
+from workflow_use.hybrid.post_action_target import (
+    CapturedTargetIdentity,
+    refreshed_target_element,
+    retained_action_target_element,
+)
 
 
 class FakeNode:
@@ -47,6 +51,17 @@ class HistoryTargetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'ambiguous_history_target'):
             match_history_target(identity.model_dump(mode='json'), mapping, 'tab-1')
 
+    def test_weak_element_hash_collision_is_disambiguated_by_stable_hash(self):
+        identity = capture_history_target(FakeNode(element_hash=101, stable_hash=202, node_name='EM'))
+        expected = FakeNode(element_hash=101, stable_hash=202, xpath='/html/body/a[1]/em', node_name='EM')
+        other = FakeNode(element_hash=101, stable_hash=303, xpath='/html/body/a[2]/em', node_name='EM')
+
+        index, node = match_history_target(
+            identity.model_dump(mode='json'), {42: expected, 43: other}, 'tab-1')
+
+        self.assertEqual(index, 42)
+        self.assertIs(node, expected)
+
     def test_compiler_preserves_history_identity_instead_of_css_or_xpath(self):
         identity = capture_history_target(FakeNode(element_hash=101, stable_hash=202))
         source_ref = SimpleNamespace(model_dump=lambda **_kwargs: {'ref': 'fixture', 'digest': '1' * 64})
@@ -82,6 +97,22 @@ class HistoryTargetTests(unittest.TestCase):
             result = __import__('asyncio').run(
                 refreshed_target_element(browser, summary, identity))
         self.assertEqual(result, 'resolved')
+
+    def test_post_action_read_keeps_exact_target_when_overlay_removes_it_from_selector_map(self):
+        original = FakeNode(element_hash=101, stable_hash=202, node_name='INPUT')
+        identity = CapturedTargetIdentity(
+            target_id='tab-1', url='https://fixture.invalid/', tag='input', attributes={}, backend=2,
+            history=capture_history_target(original))
+        summary = SimpleNamespace(url=identity.url, dom_state=SimpleNamespace(selector_map={}))
+        page = SimpleNamespace(get_url=AsyncMock(return_value=identity.url))
+        browser = SimpleNamespace(agent_focus_target_id='tab-1',
+                                  get_current_page=AsyncMock(return_value=page))
+        retained = object()
+
+        result = __import__('asyncio').run(
+            retained_action_target_element(browser, summary, identity, retained))
+
+        self.assertIs(result, retained)
 
 
 if __name__ == '__main__':

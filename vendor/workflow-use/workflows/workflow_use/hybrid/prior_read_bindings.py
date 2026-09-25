@@ -30,27 +30,33 @@ def attach_prior_read_bindings(collector, history):
 
 
 def binding_from_prior_reads(action_ref, argument_path, expected, prior_facts):
-    candidates, visited = {}, 0
-    for fact in prior_facts:
+    visited = 0
+    for fact in reversed(prior_facts):
         try:
             read = VerifiedNaturalRead.model_validate(fact.value)
         except Exception:
             continue
+        if read.stable is not True:
+            continue
+        matches = {}
         for path, value in _values(read.output):
             visited += 1
             if visited > MAX_BINDING_VALUES:
                 return None
             if digest(value) != digest(expected):
                 continue
-            key = (read.actionRef, tuple(path))
-            candidates[key] = (fact.id, read.actionRef, path)
-    if len(candidates) != 1:
-        return None
-    source_ref, node_id, path = next(iter(candidates.values()))
-    return NaturalBindingFact(
-        actionRef=action_ref, argumentPath=argument_path,
-        binding={'source': 'node', 'nodeId': node_id, 'path': path},
-        provenance='node_output', sourceReadRef=source_ref)
+            matches[tuple(path)] = path
+        if matches:
+            # WHY：先前宽查询可重复包含同一地址；最近的精确重读若唯一，
+            # 就以该读取为可复跑来源。同一次读取里的重复值仍没有确定字段身份。
+            if len(matches) != 1:
+                return None
+            path = next(iter(matches.values()))
+            return NaturalBindingFact(
+                actionRef=action_ref, argumentPath=argument_path,
+                binding={'source': 'node', 'nodeId': read.actionRef, 'path': path},
+                provenance='node_output', sourceReadRef=fact.id)
+    return None
 
 
 def _attach_action_bindings(collector, observation, action_ref, action_name, arguments, prior_facts):

@@ -25,14 +25,15 @@ class _RetryPolicy:
 
 
 async def capture_consistent_post_snapshot(browser, facts_before_live, facts_after_live, live_facts, observe,
-                                           *, closed_target_id=None, _policy=None):
+                                           *, closed_target_id=None, snapshot_reader=None, _policy=None):
     """Re-read on URL sampling mismatch; this does not prove rendering or business completion."""
     policy = _policy or _RetryPolicy()
     stable_tab_id = browser.agent_focus_target_id
 
     async def attempt():
         expected_tab_id = await _post_action_tab_id(browser, stable_tab_id, closed_target_id)
-        summary = await browser.get_browser_state_summary(cached=False)
+        reader = snapshot_reader or browser.get_browser_state_summary
+        summary = await reader(cached=False)
         await _require_live_snapshot(browser, summary, expected_tab_id)
         if closed_target_id in {str(tab.target_id) for tab in summary.tabs}:
             raise ObservationStateTransitionPending()

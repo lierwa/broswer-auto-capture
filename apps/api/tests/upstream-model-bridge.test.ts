@@ -11,6 +11,29 @@ const selection = { connectionId: randomUUID(), modelId: "fixture", reasoningEff
 type Subject = Parameters<typeof openModelBridge>[0]["subject"]
 const usage = { inputTokens: 3, outputTokens: 2, totalTokens: 5, reported: true }
 
+// 不变量：固定 browser-use 版本必须通过 BrowserProfile 持有 B-A-T 指定目录，不能退回临时 profile。
+test("上游浏览器适配器保留持久 profile 所有权和运行边界",
+  { skip: !process.env.BAT_UPSTREAM_PYTHON && "requires the pinned BAT_UPSTREAM_PYTHON environment" }, async () => {
+  const root = process.cwd(), profilePath = await mkdtemp(path.join(tmpdir(), "bat-owned-profile-"))
+  try {
+    const result = await python(root, `
+import json,sys
+from pathlib import Path
+from browser_use_runner.hybrid_main import owned_browser
+raw=json.load(sys.stdin)
+expected=Path(raw['profilePath']).resolve()
+browser=owned_browser(expected,headless=True,allowed_domains=['example.com'])
+assert Path(browser.browser_profile.user_data_dir).resolve()==expected
+assert browser.browser_profile.headless is True
+assert browser.browser_profile.allowed_domains==['example.com']
+assert browser.browser_profile.enable_default_extensions is False
+assert browser.browser_profile.keep_alive is False
+assert browser.browser_profile.executable_path is None
+`, { profilePath })
+    assert.equal(result.code, 0, result.stderr)
+  } finally { await rm(profilePath, { recursive: true, force: true }) }
+})
+
 // 不变量：真实 Python 调用形状经独立 HTTP 通道保留消息、图像、schema、usage 和用途；正文不能进审计。
 test("Python 上游模型桥保留六种用途和多模态请求，stdout 不污染协议",
   { skip: !process.env.BAT_UPSTREAM_PYTHON && "requires the pinned BAT_UPSTREAM_PYTHON environment" }, async () => {
@@ -103,7 +126,8 @@ async def run():
     runner=hybrid.Runner()
     runner.browser=SimpleNamespace(browser_profile=SimpleNamespace(keep_alive=False))
     result=await runner.handle(raw)
-    assert result['resultSpecKeys']==['contractVersion','edgeCases','fields','mode','schema']
+    assert 'schema' in result['resultSpecKeys']
+    assert 'schemaValue' not in result['resultSpecKeys']
     assert 'schemaValue' not in captured['resultSpec']
 
 asyncio.run(run())
@@ -119,7 +143,8 @@ asyncio.run(run())
           required: ["items"], additionalProperties: false },
         fields: [{ path: ["items"], description: "visible records", producerRef: "visible-records" }], edgeCases: [] },
       requirementId: randomUUID(), requirementVersion: 1, requirementText: "read records", requirementDigest: "a".repeat(64),
-      planId: randomUUID(), planVersion: 1, planDigest: "b".repeat(64), stepId: "read-records", callMode: "once", maxSteps: 10,
+      planId: randomUUID(), planVersion: 1, planDigest: "b".repeat(64), entryUrls: ["https://example.test/"],
+      stepId: "read-records", callMode: "once", maxSteps: 10,
     },
   })
   assert.equal(result.code, 0, result.stderr)

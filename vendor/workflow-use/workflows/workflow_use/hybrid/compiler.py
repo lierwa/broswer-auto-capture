@@ -47,8 +47,8 @@ def compile_request(request: CompilationRequest | NaturalCompilationRequest, reg
     issues, segments, ledger = list(source_gaps), [], []
     if request.actionRegistryVersion != registry.schemaDigest or trace.source.version != registry.providerVersion:
         issues.append(gap('invalid_source', [], 'registry_version_mismatch', 'reject_trace'))
-    if not trace.judged or not trace.completed or trace.finalResultRef is None:
-        issues.append(gap('invalid_source', [], 'successful_judged_business_result_required', 'reject_trace'))
+    if not trace.completed or trace.finalResultRef is None:
+        issues.append(gap('invalid_source', [], 'completed_business_result_required', 'reject_trace'))
     # WHY: 已确认合同缺少或未被样本证明时保持 gap；不能从录像补出分支或循环。
     prior, prior_values, wait_owners = {}, {}, {}
     observations = {item.id: item for item in trace.observations}
@@ -340,7 +340,7 @@ def linear_graph(segments):
     for index, segment in enumerate(segments):
         following = segments[index + 1]['id'] if index + 1 < len(segments) else 'completed'
         edges.append({'from': segment['id'], 'outcome': 'success', 'to': following})
-        failures = ('timeout', 'failed', 'cancelled') if segment['kind'] == 'explicit_llm' else (
+        failures = ('timeout', 'failed', 'cancelled') if segment['kind'] in ('explicit_llm', 'function') else (
             'missing', 'timeout', 'blocked', 'human_required', 'failed', 'cancelled')
         if segment['kind'] == 'deterministic' and segment['operation']['name'] == 'task-chain.invoke':
             failures = ('partial', 'blocked', 'human_required', 'timeout', 'failed', 'cancelled')

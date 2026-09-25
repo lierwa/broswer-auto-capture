@@ -1,8 +1,9 @@
-import { assertWorkflowRuntimeSupported } from "../upstream-browser/retirement.js"
+import { assertExecutionBrowserSupported, assertWorkflowRuntimeSupported, usesHybridBrowserRuntime } from "../upstream-browser/retirement.js"
 import { z } from "zod"
 import {
   CONTRACT_VERSION, parseTaskValue, taskRunSchema, type JsonValue, type TaskChain, type TaskRun,
-  type TaskDataContract, type TaskBudget, type TaskConsumption, type TaskRunMode, type TaskRunRequest, type ValueSchema, type VersionReference,
+  type TaskDataContract, type TaskBudget, type TaskConsumption, type TaskExecution, type TaskRunMode, type TaskRunRequest,
+  type ValueSchema, type VersionReference,
 } from "@browser-capture/contracts"
 import type { AIEvent } from "@browser-capture/contracts/ai"
 import { BrowserError, browserGrantLimits, TaskChainBrowserAdapter, taskChainBrowserActions,
@@ -15,6 +16,7 @@ import {
 import type { AIModelProvider, PreparedAIModel, PreparedMainAIModel } from "../ai/model.js"
 import type { BrowserService } from "../browser/service.js"
 import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
+import type { RunnerCleanupReport } from "../upstream-browser/cleanup.js"
 import type { TaskContractRepository } from "./repository.js"
 import { explorationStepSubmissionSchema, traceEvent, validateExplorationResult,
   type ExplorationStepResult, type ExplorationTrace } from "./exploration-trace.js"
@@ -36,7 +38,9 @@ type RuntimeGroup = Readonly<{
   budget: TaskBudget; consumed: TaskConsumption; scopeConsumption: Readonly<Record<string, TaskConsumption>>;
   scopeBudgets?: Readonly<Record<string, TaskBudget>>;
   onConsumption?: (scopeId: string, snapshot: BudgetSnapshot) => void;
+  onCleanup?: (report: RunnerCleanupReport) => void;
   pacing?: RuntimeNodePacing;
+  browser?: TaskExecution["browser"];
 }>
 
 const explorationWallTimeoutMs = 180_000
@@ -224,22 +228,24 @@ export class TaskRuntimeHost {
   }
 
   async group<T>(input: RuntimeGroup, work: (execute: (chain: TaskChain, request: TaskRunRequest,
-    control?: RuntimeControl) => Promise<TaskRun>) => Promise<T>) {
+    control?: RuntimeControl) => Promise<TaskRun>) => Promise<T>): Promise<T> {
     const scopes = new Map(input.chains.map((chain) => [chain.stepId, { budget: input.scopeBudgets?.[chain.stepId] ?? chain.budget,
       consumed: input.scopeConsumption[chain.stepId] ?? zeroConsumption() }]))
     const ledger = new TaskBudgetLedger(input.budget, input.consumed, scopes, input.onConsumption)
     const closure = this.assertExecutable(input.taskId, input.chains)
+    assertExecutionBrowserSupported(closure, input.browser?.headless ?? false)
     const injected = await this.factory?.({ taskId: input.taskId, authorizationId: input.authorizationId, purpose: input.purpose })
     if (injected) return work(this.executor(injected, input.purpose, input.signal, ledger, 0, input.pacing))
-    const hybrid = closure.some((chain) => chain.nodes.some((node) => node.kind === "capability"
-      && ["browser.workflow-step", "browser.read-fields"].includes(node.capability.name)))
+    const hybrid = usesHybridBrowserRuntime(closure)
     if (hybrid) {
       if (!this.upstream.withCapabilities) throw new Error("hybrid_runtime_unavailable")
       const canRestoreByNavigation = closure.every((chain) => chain.nodes.every((node) => node.kind !== "capability"
         || !node.capability.name.startsWith("browser.") || node.capability.name === "browser.read-fields"
         || z.object({ actionName: z.literal("navigate") }).passthrough().safeParse(node.config).success))
-      return this.upstream.withCapabilities({ signal: input.signal, ownerId: input.browserRunId,
-        allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation }, (capabilities) =>
+      return this.upstream.withCapabilities<T>({ signal: input.signal, ownerId: input.browserRunId,
+        allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation,
+        ...(input.browser ? { headless: input.browser.headless } : {}),
+        ...(input.onCleanup ? { onCleanup: input.onCleanup } : {}) }, (capabilities) =>
         work(this.executor(capabilities, input.purpose, input.signal, ledger, 0, input.pacing)))
     }
     const actions = [...new Set(closure.flatMap(taskChainBrowserActions))]

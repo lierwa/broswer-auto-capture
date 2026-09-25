@@ -3,13 +3,21 @@
 from .coverage import validate_coverage
 from .evidence import digest, gap
 from .natural_output import compile_natural_output_assembly
+from .natural_read_liveness import prune_unused_queries, rebind_consumer_readiness
 from .natural_readiness import validate_consumer_readiness
-from .natural_result_binding import (compile_empty_list_branches, compile_result_binding,
-                                     compile_result_derivation_segments, wire_empty_list_branches)
+from .natural_result_binding import (
+    compile_empty_list_branches,
+    compile_result_binding,
+    compile_result_derivation_segments,
+    wire_empty_list_branches,
+)
 
 
 def finalize_natural_compilation(request, registry, compilation_type, linear_graph, output_schema,
                                  segments, ledger, issues):
+    segments, ledger, consumed, pruning_issues = prune_unused_queries(request, registry, segments, ledger)
+    issues.extend(pruning_issues)
+    issues.extend(rebind_consumer_readiness(request.trace, segments, ledger))
     issues.extend(validate_consumer_readiness(segments))
     segments, derivation_issues = compile_result_derivation_segments(
         request.plan.resultSpec, request.trace, segments, output_schema)
@@ -27,7 +35,9 @@ def finalize_natural_compilation(request, registry, compilation_type, linear_gra
     result_branches, branch_issues = compile_empty_list_branches(request.plan.resultSpec, result_binding, segments)
     issues.extend(branch_issues)
     issues.extend(validate_coverage(
-        request.trace, ledger, {segment['id'] for segment in segments}, registry=registry))
+        request.trace, ledger, {segment['id'] for segment in segments}, registry=registry,
+        result_spec=request.plan.resultSpec, output_schema=output_schema,
+        consumed_query_ids=consumed))
     issues = sorted({item.id: item for item in issues}.values(), key=lambda item: item.id)
     graph = linear_graph(segments) if not issues else {'entry': '', 'edges': [], 'terminals': []}
     if not issues:
@@ -63,7 +73,7 @@ def _compile_output(request, output_schema, segments, issues):
 
 
 def _reuse_digest(segment):
-    if segment['kind'] == 'explicit_llm':
+    if segment['kind'] in ('explicit_llm', 'function'):
         return digest({key: value for key, value in segment.items() if key != 'id'})
     return digest({'operation': segment['operation'], 'target': segment['target'],
         'bindings': [{'argumentPath': item['argumentPath'], 'kind': item['kind'], 'binding': item['binding']}

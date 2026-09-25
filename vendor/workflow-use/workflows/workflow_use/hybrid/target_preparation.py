@@ -95,6 +95,21 @@ TARGET_PREPARATION_SCRIPT = r"""() => {
     scrollContainer: scrollContainer || {tag:'window', id:null, scrollTop:scrollY, scrollLeft:scrollX}};
 }"""
 
+async def current_document_id(browser):
+    page = await browser.get_current_page()
+    if page is None:
+        raise ValueError('page_unavailable')
+    try:
+        roots = await page.get_elements_by_css_selector('html')
+        if len(roots) != 1:
+            raise ValueError('target_document_identity_unavailable')
+        value = (await inspect_action_target(roots[0]))['documentId']
+    except Exception as error:
+        raise ValueError('target_document_identity_unavailable') from error
+    if not isinstance(value, str) or not value:
+        raise ValueError('target_document_identity_unavailable')
+    return value
+
 
 async def inspect_action_target(element):
     try:

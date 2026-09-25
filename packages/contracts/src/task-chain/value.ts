@@ -90,3 +90,28 @@ export function parseTaskOutput(rawContract: unknown, rawOutput: unknown): TaskO
   // 产物内容在读取 artifact 时校验；此边界仅校验引用，不能冒充已经读取内容。
   return output.kind === "artifact" ? output : { ...output, value: parseTaskValue(contract, output.value) }
 }
+
+/** WHY：无参数合同仍需两次独立验证，但不存在可伪造的“另一组输入”；只有值域确实大于一时才要求换值。 */
+export function taskInputRequiresVariation(rawContract: unknown) {
+  return valueSchemaHasAlternatives(taskDataContractSchema.parse(rawContract).schema)
+}
+
+function valueSchemaHasAlternatives(schema: ValueSchema): boolean {
+  if (schema.type === "null") return false
+  if (schema.type === "boolean") return true
+  if (schema.type === "string") {
+    if (schema.enum) return new Set(schema.enum).size > 1
+    return schema.maxLength !== 0
+  }
+  if (schema.type === "number" || schema.type === "integer") {
+    return schema.minimum === undefined || schema.maximum === undefined || schema.minimum !== schema.maximum
+  }
+  if (schema.type === "array") {
+    if (schema.maxItems === 0) return false
+    if (schema.minItems === undefined || schema.maxItems === undefined || schema.minItems !== schema.maxItems) return true
+    return schema.minItems > 0 && valueSchemaHasAlternatives(schema.items)
+  }
+  if (schema.type !== "object") return false
+  if (schema.additionalProperties || schema.required.length !== Object.keys(schema.properties).length) return true
+  return Object.values(schema.properties).some(valueSchemaHasAlternatives)
+}

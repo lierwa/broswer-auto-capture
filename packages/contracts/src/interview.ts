@@ -65,13 +65,40 @@ export const decisionSchema = z.object({
 export const unresolvedSchema = z.object({
   id: text, revision, question: questionSchema, status: z.enum(["open", "answered", "superseded", "resolved"]), answerMessageId: text.nullable(),
 })
+const httpUrl = z.string().url().refine((value) => {
+  const protocol = new URL(value).protocol
+  return protocol === "http:" || protocol === "https:"
+}, "来源地址必须使用 http 或 https")
+export const sourceCandidateSchema = z.object({
+  id: text, title: text, url: httpUrl, origin: httpUrl, domain: text,
+  description: z.string().trim().max(1_000),
+}).strict()
+export const sourceResolutionSchema = z.object({
+  id: text, revision, subject: text, query: text,
+  // WHY：来源工具由 Pi extension registry 决定，公共事实只保存实际工具/证据来源标识，不能冻结供应商枚举。
+  provider: z.string().trim().min(1).max(200),
+  searchStatus: z.enum(["ok", "unavailable"]).default("ok"),
+  outcome: z.enum(["unique", "multiple", "none", "provided"]),
+  status: z.enum(["open", "selected", "needs_clarification", "superseded"]),
+  candidates: z.array(sourceCandidateSchema).max(5), questionId: text.nullable(),
+  selectedCandidateId: text.nullable(), answerMessageId: text.nullable(), createdAt: z.string().datetime(),
+}).strict().superRefine((value, context) => {
+  if (value.status === "selected" && !value.selectedCandidateId) {
+    context.addIssue({ code: "custom", message: "已确认来源必须引用候选" })
+  }
+  if (value.selectedCandidateId && !value.candidates.some((candidate) => candidate.id === value.selectedCandidateId)) {
+    context.addIssue({ code: "custom", message: "来源选择必须引用当前候选" })
+  }
+})
 export const legacyInterviewStateSchema = z.object({
   revision, messages: z.array(messageSchema), drafts: z.array(draftSchema),
   confirmedVersion: z.number().int().nullable(), active: z.boolean(), audits: z.array(auditSchema),
 })
 export const interviewStateSchema = legacyInterviewStateSchema.extend({
   sequence: revision.default(0), activeTurnId: text.nullable().default(null), cancellationRequested: z.boolean().default(false),
+  policyVersion: z.number().int().min(0).max(1).default(0),
   turns: z.array(turnSchema).default([]), decisions: z.array(decisionSchema).default([]), unresolved: z.array(unresolvedSchema).default([]),
+  sourceResolutions: z.array(sourceResolutionSchema).default([]),
 })
 // WHY：旧请求类型仅用于迁移前切片兼容；正式 API 必须携带幂等键或精确轮次。
 export const interviewRequestSchema = z.discriminatedUnion("type", [
@@ -111,7 +138,10 @@ export type InterviewMessagePart = z.infer<typeof interviewMessagePartSchema>
 export type InterviewRequest = z.infer<typeof interviewRequestSchema>
 export type InterviewCommand = z.infer<typeof interviewCommandSchema>
 export type InterviewTurn = z.infer<typeof turnSchema>
-export const emptyInterview: InterviewState = interviewStateSchema.parse({ revision: 0, messages: [], drafts: [], confirmedVersion: null, active: false, audits: [] })
+export type SourceCandidate = z.infer<typeof sourceCandidateSchema>
+export type SourceResolution = z.infer<typeof sourceResolutionSchema>
+export const emptyInterview: InterviewState = interviewStateSchema.parse({ revision: 0, messages: [], drafts: [], confirmedVersion: null,
+  active: false, audits: [], policyVersion: 1 })
 
 export function currentDraft(state: Pick<InterviewState, "drafts" | "revision">) {
   const last = state.drafts.at(-1)

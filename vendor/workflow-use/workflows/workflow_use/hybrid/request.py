@@ -1,9 +1,24 @@
 """Authority and control inputs. Request digests cover their full normalized projections."""
 from typing import Annotated, Literal
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import AfterValidator, Field, JsonValue, model_validator
 
-from .evidence import Contract, EvidenceRef, NormalizedTrace, digest
+from .evidence import Contract, EvidenceRef, NormalizedTraceContract, digest
+
+
+TASK_KEY_PATTERN = r'^[a-z][A-Za-z0-9_-]{0,63}$'
+RESERVED_TASK_KEYS = {'constructor', 'prototype', '__proto__'}
+
+
+def _validate_task_key(value):
+    # WHY：这些引用跨越 TS 公共合同和 Python 编译适配器。Python 只集中镜像一次
+    # keySchema，并由跨语言一致性测试防止两边继续各字段漂移。
+    if value in RESERVED_TASK_KEYS:
+        raise ValueError('reserved_task_key')
+    return value
+
+
+TaskKey = Annotated[str, Field(pattern=TASK_KEY_PATTERN), AfterValidator(_validate_task_key)]
 
 
 class RequirementClause(Contract):
@@ -99,7 +114,7 @@ class CompilationRequest(Contract):
     plan: Plan
     control: PlanControlContract
     runtimeInputSchema: dict[str, JsonValue]
-    trace: NormalizedTrace
+    trace: NormalizedTraceContract
     acceptedAnnotations: list[ControlIntentAnnotation | SemanticOperationAnnotation]
 
     @model_validator(mode='after')
@@ -164,18 +179,18 @@ class NaturalRequirement(Contract):
 class ResultField(Contract):
     path: list[str | int] = Field(max_length=40)
     description: str = Field(min_length=1, max_length=10000)
-    producerRef: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,39}$')
+    producerRef: TaskKey
 
 
 class ResultEdgeCase(Contract):
     description: str = Field(min_length=1, max_length=10000)
-    controlRef: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,39}$')
+    controlRef: TaskKey
 
 
 class ResultDerivation(Contract):
-    producerRef: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,39}$')
+    producerRef: TaskKey
     operation: Literal['count']
-    sourceProducerRef: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,39}$')
+    sourceProducerRef: TaskKey
     sourcePath: list[str | int] = Field(max_length=40)
 
 
@@ -250,6 +265,7 @@ class NaturalPlan(Contract):
     inputSchemaDigest: str = Field(pattern=r'^[a-f0-9]{64}$')
     outputSchemaDigest: str = Field(pattern=r'^[a-f0-9]{64}$')
     callMode: Literal['once', 'each', 'batch']
+    entryUrls: list[str] = Field(max_length=32)
     resultSpec: ResultSpec
 
     @model_validator(mode='after')
@@ -265,7 +281,7 @@ class NaturalCompilationRequest(Contract):
     requirement: NaturalRequirement
     plan: NaturalPlan
     runtimeInputSchema: dict[str, JsonValue]
-    trace: NormalizedTrace
+    trace: NormalizedTraceContract
 
     @model_validator(mode='after')
     def verify_schema_digest(self):

@@ -37,7 +37,6 @@ class HistoryRecord(Contract):
 
 class HistoryInput(Contract):
     source: TraceSource
-    judged: bool
     completed: bool
     records: list[HistoryRecord]
     observations: list[NormalizedObservation]
@@ -65,8 +64,8 @@ def normalize_history(source: HistoryInput, registry: ActionRegistry):
                 action_refs[(record.stepIndex, action_index)], ambiguous, registry)
             actions.append(action)
             gaps.extend(issues)
-    body = dict(mediaType='application/vnd.bat.browser-use-trace+json;version=1',
-                source=source.source.model_dump(), judged=source.judged, completed=source.completed,
+    body = dict(mediaType='application/vnd.bat.browser-use-trace+json;version=2',
+                source=source.source.model_dump(), completed=source.completed,
                 actions=[a.model_dump() for a in actions], observations=[o.model_dump() for o in source.observations],
                 finalResultRef=source.finalResultRef.model_dump() if source.finalResultRef else None,
                 redactionManifestRef=source.redactionManifestRef.model_dump())
@@ -115,8 +114,7 @@ def structure_fixture_input(fixture: dict, redaction: EvidenceRef, provider_vers
                    for index, result in enumerate(record['results'])]
         records.append(HistoryRecord(stepIndex=record['stepIndex'], actions=record['actions'], results=results))
     final = records[-1].results[-1] if records and records[-1].results else None
-    # H0 fixture only retained judgement presence, not verdict; presence must never become approval.
     return HistoryInput(source=TraceSource(version=provider_version, historyRef='sha256:' + fixture['sourceDigest']),
-                        judged=False, completed=bool(final and final.is_done and final.success),
+                        completed=bool(final and final.is_done and final.success),
                         records=records, observations=[], redactionManifestRef=redaction,
                         finalResultRef=final.ref if final else None)

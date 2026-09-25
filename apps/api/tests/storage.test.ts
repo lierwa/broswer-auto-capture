@@ -68,7 +68,7 @@ test("任务创建幂等，失败事务不改变消息/草稿/确认/事件序�
   assert.deepEqual(store.snapshot(id), before)
   assert.equal(store.list().length, 1)
 }))
-test("v1 数据库原子迁移到 v11，旧访谈和旧调研原表均保留", async () => {
+test("v1 数据库原子迁移到 v16，旧访谈和旧调研原表均保留", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "browser-v1-migration-"))
   const file = path.join(directory, "workbench.sqlite")
   try {
@@ -85,7 +85,7 @@ test("v1 数据库原子迁移到 v11，旧访谈和旧调研原表均保留", a
     await reopened.close()
     const inspection = new Database(file, { readonly: true })
     try {
-      assert.equal(inspection.pragma("user_version", { simple: true }), 11)
+      assert.equal(inspection.pragma("user_version", { simple: true }), 16)
       assert.deepEqual(inspection.prepare("SELECT * FROM browserRuns").all(), [])
       assert.deepEqual(inspection.prepare("SELECT name FROM sqlite_master WHERE name='researchRuns'").get(), { name: "researchRuns" })
       assert.deepEqual(inspection.prepare("SELECT * FROM aiSettings").all(), [])
@@ -108,7 +108,7 @@ test("v3 升级保留旧调研与浏览器历史，迁移冲突整体回滚", ()
   try {
     connection.exec("CREATE TABLE tasks (id TEXT PRIMARY KEY); INSERT INTO tasks VALUES ('existing'); CREATE TABLE operations (scope TEXT, requestId TEXT, digest TEXT, resultId TEXT, PRIMARY KEY(scope,requestId)); CREATE TABLE browserRuns (runId TEXT PRIMARY KEY, taskId TEXT, body TEXT); INSERT INTO browserRuns VALUES ('old','existing','{}'); PRAGMA user_version=3")
     migrate(connection); migrate(connection)
-    assert.equal(connection.pragma("user_version", { simple: true }), 11)
+    assert.equal(connection.pragma("user_version", { simple: true }), 16)
     assert.deepEqual(connection.prepare("SELECT * FROM browserRuns").all(), [{ runId: "old", taskId: "existing", body: "{}" }])
     assert.deepEqual(connection.prepare("SELECT name FROM sqlite_master WHERE name='researchRuns'").get(), { name: "researchRuns" })
     connection.exec("PRAGMA user_version=3")

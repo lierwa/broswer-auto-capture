@@ -1,12 +1,12 @@
 /* WHY：聊天正文、决策和草稿卡共同组成时间线；完整文档在二级 Dialog 阅读。 */
-.interview-workspace { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.interview-workspace { height: 100%; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .review-panel [role="tabpanel"]:has(.interview-workspace) { overflow: hidden; }
 .interview-bar { height: 54px; flex-shrink: 0; padding: 0 28px; display: flex; justify-content: space-between; align-items: center; color: var(--color-text-muted); font-size: 12px; border-bottom: 1px solid var(--color-border); }
-.interview-bar > div { display: flex; align-items: center; gap: 8px; }
+.interview-bar > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .interview-notices { flex-shrink: 0; width: min(100%, 840px); margin: 0 auto; padding: 0 28px; }
 .interview-notices:empty { display: none; }
 .context-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-accent); }
-.interview-thread { min-height: 0; flex: 1; --chat-content-width: 784px; --chat-composer-width: 728px; }
+.interview-thread { min-width: 0; min-height: 0; flex: 1; --chat-content-width: 784px; --chat-composer-width: 728px; }
 .interview-thread--time-incomplete [data-agent-turn-timestamp="true"] { display: none; }
 .thread-column { padding: 30px 28px 20px; }
 .thread-welcome { max-width: 620px; padding: 0 0 10px; }
@@ -55,8 +55,13 @@
 @media (max-width: 600px) {
   .review-panel { height: calc(100dvh - 195px); min-height: 480px; }
   .thread-column { padding: 22px 16px 8px; }
-  /* WHY：窄屏滚动 viewport 在 Windows Chrome 稳定保留左右各 15px 槽；Composer 位于滚动层外，需镜像该宽度。 */
-  .interview-thread .thread-bottom { width: calc(100% - 30px); padding: 8px 16px 12px; }
+  .interview-thread { --chat-content-width: 100%; --chat-composer-width: 100%; }
+  /* WHY：窄屏 Composer 与时间线共用容器宽度，不能保留桌面定宽后再依赖面板裁切。 */
+  .interview-thread .thread-bottom { width: 100%; padding: 8px 15px 12px; }
+  .thread-bottom [data-chat-composer-width] { width: 100%; max-width: 100%; min-width: 0; transform: none; }
+  .interview-bar > div:first-child { flex: 1; }
+  .interview-bar > div:first-child > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .interview-bar > .rt-Button { min-width: 0; max-width: 52%; overflow: hidden; white-space: nowrap; }
   .interview-notices { padding: 0 16px; }
   .interview-bar { padding: 0 16px; }
   .confirmed-next { flex-wrap: wrap; }

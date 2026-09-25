@@ -9,6 +9,7 @@ import {
   type CommonSurfaceQuestion,
 } from "@agent-platform/ai-connect/ui-contracts";
 import { projectAIInvocationTimeline } from "@agent-platform/ai-connect-react/components/AIInvocationTimeline";
+import type { AIExtensionEvent } from "@agent-platform/ai-connect/browser";
 import {
   commonQuestionModules,
   createAnsweredInteractionTimelineEntry,
@@ -316,7 +317,87 @@ export function interviewMessageTimes(state: InterviewState) {
 }
 
 function projectInterviewActivity(state: InterviewState) {
-  return projectAIInvocationTimeline(state.messages.flatMap((message) => message.aiEvents));
+  return { hooks: state.messages.flatMap((message) => {
+    const queries = new Map<string, string>();
+    return projectAIInvocationTimeline(message.aiEvents, (event) =>
+      projectSearchHook(event, message.id, queries)).hooks.map((hook) => ({
+      ...hook, relatedMessageId: message.id,
+    }));
+  }) };
+}
+
+type TimelineHook = ReturnType<typeof projectAIInvocationTimeline>["hooks"][number];
+
+function projectSearchHook(event: AIExtensionEvent, messageId: string, queries: Map<string, string>): TimelineHook | null {
+  if (event.namespace !== "agent-platform.pi-agent-session") return null;
+  const payload = asRecord(event.payload);
+  if (!payload || !["web_search", "search_sources"].includes(String(payload.toolName))) return null;
+  const type = payload.type;
+  if (!["tool.execution.started", "tool.execution.completed", "tool.execution.failed"].includes(String(type))) return null;
+  const callId = payload.callId;
+  if (typeof callId !== "string" || !callId) return null;
+  if (type === "tool.execution.started") queries.set(callId, searchQuery(payload.input));
+  const output = asRecord(payload.output);
+  const details = asRecord(output?.details);
+  const query = searchQuery(details) || queries.get(callId) || "公开资料";
+  const unavailable = type === "tool.execution.failed" || Boolean(details?.error)
+    || details?.successfulQueries === 0 || details?.status === "unavailable";
+  const status: TimelineHook["status"] = type === "tool.execution.started" ? "running"
+    : unavailable ? "error" : "completed";
+  const refs = type === "tool.execution.completed" ? searchResultRefs(output) : [];
+  return {
+    kind: "tool-progress", status,
+    title: status === "running" ? "正在搜索公开资料" : status === "error" ? "公开搜索未完成" : "公开搜索完成",
+    description: [query, ...refs].join(" · ").slice(0, 600),
+    createdAt: event.createdAt, relatedMessageId: messageId,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function searchQuery(value: unknown) {
+  const input = asRecord(value);
+  if (typeof input?.query === "string") return input.query.trim();
+  return Array.isArray(input?.queries) ? input.queries.filter((item): item is string => typeof item === "string").join("、") : "";
+}
+
+function searchResultRefs(output: Record<string, unknown> | null) {
+  const refs = new Set<string>();
+  const contentTexts = (Array.isArray(output?.content) ? output.content : []).flatMap((content) => {
+    const text = asRecord(content)?.text;
+    return typeof text === "string" ? [text] : [];
+  });
+  const definitions = new Map<string, string>();
+  for (const text of contentTexts) {
+    for (const match of text.matchAll(/^\s{0,3}\[([^\]\r\n]+)\]:\s*<?(https?:\/\/[^\s>]+)>?/gmu)) {
+      definitions.set(match[1]!.trim().toLowerCase(), match[2]!);
+    }
+  }
+  const add = (value: unknown) => {
+    if (typeof value !== "string") return;
+    try {
+      const url = new URL(value);
+      if (["http:", "https:"].includes(url.protocol)) { url.hash = ""; refs.add(url.href); }
+    } catch { /* 搜索结果不是可引用的 HTTP URL。 */ }
+  };
+  for (const text of contentTexts) {
+    for (const match of text.matchAll(/\[[^\]\r\n]+\]\((https?:\/\/[^\s)]+)\)|^\s*(https?:\/\/\S+)\s*$/gmu)) {
+      add(match[1] ?? match[2]);
+      if (refs.size === 2) return [...refs];
+    }
+    for (const match of text.matchAll(/\[([^\]\r\n]+)\]\[([^\]\r\n]+)\]/gu)) {
+      add(definitions.get(match[2]!.trim().toLowerCase()));
+      if (refs.size === 2) return [...refs];
+    }
+    try {
+      const parsed = asRecord(JSON.parse(text));
+      for (const result of Array.isArray(parsed?.results) ? parsed.results : []) add(asRecord(result)?.url);
+    } catch { /* 普通搜索文本仍可通过链接语法提取引用。 */ }
+    if (refs.size >= 2) return [...refs].slice(0, 2);
+  }
+  return [...refs].slice(0, 2);
 }
 
 function currentInterviewRun(state: InterviewState): InteractiveTimelineValue["currentRun"] {
@@ -340,8 +421,8 @@ export function interviewErrorMessage(message: InterviewMessage | undefined) {
 
 function ConfirmedNext({ version, onPlan }: { version: number; onPlan(): void }) {
   return <div className="confirmed-next"><Check size={16} /><div><strong>需求 v{version} 已确认</strong>
-    <p>接下来依据这份范围形成任务计划；计划会按需核验真实来源，并在授权后生成、验证和执行任务链路。</p></div>
-    <Button variant="soft" onClick={onPlan}>生成任务计划<ArrowRight size={14} /></Button></div>;
+    <p>接下来系统会依据这份范围完成任务准备，必要时请你提供代表输入或处理登录等人工步骤。</p></div>
+    <Button variant="soft" onClick={onPlan}>打开链路画布<ArrowRight size={14} /></Button></div>;
 }
 
 function TurnArtifacts({ item, state, onDraft }: { item: InterviewMessage; state: InterviewState; onDraft: (v: number) => void }) {

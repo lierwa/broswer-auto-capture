@@ -4,6 +4,7 @@ export function validateState(input: InterviewState) {
   const state = interviewStateSchema.parse(input)
   if (state.active !== Boolean(state.activeTurnId)) throw new Error("轮次活动状态不一致")
   if (new Set(state.messages.map((item) => item.id)).size !== state.messages.length) throw new Error("消息标识重复")
+  if (new Set(state.sourceResolutions.map((item) => item.id)).size !== state.sourceResolutions.length) throw new Error("来源解析标识重复")
   const active = state.turns.filter((turn) => ["running", "cancelling"].includes(turn.status))
   if (active.length !== Number(state.active) || (state.active && active[0]?.id !== state.activeTurnId)) throw new Error("活动轮次归属错误")
   if (state.confirmedVersion !== null && (state.active || currentDraft(state)?.version !== state.confirmedVersion)) throw new Error("确认必须绑定当前有效草稿")
@@ -19,6 +20,11 @@ export function validateState(input: InterviewState) {
       || !state.decisions.some((decision) => decision.messageId === message.id && decision.questionId === reply.surfaceId)
       || !state.unresolved.some((question) => question.id === reply.surfaceId && question.answerMessageId === message.id)) {
       throw new Error("Question 回答历史归属错误")
+    }
+  }
+  for (const resolution of state.sourceResolutions.filter((item) => item.status === "open" || item.status === "needs_clarification")) {
+    if (!resolution.questionId || !state.unresolved.some((question) => question.id === resolution.questionId)) {
+      throw new Error("来源解析缺少 Question 归属")
     }
   }
   return state

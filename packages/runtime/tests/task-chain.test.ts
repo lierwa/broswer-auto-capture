@@ -261,6 +261,58 @@ test("human waitpoint 保存现场，恢复时由 fresh observation 决定继续
   })
 })
 
+test("合法终点不再被链尾完成 predicate 二次改判，真实节点错误仍失败", async () => {
+  const source = loopChain()
+  source.completion = [{ id: "legacySemanticGate", description: "历史链尾语义门",
+    predicate: { operator: "equals", left: { source: "constant", value: false },
+      right: { source: "constant", value: true } } }]
+  const chain = taskChainSchema.parse(source)
+  const completed = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, { items: [] }), capabilities: {} })
+  assert.equal(completed.status, "completed")
+  assert.equal(completed.outcome?.status, "completed")
+  if (completed.outcome?.status !== "completed") throw new Error("fixture_expected_completed")
+  assert.deepEqual(completed.outcome.completionEvidence, ["done"])
+
+  const failed = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, { items: [items[0]!] }), capabilities: {
+    browser: async () => { throw new Error("target_not_found") },
+  } })
+  assert.equal(failed.status, "failed")
+  assert.equal(failed.outcome?.status, "failed")
+  if (failed.outcome?.status !== "failed") throw new Error("fixture_expected_failed")
+  assert.equal(failed.outcome.code, "target_not_found")
+
+  const outputChain = humanChain()
+  const invalidOutput = await new TaskChainRuntime().execute({ chain: outputChain,
+    request: requestFor(outputChain, { ready: false }), capabilities: {
+      human: async () => ({ outcome: "success", output: { ready: "invalid" } }),
+    } })
+  assert.equal(invalidOutput.status, "failed")
+})
+
+test("浏览器 capability 的协议级认证等待以 fresh URL 恢复同一运行", async () => {
+  const chain = capabilityEffectChain(), request = requestFor(chain, null)
+  const browser = { sessionId: "session-1", tabId: "tab-1", url: "https://example.com/private",
+    observationDigest: "a".repeat(64), observedAt: "2026-09-20T00:00:00.000Z" }
+  const waiting = await new TaskChainRuntime().execute({ chain, request, capabilities: {
+    capability: async () => ({ outcome: "human_required", reason: "authentication_required", browser,
+      externalFailure: { category: "authentication", code: "authentication_required", origin: "https://example.com",
+        observedOrigin: "https://example.com", httpStatus: 401, retryAt: null } }),
+  } })
+  assert.equal(waiting.status, "waiting_for_human")
+  assert.deepEqual(waiting.checkpoint?.resumeWhen, { operator: "exists", path: ["url"] })
+  const checkpoint = waiting.checkpoint!
+  let dispatched = 0
+  const completed = await new TaskChainRuntime().execute({ chain, request, capabilities: {
+    verifyResume: async () => ({ ok: true, browser: { ...browser, sessionId: "session-2",
+      observationDigest: "b".repeat(64) }, observation: { ...browser, sessionId: "session-2",
+      observationDigest: "b".repeat(64) } }),
+    capability: async () => { dispatched++; return { outcome: "success", output: null } },
+  }, control: { checkpoint, resumeRequest: resumeRequest(checkpoint) } })
+  assert.equal(completed.status, "completed")
+  assert.equal(completed.binding.runId, waiting.binding.runId)
+  assert.equal(dispatched, 1)
+})
+
 test("显式 llm 节点先记调用意图，再按供应商实际回报计数", async () => {
   const chain = llmChain(), persisted: TaskRun[] = []
   const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, "输入"), capabilities: {

@@ -27,7 +27,7 @@
     },
     {
       "name": "@agent-platform/pi-agent-session",
-      "sourceHash": "a59d0499726a6a19a15d62b96e4867d0d068b0df9d05adb985b8a79270c11a04"
+      "sourceHash": "0beb8324114fe6da836aaa989d7be69d17cf8f158d56ac2308f1e1d05d0d4067"
     }
   ],
   "packages": {
@@ -124,8 +124,8 @@
     "agentSession": {
       "name": "@agent-platform/pi-agent-session",
       "version": "0.1.0",
-      "file": "agent-platform-pi-agent-session-0.1.0-8f3f828d.tgz",
-      "sha256": "8f3f828dc7f8485d6dd3e64f02b862389171290eba69b402fdfd148d72b7054b",
+      "file": "agent-platform-pi-agent-session-0.1.0-52e0e9c6.tgz",
+      "sha256": "52e0e9c6630c47cb41874591dc4e5e9f7db36aca8180e4fca47b379b91be01f5",
       "exports": [
         ".",
         "./platform-internal"
@@ -135,5 +135,5 @@
   },
   "core": "agent-platform-ai-connect-0.3.2-e61cfe91.tgz",
   "react": "agent-platform-ai-connect-react-0.3.2-15d6e5f0.tgz",
-  "agentSession": "agent-platform-pi-agent-session-0.1.0-8f3f828d.tgz"
+  "agentSession": "agent-platform-pi-agent-session-0.1.0-52e0e9c6.tgz"
 }

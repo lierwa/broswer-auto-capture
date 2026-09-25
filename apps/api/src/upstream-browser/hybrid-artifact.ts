@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { jsonValueSchema, parseTaskValue, valueBindingSchema, type JsonValue, type TaskPlan, type TaskPlanStep,
-  type TaskRequirement } from "@browser-capture/contracts"
+  type TaskExecutionFailureEvidence, type TaskRequirement } from "@browser-capture/contracts"
 import { digestJson, resolveBinding } from "@browser-capture/runtime"
 import type { ModelCallReport } from "@browser-capture/runtime"
 import { hybridCompilerResponseSchema, hybridNaturalRequestSchema, naturalBindingFactValueSchema } from "./hybrid-schema.js"
@@ -25,7 +25,9 @@ export const hybridArtifactSchema = z.object({
     planId: z.uuid(), planVersion: z.number().int().positive(), planDigest: hash,
     stepId: z.string().min(1), inputDigest: hash }).strict(),
   compilationRequest: jsonValueSchema, compilerResponse: hybridCompilerResponseSchema,
-  source: z.object({ history: sourceReference, sourceSuccess: z.literal(true), sourceValidated: z.literal(true),
+  source: z.object({ history: sourceReference, sourceSuccess: z.literal(true),
+    // 只为读取既有不可变 artifact 保留；新 artifact 不写入且任何路径都不把它当作门。
+    sourceValidated: z.literal(true).optional(),
     closed: z.literal(true) }).strict(),
   modelCalls: z.array(z.object({ callId: z.string().min(1), purpose: z.enum(["agent", "judge", "extract", "semantic_annotation"]),
     model: z.string(), intendedAt: z.string().datetime(), status: z.enum(["intended", "completed", "failed", "interrupted"]),
@@ -48,7 +50,7 @@ export function readHybridSourceArtifact(raw: unknown) {
 }
 
 export function createHybridSourceArtifact(requirement: TaskRequirement, plan: TaskPlan, stepId: string,
-  input: JsonValue, source: HybridSourceResult, closed = true) {
+  input: JsonValue, source: HybridSourceResult, closed = true, repair?: TaskExecutionFailureEvidence) {
   const { forkSourceDigest, modelCalls, ...result } = source
   const artifact = sourceArtifactSchema.parse({ mode: "workflow-use-source/v2", status: "explored", closed,
     requirementDigest: digestJson(requirement), planDigest: digestJson(plan), stepId, inputDigest: digestJson(input),
@@ -60,6 +62,7 @@ export function createHybridSourceArtifact(requirement: TaskRequirement, plan: T
     const step = plan.steps.find((item) => item.id === stepId)
     if (!step) throw new Error("hybrid_natural_step_missing")
     assertNaturalSourceIdentity(request, requirement, plan, step, input, result.history,
+      repair,
       naturalPayloadContext(envelope, request))
   }
   return artifact
@@ -69,7 +72,7 @@ export function createHybridSourceArtifact(requirement: TaskRequirement, plan: T
 export function createHybridArtifact(input: { requirement: TaskRequirement; plan: TaskPlan; step: TaskPlanStep;
   stepInput: JsonValue; request: unknown; response: unknown; forkSourceDigest: string;
   source: z.infer<typeof hybridArtifactSchema>["source"]; modelCalls: ModelCallReport[]; version: number; model: string;
-  resolveChild?: ResolveHybridChild }) {
+  repair?: TaskExecutionFailureEvidence; resolveChild?: ResolveHybridChild }) {
   if (!input.requirement.confirmation || input.plan.requirement.id !== input.requirement.id
     || input.plan.requirement.version !== input.requirement.version || input.plan.requirement.digest !== digestJson(input.requirement)
     || input.plan.requirement.revision !== input.requirement.revision) throw new Error("hybrid_confirmed_source_required")
@@ -80,11 +83,12 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
   if (envelope.compilation.compilerVersion === "bat-hybrid/2") {
     const natural = assertNaturalSourceIdentity(
       request, input.requirement, input.plan, input.step, input.stepInput, input.source.history,
+      input.repair,
       naturalPayloadContext(envelope, request))
     const hasNaturalSummaryProof = natural.trace.observations.some((observation) =>
-      observation.facts.some((fact) => fact.kind === "verified_natural_summary"))
-    // WHY：verified_natural_read 是纯 DOM 读取，不会调用模型；只有 bat_summarize 的
-    // verified_natural_summary 才必须存在 semantic_annotation 调用审计。
+      observation.facts.some((fact) => fact.kind === "verified_natural_summary" || fact.kind === "selection_function"))
+    // WHY：verified_natural_read 是纯 DOM 读取；summary/selection 模型派生内容
+    // 必须存在 semantic_annotation 调用审计。
     assertSourceModelAudit(input.modelCalls, hasNaturalSummaryProof)
     const chain = materializeHybridChain({ response: envelope, request, plan: input.plan,
       step: input.step, version: input.version, model: input.model,
@@ -126,15 +130,17 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
 
 function assertNaturalSourceIdentity(raw: Record<string, JsonValue>, requirement: TaskRequirement, plan: TaskPlan,
   step: TaskPlanStep, input: JsonValue, history: { localRef: string; digest: string },
+  repair: TaskExecutionFailureEvidence | undefined,
   payload: ReturnType<typeof naturalPayloadContext>) {
   const source = hybridNaturalRequestSchema.parse(raw)
   const requirementText = naturalRequirementText(requirement).text
-  const taskText = browserUseTask({ requirement, plan, step, resolvedInput: input })
+  const taskText = browserUseTask({ requirement, plan, step, resolvedInput: input, ...(repair ? { repair } : {}) })
   if (source.requirement.id !== requirement.id || source.requirement.version !== requirement.version
     || source.requirement.text !== requirementText || source.requirement.taskText !== taskText
     || source.requirement.sourceDigest !== digestJson(requirement) || source.plan.id !== plan.id
     || source.plan.version !== plan.version || source.plan.sourceDigest !== digestJson(plan)
     || source.plan.stepId !== step.id || source.plan.callMode !== step.invocation.mode
+    || !isDeepStrictEqual(source.plan.entryUrls, plan.entryUrls ?? [])
     || source.plan.inputSchemaDigest !== digestCanonicalJson(jsonValueSchema.parse(step.inputContract.schema))
     || source.plan.outputSchemaDigest !== digestCanonicalJson(jsonValueSchema.parse(step.outputContract.schema))
     || !step.resultSpec || !isDeepStrictEqual(source.plan.resultSpec, step.resultSpec)
@@ -178,7 +184,7 @@ function assertSourceModelAudit(calls: ModelCallReport[], annotations: boolean) 
   if ([...settled.values()].some((call) => call.status === "intended" || call.reportedInvocations === null)) {
     throw new Error("hybrid_source_model_audit_incomplete")
   }
-  for (const purpose of ["agent", "judge"]) {
+  for (const purpose of ["agent"]) {
     if (![...settled.values()].some((call) => call.purpose === purpose && call.status === "completed"
       && (call.reportedInvocations ?? 0) > 0)) throw new Error("hybrid_source_model_audit_missing")
   }

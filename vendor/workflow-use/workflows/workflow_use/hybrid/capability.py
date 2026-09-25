@@ -8,10 +8,11 @@ from .dialog_event_bridge import DialogEventBridge
 from .postconditions import (PostconditionNotMet, SettlePolicy, capture_check_baselines, declared_checks,
                              settle_policy, verify_declared)
 from .native_event_capture import NativeEventCapture
+from .navigation import NAVIGATION_ACTIONS, navigation_tab_ids, reconcile_new_navigation_tab
 from .physical_input import dispatch_physical_click
 from .registry import ActionRegistry
 from .scroll_observation import inspect_page_scroll, scroll_dispatch_metadata, scroll_failure_code
-from .target_preparation import verify_event_target
+from .target_preparation import current_document_id, verify_event_target
 from .target_scroll import TargetScrollParams, register_target_scroll_tool
 from .targets import TARGET_ORDINAL_ARGUMENT, TargetResolver, materialize_target
 from .visible_wait import VisibleWaitParams, register_visible_wait_tool
@@ -33,6 +34,10 @@ RETRYABLE_TARGET_ERRORS = frozenset({
 MISSING_TARGET_ERRORS = frozenset({
     'missing_history_target', 'missing_item_target', 'missing_stable_target', 'missing_structure_container',
 })
+READINESS_BLOCKED_ERRORS = frozenset({
+    'target_detached', 'target_disabled', 'target_hit_blocked', 'target_not_in_view',
+    'target_not_visible', 'target_read_only',
+})
 
 
 class OrdinaryCapability:
@@ -52,7 +57,26 @@ class OrdinaryCapability:
         checks = declared_checks(postconditions, args, target)
         policy = settle_policy(postconditions)
         await capture_check_baselines(self.browser, checks)
-        result = await self.execute(action_name, args, target, native_dialog_policy=native_dialog_policy)
+        prior_tabs = await navigation_tab_ids(self.browser) \
+            if action_name in NAVIGATION_ACTIONS and expects_url_change(postconditions) else None
+        prepared = await self.resolve_target(target, action_name=action_name) \
+            if action_name in TARGET_ACTIONS and target is not None else None
+        result = await self.execute(action_name, args, target, native_dialog_policy=native_dialog_policy,
+                                    _prepared=prepared)
+        if prior_tabs is not None:
+            started = asyncio.get_running_loop().time()
+            options = {} if policy is None else {'attempts': policy.maxAttempts,
+                'interval': policy.intervalMs / 1000, 'max_ms': policy.maxMs}
+            await reconcile_new_navigation_tab(self.browser, prior_tabs, **options)
+            if policy is not None:
+                remaining = policy.maxMs - int((asyncio.get_running_loop().time() - started) * 1000)
+                if remaining <= 0:
+                    raise PostconditionNotMet('ordinary_postcondition_timeout')
+                policy = policy.model_copy(update={'maxMs': remaining})
+        if prepared is not None:
+            for check in checks:
+                if check.parameters.get('kind', '').startswith('target_'):
+                    check.parameters['_retainedElement'] = prepared.element
         try:
             await verify_declared(self.browser, checks, policy)
         except PostconditionNotMet as error:
@@ -63,9 +87,13 @@ class OrdinaryCapability:
             if failure_code is not None:
                 raise RuntimeError(failure_code) from error
             raise
+        finally:
+            for check in checks:
+                check.parameters.pop('_retainedElement', None)
         return result.model_dump(mode='json')
 
-    async def execute(self, action_name: str, args: dict, target: dict | None = None, *, native_dialog_policy=None):
+    async def execute(self, action_name: str, args: dict, target: dict | None = None, *, native_dialog_policy=None,
+                      _prepared=None):
         if action_name not in ORDINARY_ACTIONS:
             raise ValueError('unsupported_ordinary_capability')
         if 'index' in args:
@@ -80,7 +108,7 @@ class OrdinaryCapability:
             if target is None:
                 raise ValueError('stable_target_required')
             target = materialize_target(target, parameters)
-            prepared = await self.resolve_target(target, action_name=action_name)
+            prepared = _prepared or await self.resolve_target(target, action_name=action_name)
             parameters['index'] = prepared.index
         elif target is not None:
             raise ValueError('unexpected_target')
@@ -180,6 +208,28 @@ class OrdinaryCapability:
                 raise RuntimeError('ordinary_target_missing') from error
             raise
 
+    async def target_readiness(self, action_name, target):
+        if action_name not in TARGET_ACTIONS or target is None:
+            raise ValueError('hybrid_target_readiness_command_invalid')
+        try:
+            document_id = await current_document_id(self.browser)
+        except Exception as error:
+            raise ValueError('hybrid_target_readiness_document_unavailable') from error
+        try:
+            prepared = await self.targets.prepare_action_target(target, action_name)
+        except ValueError as error:
+            code = str(error)
+            if code in MISSING_TARGET_ERRORS:
+                return {'status': 'missing', 'documentId': document_id}
+            if code in READINESS_BLOCKED_ERRORS:
+                return {'status': 'blocked', 'documentId': document_id}
+            if code.startswith('ambiguous_') or code == 'ambiguous_or_inconsistent_stable_target':
+                return {'status': 'ambiguous', 'documentId': document_id}
+            raise ValueError('hybrid_target_readiness_resolution_invalid') from error
+        if prepared.document_id != document_id:
+            raise ValueError('target_document_changed')
+        return {'status': 'ready', 'documentId': document_id}
+
     async def _dispatch_captured(self, action_name, dispatch, target=None, element=None):
         await self.event_capture.arm(action_name, target, element)
         failure = None
@@ -236,3 +286,8 @@ class OrdinaryCapability:
 
 def retryable_target_error(error):
     return isinstance(error, ValueError) and str(error) in RETRYABLE_TARGET_ERRORS
+
+
+def expects_url_change(postconditions):
+    return any(isinstance(item, dict) and item.get('kind') in ('url', 'url_digest')
+               and item.get('changed') is True for item in postconditions)

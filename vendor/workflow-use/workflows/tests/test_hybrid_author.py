@@ -11,8 +11,10 @@ from pydantic import BaseModel
 from browser_use_runner.output_schema import output_model_for
 from workflow_use.hybrid.__main__ import _compilation_sources
 from workflow_use.hybrid.author import (AUTHOR_URL_SHORTENING_LIMIT, NATURAL_AGENT_GUIDANCE,
-                                        VISIBLE_TEXT_EXTRACTION_GUIDANCE, _public_compilation_request,
-                                        _run_business_agent, author_tools, field_read_outcome,
+                                        NATURAL_EXECUTION_AGENT_GUIDANCE,
+                                        VISIBLE_TEXT_EXTRACTION_GUIDANCE, NavigationScopeViolation,
+                                        _business_result, _public_compilation_request, _reject_navigation_scope_retry,
+                                         author_tools, author_tools_for_result_spec, field_read_outcome,
                                         normalize_author_action)
 from workflow_use.hybrid.dom_reference_tool import (
     MAX_MODEL_OUTPUT_CHARS,
@@ -21,54 +23,67 @@ from workflow_use.hybrid.dom_reference_tool import (
     _inspection_payload,
     register_dom_inspection_tool,
 )
+from workflow_use.hybrid.coverage import EXECUTION_EXTRACTION_RULE, execution_extraction_coverage, validate_coverage
+from workflow_use.hybrid.evidence import ActionCoverage, EvidenceRef, ObservationFact, digest
 from workflow_use.hybrid.field_read_params import FieldReadToolParams
 from workflow_use.hybrid.field_read_tool import _fixed_read_error
 from workflow_use.hybrid.read import ReadField, ReadSpec, read_fields
 from workflow_use.hybrid.registry import ActionRegistry
+from workflow_use.hybrid.natural_compile import NATURAL_SETTLE, natural_postconditions
 from workflow_use.hybrid.rendered_field_text import FieldReadError
 from workflow_use.hybrid.request import DataResultSpec, NaturalCompilationRequest, NaturalPlan
 
 
 class AuthorFollowUpTests(unittest.TestCase):
-    def test_judge_rejected_success_continues_once_in_the_same_agent(self):
-        class History:
-            def __init__(self, validated):
-                self.validated = validated
+    def test_execution_authoring_excludes_unreplayable_extract_but_keeps_structured_query(self):
+        class Output(BaseModel):
+            value: None = None
 
+        registry = ActionRegistry.from_tools(author_tools(Output, exclude_extract=True))
+
+        self.assertNotIn('extract', registry.names)
+        self.assertIn('find_elements', registry.names)
+        self.assertTrue({'navigate', 'scroll', 'search_page', 'send_keys', 'dropdown_options'} <= set(registry.names))
+        self.assertFalse({'search', 'find_text', 'switch', 'close', 'save_as_pdf'} & set(registry.names))
+
+        rebuilt = ActionRegistry.from_tools(author_tools_for_result_spec(
+            Output, SimpleNamespace(mode='execution')))
+        self.assertEqual(rebuilt.schemaDigest, registry.schemaDigest)
+
+    def test_successful_business_result_does_not_require_a_judge(self):
+        class History:
             def is_done(self): return True
             def is_successful(self): return True
-            def is_validated(self): return self.validated
-            def judgement(self): return {'verdict': self.validated, 'failure_reason': 'second page was not visited',
-                                          'reached_captcha': False, 'impossible_task': False}
+            def get_structured_output(self, model): return model.model_validate({'value': 'done'})
 
-        class Agent:
-            def __init__(self):
-                self.histories = [History(False), History(True)]
-                self.runs = 0
-                self.follow_up = None
+        schema = {'type': 'object', 'properties': {'value': {'type': 'string'}},
+                  'required': ['value'], 'additionalProperties': False}
+        model, unwrap = output_model_for(schema, 'SuccessfulOutput')
+        completed, output, gaps = _business_result(History(), False, model, unwrap, schema)
 
-            async def run(self, **_kwargs):
-                history = self.histories[self.runs]
-                self.runs += 1
-                return history
-
-            def add_new_task(self, task):
-                self.follow_up = task
-
-        agent = Agent()
-        history = asyncio.run(_run_business_agent(agent, 20, lambda _agent: None))
-
-        self.assertTrue(history.is_validated())
-        self.assertEqual(agent.runs, 2)
-        self.assertIn('exact runtime input', agent.follow_up)
-        self.assertIn('second page was not visited', agent.follow_up)
-        self.assertIn('Use native extract on each page', agent.follow_up)
+        self.assertTrue(completed)
+        self.assertEqual(output, {'value': 'done'})
+        self.assertEqual(gaps, [])
 
     def test_agent_guidance_preserves_runtime_url_and_reads_every_output_page(self):
         self.assertIn('runtime input URL exactly as supplied', NATURAL_AGENT_GUIDANCE)
         self.assertIn('Use native extract on every page', NATURAL_AGENT_GUIDANCE)
         self.assertIn('complete visible text only', NATURAL_AGENT_GUIDANCE)
         self.assertIn('transient signed URLs', NATURAL_AGENT_GUIDANCE)
+        self.assertIn('stop immediately', NATURAL_AGENT_GUIDANCE)
+
+    def test_execution_guidance_does_not_request_the_excluded_extract_tool(self):
+        self.assertNotIn('Use native extract on every page', NATURAL_EXECUTION_AGENT_GUIDANCE)
+        self.assertIn('native extract is intentionally unavailable', NATURAL_EXECUTION_AGENT_GUIDANCE)
+        self.assertIn('find_elements for complete candidate collections', NATURAL_EXECUTION_AGENT_GUIDANCE)
+
+    def test_navigation_outside_authorized_scope_stops_without_another_model_step(self):
+        agent = SimpleNamespace(history=SimpleNamespace(history=[SimpleNamespace(result=[
+            SimpleNamespace(error='Navigation failed: Navigation to https://elsewhere.test blocked by security policy'),
+        ])]))
+
+        with self.assertRaisesRegex(NavigationScopeViolation, 'hybrid_navigation_outside_authorized_scope'):
+            _reject_navigation_scope_retry(agent)
 
     def test_extract_query_is_normalized_to_literal_visible_text_before_dispatch(self):
         params = SimpleNamespace(query='Read the complete body.', extract_links=False)
@@ -125,7 +140,7 @@ class AuthorFollowUpTests(unittest.TestCase):
                                          'producerRef': 'items-read'}], 'edgeCases': []})
         plan = NaturalPlan.model_construct(id='plan', version=1, sourceDigest='a' * 64,
             digest='b' * 64, stepId='step', inputSchemaDigest='c' * 64,
-            outputSchemaDigest='d' * 64, callMode='once', resultSpec=spec)
+            outputSchemaDigest='d' * 64, callMode='once', entryUrls=[], resultSpec=spec)
         request = NaturalCompilationRequest.model_construct(
             compilerVersion='bat-hybrid/2', actionRegistryVersion='registry',
             requirement=SimpleNamespace(model_dump=lambda **_kwargs: {'id': 'requirement'}), plan=plan,
@@ -140,6 +155,68 @@ class AuthorFollowUpTests(unittest.TestCase):
         self.assertIn('schema', source_plan['resultSpec'])
         self.assertNotIn('schemaValue', source_plan['resultSpec'])
 
+    def test_execution_extract_cannot_be_erased_when_public_result_is_null(self):
+        class Output(BaseModel):
+            value: None = None
+
+        registry = ActionRegistry.from_tools(author_tools(Output))
+        url = 'https://example.test/watch'
+        url_digest = digest(url)
+        url_fact = lambda identity: ObservationFact(
+            id=identity, kind='url_digest', value=url_digest,
+            sourceRefs=[EvidenceRef(ref='fixture:' + identity, digest=url_digest)])
+        pre = SimpleNamespace(id='o-pre', tabId='tab-1', url=url, facts=[url_fact('before')], sourceRefs=[])
+        post = SimpleNamespace(id='o-post', tabId='tab-1', url=url, facts=[url_fact('after')], sourceRefs=[])
+        action = SimpleNamespace(id='a-0001', name='extract', effect='read', status='succeeded',
+            args={'query': 'Read visible playback state.', 'extract_links': False, 'extract_images': False},
+            resultRef=EvidenceRef(ref='fixture:result', digest='2' * 64),
+            preObservationRef=pre.id, postObservationRef=post.id)
+
+        coverage = execution_extraction_coverage(
+            registry, action, pre, post, SimpleNamespace(mode='execution'), {'type': 'null'})
+
+        self.assertIsNone(coverage)
+        stale = ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
+            exclusionRule=EXECUTION_EXTRACTION_RULE, evidenceRefs=[action.resultRef])
+        trace = SimpleNamespace(actions=[action], observations=[pre, post])
+        issues = validate_coverage(trace, [stale], set(), registry=registry,
+            result_spec=SimpleNamespace(mode='execution'), output_schema={'type': 'null'})
+        self.assertEqual([issue.reason for issue in issues], ['invalid_exclusion'])
+        self.assertIsNone(execution_extraction_coverage(
+            registry, action, pre, post, SimpleNamespace(mode='data'), {'type': 'null'}))
+
+    def test_click_navigation_accepts_a_new_focused_tab_without_persisting_its_id(self):
+        before = ObservationFact(id='before-url', kind='url_digest', value='1' * 64,
+            sourceRefs=[EvidenceRef(ref='fixture:before-url', digest='1' * 64)])
+        after = ObservationFact(id='after-url', kind='url_digest', value='2' * 64,
+            sourceRefs=[EvidenceRef(ref='fixture:after-url', digest='2' * 64)])
+        pre = SimpleNamespace(tabId='tab-before', facts=[before])
+        post = SimpleNamespace(tabId='tab-after', facts=[after])
+
+        conditions, _refs, issues = natural_postconditions(
+            SimpleNamespace(id='a-0001', name='click'), pre, post, {'strategy': 'history'}, [])
+
+        self.assertEqual(issues, [])
+        self.assertEqual(conditions, [{
+            'kind': 'url_digest', 'changed': True, 'clauseRef': after.id, 'settle': NATURAL_SETTLE,
+        }])
+
+    def test_fixed_wait_keeps_the_runtime_url_without_freezing_the_sample_url(self):
+        before = ObservationFact(id='before-url', kind='url_digest', value='1' * 64,
+            sourceRefs=[EvidenceRef(ref='fixture:before-url', digest='1' * 64)])
+        after = ObservationFact(id='after-url', kind='url_digest', value='1' * 64,
+            sourceRefs=[EvidenceRef(ref='fixture:after-url', digest='2' * 64)])
+        pre = SimpleNamespace(tabId='tab-1', facts=[before])
+        post = SimpleNamespace(tabId='tab-1', facts=[after])
+
+        conditions, _refs, issues = natural_postconditions(
+            SimpleNamespace(id='a-0001', name='wait'), pre, post, None, [])
+
+        self.assertEqual(issues, [])
+        self.assertEqual(conditions, [{
+            'kind': 'url_digest', 'unchanged': True, 'clauseRef': after.id,
+        }])
+
     def test_optional_result_field_requires_edge_case(self):
         schema = {'type': 'object', 'properties': {
             'items': {'type': 'array', 'items': {'type': 'string'}},
@@ -152,6 +229,19 @@ class AuthorFollowUpTests(unittest.TestCase):
                     {'path': ['items'], 'description': 'items', 'producerRef': 'items-read'},
                     {'path': ['detail'], 'description': 'detail', 'producerRef': 'detail-read'},
                 ], 'edgeCases': []})
+
+    def test_result_refs_match_public_task_chain_key_contract(self):
+        schema = {'type': 'object', 'properties': {'message': {'type': 'string'}},
+                  'required': ['message'], 'additionalProperties': False}
+        spec = DataResultSpec.model_validate({'contractVersion': 'bat-result-spec/v1', 'mode': 'data',
+            'schema': schema, 'fields': [{'path': ['message'], 'description': 'message',
+                                         'producerRef': 'catalogResultText'}], 'edgeCases': []})
+
+        self.assertEqual(spec.fields[0].producerRef, 'catalogResultText')
+        with self.assertRaises(ValueError):
+            DataResultSpec.model_validate({'contractVersion': 'bat-result-spec/v1', 'mode': 'data',
+                'schema': schema, 'fields': [{'path': ['message'], 'description': 'message',
+                                             'producerRef': 'a' * 65}], 'edgeCases': []})
 
     def test_authoring_exposes_no_bat_evidence_or_wait_tools_to_the_model(self):
         class Output(BaseModel):

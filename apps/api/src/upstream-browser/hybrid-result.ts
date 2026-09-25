@@ -1,9 +1,9 @@
 import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
-import { valueBindingSchema, type ValueBinding, type ValueSchema } from "@browser-capture/contracts"
+import { parseTaskValue, valueBindingSchema, type JsonValue, type ValueBinding, type ValueSchema } from "@browser-capture/contracts"
 import { materializeOutputAssembly, type MaterializedOutput } from "./hybrid-output.js"
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
-import { hybridNaturalRequestSchema, hybridOutputAssemblySchema, hybridResultBindingSchema,
+import { hybridNaturalRequestSchema, hybridOutputAssemblyEvidenceSchema, hybridOutputAssemblySchema, hybridResultBindingSchema,
   hybridResultBranchSchema, type HybridCompilation, type HybridSegment } from "./hybrid-schema.js"
 
 type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>
@@ -79,7 +79,7 @@ function assertResultBranch(branch: z.infer<typeof hybridResultBranchSchema>,
     throw new Error("hybrid_natural_result_branch_output_mismatch")
   }
   assertRequiredCoverage(branch.falseResult.schema, branch.falseResult.assignments.map((item) => item.to))
-  assertAssignmentSchemas(branch.falseResult, compilation)
+  assertAssignmentSchemas(branch.falseResult, compilation, request.runtimeInputSchema)
   return branch
 }
 
@@ -104,11 +104,24 @@ function assertResultBinding(raw: unknown, assembly: z.infer<typeof hybridOutput
     throw new Error("hybrid_natural_result_binding_mismatch")
   }
   assertDistinctPaths(binding.assignments.map((item) => item.to))
-  const expected = assembly.fields.map((field) => {
+  const expected: Array<{ to: Array<string | number>; from: ValueBinding; producerRef: string }> = []
+  for (const field of assembly.fields) {
     const owners = spec.fields.filter((owner) => pathPrefix(owner.path, field.path))
-    if (owners.length !== 1) throw new Error("hybrid_natural_result_binding_owner_ambiguous")
-    return { to: field.path, from: field.binding, producerRef: owners[0]!.producerRef }
-  })
+    if (owners.length > 1) throw new Error("hybrid_natural_result_binding_owner_ambiguous")
+    if (owners.length === 1) {
+      expected.push({ to: field.path, from: field.binding, producerRef: owners[0]!.producerRef })
+      continue
+    }
+    const covered = spec.fields.filter((owner) => pathPrefix(field.path, owner.path))
+    if (!covered.length || field.binding.source !== "node") {
+      throw new Error("hybrid_natural_result_binding_owner_ambiguous")
+    }
+    // WHY：完整根对象是已验证来源；host 必须逐字段重算子路径，不能把同一来源误判为所有权冲突。
+    const source = field.binding
+    for (const owner of covered) expected.push({ to: owner.path,
+      from: { ...source, path: [...source.path, ...owner.path.slice(field.path.length)] },
+      producerRef: owner.producerRef })
+  }
   if (!isDeepStrictEqual(binding.assignments, expected)) throw new Error("hybrid_natural_result_binding_assignments_mismatch")
   if (spec.mode === "data") for (const derivation of spec.derivations) {
     const targets = binding.assignments.filter((item) => item.producerRef === derivation.producerRef)
@@ -117,18 +130,19 @@ function assertResultBinding(raw: unknown, assembly: z.infer<typeof hybridOutput
       throw new Error("hybrid_natural_result_derivation_mismatch")
     }
   }
-  assertAssignmentSchemas(binding, compilation)
+  assertAssignmentSchemas(binding, compilation, request.runtimeInputSchema)
 }
 
-function assertAssignmentSchemas(binding: z.infer<typeof hybridResultBindingSchema>, compilation: NaturalCompilation) {
+function assertAssignmentSchemas(binding: z.infer<typeof hybridResultBindingSchema>, compilation: NaturalCompilation,
+  runtimeInputSchema: ValueSchema) {
   for (const assignment of binding.assignments) {
     const targetSchema = schemaAtPath(binding.schema, assignment.to)
     if (assignment.from.source === "constant") {
-      if (!targetSchema || targetSchema.type !== "array" || !Array.isArray(assignment.from.value)
-        || assignment.from.value.length !== 0) throw new Error("hybrid_natural_result_binding_schema_mismatch")
+      if (!targetSchema) throw new Error("hybrid_natural_result_binding_schema_mismatch")
+      assertSchemaValue(targetSchema, assignment.from.value)
       continue
     }
-    const sourceSchema = outputBindingSchema(assignment.from, compilation)
+    const sourceSchema = outputBindingSchema(assignment.from, compilation, runtimeInputSchema)
     if (!targetSchema || !isDeepStrictEqual(sourceSchema, targetSchema)) {
       throw new Error("hybrid_natural_result_binding_schema_mismatch")
     }
@@ -144,24 +158,45 @@ function assertOutputAssembly(raw: unknown, compilation: NaturalCompilation,
     .filter((fact) => fact.id === assembly.sourceRef && fact.kind === "verified_output_assembly")
     .map((fact) => ({ observation, fact })))
   if (matches.length !== 1) throw new Error("hybrid_natural_output_fact_missing")
-  const { observation, fact } = matches[0]!, value = hybridOutputAssemblySchema.pick({ fields: true, schema: true }).extend({
-    outputDigest: z.string().regex(/^[a-f0-9]{64}$/) }).strict().parse(fact.value)
+  const { observation, fact } = matches[0]!, value = hybridOutputAssemblyEvidenceSchema.parse(fact.value)
   payload.assertFact(fact, observation.id)
+  const executableFields = value.fields.map(({ sampleValue: _sampleValue, ...field }) => field)
   const finalResult = z.object({ digest: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough().safeParse(request.trace.finalResultRef)
   if (!finalResult.success || value.outputDigest !== finalResult.data.digest
-    || !isDeepStrictEqual(value.fields, assembly.fields) || !isDeepStrictEqual(value.schema, assembly.schema)
+    || !isDeepStrictEqual(executableFields, assembly.fields) || !isDeepStrictEqual(value.schema, assembly.schema)
     || !isDeepStrictEqual(fact.sourceRefs, assembly.proofRefs)) throw new Error("hybrid_natural_output_fact_mismatch")
-  for (const field of assembly.fields) {
-    const sourceSchema = outputBindingSchema(field.binding, compilation)
+  for (const evidenceField of value.fields) {
+    const { sampleValue: _sampleValue, ...field } = evidenceField
     const targetSchema = schemaAtPath(assembly.schema, field.path)
+    if (!targetSchema) throw new Error("hybrid_natural_output_field_schema_mismatch")
+    const hasSample = Object.hasOwn(evidenceField, "sampleValue")
+    if (field.binding.source === "node") {
+      if (hasSample) throw new Error("hybrid_natural_output_dynamic_sample_forbidden")
+    } else {
+      if (!hasSample) throw new Error("hybrid_natural_output_sample_proof_missing")
+      assertSchemaValue(targetSchema, evidenceField.sampleValue as JsonValue)
+      if (field.binding.source === "constant" && (!isDeepStrictEqual(field.binding.value, evidenceField.sampleValue)
+        || typeof field.binding.value !== "string" || !field.binding.value
+        || !request.requirement.text.includes(field.binding.value))) {
+        throw new Error("hybrid_natural_output_constant_authority_mismatch")
+      }
+    }
+    const sourceSchema = field.binding.source === "constant" ? targetSchema
+      : outputBindingSchema(field.binding, compilation, request.runtimeInputSchema)
     if (!targetSchema || !isDeepStrictEqual(sourceSchema, targetSchema)) {
       throw new Error("hybrid_natural_output_field_schema_mismatch")
     }
   }
 }
 
-function outputBindingSchema(binding: ValueBinding, compilation: NaturalCompilation) {
-  if (binding.source !== "node") throw new Error("hybrid_natural_output_binding_dynamic_required")
+function outputBindingSchema(binding: ValueBinding, compilation: NaturalCompilation, runtimeInputSchema: ValueSchema) {
+  if (binding.source === "input") {
+    const selected = schemaAtPath(runtimeInputSchema, binding.path)
+    if (!selected) throw new Error("hybrid_natural_output_source_path_missing")
+    return selected
+  }
+  if (binding.source === "constant") throw new Error("hybrid_natural_output_constant_schema_requires_target")
+  if (binding.source !== "node") throw new Error("hybrid_natural_output_binding_source_unsupported")
   const direct = compilation.segments.find((item) => item.id === binding.nodeId)
   if (direct?.kind === "deterministic" && direct.operation.name === "data.transform") {
     const selected = direct.outputs[0] && schemaAtPath(direct.outputs[0].schema, binding.path)
@@ -171,10 +206,15 @@ function outputBindingSchema(binding: ValueBinding, compilation: NaturalCompilat
   const row = compilation.coverage.find((item) => item.actionRef === binding.nodeId)
   if (row?.disposition !== "compiled" || !row.ownerSegmentId) throw new Error("hybrid_natural_output_node_missing")
   const segment = compilation.segments.find((item) => item.id === row.ownerSegmentId)
-  const schema = segment?.kind === "explicit_llm" ? segment.outputSchema : segment?.outputs[0]?.schema
+  const schema = segment?.kind === "explicit_llm" ? segment.outputSchema
+    : segment?.kind === "function" ? segment.draft.outputSchema : segment?.outputs[0]?.schema
   const selected = schema && schemaAtPath(schema, binding.path)
   if (!selected) throw new Error("hybrid_natural_output_source_path_missing")
   return selected
+}
+
+function assertSchemaValue(schema: ValueSchema, value: JsonValue) {
+  parseTaskValue({ id: "hybrid-result-evidence", version: 1, dialect: "bat-value-schema/v1", schema }, value)
 }
 
 function assertRequiredCoverage(schema: ValueSchema, owners: Array<Array<string | number>>, path: Array<string | number> = []) {

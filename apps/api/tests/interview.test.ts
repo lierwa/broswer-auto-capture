@@ -43,6 +43,24 @@ test("Main 以任务为 canonical session，accepted history 使用同一消息�
     { drafts: 2, status: "succeeded" },
   ])
 }))
+test("已提交终态不会在 Pi 收尾期间把下一轮误判为并发", async () => fixture(async ({ coordinator, store, client, create, send }) => {
+  const id = create(); let continued = false, followupError: unknown
+  client.runTurn = async function* () { yield authoredInterview({ assistantText: "请确认范围", question, draft: null }) }
+  client.onConfirm = () => {
+    if (continued) return
+    continued = true
+    try {
+      assert.equal(store.snapshot(id).active, false)
+      assert.equal(send(id, "第二轮补充").active, true)
+    } catch (error) { followupError = error }
+  }
+  send(id, "第一轮目标")
+  await coordinator.waitForIdle()
+  assert.ifError(followupError)
+  assert.equal(continued, true)
+  assert.equal(store.snapshot(id).turns.length, 2)
+  assert.deepEqual(store.snapshot(id).turns.map((turn) => turn.status), ["succeeded", "succeeded"])
+}))
 test("多任务输入/草稿/确认隔离，归档只读且可恢复", async () => fixture(async ({ coordinator, store, create, send, mainRuns }) => {
   const a = create(), b = create()
   send(a, "只要冰箱"); await coordinator.waitForIdle()

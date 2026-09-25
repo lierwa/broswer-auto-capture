@@ -60,7 +60,7 @@ test("stable/v2 Function 拒绝超长源码和未绑定 port", () => {
     ? { ...node, source: "x".repeat(32_769) } : node) }
   assert.throws(() => taskChainSchema.parse(tooLarge), /function_source_bytes/)
   const unbound = v2Chain()
-  unbound.edges = unbound.edges.filter((edge) => edge.port !== "cancelled")
+  unbound.edges = unbound.edges.filter((edge) => edge.port !== "success")
   assert.throws(() => taskChainSchema.parse(unbound), /unbound_outcome/)
 })
 

@@ -1,9 +1,9 @@
 import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
-import { parseTaskValue, predicateSchema, stableChainNodeV2Schema, valueBindingSchema, type JsonValue, type StableChainNodeV2,
+import { jsonValueSchema, parseTaskValue, predicateSchema, stableChainNodeV2Schema, valueBindingSchema, type JsonValue, type StableChainNodeV2,
   type StableChainNode, type TaskDataContract, type ValueBinding, type ValueSchema } from "@browser-capture/contracts"
 import { executeFunctionNode } from "@browser-capture/runtime"
-import { functionDraftSchema, hybridPreparationSchema, semanticOperationBindingSchema,
+import { functionDraftSchema, hybridPreparationSchema, hybridTargetSchema, semanticOperationBindingSchema,
   semanticOperationSchema } from "./hybrid-schema.js"
 
 const unit: TaskDataContract = { id: "unit", version: 1, dialect: "bat-value-schema/v1", schema: { type: "null" } }
@@ -75,9 +75,12 @@ const evidenceSchema = z.discriminatedUnion("phase", [
     documentId: z.string().min(1), status: z.literal("ready"), unique: z.literal(true) }).strict(),
 ])
 
-export function materializePreparationGraph(input: { preparation: unknown; evidence: unknown[] }) {
+export function materializePreparationGraph(input: { preparation: unknown; evidence: unknown[];
+  consumer: { actionName: string; target: unknown } }) {
   const preparation = hybridPreparationSchema.parse(input.preparation)
   const evidence = input.evidence.map((item) => evidenceSchema.parse(item))
+  const consumer = z.object({ actionName: z.enum(["click", "input", "dropdown_options", "select_dropdown"]),
+    target: hybridTargetSchema }).strict().parse(input.consumer)
   const refs = new Set(preparation.proofRefs.map((item) => `${item.ref}\0${item.digest}`))
   if (evidence.length !== 3 || evidence.some((item) => !refs.has(`${item.ref}\0${item.digest}`))) {
     throw new Error("optional_preparation_evidence_missing")
@@ -88,17 +91,19 @@ export function materializePreparationGraph(input: { preparation: unknown; evide
   if (!before || !dispatch || !after || before.documentId !== dispatch.documentId || before.documentId !== after.documentId) {
     throw new Error("optional_preparation_document_changed")
   }
-  return preparationNodes(preparation)
+  return preparationNodes(preparation, consumer)
 }
 
-function preparationNodes(preparation: z.infer<typeof hybridPreparationSchema>) {
+function preparationNodes(preparation: z.infer<typeof hybridPreparationSchema>,
+  consumer: { actionName: string; target: z.infer<typeof hybridTargetSchema> }) {
   const prefix = `prepare-${preparation.id}`
   const readinessContract = contract(`${prefix}-readiness`, { type: "object", properties: {
     status: { type: "string", enum: ["ready", "missing", "blocked", "ambiguous"] }, documentId: { type: "string" },
   }, required: ["status", "documentId"], additionalProperties: false })
   const readiness = (id: string): Extract<StableChainNodeV2, { kind: "capability" }> => ({ id, label: "目标就绪性",
     kind: "capability", capability: { name: "browser.target-readiness", version: 1 }, input: {},
-    config: { consumerSegmentId: preparation.consumerSegmentId }, effect: "read", timeoutMs: 5_000,
+    config: jsonValueSchema.parse({ consumerSegmentId: preparation.consumerSegmentId, actionName: consumer.actionName,
+      target: consumer.target }), effect: "read", timeoutMs: 5_000,
     outputContract: readinessContract, writes: [] })
   const status = (nodeId: string, value: string) => ({ operator: "equals" as const,
     left: { source: "node" as const, nodeId, path: ["status"] }, right: { source: "constant" as const, value } })
@@ -140,12 +145,13 @@ export function upgradeStableGraph(nodes: Array<StableChainNode | StableChainNod
   const branchPorts = new Map<string, { matched: string; fallback: string }>()
   const upgraded = nodes.map((node): StableChainNodeV2 => {
     if (!("outcomes" in node)) return stableChainNodeV2Schema.parse(node)
-    const { outcomes: _outcomes, ...plain } = node
     if (node.kind === "branch") {
       const matched = "matched"
       branchPorts.set(node.id, { matched, fallback: "default" })
-      return stableChainNodeV2Schema.parse({ ...plain, cases: [{ id: matched, label: node.label, predicate: node.predicate }] })
+      const { outcomes: _outcomes, predicate, ...branch } = node
+      return stableChainNodeV2Schema.parse({ ...branch, cases: [{ id: matched, label: node.label, predicate }] })
     }
+    const { outcomes: _outcomes, ...plain } = node
     if (node.kind === "llm") {
       const { outcomes: _ports, instruction, delegate: _delegate, ...llm } = node
       return stableChainNodeV2Schema.parse({ ...llm, systemPrompt: instruction })

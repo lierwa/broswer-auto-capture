@@ -6,15 +6,20 @@ from unittest.mock import AsyncMock, patch
 from workflow_use.hybrid.capability import OrdinaryCapability
 from workflow_use.hybrid.causal import waits_owned_by_next_target
 from workflow_use.hybrid.evidence import EvidenceRef, digest
-from workflow_use.hybrid.natural_compile import consumer_readiness_by_action
+from workflow_use.hybrid.natural_compile import consumer_readiness_by_action, natural_postconditions
 from workflow_use.hybrid.natural_reads import compile_verified_read
 from workflow_use.hybrid.postconditions import (
+    PostconditionNotMet,
     SettlePolicy,
     capture_check_baselines,
     check_fact,
     declared_checks,
+    read_check_value,
+    verify_once,
 )
 from workflow_use.hybrid.read import ReadField, ReadSpec
+from workflow_use.hybrid.rendered_field_text import FieldReadError
+from workflow_use.hybrid.visible_wait import VisibleWaitParams, register_visible_wait_tool
 
 REF = EvidenceRef(ref='fixture:evidence', digest='1' * 64)
 OUTPUT_SCHEMA = {'type': 'array', 'maxItems': 5, 'items': {
@@ -31,7 +36,7 @@ def observation(identity, sequence, url, facts=()):
                            facts=list(facts), sourceRefs=[REF])
 
 
-def readiness_trace(producer_effect):
+def readiness_trace(producer_effect, consumer_name='extract'):
     url = 'https://example.test/issues'
     url_fact = lambda identity: SimpleNamespace(
         id=identity, kind='url_digest', value=digest(url), sourceRefs=[REF])
@@ -50,7 +55,7 @@ def readiness_trace(producer_effect):
     ]
     producer = SimpleNamespace(id='a-0001', name='click', effect=producer_effect, status='succeeded',
                                preObservationRef='o-0001', postObservationRef='o-0002', resultRef=REF)
-    consumer = SimpleNamespace(id='a-0002', name='extract', effect='read', status='succeeded',
+    consumer = SimpleNamespace(id='a-0002', name=consumer_name, effect='read', status='succeeded',
                                preObservationRef='o-0003', postObservationRef='o-0004', resultRef=result)
     return SimpleNamespace(actions=[producer, consumer], observations=observations)
 
@@ -74,13 +79,42 @@ class CompilerReadinessTests(unittest.TestCase):
 
         self.assertEqual(readiness['condition']['transition'], True)
         self.assertEqual(readiness['condition']['consumerRef'], 's-a-0002')
-        self.assertEqual(readiness['condition']['read'], SPECIFICATION.model_dump(mode='json'))
+        expected = SPECIFICATION.model_dump(mode='json')
+        expected['maxInputBytes'] = 128000
+        self.assertEqual(readiness['condition']['read'], expected)
 
     def test_navigation_uses_stable_ready_projection_without_old_page_baseline(self):
         readiness = consumer_readiness_by_action(readiness_trace('navigation'))['a-0001']
 
         self.assertEqual(readiness['condition']['ready'], True)
         self.assertNotIn('transition', readiness['condition'])
+
+    def test_complete_native_query_can_prove_consumer_readiness(self):
+        readiness = consumer_readiness_by_action(
+            readiness_trace('external_write', consumer_name='find_elements'))['a-0001']
+
+        self.assertEqual(readiness['condition']['consumerRef'], 's-a-0002')
+        self.assertEqual(readiness['condition']['read']['maxInputBytes'], 128000)
+
+    def test_url_changing_click_keeps_the_proven_consumer_readiness(self):
+        before = SimpleNamespace(id='url-before', kind='url_digest', value='1' * 64,
+                                 sourceRefs=[REF])
+        after = SimpleNamespace(id='url-after', kind='url_digest', value='2' * 64,
+                                sourceRefs=[REF])
+        consumer = consumer_readiness_by_action(
+            readiness_trace('external_write', consumer_name='find_elements'))['a-0001']
+
+        conditions, _refs, issues = natural_postconditions(
+            SimpleNamespace(id='a-0001', name='click'),
+            observation('pre', 0, 'https://example.test/search', [before]),
+            observation('post', 1, 'https://example.test/detail', [after]),
+            {'strategy': 'history'}, [], consumer)
+
+        self.assertEqual(issues, [])
+        self.assertEqual([item['kind'] for item in conditions], ['url_digest', 'read_fields'])
+        self.assertTrue(all(item['settle'] == {
+            'maxMs': 30000, 'maxAttempts': 100, 'intervalMs': 300,
+        } for item in conditions))
 
     def test_business_text_without_max_length_uses_the_native_read_byte_budget(self):
         schema = {'type': 'array', 'maxItems': 5, 'items': {
@@ -153,6 +187,40 @@ class RuntimeReadinessTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await check_fact(checks[0].parameters, object()),
                              (True, 'declared_fact_checked'))
 
+    async def test_unchanged_compares_against_the_current_runtime_baseline(self):
+        checks = declared_checks([{'kind': 'url_digest', 'unchanged': True}], {}, None)
+        with patch('workflow_use.hybrid.postconditions.read_check_value', new=AsyncMock(
+                side_effect=['runtime-url', 'runtime-url', 'different-url'])):
+            await capture_check_baselines(object(), checks)
+            self.assertEqual(await check_fact(checks[0].parameters, object()),
+                             (True, 'declared_fact_checked'))
+            self.assertEqual(await check_fact(checks[0].parameters, object()),
+                             (False, 'declared_fact_checked'))
+
+    async def test_stale_projection_is_not_ready_until_the_business_shape_stabilizes(self):
+        checks = declared_checks([self.condition('transition')], {}, None)
+        stale = FieldReadError('read_text_affix_invalid', field_name='title', match_count=1,
+                               reason='text_prefix_mismatch')
+        with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(
+                side_effect=[[{'title': 'Old'}], stale,
+                             [{'title': 'New'}], [{'title': 'New'}]])):
+            await capture_check_baselines(object(), checks)
+            self.assertEqual(await check_fact(checks[0].parameters, object()),
+                             (False, 'declared_projection_not_ready'))
+            self.assertEqual(await check_fact(checks[0].parameters, object()),
+                             (False, 'declared_projection_not_stable'))
+            self.assertEqual(await check_fact(checks[0].parameters, object()),
+                             (True, 'declared_fact_checked'))
+
+    async def test_old_page_outside_result_shape_does_not_block_the_single_dispatch(self):
+        checks = declared_checks([self.condition('transition')], {}, None)
+        old_page = FieldReadError('read_text_affix_invalid', field_name='title', match_count=1,
+                                  reason='text_prefix_mismatch')
+        with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(
+                side_effect=[old_page])):
+            await capture_check_baselines(object(), checks)
+        self.assertTrue(checks[0].parameters['baselineUnavailable'])
+
     async def test_missing_pre_action_projection_may_appear_but_must_stabilize(self):
         checks = declared_checks([self.condition('transition')], {}, None)
         with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(
@@ -182,6 +250,98 @@ class RuntimeReadinessTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(RuntimeError, 'ordinary_target_missing'):
             await capability.resolve_target({'strategy': 'history'})
+
+    async def test_target_readiness_uses_one_live_resolution_without_dispatch(self):
+        capability = OrdinaryCapability.__new__(OrdinaryCapability)
+        capability.browser = object()
+        capability.targets = SimpleNamespace(prepare_action_target=AsyncMock(
+            return_value=SimpleNamespace(document_id='doc-1')))
+        with patch('workflow_use.hybrid.capability.current_document_id',
+                   new=AsyncMock(return_value='doc-1')):
+            self.assertEqual(await capability.target_readiness('click', {'strategy': 'history'}),
+                             {'status': 'ready', 'documentId': 'doc-1'})
+        capability.targets.prepare_action_target.assert_awaited_once()
+
+    async def test_target_readiness_preserves_missing_blocked_and_ambiguous(self):
+        for code, status in [('missing_stable_target', 'missing'),
+                             ('target_hit_blocked', 'blocked'),
+                             ('ambiguous_history_target', 'ambiguous')]:
+            with self.subTest(code=code):
+                capability = OrdinaryCapability.__new__(OrdinaryCapability)
+                capability.browser = object()
+                capability.targets = SimpleNamespace(prepare_action_target=AsyncMock(
+                    side_effect=ValueError(code)))
+                with patch('workflow_use.hybrid.capability.current_document_id',
+                           new=AsyncMock(return_value='doc-1')):
+                    self.assertEqual(await capability.target_readiness(
+                        'click', {'strategy': 'history'}),
+                        {'status': status, 'documentId': 'doc-1'})
+
+    async def test_postcondition_reads_the_exact_dispatched_target_after_overlay(self):
+        retained = object()
+        parameters = {'kind': 'target_value', 'target': {'strategy': 'history'},
+                      '_retainedElement': retained}
+        with patch('workflow_use.hybrid.postconditions.read_target_value',
+                   new=AsyncMock(return_value='alpha')) as read:
+            self.assertEqual(await read_check_value(parameters, object()), 'alpha')
+        read.assert_awaited_once_with(retained)
+
+
+class PostconditionDiagnosticTests(unittest.IsolatedAsyncioTestCase):
+    def readiness(self):
+        return declared_checks([{
+            'kind': 'read_fields', 'ready': True, 'consumerRef': 's-a-0002',
+            'read': SPECIFICATION.model_dump(mode='json'),
+            'scope': {'url': 'https://example.test/issues'}, 'settle': SETTLE,
+        }], {}, None)
+
+    async def test_field_read_limit_keeps_only_fixed_check_and_error_codes(self):
+        checks = self.readiness()
+        error = FieldReadError('read_collection_limit', field_name='secret', match_count=201,
+                               reason='https://private.test/?token=secret')
+        with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(side_effect=error)):
+            with self.assertRaises(PostconditionNotMet) as raised:
+                await verify_once(object(), checks)
+        self.assertEqual(str(raised.exception),
+                         'ordinary_postcondition_failed_read_fields_read_collection_limit')
+
+    async def test_unknown_dependency_message_cannot_cross_the_runtime_boundary(self):
+        checks = self.readiness()
+        with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(
+                side_effect=RuntimeError('https://private.test/?token=secret'))):
+            with self.assertRaises(PostconditionNotMet) as raised:
+                await verify_once(object(), checks)
+        self.assertEqual(str(raised.exception), 'ordinary_postcondition_failed_read_fields_check_error')
+
+    async def test_multiple_failed_checks_identify_the_first_fixed_failure(self):
+        checks = declared_checks([
+            {'kind': 'url_digest', 'changed': True, 'settle': SETTLE},
+            {'kind': 'read_fields', 'ready': True, 'consumerRef': 's-a-0002',
+             'read': SPECIFICATION.model_dump(mode='json'),
+             'scope': {'url': 'https://example.test/issues'}, 'settle': SETTLE},
+        ], {}, None)
+        checks[0].parameters.update({'baselineCaptured': True, 'expected': 'old-url-digest'})
+        with patch('workflow_use.hybrid.postconditions.read_check_value', new=AsyncMock(
+                side_effect=['old-url-digest', ValueError('target_scope_mismatch')])):
+            with self.assertRaises(PostconditionNotMet) as raised:
+                await verify_once(object(), checks)
+        self.assertEqual(str(raised.exception), 'ordinary_postcondition_failed_url_digest_fact_mismatch')
+
+    async def test_visible_wait_preserves_timeout_classification_for_diagnostic_suffix(self):
+        class ToolSink:
+            def action(self, *_args, **_kwargs):
+                def register(action):
+                    self.registered = action
+                    return action
+                return register
+
+        tools = ToolSink()
+        register_visible_wait_tool(tools)
+        with patch('workflow_use.hybrid.visible_wait.wait_for_visible', new=AsyncMock(
+                side_effect=PostconditionNotMet(
+                    'ordinary_postcondition_failed_target_visible_fact_mismatch'))):
+            result = await tools.registered(VisibleWaitParams(selector='.target'), object())
+        self.assertEqual(result.error, 'bat_wait_for_timeout')
 
 
 if __name__ == '__main__':

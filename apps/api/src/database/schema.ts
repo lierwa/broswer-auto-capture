@@ -1,14 +1,15 @@
 import { integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
-import type { InterviewMessage } from "@browser-capture/contracts/interview"
+import type { InterviewMessage, SourceResolution } from "@browser-capture/contracts/interview"
 import type { ModelSelection } from "@agent-platform/ai-connect/client"
 import type { BrowserRecord } from "@browser-capture/contracts/browser"
-import type { JsonValue, TaskContract } from "@browser-capture/contracts"
+import type { JsonValue, RunnableTaskRelease, TaskContract, TaskDraft, TaskExecutionCandidate } from "@browser-capture/contracts"
 import type { TaskAuthoringJob, TaskExecution } from "@browser-capture/contracts/api"
 
 export const tasks = sqliteTable("tasks", {
   id: text().primaryKey(), title: text().notNull(), renamed: integer({ mode: "boolean" }).notNull(),
   archived: integer({ mode: "boolean" }).notNull(), updatedAt: text().notNull(),
   revision: integer().notNull(), sequence: integer().notNull(), confirmedVersion: integer(), activeTurnId: text(),
+  interviewPolicyVersion: integer().notNull(),
 })
 const taskId = () => text("taskId").notNull().references(() => tasks.id)
 export const messages = sqliteTable("messages", {
@@ -31,6 +32,10 @@ export const questions = sqliteTable("questions", {
 export const decisions = sqliteTable("decisions", {
   taskId: taskId(), id: text().notNull(), revision: integer().notNull(), kind: text({ enum: ["option", "free_text", "draft_confirmation"] }).notNull(),
   text: text().notNull(), messageId: text(), questionId: text(), draftVersion: integer(), createdAt: text().notNull(),
+}, (table) => [primaryKey({ columns: [table.taskId, table.id] })])
+export const sourceResolutions = sqliteTable("sourceResolutions", {
+  taskId: taskId(), id: text().notNull(), revision: integer().notNull(),
+  body: text({ mode: "json" }).$type<SourceResolution>().notNull(),
 }, (table) => [primaryKey({ columns: [table.taskId, table.id] })])
 export const audits = sqliteTable("audits", {
   taskId: taskId(), ordinal: integer().notNull(), revision: integer().notNull(), model: text().notNull(), effort: text().notNull(), invocations: integer().notNull(),
@@ -63,14 +68,40 @@ export const taskContracts = sqliteTable("taskContracts", {
   body: text({ mode: "json" }).$type<TaskContract>().notNull(), createdAt: text().notNull(), updatedAt: text().notNull(),
 }, (table) => [uniqueIndex("task_contract_identity").on(table.kind, table.entityId, table.version)])
 export const taskAuthoringJobs = sqliteTable("taskAuthoringJobs", {
-  id: text().primaryKey(), taskId: taskId(), type: text({ enum: ["plan", "chain"] }).notNull(),
-  status: text().notNull(), body: text({ mode: "json" }).$type<TaskAuthoringJob>().notNull(),
+  id: text().primaryKey(), taskId: taskId(), type: text({ enum: ["plan", "chain", "prepare", "repair", "adjustment"] }).notNull(),
+  status: text().notNull(), sequence: integer().notNull(), updatedAt: text().notNull(),
+  body: text({ mode: "json" }).$type<TaskAuthoringJob>().notNull(),
+})
+export const taskWorkspaceSequences = sqliteTable("taskWorkspaceSequences", {
+  taskId: taskId().primaryKey(), sequence: integer().notNull(),
 })
 export const taskExecutions = sqliteTable("taskExecutions", {
+  // WHY：ExecutionCleanup 只在经 Zod 校验的 body 中拥有权威状态；不增平行列或表，避免重启后双写漂移。
   id: text().primaryKey(), taskId: taskId(), planId: text().notNull(), status: text().notNull(),
+  sequence: integer().notNull(), createdAt: text().notNull(), updatedAt: text().notNull(),
   body: text({ mode: "json" }).$type<TaskExecution>().notNull(),
 })
+export const taskExecutionCleanupAudits = sqliteTable("taskExecutionCleanupAudits", {
+  // 这里只追加脱敏证据；cleanup 状态权威仍唯一位于 taskExecutions.body.cleanup。
+  id: text().primaryKey(), taskId: taskId(), executionId: text().notNull().references(() => taskExecutions.id),
+  attempt: integer().notNull(), source: text({ enum: ["runner", "owner_verification"] }).notNull(),
+  body: text({ mode: "json" }).$type<JsonValue>().notNull(), createdAt: text().notNull(),
+}, (table) => [uniqueIndex("task_execution_cleanup_attempt").on(table.executionId, table.attempt)])
 export const taskArtifacts = sqliteTable("taskArtifacts", {
   artifactId: text().primaryKey(), taskId: taskId(), runId: text().notNull(), mediaType: text().notNull(), digest: text().notNull(),
   body: text({ mode: "json" }).$type<JsonValue>().notNull(), createdAt: text().notNull(),
+})
+export const taskReleases = sqliteTable("taskReleases", {
+  recordId: text().primaryKey(), taskId: taskId(), releaseId: text().notNull(), version: integer().notNull(),
+  digest: text().notNull(), body: text({ mode: "json" }).$type<RunnableTaskRelease>().notNull(), createdAt: text().notNull(),
+}, (table) => [uniqueIndex("task_release_version").on(table.taskId, table.version),
+  uniqueIndex("task_release_identity").on(table.releaseId, table.version)])
+export const taskDrafts = sqliteTable("taskDrafts", {
+  taskId: taskId().primaryKey(), id: text().notNull(), revision: integer().notNull(), checksum: text().notNull(),
+  body: text({ mode: "json" }).$type<TaskDraft>().notNull(), updatedAt: text().notNull(),
+}, (table) => [uniqueIndex("task_draft_identity").on(table.id)])
+export const taskExecutionCandidates = sqliteTable("taskExecutionCandidates", {
+  executionId: text().primaryKey().references(() => taskExecutions.id), taskId: taskId(), draftId: text().notNull(),
+  draftRevision: integer().notNull(), draftChecksum: text().notNull(),
+  body: text({ mode: "json" }).$type<TaskExecutionCandidate>().notNull(), createdAt: text().notNull(),
 })

@@ -40,12 +40,12 @@ class NaturalBindingFact(Contract):
     actionRef: str = Field(pattern=r'^a-\d{4,}$')
     argumentPath: str = Field(min_length=1)
     binding: dict[str, JsonValue]
-    provenance: Literal['runtime_input', 'native_parameter', 'task_literal', 'node_output']
+    provenance: Literal['runtime_input', 'native_parameter', 'task_literal', 'plan_entry_url', 'node_output']
     taskQuote: str | None = None
     sourceReadRef: str | None = None
 
 
-def binding_facts(action_ref, action_name, arguments, input_value, input_schema, requirement_text):
+def binding_facts(action_ref, action_name, arguments, input_value, input_schema, requirement_text, entry_urls=()):
     facts = []
     for argument_path, value in sorted(arguments.items()):
         if argument_path in ('index', 'element_index', 'xpath'):
@@ -64,6 +64,12 @@ def binding_facts(action_ref, action_name, arguments, input_value, input_schema,
         if isinstance(value, str) and value and value in requirement_text:
             facts.append(NaturalBindingFact(actionRef=action_ref, argumentPath=argument_path,
                 binding={'source': 'constant', 'value': value}, provenance='task_literal', taskQuote=value))
+            continue
+        if action_name == 'navigate' and argument_path == 'url' and value in entry_urls:
+            # WHY：准备任务必须从计划授权入口开始；入口 URL 属于版本化计划事实，
+            # 不能依赖它是否碰巧逐字出现在需求正文中。
+            facts.append(NaturalBindingFact(actionRef=action_ref, argumentPath=argument_path,
+                binding={'source': 'constant', 'value': value}, provenance='plan_entry_url'))
     return facts
 
 

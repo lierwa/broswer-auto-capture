@@ -24,12 +24,12 @@ def fixture(kind='navigation', identities=None, verified_child=None):
     raw['requirement']['id'] = '10000000-0000-4000-8000-000000000002'
     raw['plan']['id'] = '10000000-0000-4000-8000-000000000003'
     raw['plan']['stepId'] = 'perform'
-    if kind == 'nested':
+    if kind in ('nested', 'nested-missing-binding'):
         raw['runtimeInputSchema'] = {'type': 'object', 'properties': {'target': raw['runtimeInputSchema']},
                                     'required': ['target'], 'additionalProperties': False}
         raw['requirement']['clauses'][0]['expression']['binding']['path'] = ['target', 'url']
         raw['plan']['inputSchemaDigest'] = digest(raw['runtimeInputSchema'])
-    if kind == 'missing-binding':
+    if kind in ('missing-binding', 'nested-missing-binding'):
         raw['requirement']['clauses'].pop(0)
     if kind in ('loop', 'semantic-loop'):
         add_loop(raw)

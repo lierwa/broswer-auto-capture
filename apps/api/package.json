@@ -7,11 +7,15 @@
     "dev": "tsx src/main.ts",
     "start": "tsx src/main.ts",
     "check": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "preaccept:requirement-dialogue": "npm run build --workspace @browser-capture/workbench",
+    "accept:requirement-dialogue": "tsx tests/requirement-dialogue-workbench-acceptance.ts",
+    "preaccept:workbench-simplification": "npm run build --workspace @browser-capture/workbench",
+    "accept:workbench-simplification": "tsx tests/workbench-simplification-acceptance.ts"
   },
   "dependencies": {
     "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-e61cfe91.tgz",
-    "@agent-platform/pi-agent-session": "file:../../vendor/agent-platform/agent-platform-pi-agent-session-0.1.0-8f3f828d.tgz",
+    "@agent-platform/pi-agent-session": "file:../../vendor/agent-platform/agent-platform-pi-agent-session-0.1.0-52e0e9c6.tgz",
     "@browser-capture/browser": "0.0.0",
     "@browser-capture/contracts": "0.0.0",
     "@browser-capture/runtime": "0.0.0",
@@ -20,6 +24,7 @@
     "drizzle-orm": "0.45.2",
     "fastify": "5.12.3",
     "proper-lockfile": "4.1.2",
+    "pi-web-access": "0.30.0",
     "tldts": "^7.0.16",
     "zod": "4.1.8"
   },

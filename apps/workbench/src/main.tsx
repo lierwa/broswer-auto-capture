@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Badge,
@@ -8,7 +8,7 @@ import {
   Theme,
   Tooltip,
 } from "@radix-ui/themes";
-import { Moon, PanelLeft, Plus, Settings, Sun } from "lucide-react";
+import { CircleUserRound, Moon, PanelLeft, Plus, Settings, Sun } from "lucide-react";
 import { ModelSettingsDialog } from "@agent-platform/ai-connect-react/components/ModelSettingsDialog";
 import "@radix-ui/themes/styles.css";
 import "@xyflow/react/dist/style.css";
@@ -18,9 +18,11 @@ import { TaskSidebar, TaskMenu } from "./TaskSidebar.js";
 import { TaskWorkspace } from "./TaskWorkspace.js";
 import { taskStatusLabels } from "./taskContract.js";
 import { useModelSettings } from "./useModelSettings.js";
+import { BrowserProfileDialog } from "./BrowserProfileDialog.js";
 import "./styles.css";
 import "./chat.css";
 import "./workbench.css";
+import "./chain-workbench.css";
 
 function subscribe(callback: () => void) {
   const media = matchMedia("(max-width: 1099px)");
@@ -37,9 +39,14 @@ function App() {
   );
   const [sidebarOpen, setSidebarOpen] = useState(() => innerWidth >= 1100);
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+  const [browserProfileOpen, setBrowserProfileOpen] = useState(false);
   const modelSettings = useModelSettings();
   const task = model.tasks.find((item) => item.id === model.selected);
-  const running = model.tasks.find((item) => item.status === "running");
+  const running = model.tasks.find((item) => ["running", "planning", "queued", "executing"].includes(item.status));
+  useEffect(() => {
+    document.documentElement.style.colorScheme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#181918" : "#f5f3ee");
+  }, [theme]);
   function select(id: string) {
     model.select(id);
     if (compact) setSidebarOpen(false);
@@ -62,6 +69,7 @@ function App() {
       radius="small"
       scaling="95%"
     >
+      <a className="skip-link" href="#main-workspace">跳到主工作区</a>
       <main
         className="app-shell task-layout"
         data-theme={theme}
@@ -83,7 +91,7 @@ function App() {
             </Dialog.Content>
           </Dialog.Root>
         )}
-        <section className="workspace">
+        <section className="workspace" id="main-workspace" tabIndex={-1}>
           <header className="topbar">
             <div className="task-title-group">
               <Tooltip content={sidebarOpen ? "收起任务列表" : "展开任务列表"}>
@@ -93,18 +101,22 @@ function App() {
                   aria-label={sidebarOpen ? "收起任务列表" : "展开任务列表"}
                   onClick={() => setSidebarOpen(!sidebarOpen)}
                 >
-                  <PanelLeft size={18} />
+                  <PanelLeft aria-hidden="true" size={18} />
                 </IconButton>
               </Tooltip>
               <h1>{task?.title ?? "浏览器工作台"}</h1>
-              {task && (
-                <Badge color="gray" variant="soft">
-                  {taskStatusLabels[task.status]}
-                </Badge>
-              )}
+              {task && <div className="topbar-product-state" data-tone={taskTone(task.status)}>
+                <i aria-hidden="true" /><div><Badge color={taskBadgeColor(task.status)} variant="soft">
+                  {taskStatusLabels[task.status]}</Badge><small>{formatUpdatedAt(task.updatedAt)}</small></div></div>}
             </div>
             <div className="status-group">
               {task && <TaskMenu task={task} model={model} />}
+              <Tooltip content="专用浏览器账号">
+                <IconButton variant="ghost" color="gray" aria-label="专用浏览器账号"
+                  onClick={() => setBrowserProfileOpen(true)}>
+                  <CircleUserRound aria-hidden="true" size={18} />
+                </IconButton>
+              </Tooltip>
               <Tooltip content="模型设置">
                 <IconButton
                   variant="ghost"
@@ -112,7 +124,7 @@ function App() {
                   aria-label="模型设置"
                   onClick={() => setModelSettingsOpen(true)}
                 >
-                  <Settings size={17} />
+                  <Settings aria-hidden="true" size={17} />
                 </IconButton>
               </Tooltip>
               <Tooltip
@@ -126,7 +138,7 @@ function App() {
                   }
                   onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                 >
-                  {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+                  {theme === "dark" ? <Sun aria-hidden="true" size={17} /> : <Moon aria-hidden="true" size={17} />}
                 </IconButton>
               </Tooltip>
             </div>
@@ -171,7 +183,7 @@ function App() {
           {model.ready && !task && (
             <section className="workspace-welcome">
               <span className="welcome-mark">
-                <Plus size={22} />
+                <Plus aria-hidden="true" size={22} />
               </span>
               <h2>每个需求，一个独立任务</h2>
               <p>
@@ -183,7 +195,7 @@ function App() {
                 disabled={!model.ready || model.busy}
                 onClick={() => void model.action({ type: "create" })}
               >
-                <Plus size={16} />
+                <Plus aria-hidden="true" size={16} />
                 新建需求
               </Button>
             </section>
@@ -205,8 +217,28 @@ function App() {
           selectOnConnect
           requiredSurface="agentSession"
         />
+        <BrowserProfileDialog open={browserProfileOpen} onOpenChange={setBrowserProfileOpen} />
       </main>
     </Theme>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);
+
+function taskTone(status: string) {
+  if (["running", "planning", "queued", "executing"].includes(status)) return "active"
+  if (status === "failed") return "danger"
+  if (["confirmed", "review"].includes(status)) return "success"
+  return "neutral"
+}
+
+function taskBadgeColor(status: string): "gray" | "amber" | "red" | "green" {
+  if (["running", "planning", "queued", "executing"].includes(status)) return "amber"
+  if (status === "failed") return "red"
+  if (["confirmed", "review"].includes(status)) return "green"
+  return "gray"
+}
+
+function formatUpdatedAt(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+    .format(new Date(value))
+}

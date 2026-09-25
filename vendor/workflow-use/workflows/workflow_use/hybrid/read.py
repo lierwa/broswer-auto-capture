@@ -17,7 +17,9 @@ from .visible_text import normalize_presentation_text
 class ReadField(Contract):
     selector: str = Field(min_length=1, max_length=2000)
     attribute: str | None = Field(default=None, pattern=r'^[a-zA-Z][a-zA-Z0-9_-]*$')
+    optionalAttribute: bool = False
     resolveUrl: bool = False
+    textSource: Literal['rendered', 'textContent'] = 'rendered'
     valueType: Literal['string', 'number', 'integer', 'boolean'] = 'string'
     textPrefix: str | None = Field(default=None, min_length=1, max_length=100)
     textSuffix: str | None = Field(default=None, min_length=1, max_length=100)
@@ -28,10 +30,14 @@ class ReadField(Contract):
 
     @model_validator(mode='after')
     def bounded_cardinality(self):
+        if self.optionalAttribute and (self.attribute is None or self.multiple):
+            raise ValueError('optional_attribute_requires_single_attribute')
         if not self.multiple and self.maxValues != 1:
             raise ValueError('single_field_cardinality_required')
-        if self.resolveUrl and self.attribute != 'href':
-            raise ValueError('url_resolution_requires_href')
+        if self.resolveUrl and self.attribute not in ('href', 'src'):
+            raise ValueError('url_resolution_requires_link_attribute')
+        if self.textSource != 'rendered' and self.attribute is not None:
+            raise ValueError('text_source_requires_text_field')
         if (self.textPrefix is not None or self.textSuffix is not None) \
                 and (self.valueType not in ('string', 'number', 'integer') or self.attribute is not None):
             raise ValueError('text_affix_projection_invalid')
@@ -44,10 +50,14 @@ class ReadField(Contract):
     def preserve_single_value_digest(self, serialize):
         # WHY：扩展多值读取不能改变原有单值 ReadSpec 的字节摘要，破坏既存字段证据。
         value = serialize(self)
+        if not self.optionalAttribute:
+            value.pop('optionalAttribute', None)
         if not self.multiple:
             value.pop('multiple', None)
         if not self.resolveUrl:
             value.pop('resolveUrl', None)
+        if self.textSource == 'rendered':
+            value.pop('textSource', None)
         if self.maxValues == 1:
             value.pop('maxValues', None)
         if self.textPrefix is None:
@@ -65,13 +75,22 @@ class ReadSpec(Contract):
     container: str = Field(min_length=1, max_length=2000)
     fields: dict[str, ReadField] = Field(min_length=1, max_length=100)
     maxItems: int = Field(gt=0, le=300)
+    includeOrdinal: bool = False
     maxInputBytes: int | None = Field(default=None, gt=0)
     outputSchema: dict[str, JsonValue]
+
+    @model_validator(mode='after')
+    def ordinal_is_host_owned(self):
+        if self.includeOrdinal and 'ordinal' in self.fields:
+            raise ValueError('read_ordinal_field_reserved')
+        return self
 
     @model_serializer(mode='wrap')
     def preserve_explicit_budget_digest(self, serialize):
         # WHY：缺省表示调用方未另设字节预算；旧调用方显式预算的 canonical bytes 必须保持不变。
         value = serialize(self)
+        if not self.includeOrdinal:
+            value.pop('includeOrdinal', None)
         if self.maxInputBytes is None:
             value.pop('maxInputBytes', None)
         return value
@@ -100,8 +119,15 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
     projected[name] = {
       selfMatched,
       values: matches.slice(0, limit).map((node) => {
-        if (field.resolveUrl) return {value: node.href, hasShadow: false};
+        if (field.resolveUrl) {
+          const resolved = node[field.attribute];
+          return {value: typeof resolved === 'string' && resolved !== ''
+            ? resolved : node.getAttribute(field.attribute), hasShadow: false};
+        }
         if (field.attribute) return {value: node.getAttribute(field.attribute), hasShadow: false};
+        if (field.textSource === 'textContent') {
+          return {value: (node.textContent || '').trim(), hasShadow: false};
+        }
         const hasShadow = Boolean(node.shadowRoot
           || Array.from(node.querySelectorAll('*')).some((child) => child.shadowRoot));
         if (!node.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})) {
@@ -128,16 +154,24 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None):
                              reason='container_not_resolved') from error
     # WHY：列表容器应描述完整稳定集合；输出合同的 maxItems 负责确定性选择 DOM 顺序前缀，
     # 不应把“前 N 条”再次推给模型编码成依赖页面包装层的 nth-child selector。
+    if specification.includeOrdinal and len(elements) > specification.maxItems:
+        # WHY：动态选择必须读取完整集合；截断会把“已读末项”误当成真实末项。
+        raise FieldReadError('read_collection_limit', field_name='container',
+                             match_count=len(elements), reason='complete_collection_required')
     elements = elements[:specification.maxItems]
     output, consumed, native_context = [], 0, {}
-    for element in elements:
+    for ordinal, element in enumerate(elements, start=1):
         fragments = await project_fields(browser, element, specification.fields, native_context)
         consumed += sum(len(value.encode()) for values in fragments.values()
                         for value in values if isinstance(value, str))
         if specification.maxInputBytes is not None and consumed > specification.maxInputBytes:
             raise ValueError('read_input_limit')
         record = {name: read_projected_field(name, fragments.get(name), field)
-                  for name, field in specification.fields.items()}
+                  for name, field in specification.fields.items()
+                  if not (field.optionalAttribute and fragments.get(name) == [None])}
+        if specification.includeOrdinal:
+            # WHY：纯函数筛选/排序后仍返回原集合身份，不能将过滤后下标当成 DOM ordinal。
+            record['ordinal'] = ordinal
         output.append(record)
     if specification.outputSchema.get('type') == 'object':
         if specification.maxItems != 1 or len(output) != 1:
@@ -157,7 +191,7 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None):
 async def project_fields(browser, element, fields, native_context):
     projection = [{'name': name, 'selector': field.selector, 'multiple': field.multiple,
                    'maxValues': field.maxValues, 'attribute': field.attribute,
-                   'resolveUrl': field.resolveUrl}
+                   'resolveUrl': field.resolveUrl, 'textSource': field.textSource}
                   for name, field in fields.items()]
     try:
         raw = await element.evaluate(FIELD_PROJECTION_SCRIPT, projection)

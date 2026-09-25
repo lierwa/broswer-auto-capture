@@ -2,6 +2,138 @@
 
 本文件只保留当前选型和仍有效的边界。阶段进度见 [PROGRESS](PROGRESS.md)，执行顺序见 [ROADMAP](ROADMAP.md)。
 
+## 2026-09-24 新建任务恢复实施边界
+
+Product Alignment:
+- natural-language task: 从已确认的浏览器需求继续生成可复跑草稿；准备失败时说明准确原因并从原阶段恢复
+- reusable chain boundary: 一个 Requirement、一个活动 TaskDraft、显式 Release、每次独立 Execution
+- runtime inputs: 当前确认需求、原计划候选、草稿 revision/checksum 与本次运行输入
+- dynamic task outputs: 合法 TaskPlan、Browser-Use 来源、候选链、试跑和正式运行结果
+- generic platform capability used: 现有 AI Connect、Pi AgentSession、Browser-Use、workflow-use、LangGraph、SQLite、Radix 与 React Flow
+- replay model calls: 普通复跑 0；仅显式 llm 节点例外；计划纠正属于准备期独立审计
+- site/task-specific code added: no
+
+当前 checkout 为 `master@7d590363`，既有 dirty work 保留。计划失败候选只从该 job 的审计事件读取；恢复不得重建未知候选、放宽 ResultSpec 校验或自动重开 Browser-Use。新增工作仅适配上述既有能力和 B-A-T 的候选、并发、诊断及生命周期合同，不引入或替换关键库。正式通过范围以本轮页面、API、SQLite 与重启证据为准。
+
+本轮对 `result_spec_path_conflict` 核对了 `resultSpecSchema`、workflow-use 的 `compile_result_binding` 和宿主 `assertResultBinding`：完整数组路径与第 0 项子字段不能同时拥有结果，且不同 `producerRef` 代表不同逻辑来源。第三份京东候选的父子来源各不相同，自动折叠会改变来源含义，所以没有把删掉子归属、放宽合同或重开浏览器作为修复。宿主只补充精确路径、来源及必填集合缺口诊断，交给既有计划纠正入口；第四份模型候选仍缺集合归属，按四次上限停止并保留全部审计。输出 schema 的业务字段未改。
+
+### 自然语言调整建议与成功结果归属
+
+Product Alignment:
+- natural-language task: 用户对已有链路的步骤或运行结果说明问题，收到有前后差异、可拒绝的修改建议
+- reusable chain boundary: 当前 Requirement／Release、准确 Execution 与 TaskRun 证据、唯一活动 TaskDraft；接受建议后仍须独立试跑和显式发布
+- runtime inputs: 保存的用户反馈、链路 revision、执行证据及当前草稿校验值
+- dynamic task outputs: 带来源审计的结构化修订候选、可审阅差异和接受后的新草稿 revision
+- generic platform capability used: AI Connect `AIModelProvider.generateObject`、Zod、既有 ChainRevisionOperation／编译校验、SQLite 与工作台侧栏
+- replay model calls: 普通链路复跑 0；调整建议是用户单独发起、独立审计的模型调用
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 从已保存反馈与准确版本／运行证据生成链路修订建议
+- existing implementation in repository: AI Connect 结构化输出、TaskAuthoringJob 审计、revision preview／编译／可执行校验、SQLite 草稿事务
+- mature candidates and pinned versions: 沿用仓库固定的 AI Connect、Zod 和现有任务链合同；不新增依赖
+- selected implementation: 复用现有结构化模型接口，新增范围受限的调整指令和 B-A-T 证据投影／候选适配
+- reused public surface: `AIModelProvider.prepare().generateObject`、Zod 边界与既有 revision operations
+- B-A-T-owned adapter and remaining gap: 候选来源重校验、差异确认、过期／取消／拒绝和唯一草稿接受事务；正式页面、真实建议质量和新版发布仍待验
+- license/runtime/platform fit: 不变更依赖或运行时，Windows 本轮定点类型检查与假模型测试通过，macOS 未测
+- browser/runtime/state ownership conflicts: 建议生成不持有浏览器；接受仍核对精确版本与运行证据，不改旧发布或执行
+- replay model calls: 普通试跑／正式运行 0，只有显式 llm 节点例外
+- rejected candidates and evidence: Pi Main 服务于访谈／浏览器探索，不是无工具的结构化链路修订建议接口；现有计划提示明确不生成节点图，不能挪用
+- focused validation: contracts／API／Workbench 类型检查、调整聚焦测试 9 项及 BrowserProfile 门测试通过；正式 UI／API／SQLite／重启待验
+
+用户在本轮明确授权**仅新增调整建议专用 prompt**，不扩大为访谈、计划或探索 prompt 改动。先前真实 Python About 试做来源已保存并正常关闭，但其计划要求必填 `status` 而确认需求没有给成功枚举值，来源也没有对应可执行事实；不能仅凭 `sourceSuccess` 或模型技术任务文字合成业务结果。离线内存模拟证明，当确认需求明确给出成功状态字面值时，现有自然读取和静态值归属可组装成功分支；不同需求摘要的旧来源不得复用。编译器只补可选字段缺省处理与缺失路径诊断，未虚构输出或放宽必填归属；该旧来源仍不能发布。
+
+### G12 后续复用与正式证据边界（2026-09-24）
+
+上方 Reuse Assessment 的“正式 UI／API／SQLite／重启待验”记录的是实施时状态。本轮随后在正式页面恢复失败建议 `b8a57468-f2f0-4172-8e1d-56108e1b9940`，沿原反馈和精确运行证据生成 `a2f0e1a2-3a01-41c4-874a-35db46798e4a` 的待确认候选；接受前活动草稿为 0，接受后才形成唯一草稿 `e6fc816c-8a24-420e-8ca8-30b0f23af7d9`。样本和独立复验执行 `c5bb324c-9720-45b7-8c2c-6c9b86b42fcc`、`e165c0be-ccbe-4ac7-8c29-028d28ab93dd` 完成且清理确认；用户手动发布 Release V2 `930d7739-f6f7-4ad7-8984-93fd3f3f5bfe`，随后正式执行 `57193eb7-6b1f-43d5-82a6-e5a585dbf01f` 完成且清理确认。V1 与原四次执行保留。七次执行均无普通复跑模型／LLM 调用，输出 digest 同为 `7a5808fac2bce36b837bfaef3673b44eb15e7207fba861c4af9a079a7ca7623b`；重启前后快照文件 SHA256 同为 `11D3469DFC73645741F76564C21FE1233DA3130D839BA16F7742852BBD4E6851`。证据索引为 `work/recovery-20260924/g12-acceptance.json`、`g12-before-restart.json`、`g12-after-restart.json` 及同目录正式 UI 的亮／暗色、390px 截图。
+
+候选只执行一次 `replace_node`，V1/V2 同一链的节点数均为 5，变更只落在 `output-assemble.label`，路线和执行输出未变。由此验收的是既有 AI Connect 结构化建议、服务端完整操作校验、用户确认、唯一草稿、两次固定链路试跑、手动发布及重启后的持久化；**不能推断行为缺陷已修复**。G12 拒绝、过期和验证失败的正式 UI 路径仍缺证据；G9 当前 provider 的联网搜索也尚未验。上述缺口继续阻止整体完成声明。
+
+### G12 运行结果反馈交接（2026-09-25）
+
+Product Alignment:
+- natural-language task: 用户在本次运行结果旁说明哪里不符合预期，进入链路调整时保留这段未提交的业务反馈。
+- reusable chain boundary: 反馈仅在同一任务当前运行的结果与调整侧栏间传递；生成建议仍由用户显式提交，并绑定准确运行和链路版本。
+- runtime inputs: 当前 execution、用户已输入的反馈、所选步骤和链路引用。
+- dynamic task outputs: 调整侧栏预填反馈；建议、草稿、发布和历史运行事实仍由原有流程产生。
+- generic platform capability used: React 本地状态、现有 Workbench 侧栏与 TaskChainConnection。
+- replay model calls: 0；用户明确点击生成修改建议后才发生独立的调整模型调用。
+- site/task-specific code added: no
+
+结果侧栏原先把反馈保存在自己的局部状态，切到调整侧栏时组件卸载，文字随之丢失。此次只修同次运行的前端临时状态交接；不改 API、持久化合同、prompt 或普通复跑。
+
+### G9 当前 provider 搜索与来源选择正式证据（2026-09-24）
+
+上段 G9“尚未验”是该时点状态。正式 UI 新任务 `882f4bb3-7a58-4986-b633-83f4c5769dd4` 没有用户填写的 URL；Pi 自行发起 `web_search`，query 为 `site:docs.python.org "What's New in Python 3.14"`，随后用 `present_source_candidates` 提交来源候选。SQLite `messages.aiEvents` 为两次 `tool.execution.completed` 保存了原始 `output.content` 和 `output.details`；候选事实的 provider 是 `pi-web-access:web_search`。这核验的是 Pi 工具事件经现有 adapter 进入正式 Timeline 与受限来源候选的真实一次调用，不把普通业务调研搜索强制转为来源选择，也不以宿主词表判断语义相关性。
+
+Question Panel 展示 1 个官方候选，用户选中 `source:009bfe70f430076c645b`，准确 URL 为 `https://docs.python.org/3/whatsnew/3.14.html`；下一轮继续确认“首个实际正文段落”的业务含义，才形成 Requirement `a34888db-4de3-4f92-85b4-cbd1b1faeae8@1`。确认事实包含这条所选搜索来源；该任务的 `taskContracts` 只有 1 条需求记录，准备、草稿、发布和执行均为 0。重启前后 `work/recovery-20260924/g9-before-restart.json` 与 `g9-after-restart.json` 的 SHA256 同为 `367C12B25E5860A0C273CD20370D4AB00301ED2FE89E5ED2736DBF6807733240`；正式 UI 的搜索进度、来源选择、澄清和确认截图为同目录 `g11-g9-*.png`。
+
+此次只覆盖当前 provider 的一次只读搜索和来源确认。可选 `summary`、凭据及其他 provider 分支仍缺正式证据；该专用任务未进入计划、Browser-Use、发布或复跑，不能据此扩大 G11/G12 或整体完成结论。
+
+## 2026-09-22 AI Connect / Pi 能力对齐与新建任务审计
+
+完整缺口、UI↔逻辑对应和退出门见 [PRODUCT_LOOP_CAPABILITY_AUDIT](PRODUCT_LOOP_CAPABILITY_AUDIT.md)。继续复用现有 AI Connect 连接/Authoring/Question、ai-connect-react Timeline/Composer、Pi AgentSession/ResourceLoader，不另建聊天、工具或 Agent 框架。
+
+实际固定版本为 AI Connect `0.3.2-e61cfe91`、React `0.3.2-15d6e5f0`、Pi AgentSession `0.1.0-52e0e9c6`。vendor 归档 SHA256 与 release.json 一致；实际安装包公共模块可导入。ResourceLoader 离线加载搜索 extension 成功，注册 `web_search/source_check/fetch_content/get_search_content`，BAT 只激活 `web_search`。未执行联网搜索，不能把注册成功写成搜索端到端已通过。
+
+实际公共事件 bridge 可把合成工具事件变为 AIEvent；公共 `projectAIInvocationTimeline` 接收 extension adapter 后可生成搜索 hook。BAT 当前调用没有传该 adapter，是明确的共享 UI 接线缺口，不是共享包没有能力。需求宿主另将任何搜索强制绑定来源选择，尚未对齐任务驱动的通用业务调研；修复应区分调研依据与用户来源决定，不能写成每个任务必须搜索/补 URL。
+
+当前最新任务的两次模型计划均因 ResultSpec 结果所有权失败，未进入真实浏览器。不能放宽合同、删除字段或重开 B-U 掩盖问题；需要准确诊断、保存候选并复用既有纠正/恢复能力。正式 UI 另确认无图失败态无处理面板，完整新建任务闭环尚未通过。本次只有审计和文档，无产品实现或 prompt 修改。
+
+## 2026-09-22 节点修订交互与验证含义修正
+
+继续复用 React Flow、Radix Themes、ValueSchemaForm、现有 revision API 与编译器，不新增公共字段、图模型或编辑调度器。用户从画布选择动作，在右侧调整名称、输入绑定、输出和动作设置；新增/删除通过一批既有 revision operations 同时维护执行图和 ChainPresentation。删除前保护节点输出、变量、完成条件和循环引用，只有明确单一后继才自动接回，不能替用户猜测分支合流。
+
+Radix `Select.Label` 必须放在 `Select.Group` 内；[官方 Select 文档](https://www.radix-ui.com/themes/docs/components/select) 的结构示例与 Group / Label 说明构成复用依据。首次新增节点弹窗暴露该组合错误，修复分组后正式 UI 通过，不替换现有组件库。
+
+界面将 sample / verification 解释为“试跑整条链路 / 独立复跑检查”。只有输入合同声明的参数才显示表单；当前链路合同为空对象，剧名是固定节点值，无参数试跑使用保存的配置，不能在验证区直接换动漫，更不能把输入自然语言当作任务泛化。发布仍须既有候选验证门满足。
+
+聚焦测试与类型检查已通过；正式编辑证据 `work/node-editor-1790017262509/result.json` 覆盖名称与固定输入保存还原、Function 新增/删除、执行内容与展示恢复、历史不变。正式 UI sample `work/node-trial-1790017373294/result.json` 精确绑定 chain v3 候选，completed / cleanup confirmed / llmCalls=0。仅完成本次 sample，独立复跑未执行、未发布。草稿事件独立读取并按候选精确引用及验证记录隔离，修改后立即清空旧候选显示；`work/node-trial-1790017373294/restart/result.json` 只读复核同次试跑的四阶段及 11 动作完成，未重跑浏览器任务。
+
+## 2026-09-22 阶段展示与通用异常缺省处理
+
+复用现有 LangGraph StateGraph、TaskChainRuntime 的结果和人工恢复机制，不新增调度器、错误状态字段或另一份执行图。`stable/v2` 正常/业务端口仍必需；可选通用错误端口有显式路由时优先执行，未处理时在当前节点沿现有结果合同收束。`stable/v1` 保持原有完整端口合同。新自然链物化复用 `compactGeneratedFailureRoutes`，只压缩来源和终态结构均与受管编译原样匹配、无业务结果/自定义原因/引用的异常路线。
+
+画布仍用 React Flow / Dagre；业务阶段和动作节点使用同一版本化 presentation，不把任务实例写入平台。通过既有修订 API 保存用户确认的四阶段与节点名称，实际执行图精简后重新验证发布，旧发布与历史执行不改。局部验证包含 10 项稀疏链/合同/分支、4 项既有取消/人工恢复、5 项 UI 投影及相关类型检查；正式产品证据在 PROGRESS 记录，未运行全量测试。
+
+正式复核已发布 chain v2 / release v7，sample、verification 与 Workbench replay 均零模型调用完成且清理确认；四阶段实时推进、逐阶段动作及节点类型、重启持久化均通过，汇总 `work/stage-chain-1790016501961/closure.json`。另补草稿覆盖运行及终态提前绿色两项定点回归；草稿与发布图使用显式模式切换，运行状态只来源于本次事件。
+
+## 2026-09-22 离线编译与正式产品验收
+
+本轮继续复用现有 browser-use / workflow-use、AI Connect bridge、QuickJS 与 LangGraph，不引入或替换关键库。删除批量可遗漏的选择函数响应，改为每个缺失函数一次有界 `semantic_annotation`：模型仅返回 source / examples，宿主拥有 actionRef、schema、绑定及节点身份。旧函数不覆盖；缺口只能形成明确编译失败，不能触发新的浏览器探索。
+
+离线 `hybrid_annotate` 复用 compile 请求和已有模型连接合同，runner 必须没有 Browser owner。Python canonical/sourcePayloads 保留原数字词法；TS 边界禁止改写需求、计划、输入、动作及旧观察，只能追加对应动作的派生函数。新来源另存，历史来源和旧运行不变；没有引入新业务字段、Agent loop 或调度器。
+
+局部准入为 Python 6 项、TS adapter 3 项及严格类型检查。正式门为 `work/i7-reprepare-1790013905749/result.json` 与 `source-reuse-audit.json`：原失败来源离线追加一个函数、探索次数 0、新增注解调用 1；sample / verification / Workbench replay 均完成、清理确认且模型调用 0。修订、清理恢复与需求回流的组合证据见 [PROGRESS](PROGRESS.md#当前状态)。当前 Windows x64 通过，macOS 未测。
+
+删除未消费截图是已证明的冗余删除，不能等同性能根因已解决：当前普通 a4 点击仍耗时 47.558 秒，普通路径缺少内部阶段计时；后续优化须先取得同一 command 的阶段耗时，不扩大公共业务协议。
+
+## 2026-09-21 紧急修复：公开动作准入与已有能力接线
+
+本轮沿用 browser-use 0.13.8 / workflow-use 0.2.11 / QuickJS 0.32.0，不新增 Agent loop、浏览器控制器或运行调度器。
+实际安装源码证明 `StructuredOutputAction.success` 默认 true 且从模型 schema 隐藏；`Agent` 构造还会再次调用公开 `Tools.use_structured_output_action`。
+薄 `AuthorTools` 适配该公开方法，通过 `registry.action` 保留原生 done 的输出实现，只补必填 success/reason。结束声明仍不代替正式产品验收，也不增加语义 judge。
+
+| 实际 action | 处理与合同 |
+| --- | --- |
+| navigate/go_back/wait/click/input/scroll/send_keys/select_dropdown | 由现有 workflow-step 承接，仍须当前来源绑定、目标和后置事实；Enter/click 共用唯一新增 tab 的实时 URL 收敛。 |
+| find_elements | 完整查询转 read-fields，保存 text、请求属性和原 ordinal；缺属性如实省略。动态规则独立为需求绑定 Function，不由样本末项猜 count。 |
+| search_page/dropdown_options | 原生只读文本发现，仅在同页事实连续时作探索证据；后续选项值仍须需求/输入绑定。不是复跑输出。 |
+| extract | 仅 data 准备可用；已有确定性字段投影/显式语义合同负责复跑，不隐式重复原生提取模型。 |
+| done | 显式成功/失败及原因，业务 data 合同保持不变；不产生执行节点。 |
+| search | 未暴露：内建搜索引擎 URL 缺来源/输入绑定；已确认入口 navigate、站内 input/Enter 保留。 |
+| find_text | 未暴露：包含滚动副作用而无复跑目标合同；search_page、scroll 和完整查询保留。 |
+| switch/close | 未暴露：随机 tab suffix 无跨运行身份合同。唯一新 tab 前进由共享导航适配处理，不能将任意切页/关闭隐藏为探索。 |
+| save_as_pdf、原有文件操作/evaluate/screenshot | 未暴露：当前无自然编译的文件交付或执行合同；不能调用后再静默丢弃。 |
+
+Function 注解对每个缺失函数只有一次有界准备调用；模型只提交纯程序与变化样例，宿主拥有输入 schema、节点身份、边、预算与绑定。
+来源事实和需求摘要不可分离，正式接收前复用既有 QuickJS 执行实际样本、变化样本和保留 ordinal 的数组重排；拒绝程序保留为编译 gap 和不可变来源。
+代码只适配这些既有公共能力，不增加网站或业务类别固定逻辑。Windows 定点验证见 PROGRESS；macOS 仍为未测，不扩大为跨平台通过。
+
+补充读取合同核验：browser-use 0.13.8 `tools/service.py` 的原生 `find_elements` 对全部 CSS 匹配元素使用 `textContent`，`href/src` 优先读取解析后的 DOM 属性；原有 read-fields 的默认可见 `innerText` 不能等价重放该查询。ReadField 因此明确区分 `rendered` 与 `textContent`，查询适配选择后者，默认业务字段和旧序列化摘要保持原合同。缺属性省略、完整集合上限和原 ordinal 仍由宿主校验。真实无头 Chrome 的三候选样本覆盖隐藏文字、隐藏元素、相对链接和缺属性，同时证明默认可见字段仍拒绝隐藏值。此证据只证明适配合同修复；最新正式 a-0005 的旧通用错误没有保留底层错误码，不能追溯断言它只有这一个原因。
+
+补充导航观察核验：原生 DOMWatchdog 的摘要 URL 来自 SessionManager 异步 Target 缓存；公开 `Page.get_target_info/get_url` 则查询 CDP `Target.getTargetInfo`。本次 author scope 仅包装本次 Browser 的公开摘要方法，前后核验实时 URL、target 与 html backend，并与原生 DOM 树对应；只有稳定同一文档时才校正过期摘要 URL。模型等待后真正换 URL/document 仍拒绝旧索引，动作后的合法导航交既有 Tenacity settle 重读，不重派动作。finally 恢复原方法，诊断仅保存摘要与时间，并按 pending/native step 关联到同次 action。五项定点验证（含真实 Chrome 文档身份）和一个新增证据归属验证通过；真实站点是否命中缓存问题须等正式来源诊断，不能由本地样本推定。
+
 ## Reuse Assessment
 
 - capability: 浏览器 Agent 探索、原生动作/DOM 能力、history 证据、确定性工作流执行和条件核验。
@@ -32,6 +164,30 @@ fork 只保留 B-A-T 运行和主链回归需要的文件：生产 Python 包、
 固定输入与编译版本必须产生稳定 TaskChain。复跑只执行普通能力和显式声明的 LLM 节点，所有模型调用进入运行审计。
 
 选型尚未由完整业务验收冻结。A 已通过；B 的稳定读取、C 的异步顺序、D 的共享会话模型节点以及 E 的同链换输入仍须分别通过。
+
+## 需求对话搜索工具复用（2026-09-20）
+
+Product Alignment:
+- natural-language task: 访谈模型在来源身份或入口确有歧义时自行决定是否搜索、搜索词和相关候选，再由用户确认来源。
+- reusable chain boundary: 搜索只是需求对话的只读工具能力；确认后的来源事实供任意后续准备任务使用。
+- runtime inputs: 完整对话、Pi 当前活动工具、搜索请求、真实结果/引用和用户候选选择。
+- dynamic task outputs: 可审计搜索事实、稳定候选 ID、用户来源决定和仍未解决的待决事项。
+- generic platform capability used: Pi ResourceLoader、extension/package、tool registry、active tools；AI Connect Question 与持久化事实。
+- replay model calls: 只发生在需求对话；普通 TaskChain 复跑仍为 0，显式 `llm` 节点除外。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 在 Pi AgentSession 中向任意支持工具调用的访谈模型提供可发现、可审计的只读搜索工具，并允许无额外搜索密钥的后备。
+- existing implementation in repository: B-A-T 已有 Bing RSS 只读 resolver、候选引用校验和 Question 投影；共享 Pi adapter 现已公开“准确 extension 来源 + active tools”入口并投影同一工具生命周期。
+- mature candidates and pinned versions: `@earendil-works/pi-coding-agent` 0.84.2 tag `914cf1472e715297caa30db4b9535d534a9eb718`；`pi-web-access` 0.30.0 commit `6c5afa1d0d43eef8552284ad73f4bd9f0612a378`，MIT，支持 Pi `modelRegistry` 凭据解析和无需额外密钥的公开搜索后备。
+- selected implementation: 复用 Pi `DefaultResourceLoader`、extension/tool registry 和 `pi-web-access` 的 `web_search`；只在需求访谈会话启用该工具，现有 Bing RSS 作为工具失败时的通用只读后备。模型连接仍只负责模型，搜索工具是否可用由 Pi 注册表和 extension 自身决定。
+- reused public surface: `DefaultResourceLoader`、package `pi.extensions`、`pi.registerTool()`、active tools、`modelRegistry.getApiKeyAndHeaders()`、extension tool lifecycle/result，以及 `pi-web-access` 的 provider routing 与 keyless fallback。
+- B-A-T-owned adapter and remaining gap: B-A-T 只声明允许的 package/tool、观察 Pi 的原始工具结果、把其中真实 URL 规范化为稳定候选并校验模型引用，然后持久化用户决定；不复制凭据、不选择搜索词、不判断相关性。R1 已从正式 Workbench 产品入口通过，剩余仅为 R5 组合复验，不再实现搜索后端。
+- license/runtime/platform fit: Pi 与 `pi-web-access` 均为 MIT；Node 24/Windows x64 下，`pi-web-access` 精确版本安装、类型检查和真实 keyless 搜索通过。上游 38 个定点测试中 36 个通过，2 个 Windows 失败只涉及本项目未启用的可选命令凭据来源；macOS 延期未测。
+- browser/runtime/state ownership conflicts: 搜索 extension 不启动 B-A-T 任务浏览器；需求对话仍不读取 Profile、不登录、不点击。只允许审查后的 extension 集，不能隐式加载用户全局任意 extension。
+- replay model calls: 搜索由当前访谈模型发起，不增加第二个语义判断模型；普通复跑无搜索工具。
+- rejected candidates and evidence: `pi-web-search` 1.6.0 只覆盖 provider 原生能力，不能给不带搜索的当前模型提供通用后备；不在 B-A-T 按供应商维护搜索矩阵，不在模型弹窗增加搜索配置，不删除 Bing 后备，不复制 Pi extension/runtime。`pi-web-access` 的可选命令凭据来源未启用，因为其 Windows 定点测试存在 2 个失败，而 `web_search` 本身不依赖该路径。
+- focused validation: `opencode` 的 extension/custom tool 与多 assistant item 整轮输出投影测试 3/3（13 assertions）、包类型检查、平台持久化/confirmed tests 11/11（51 assertions）通过；同步 digest 为 `52e0e9c6630c47cb41874591dc4e5e9f7db36aca8180e4fca47b379b91be01f5`。B-A-T 实际加载 1 个 `pi-web-access` extension 且 `web_search` 恰好注册一次；来源合同测试 4/4 与 API 类型检查通过。正式 headless Workbench/API 入口完成 `web_search → present_source_candidates → Question → requirement v2`，未决事项 0，需求阶段产品浏览器命令 0；证据为 `work/requirement-dialogue-workbench-unique-2026-09-20T15-44-31-667Z`。
 
 ## 首次业务完成后的确定性读取补证（已撤销）
 
@@ -182,6 +338,17 @@ Product Alignment:
 - replay model calls: 0。
 - site/task-specific code added: no。
 
+# 动作后精确目标核验（2026-09-20）
+
+Product Alignment:
+- natural-language task: 输入值后页面立即出现通知或动态层时，确认本次输入已经完成，再执行预执行学到的后续准备节点。
+- reusable chain boundary: 同一普通动作派发目标的只读后置条件；后续动作仍重新解析目标和遮挡状态。
+- runtime inputs: 已验证的稳定目标、本次派发保留的原生 element 与声明式 postcondition。
+- dynamic task outputs: 输入/选择动作的完成事实或确定性失败。
+- generic platform capability used: OrdinaryCapability、TargetResolver 和现有确定性 postcondition verifier。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
 Reuse Assessment:
 - capability: Browser-Use 历史交互元素在新 DOM 快照中的重绑定。
 - existing implementation in repository: `dom_evidence.py` 已保存局部图，但编译器只产出 CSS/XPath，运行器未消费原生历史身份。
@@ -304,3 +471,357 @@ Reuse Assessment:
 - replay model calls: 普通路径 0；显式 LLM 每节点最多 1。
 - rejected candidates and evidence: Dify Sandbox 缺 Windows 默认支持；Coze local runner 无安全隔离；`node:vm` 不是安全边界；browser-use Agent 会混合模型决策和浏览器动作。
 - focused validation: React/Radix 干扰站可见 + headless；QuickJS Windows/macOS 双平台 spike；stable/v1/v2 保存加载；Function/Branch/LLM 正常和错误出口；真实页面不同输入。
+
+# Hybrid 复跑的 HTTP 外部状态与恢复（2026-09-20）
+
+Product Alignment:
+- natural-language task: 已发布任务复跑时，主文档要求登录则暂停同一运行等待处理，主文档限流或拒绝访问则给出外部阻断且不启动修复模型。
+- reusable chain boundary: 一个普通 `browser.workflow-step` 在真实主文档响应与当前浏览器观察之间形成通用外部状态结果。
+- runtime inputs: 已发布链路固定 URL、真实 Chromium 主文档 HTTP 状态和当前 browser summary。
+- dynamic task outputs: authentication `human_required`、rate-limit/access `blocked`、恢复观察和类型化 external failure。
+- generic platform capability used: browser-use Browser、cdp-use Network 事件、TaskChain capability outcome、checkpoint 与 verifyResume。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 不读站点文案地识别主文档认证、拒绝和限流，并把人工处理后的页面重新接回同一 run。
+- existing implementation in repository: BrowserSkill 路径已把 `authentication_required`/`verification_required` 映射为 `human_required`，把 `rate_limited`/`access_denied` 映射为外部阻断；TaskChain runtime 已拥有 checkpoint、resume condition 和同 run 恢复。
+- mature candidates and pinned versions: browser-use 0.13.8 的现有 Browser/CDP session；cdp-use 1.4.5 的 `Network.responseReceived` 注册面与 `Network.enable` 命令。
+- selected implementation: hybrid runner 订阅同一 Browser 的主文档响应，只保留当前 URL 的 401/403/429 数值；TypeScript adapter 将受控错误码映射到既有 capability outcome/externalFailure，并只对全链可安全导航恢复的场景使用当前 URL 作为恢复条件。
+- reused public surface: `CDPClient.register.Network.responseReceived`、`BrowserSession.get_or_create_cdp_session`、现有 `NodeCapabilityResult`、`TaskCheckpoint` 和 `verifyResume`。
+- B-A-T-owned adapter and remaining gap: 只承担 Python 安全错误码到产品通用失败合同的适配；验证码等没有协议级信号的页面仍不能靠文字猜测，本阶段不扩展 Profile/账号管理。
+- license/runtime/platform fit: 不新增依赖，继续使用已固定的 Python 3.12、browser-use 0.13.8、cdp-use 1.4.5 和 Windows x64 产品范围；macOS arm64 保持延期未测。
+- browser/runtime/state ownership conflicts: 不创建第二个 Browser、Agent loop 或 checkpoint store；HTTP 事实来自 hybrid runner 已拥有的唯一 Chromium。
+- replay model calls: 0。
+- rejected candidates and evidence: 不按登录页文字、CSS class、站点 URL 或业务弹窗做识别；不复制网络抓取器；不把 403/429 当确定性 selector 失败；不为恢复创建新 execution/run。
+- focused validation: 401 等待并在受控外部状态解除后恢复同一 run；403/429 为 external block 且无 repair；普通 200 页面不改变既有 hybrid 运行。
+
+# 无参数任务的准备输入语义（2026-09-20）
+
+Product Alignment:
+- natural-language task: 用户确认一个无需填写业务参数的浏览器任务后，系统自动完成样本验证、独立复验和发布。
+- reusable chain boundary: 一份输入合同为 `null` 的通用任务计划及其两次独立验证运行。
+- runtime inputs: 合同允许的 JSON `null` 值；它是已捕获输入，不是“尚未提供”的哨兵。
+- dynamic task outputs: 两次执行回执、不可变 release 和默认 preset。
+- generic platform capability used: ValueSchema、准备状态机、TaskExecution 和产品发布投影。
+- replay model calls: 0；首次准备阶段的模型调用保持原有审计。
+- site/task-specific code added: no。
+
+# 根对象业务结果的字段绑定（2026-09-20）
+
+Product Alignment:
+- natural-language task: 浏览器一次读取返回完整业务对象时，按已确认的 ResultSpec 字段将该对象发布为可复跑业务结果。
+- reusable chain boundary: 一份已验证的根对象输出与若干不重叠的声明字段之间的确定性绑定。
+- runtime inputs: verified output assembly、有限 ValueSchema 和计划拥有的 producerRef。
+- dynamic task outputs: 每个声明字段对应的 `ResultBinding.assignment`，来源仍指向同一个已验证节点的子路径。
+- generic platform capability used: workflow-use output assembly、ResultSpec/ResultBinding、ValueBinding path。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 将一个已验证根对象拆分绑定到多个声明结果字段。
+- existing implementation in repository: workflow-use 已拥有 output assembly、字段所有权检查与 ResultBinding 编译；TypeScript host 已逐 assignment 校验源/目标 schema。
+- mature candidates and pinned versions: 受管 workflow-use 0.2.11 fork；无需新增库。
+- selected implementation: 扩展现有 `compile_result_binding`，仅在根/祖先来源覆盖多个不重叠声明字段时追加相对子路径。
+- reused public surface: 已有 `ValueBinding.path`、`ResultBinding.assignments` 和 host `assertAssignmentSchemas`。
+- B-A-T-owned adapter and remaining gap: 无新增运行时；只补齐已有公共合同的确定性 lowering。
+- license/runtime/platform fit: 不新增依赖或平台要求，继续由受管 fork 哈希门保护。
+- browser/runtime/state ownership conflicts: 无；不创建浏览器、Agent loop 或状态库。
+- replay model calls: 0。
+- rejected candidates and evidence: 不把两个业务字段合并成一个虚构 producerRef，不按字段名猜来源，也不放宽无证据输出。
+- focused validation: Python 定点测试覆盖根对象拆分；TypeScript host 继续校验每个子路径 schema；随后以真实业务结果任务验收。
+
+# 修复探索来源身份（2026-09-20）
+
+Product Alignment:
+- natural-language task: 用户授权依据某次真实确定性失败重新准备任务，并保留失败证据与旧版本。
+- reusable chain boundary: 修复探索任务文本、Python 返回的自然来源和 TypeScript host 身份核验使用同一份失败证据。
+- runtime inputs: 已确认需求、计划、失败运行输入和持久化 `TaskExecutionFailureEvidence`。
+- dynamic task outputs: 绑定该失败证据的新候选链、两次验证与新不可变 release。
+- generic platform capability used: 既有 repair coordinator、browserUseTask、source artifact 和 host source identity gate。
+- replay model calls: 0；只有用户授权的修复探索允许模型调用。
+- site/task-specific code added: no。
+
+# 自然来源中的可选页面准备（2026-09-20）
+
+Product Alignment:
+- natural-language task: 预执行遇到会遮挡后续业务操作的对话层时，把已验证的关闭动作编入新版本；复跑页面没有该对话层时直接跳过。
+- reusable chain boundary: 同文档内一个有单次派发证据的准备动作和紧随其后的稳定目标消费者，物化为“检查消费者；必要时准备；再次检查”的通用分支。
+- runtime inputs: 原始自然 trace 的遮挡变化、对话语义、原生派发、文档身份及消费者稳定目标证据。
+- dynamic task outputs: `ready | missing | blocked | ambiguous` 目标就绪性和确定性分支结果。
+- generic platform capability used: 既有 workflow-use 稳定目标解析、`materializePreparationGraph`、stable/v2 Branch 和同一 Browser session。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 已准备页面变体的可选动作及后续目标就绪性检查。
+- existing implementation in repository: workflow-use 已拥有唯一目标解析、命中遮挡检查和文档身份；host 已有未接入的 `materializePreparationGraph`。
+- mature candidates and pinned versions: 受管 workflow-use 0.2.11、browser-use 0.13.8、现有 stable/v2 runtime；无需新增库。
+- selected implementation: 从已校验原始事实保守识别“对话内单次 click 改变 overlay 状态，且同文档后续目标变为唯一可操作”的相邻动作；复用现有准备图并给 runner 增加只读目标就绪性命令。
+- reused public surface: `TargetResolver.prepare_action_target`、目标准备的 document identity、TaskChain capability/branch ports。
+- B-A-T-owned adapter and remaining gap: 只负责证据到版本化准备图的适配和 TS/Python 协议；无法证明的页面变化仍显式中断并要求重新准备。
+- license/runtime/platform fit: 不新增依赖；Windows x64 当前范围，macOS arm64 继续延期未测。
+- browser/runtime/state ownership conflicts: 检查、准备和消费者共用一个 runner/Browser；不新增 Agent loop、运行时或 checkpoint store。
+- replay model calls: 0。
+- rejected candidates and evidence: 不按网站、文案、业务字段、CSS class 或 URL 猜弹窗；不让模型在复跑时临时找关闭按钮；不把准备动作无条件执行。
+- focused validation: 纯合同测试覆盖证据不足拒绝与图改写；真实 headless 页面同时覆盖 overlay 存在和不存在，两条路径都零模型。
+
+# 修复候选的零派发验证重试（2026-09-20）
+
+Product Alignment:
+- natural-language task: 用户已授权并生成新候选后，若验证在任何节点或 Browser 命令派发前因宿主预检失败，修好宿主后继续验证同一候选。
+- reusable chain boundary: 同一失败证据、同一已保存不可变候选和一次新的显式重试授权。
+- runtime inputs: 失败修复任务、候选链引用、零 transitions/commands/invocations 的验证执行事实。
+- dynamic task outputs: 新的验证执行；通过后继续双输入验证和发布。
+- generic platform capability used: 已有 repair job、TaskExecution consumption、不可变 chain reference 和验证队列。
+- replay model calls: 0；只有没有可复用候选时才重新探索。
+- site/task-specific code added: no。
+## 2026-09-20 自然语言站点入口与只读链路画布
+
+```text
+Product Alignment:
+- natural-language task: 用户只说目标站点名称和业务目标，准备任务自行确定预执行入口；用户可查看实际发布的节点链路
+- reusable chain boundary: 计划保存需求授权范围内的预执行入口，链路画布只投影已保存的计划、链版本、节点和运行证据
+- runtime inputs: 只有复跑时会变化的业务值；入口 URL 不进入用户运行表单
+- dynamic task outputs: 经预执行验证的 TaskChain、版本状态、节点图和运行审计
+- generic platform capability used: TaskPlan、受控 origin grant、React Flow、既有 TaskChainConnection
+- replay model calls: 普通复跑不增加模型调用；入口只在规划/预执行阶段形成
+- site/task-specific code added: no
+```
+
+真实新建任务暴露了 P6 样本未覆盖的合同断层：已确认需求明确写有站点名称，但 `collectOrigins` 只识别完整 URL，准备流程把空 `allowedOrigins` 直接交给 hybrid runner，两次均在任何浏览器动作和探索模型调用前失败。修复把通用 `entryUrls` 保存为计划事实，由规划模型根据已确认来源生成，宿主再派生受控 origin；不向用户请求 `startUrl`，也不为具体网站加映射。旧计划继续可读，新规划候选必须提供至少一个 http/https 入口。
+
+原 React Flow `LiveChain` 组件和节点投影从未删除，但产品导航曾移除唯一入口。当前恢复为“链路画布”只读标签页，保留平移、缩放、版本选择、节点详情与运行证据；JSON 输入框和内部样本/换输入验证按钮不回到正常产品路径。
+
+# 执行资源清理与链路工作台修订（2026-09-21）
+
+第三次真实正式复跑证明：当前上游 runner close 的非零退出码会覆盖已经 completed 的 TaskRun，并被通用 catch 误分类为可模型修复的确定性链路失败。
+当前清理实现已经拥有 ChildProcess、browser-use Browser owner、Windows 精确 PID 树终止和临时目录删除；缺口是结构化清理报告、幂等 close、
+持久化恢复和产品投影，不是缺少另一个进程框架或浏览器驱动。新增第三方进程管理库不能解决 owner、Profile、历史结果和 cleanup_required 合同，因此不采用。
+
+最初调研先后把问题误判为“只缺自动布局”和“需要容器/子画布编辑器”。进一步从 TaskChain 事实源和节点编辑闭环核验后，正确边界是：链路只有一套真实动作节点与边；用户阅读层新增版本化**链路阶段**，总览只显示阶段，单击只附着一个临时动作摘要，进入阶段才在同一画布聚焦真实动作子图。子路径不常驻，也不应被塞进撑大主图的阶段容器。
+
+仓库已经使用 `@xyflow/react@12.11.6`。其公开节点、边、Handle、选择、重连、视口和 MiniMap 足以覆盖阶段总览与聚焦子图；两个层级分别布局后，不需要 React Flow `parentId` 的复合 sub-flow。`@dagrejs/dagre@3.1.1` 为 MIT，含 TypeScript 声明，直接依赖 `@dagrejs/graphlib@4.0.5`；npm 元数据的 unpacked size 分别约 1.41 MB 与 0.47 MB，约 1.9 MB 不是浏览器最终 bundle，也不是启动时解包 8 MB。Dagre 只在首次投影、结构改变或用户点击“整理布局”时计算坐标，不在每次渲染运行。
+
+FlowGram.AI 与 Coze Studio 仍是有价值的产品参考，但不作为生产编辑器依赖。官方 free-layout loop 示例用 `isContainer` 建立容器；`toggleLoopExpanded` 在折叠/展开时改变容器尺寸并隐藏/显示子节点和连线。这正是当前产品拒绝的“大容器内常驻子画布”结构。FlowGram 的 editor/document/form/history/variable 等广泛状态所有权也会与 B-A-T 已有服务端 revision、checksum、digest 和持久化事实源重叠。ELK 对阶段总览与单阶段聚焦这两张派生布局没有 Dagre 之外的已证实价值，因此本轮不引入。
+
+节点详情不能由 UI 递归解释任意 config。需要新增通用 capability descriptor registry，为每种平台能力声明标题/摘要生成、类型化字段、控件、目标要求、端口、兼容替换和验证支持。它不认识网站、业务字段、页面文案或 CSS class。缺少 descriptor 的 capability 只读，不能用 JSON 编辑器兜底。修改原子动作时必须连同所属阶段、前置条件、后置条件和下一动作展示；任何执行语义改变使旧验证失效，直到聚焦验证重新证明阶段具名出口可达。
+
+CodeGraph 对当前接线的核验还显示：任务行选择只更新选中项；运行命令在侧栏/独立 Dialog，accepted 后没有把新 execution 交给链路画布；现有节点投影会跨多个 TaskRun 按节点取最后事件。故“增加运行按钮和动画”不是完整修复，必须先增加幂等 accepted execution 回执、按 execution/sequence 的事件续接，再由画布绑定单次运行。左侧列表只保留选择和即时反馈。
+
+参考：
+
+- https://github.com/coze-dev/coze-studio/blob/main/README.md
+- https://github.com/bytedance/flowgram.ai
+- https://github.com/bytedance/flowgram.ai/blob/main/apps/demo-free-layout/src/nodes/loop/index.ts
+- https://github.com/bytedance/flowgram.ai/blob/main/apps/demo-free-layout/src/utils/toggle-loop-expanded.ts
+- https://reactflow.dev/learn/layouting/layouting
+- https://reactflow.dev/learn/layouting/sub-flows
+- https://reactflow.dev/learn/advanced-use/performance
+
+Reuse Assessment:
+- capability: 正式 execution 所属资源的可靠清理与恢复；带阶段总览、同画布聚焦编辑和单次 execution 实时运行态的链路工作台。
+- existing implementation in repository: ChildProcess/browser-use owner/Windows PID 树终止/临时目录清理；`@xyflow/react@12.11.6`、revision draft layout/checksum/digest、TaskRun 持久化事件。
+- mature candidates and pinned versions: 保留现有 runner/browser 公共面；`@xyflow/react@12.11.6`、`@dagrejs/dagre@3.1.1`；FlowGram 1.0.14 与 ELK 仅为对照候选。
+- selected implementation: 现有 runner adapter 增加结构化 cleanup report；UI 保留 React Flow，以 Dagre 分别布局阶段总览和聚焦动作子图。
+- reused public surface: ChildProcess close/exit、browser-use Browser close/kill；React Flow nodes/edges/handles/selection/reconnect/viewport/minimap；Dagre graph/layout/rankdir。
+- B-A-T-owned adapter and remaining gap: cleanup 持久化与产品状态、accepted execution/事件续接、ChainPresentation/CapabilityDescriptor 服务端事实、TaskChain/阶段/事件到编辑器模型映射、发布布局来源和上下文节点编辑。
+- license/runtime/platform fit: 不为清理新增依赖；React Flow/Dagre 均为 MIT，Dagre 含类型声明；Windows/Vite headless 隔离原型已通过，生产接线仍待 I5，macOS arm64 仍延期未测。
+- browser/runtime/state ownership conflicts: 不新增 Browser/CDP owner；编辑器不拥有 runtime、版本或执行状态。
+- replay model calls: 0，显式 llm 节点除外。
+- rejected candidates and evidence: 忽略 close/按退出码改判、第三方进程框架、固定网格、两套可执行图、永久大容器子画布、FlowGram 的重叠状态所有权、无证据引入 ELK、自研画布/布局和原始 JSON 编辑均不能满足当前不变量。
+- focused validation: I0 React Flow+Dagre 隔离原型；I2 真实 child cleanup；I4 presentation/descriptor 服务端合同；I5 生产运行台；I6 修订发布；I7 正式 Workbench/API 画布内复跑、cleanup_required 恢复和产品闭环。
+# 2026-09-24 新建凡人任务样本观察恢复
+
+Product Alignment:
+- natural-language task: 从新建需求准备并复跑“在 Bilibili 播放当前最新可播放的《凡人修仙传》正片”。
+- reusable chain boundary: 已编译草稿的普通执行器只重取当前页面观察；失败的样本执行和链版本保持不可变。
+- runtime inputs: 当前浏览器会话、标签页、URL 与 DOM；无业务输入。
+- dynamic task outputs: 同一次浏览器动作之后一致的页面身份与观察摘要，供运行检查点审计。
+- generic platform capability used: 已有 Browser-Use 页面状态读取、workflow-use 页面身份检查、TaskRun 事件和清理协议。
+- replay model calls: 0；重取观察不重发浏览器动作或调用模型。
+- site/task-specific code added: no。
+
+新建任务 `2a777a77-353e-4894-9b96-1e505827d366` 的一次 headless Browser-Use 代表试做成功并编成唯一草稿；首个样本运行在 `s-a-0008` 点击后以 `target_document_identity_unavailable` 失败，前面节点已完成，14 次浏览器命令、0 次模型调用，清理已确认。当前错误把页面身份探测的底层异常折叠为同一代码，尚不能证明唯一根因。点击后的 URL 变化与观察时 DOM 尚不可用存在竞态风险；修复只在普通观察读取暂不可用时短时重取整份快照，保持标签页和 URL 一致，不重发动作。现有 Browser-Use 和 workflow-use 已提供全部读取能力，不引入新依赖。
+
+Product Alignment:
+- natural-language task: 同一新建任务必须每次重新选择 Bilibili 当前可播放的最新正片，并排除非正片。
+- reusable chain boundary: 只修订该任务的唯一草稿；从当前剧集列表读取候选，经纯函数选出序号，再让同一链路继续点击和播放。
+- runtime inputs: 无；剧集列表是本次浏览器页面的动态观察。
+- dynamic task outputs: 当前候选序号及播放状态，历史失败样本和旧任务发布版本不改写。
+- generic platform capability used: 已有 read-fields、function、结构目标序号绑定、草稿修订 API 与画布展示。
+- replay model calls: 0；普通样本和正式运行只用固定执行器。
+- site/task-specific code added: no；剧集筛选表达式和页面选择器仅保存在此任务草稿数据中。
+
+原始新草稿在进入剧集页后直接点预执行时记录的 `a[6]`，没有读取剧集列表或绑定最新候选，不能满足已确认需求。开发者随后通过 headless 页面脚本直接调用草稿 API，参考此项目中该任务旧 Release V8 的“读取列表→纯函数选序号→结构目标点击”任务数据，为新草稿补入两个节点并替换点击配置，同时在非正片过滤中加入本次需求明确的 PV；其余计划和动作保持不变。这是开发者手工构造的修订数据，没有使用产品给用户的修订入口或自然语言调整建议确认。后续样本、独立复验和页面发布的技术事实不能替代新任务的完整产品验收；历史 V8 的运行也不能替代新任务验收。
+
+Product Alignment:
+- natural-language task: 修订后的浏览器链路要在已确认计划额度内完成样本与复验，发布后工作台要展示当前版本的真实状态。
+- reusable chain boundary: 预算修订生成新的草稿版本和候选快照；历史执行和准备失败保留审计，不回写发布链路。
+- runtime inputs: 当前计划步骤授权上限、草稿命令额度、准备活动与发布的时间顺序。
+- dynamic task outputs: 当前草稿的预算、验证记录与当前工作台活动状态。
+- generic platform capability used: TaskDraft 修订、TaskPlan 额度校验、TaskExecution/Release 投影。
+- replay model calls: 0；这些改动不增加普通复跑模型调用。
+- site/task-specific code added: no；站点和剧集规则只在任务草稿与发布数据中。
+
+新任务的开发者修订链 v2 增加了当前页面读取和函数选择，仍保留旧的 15 次命令额度，第二次样本在 15/15 后于目标点击前被预算阻断。计划步骤授权上限为 3850；开发者再次通过页面脚本直接调用草稿修订 API 将额度显式设为 24，产生草稿 revision 2 / 链 v3，清空旧验证。新的样本及独立复验各使用 17 次浏览器命令、0 次模型调用，均完成并确认清理，随后从正式画布点击发布 Release V1。审计曾发现一段只沿成功直线推算命令数的自动算法，无法覆盖分支、循环和异常观察，且本任务没有实际用到；已删除，只保留受计划上限约束的显式修订和真实试跑验证。发布后的旧准备失败一度仍被工作台投影为当前活动；按当前草稿/发布与准备活动的时间顺序修正投影，旧失败记录不删除。发布后普通执行已完成两次，但依赖前述开发者直接修订，故完整用户产品路径仍未通过验收。
+
+Product Alignment:
+- natural-language task: 浏览器任务中的一次点击或 Enter 打开新标签页后，预执行仍须保存可编译的真实页面证据。
+- reusable chain boundary: 仅给本次 Browser-Use owner 新附加的页面会话解除调试暂停；不改动作、链路或来源合同。
+- runtime inputs: 受管 Browser-Use 会话及 Target.attachedToTarget 的 page/session 身份。
+- dynamic task outputs: 原生新页面继续导航后由现有观察、编译和运行路径生成的事实。
+- generic platform capability used: browser-use 0.13.8 SessionManager attach 流程与 cdp-use 1.4.5 Runtime.runIfWaitingForDebugger。
+- replay model calls: 0；附加页恢复不调用模型或重复浏览器业务动作。
+- site/task-specific code added: no。
+
+本地安装包源码核验：`SessionManager._handle_target_attached` 仅在事件 `waitingForDebugger=true` 时调用 `Runtime.runIfWaitingForDebugger`，而 `BrowserSession.get_or_create_cdp_session(focus=True)` 已对聚焦页面无条件调用同一命令并将失败视为非致命。`cdp-use` 事件注册每个 method 只有一个 handler，因此 B-A-T 不能另注册 `Target.attachedToTarget` 以免覆盖 Browser-Use 的会话池。已验证的实验适配限于本次 Browser 实例：对该事件标识的 page session **先**有界发送相同恢复命令，再执行原 attach 回调；已关闭标签页的会话缺失按短生命周期处理。此前仅由采样推测的标签发现扩窗和 DOM 重读补丁已经撤回；它们没有证明针对本故障。
+
+Product Alignment:
+- natural-language task: 每次运行都从当页可能变化的候选集合中按已确认规则选择目标。
+- reusable chain boundary: 首次 Browser-Use 试做必须留下完整候选读取与目标绑定；缺证的集合点击不进入可发布候选。
+- runtime inputs: 当前页面的候选集合，不使用样本序号、站点名称或剧集编号。
+- dynamic task outputs: 已证明的读取、纯函数选择结果及本次目标序号。
+- generic platform capability used: Browser-Use find_elements、既有 verified_natural_read、selection_function 与编译 gap。
+- replay model calls: 0；选择函数仅在准备时生成，普通复跑不调用模型。
+- site/task-specific code added: no。
+
+原始凡人来源 a-0008 的同级链接共享结构 class，但没有该页的完整候选读取，编译器误把历史 a[6] 当成可复跑目标。通用修正对这种未绑定集合点击在原生派发前向探索 Agent 返回读取要求，并在离线编译时拒绝固定 XPath；不允许历史成功运行或开发脚本修订回填这个来源。以该来源的原始持久事实离线检查，现返回 `collection_selection_read_required`，目标为 null。此门只阻止假成功；后续仍须用新的正式预执行、两次验证、手动发布和再次运行证明首次编译真正完成。
+
+2026-09-25 接入核验：沿用 `browser-use@0.13.8` 和 `cdp-use@1.4.5`，复用实验项目 `PopupResumeAdapter` 的单实例方法包装，不替换库、不接管 B-U 会话池。B-A-T 的 `Runner.start`/`start_profile` 在 `Browser.start()` 后安装，`Runner._close` 的 `finally` 还原；本地 headless Enter 开页样本新增 1 页，恢复 2/2、清理确认，见 `work/recovery-20260925/popup-smoke-result.json`。这是通用新标签行为证据，正式《凡人》准备与链路编译仍需单独验收。
+
+Product Alignment:
+- natural-language task: 每次从当前页面的完整候选集合按用户已确认规则点击目标。
+- reusable chain boundary: 集合点击只消费本次同页 `find_elements` 的已验证读取；准备期纯函数将读取转换为运行时 ordinal，候选漂移要求重新读取。
+- runtime inputs: 当前 DOM 集合及准确页面身份；不得沿用探索时的序号。
+- dynamic task outputs: 已验证读取引用、纯函数所选原始 ordinal、同次目标点击。
+- generic platform capability used: 现有 `find_elements`、`verified_natural_read`、`browser.read-fields`、QuickJS function 与结构目标绑定。
+- replay model calls: 0；模型只在准备期生成并校验选择函数。
+- site/task-specific code added: no。
+
+合同审查发现：`verified_collection_query` 只核对页签、URL、数量与被点击 backend，未核对当前集合身份/内容仍等于原读取；`selection_read` 未核对读取 targetId 与点击前 tab，`bind_selection_function` 在匹配失败时放行原样点击。修正只关联内部集合读取来源并在原 Browser owner 内复核，保留唯一语义标签目标的固定路径；不引入浏览器控制、图调度或模型后备。
+
+Product Alignment:
+- natural-language task: 从 Bilibili 现场查到作品入口后继续进入剧集页，再按本次页面列表选择最新正片。
+- reusable chain boundary: 导航地址必须绑定到此前已验证读取的确切输出字段；多次读取同一值时，以最近一次仍能唯一定位该值的读取为来源，单次读取内重复值仍拒绝。
+- runtime inputs: 当前页面重新读取的链接集合；无用户业务参数。
+- dynamic task outputs: 已验证的链接字段和后续当前剧集选择，不固化一次性页面 URL。
+- generic platform capability used: 既有 `verified_natural_read`、node output binding、编译器来源校验和 `browser.read-fields`。
+- replay model calls: 0；普通复跑只消费确定性读取输出。
+- site/task-specific code added: no。
+
+2026-09-25 正式新任务首编译事实：代表试做已通过新页进入 Bilibili 搜索页，完成 10 次浏览器命令并观察到播放；`a-0006` 的精确作品链接读取只含一条，`a-0007 navigate.url` 与其中 `attribute_href` 相等。先前更宽的 `a-0005` 读取也含同一 URL 四次，旧绑定器把所有历史匹配并在两次读取之间判为歧义，留下唯一 `natural_binding_evidence_missing:url` gap。收集器已改为优先最近的唯一读取，同次读取多路径歧义仍拒绝。
+
+Product Alignment:
+- natural-language task: 准备任务已有有效方案、代表试做却缺少可编译的页面来源时，从该方案重新采集一次证据。
+- reusable chain boundary: 仅在完整旧来源的编译缺口全部要求 `collect_evidence` 时显示显式续做；旧来源、运行和失败审计不可改写。
+- runtime inputs: 当前已确认需求、保存的方案与代表输入，以及本次新浏览器页面事实。
+- dynamic task outputs: 新的独立试做来源和草稿候选；旧编译缺口保留可追溯。
+- generic platform capability used: 既有准备任务 `resume_preparation_from_plan`、source artifact 校验和 Browser-Use 单会话 owner。
+- replay model calls: 0；重新采集只发生在准备任务，正式复跑仍无隐式模型调用。
+- site/task-specific code added: no。
+
+旧来源的 `a-0007` 预观察里没有 URL 绑定事实，但完整 trace 已保存更早的已验证读取。续做门据来源 artifact 的 `collect_evidence` 缺口开放，明确从保存方案开启新的代表试做；旧来源和失败审计始终保留。第二次真实试做解决了入口 URL 绑定问题，后续却因宽泛按钮查询导致入口点击的自动 Function 样本无有效输出，且最新剧集 Function 的变化样本超出读取规格的 ordinal 上限，留下 `function_output_invalid`。不应直接第三次试做或修改模型答案。
+
+Product Alignment:
+- natural-language task: 已保存试做中，若导航参数与此前已验证读取的唯一字段完全相等，可以从不可变 trace 恢复来源绑定。
+- reusable chain boundary: 离线编译器只派生来源决策，不修改原浏览器事实；TS 入库侧独立复核原始读取、动作顺序、值和唯一字段路径。
+- runtime inputs: 运行时的 `browser.read-fields` 节点输出，而非本次试做 URL 常量。
+- dynamic task outputs: 后续导航地址随实时读取更新；原 trace 和旧失败记录不改。
+- generic platform capability used: 现有 `verified_natural_read`、node output binding 和离线编译恢复。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Product Alignment:
+- natural-language task: 从页面候选中读取首项后继续执行；候选为空时明确失败，不报告任务完成。
+- reusable chain boundary: 已验证读取的输出 schema 若保证所用索引存在，编译器可直接使用该索引；读取不满足 schema 时由运行时进入失败路径。未受 schema 保证的索引仍须有显式控制流。
+- runtime inputs: 当前浏览器读取结果，不使用探索样本列表。
+- dynamic task outputs: 当前读取的首项字段及其后续动作；空列表产生可审计的运行失败。
+- generic platform capability used: `browser.read-fields` 输出 schema 校验、已有失败路由和节点输出绑定。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Product Alignment:
+- natural-language task: 首次试做必须能把中间页面动作和最终动态目标分别编译为可复跑链路；页面候选变化时仍按相应步骤的规则选择。
+- reusable chain boundary: 选择注解只使用当步真实读取、动作上下文与已确认需求；模型变化样例必须落在该读取的输入和输出合同内，异常直接留下编译缺口。
+- runtime inputs: 本次页面重新读取的候选与其原始 ordinal，不使用上次试做的候选位置。
+- dynamic task outputs: 当步纯函数选择的 ordinal、动作结果及后续播放状态。
+- generic platform capability used: 既有 Browser-Use find_elements、verified_natural_read、准备期 selection annotation、QuickJS 合同校验和 CollectionReadRequired 补读回路。
+- replay model calls: 0；仅首次准备期对缺失的选择规则生成程序。
+- site/task-specific code added: no。
+
+2026-09-25 第二次新来源的首编译失败分两处：中间页的宽泛 `button` 查询包含 41 个不同用途的控件，模型把最终“最新正片”规则错套到只显示“立即观看”的中间动作，真实观察样例即失败；最终剧集选择程序的变化样例输出 ordinal 91/52/77，超出浏览器读取 `maxItems=50`。修正必须在新的 B-U 之前作用于常规准备路径：让当步动作语义和候选合同进入注解边界，保留严格的实际样例与变化样例校验；不能通过删除失败样例、放宽运行合同或复用旧来源宣称成功。
+
+2026-09-25 新任务 `b1e38157-4e23-4511-9dbe-7eaaf6ca07c2` 的第一次正式准备：B-U 已完成并观察到播放，14 次浏览器命令，入口导航绑定与宽泛中间按钮问题未再出现；自动首编译仍在 a-0013 留下 `selection_annotation_unavailable` 和 `selection_function_evidence_required`，没有草稿。结构化选择输出改成按 `maxItems` 动态 Pydantic 模型后，调用仍以原 `SelectionProgram.model_validate` 解析完成对象；Pydantic 对不同基类的模型实例报 `model_type`，定点复现了该跨模型交接缺口。动态模型现继承原合同，并新增“真实结构化模型实例”测试；下一次只能用新 B-U 来源验证正常首编译，不能把这份来源的重编译算验收。
+
+2026-09-25 验收复核：模型桥接 `apps/api/python/browser_use_runner/ai_connect.py` 在带 `output_format` 时把完成值先解析成对应 Pydantic 实例，证明上述跨基类交接是真实运行路径。修正后新建的另一任务 `3286024e-09c8-45b0-a342-488597ebfe99` 有唯一准备作业、唯一新来源，B-U 成功后在同次作业自动编译为 12 段且零缺口；样本与独立复验、手动发布 V1、两次普通零模型复跑、每次 `media_playback=playing` 节点成功及重启恢复均有正式 UI/API/SQLite 证据。未以旧来源重编译或开发者草稿注入作为该结论。G12 异常分支与 macOS 真机仍各自保留未验边界。
+
+2026-09-25 有界面复跑失败的诊断准备：正式 UI execution `7e6680f2-18a1-4aac-838f-962d9ed091f0` 在 `s-a-0004` 的 30 秒后置核验失败；Chrome 历史证明动作访问了与发布链 scope 完全相同的搜索 URL。该节点同时检查 URL 变化和搜索页 `a` 集合读取；现有 `StepVerifier` 已返回失败检查名，`postconditions.verify_once` 却折叠成统一 `ordinary_postcondition_failed`，因此持久记录无法区分页焦点、候选超额、投影或稳定性。先补不含页面内容的有限诊断，再依据同一次正式运行的事实修复；不凭页面 URL 猜测或复用旧 headless 成功记录。
+
+Product Alignment:
+- natural-language task: 从浏览器页面进入下一页后，若运行未满足后置条件，指出具体失败的通用检查条件以便修复。
+- reusable chain boundary: 保留不可变发布链与单次运行事件；失败只携带有限检查种类和固定诊断码，不携带页面正文、URL 或账号数据。
+- runtime inputs: 本次动作前后由既有 StepVerifier 检查的页面事实。
+- dynamic task outputs: 本次失败的安全检查类别；业务输出仍按原链路合同。
+- generic platform capability used: workflow-use StepVerifier、Tenacity settle、既有错误码安全边界。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 复跑后置条件失败的有限诊断。
+- existing implementation in repository: `workflow_use.hybrid.postconditions.verify_once` 已调用上游 `StepVerifier.verify_step`，后者返回 `checks_failed` 和详情；`safe_runtime_error_code` 已限制可透传的受管错误码。
+- mature candidates and pinned versions: 当前受管 workflow-use 0.2.11 的 StepVerifier、Tenacity 9.1.2；无需新库。
+- selected implementation: 复用 StepVerifier 的结构化失败检查，仅在受管适配层映射成固定安全码。
+- reused public surface: `VerificationOutcome.checks_failed`、已有 `VerificationCheck.parameters` 和 settle 策略。
+- B-A-T-owned adapter and remaining gap: 只补安全诊断映射，不重写校验器或浏览器动作。
+- license/runtime/platform fit: 沿用现有受管 fork、Python 3.12、Windows x64 路径；无新依赖。
+- browser/runtime/state ownership conflicts: 不改变一次动作、单浏览器 owner、checkpoint 或清理。
+- replay model calls: 0。
+- rejected candidates and evidence: 不把页面原文或上游任意异常直接写入运行理由；现有统一错误码已使本次失败缺乏可判定条件。
+- focused validation: 受管适配层定点测试和一次正式 UI 有界面复跑；结果待取得。
+
+2026-09-25 定点诊断结果：正式有界面运行 `9c49f1f7-584b-4936-85ee-19b15b508ee7` 在 `s-a-0004` 报 `ordinary_postcondition_failed_read_fields_read_collection_limit`，清理已确认。来源 `618229f3-0d6c-456e-8068-5f95fccee37b` 的完整全页 `a` 查询当时恰好读到 200 条；其后失败的点击未派发，窄范围查询读到一条目标链接，后续导航只消费窄查询的链接。发布链却保留无人消费的全页读取，并使前一步的 ConsumerReadiness 指向它；页面链接数后来超过读取上限，触发严格拒绝。不能截断集合、调大上限、手改旧 Release，或把旧来源的重新编译算作全新任务验收。
+
+Product Alignment:
+- natural-language task: 浏览器先宽泛观察页面，再用更准确的完整候选读取决定后续导航或选择，并在普通复跑中可靠执行。
+- reusable chain boundary: 只把有实际动作、绑定或输出职责的已验证读取纳入 TaskChain；被排除的纯探索读取仍须由来源和覆盖账本审计。动作后的就绪条件指向保留且真正被消费的读取。
+- runtime inputs: 当前页面的真实候选集合、源动作顺序、读取查询与后续值绑定；不复用探索时的 200 条样本。
+- dynamic task outputs: 正式运行时重新读取的目标链接或候选序号，以及原来源动作的完整覆盖分类。
+- generic platform capability used: 现有 natural compiler、verified natural read、ConsumerReadiness、source coverage 和输出绑定。
+- replay model calls: 0；普通读取、导航和选择不隐式调用模型。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 已验证纯读取的依赖裁剪与动作就绪条件重绑。
+- existing implementation in repository: 受管 workflow-use 0.2.11 的 natural compiler 已有逐动作读取编译、绑定、ConsumerReadiness、coverage 和输出合同；缺少最终依赖裁剪。
+- mature candidates and pinned versions: 继续复用受管 workflow-use 0.2.11 的编译与证据模块；该局部编译规则无需另引图优化库。
+- selected implementation: 在现有编译最终化阶段依据真实绑定和输出消费判断读取是否存活；对经过原始查询与读取证据验证的死读取记录排除覆盖，再用保留读取重建就绪条件。
+- reused public surface: 现有 compiled segments、verified natural read、source coverage 和 ConsumerReadiness 合同。
+- B-A-T-owned adapter and remaining gap: 只补 B-A-T 的来源到可复跑 TaskChain 的编译决策与审计，保留原 Browser-Use 浏览器控制。
+- license/runtime/platform fit: 不引入依赖，沿用当前受管 fork、Python 3.12、Windows x64。
+- browser/runtime/state ownership conflicts: 不创建第二个浏览器 owner，不改变运行时图调度、检查点或清理职责。
+- replay model calls: 0。
+- rejected candidates and evidence: 提高 `maxItems` 或截断会掩盖完整候选合同；直接修改发布版本或复用旧来源无法验证首次编译；全新编译器会重复已有成熟能力。
+- focused validation: 编译/coverage/输出/ConsumerReadiness 定点测试，受管 fork 校验；之后正式工作台全新 B-U 来源的首次编译、样本、独立复验和有界面普通运行。
+
+Product Alignment:
+- natural-language task: 用户在每次正式运行前选择是否显示浏览器窗口，适用于视频播放、网页读取和表单等任务。
+- reusable chain boundary: 展示模式属于本次 execution 的启动设置，不属于不可变 TaskChain、发布版本、节点或业务输入；恢复同次 execution 时沿用已保存设置。
+- runtime inputs: 已发布链路的业务输入、每次运行明确选择的 headless 布尔值。
+- dynamic task outputs: 本次运行事件、业务输出和可审计的浏览器启动设置。
+- generic platform capability used: 既有运行弹窗、`run_task` Zod 边界、TaskExecution 持久化、单一 Browser owner 和 BrowserProfile.headless。
+- replay model calls: 0；展示模式不改变模型调用边界。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 单次正式运行选择有界面或无界面浏览器。
+- existing implementation in repository: 运行设置弹窗已有节奏控件，后端已有 Python hybrid runner 的 `headless` 参数及 BrowserProfile 启动能力；当前仅由全局环境变量决定。
+- mature candidates and pinned versions: 现有 Radix Themes、Zod、browser-use/BrowserProfile 与已接入的 Python hybrid runner；无需新增库。
+- selected implementation: 在既有 UI/API/TaskExecution 合同中保存本次布尔设置，并将其穿过现有单会话 owner 传给 runner。
+- reused public surface: Radix 表单控件、Zod 解析、现有 `startHybrid` 和 `BrowserProfile(headless=...)`。
+- B-A-T-owned adapter and remaining gap: 为正式运行补齐每次 execution 的展示设置交接；显式的 `false` 必须覆盖服务端旧环境变量。
+- license/runtime/platform fit: 沿用仓库已有依赖与 Windows 运行路径，无新依赖。
+- browser/runtime/state ownership conflicts: 单次运行仍只启动一个产品浏览器控制会话；设置写入当前 execution 后不随环境变化漂移。
+- replay model calls: 0。
+- rejected candidates and evidence: 不用全局环境变量代替用户本次选择；它无法表达同一发布链路不同 execution 的模式，也无法作为恢复事实。
+- focused validation: 合同解析与持久化、runner 启动参数定点测试，以及发布链路的实际有界面/无界面运行。

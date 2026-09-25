@@ -1,9 +1,10 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
-import { CONTRACT_VERSION, chainNodeSchema, parseTaskValue, requiredStableNodeOutcomes, stableChainNodeSchema,
+import { capabilityDescriptorSchema, chainPresentationSchema, taskDraftSchema, CONTRACT_VERSION,
+  chainNodeSchema, parseTaskValue, requiredStableNodeOutcomes, stableChainNodeSchema,
   resultSpecSchema, taskChainSchema, taskDataContractSchema, taskPlanExecutionIssues, taskPlanSchema, taskPlanStepSchema, taskRequirementSchema,
-  valueBindingSchema, type ChainNode, type StableChainNode } from "@browser-capture/contracts"
+  taskInputRequiresVariation, valueBindingSchema, type ChainNode, type StableChainNode } from "@browser-capture/contracts"
 import { budget, condition, dataContract, digest, extractionFixture, ids, inputBinding, nodeBase, nodeBinding,
   nullContract, playbackFixture, reference } from "./task-chain-fixtures.js"
 
@@ -103,6 +104,48 @@ test("图身份、出口、binding 和 verified 证据拒绝伪造或缺失", ()
   const verification = { ...sample, phase: "verification", runId: ids.request, inputDigest: "b".repeat(64) }
   assert.equal(taskChainSchema.safeParse({ ...chain, validation: { status: "verified", evidence: [sample, verification] } }).success, true)
   assert.equal(taskChainSchema.safeParse({ ...chain, validation: { status: "verified", evidence: [sample, { ...verification, inputDigest: digest }] } }).success, false)
+  const singleton = { ...chain, inputContract: nullContract, validation: { status: "verified" as const,
+    evidence: [sample, { ...verification, inputDigest: digest }] } }
+  assert.equal(taskChainSchema.safeParse(singleton).success, true)
+  assert.equal(taskChainSchema.safeParse({ ...singleton, validation: { status: "verified",
+    evidence: [sample, { ...verification, runId: sample.runId, inputDigest: digest }] } }).success, false)
+})
+
+test("presentation/descriptor 与唯一活动 TaskDraft 合同严格校验", () => {
+  const presentation = { contractVersion: CONTRACT_VERSION, kind: "chain_presentation", chain: reference(ids.chain),
+    descriptorRegistryVersion: "bat-capability-descriptors/v1",
+    stages: [{ id: "stage", title: "阶段", summary: "通用阶段", nodeIds: ["open"], entryNodeId: "open",
+      exits: [{ id: "done", label: "完成", sourceNodeId: "open", sourcePort: "success" }] }],
+    overviewLayout: [{ stageId: "stage", x: 0, y: 0 }],
+    focusLayouts: [{ stageId: "stage", nodes: [{ nodeId: "open", x: 0, y: 0 }] }],
+    presentationDigest: digest }
+  assert.equal(chainPresentationSchema.safeParse(presentation).success, true)
+  assert.equal(chainPresentationSchema.safeParse({ ...presentation,
+    stages: [...presentation.stages, presentation.stages[0]] }).success, false)
+  const descriptor = { capability: { name: "browser.perform", version: 1 }, descriptorVersion: 1,
+    family: "browser", displayName: "浏览器动作", summary: "执行浏览器动作", editableFields: [],
+    targetMode: "live_browser_picker", ports: [], replacements: [], validationScope: "node_and_downstream" }
+  assert.equal(capabilityDescriptorSchema.safeParse(descriptor).success, true)
+
+  assert.equal(chainPresentationSchema.safeParse({ ...presentation, source: "published" }).success, false)
+  const draft = taskDraftSchema.parse({ contractVersion: CONTRACT_VERSION, kind: "task_draft",
+    id: ids.run, taskId: extractionFixture.chain.taskId, revision: 0,
+    requirement: extractionFixture.plan.requirement, baseRelease: null,
+    content: { plan: extractionFixture.plan, steps: [{ stepId: extractionFixture.chain.stepId,
+      chain: extractionFixture.chain, presentation }] }, checksum: digest,
+    validation: { records: [] }, createdAt: "2026-09-21T00:00:00.000Z",
+    updatedAt: "2026-09-21T00:00:00.000Z" })
+  assert.equal(draft.content.steps.length, 1)
+  assert.deepEqual(draft.validation.records, [])
+})
+
+test("只在输入合同确有另一合法值时要求换值", () => {
+  assert.equal(taskInputRequiresVariation(nullContract), false)
+  assert.equal(taskInputRequiresVariation(dataContract("fixed", { type: "string", enum: ["only"] })), false)
+  assert.equal(taskInputRequiresVariation(dataContract("empty", { type: "object", properties: {},
+    required: [], additionalProperties: false })), false)
+  assert.equal(taskInputRequiresVariation(dataContract("choice", { type: "boolean" })), true)
+  assert.equal(taskInputRequiresVariation(extractionFixture.chain.inputContract), true)
 })
 
 test("组合计划逐项调用同一链路，拒绝未声明依赖和预算扩权", () => {

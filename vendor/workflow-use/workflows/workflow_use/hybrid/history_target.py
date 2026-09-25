@@ -63,13 +63,17 @@ def match_history_target(raw, mapping, target_id):
     levels.extend((name, lambda node, key=name, expected=value:
                    _attribute_digest(node, key) == expected)
                   for name, value in attribute_digests.items())
+    ambiguous = False
     for _level, predicate in levels:
         matches = [(index, node) for index, node in items if predicate(node)]
         if len(matches) > 1:
-            raise ValueError('ambiguous_history_target')
+            # WHY：elementHash 等单一弱信号可能在多个同类后代上碰撞；只有所有已保存的
+            # 原生身份信号都不能继续消歧时才判定歧义，不能抢在 stableHash/XPath 前失败。
+            ambiguous = True
+            continue
         if matches:
             return matches[0]
-    raise ValueError('missing_history_target')
+    raise ValueError('ambiguous_history_target' if ambiguous else 'missing_history_target')
 
 
 def _eligible(node, target_id):

@@ -13,8 +13,10 @@
     "./chain": "./src/task-chain/chain.ts",
     "./plan": "./src/task-chain/plan.ts",
     "./run": "./src/task-chain/run.ts",
+    "./product": "./src/task-chain/product.ts",
     "./ai": "./src/ai.ts",
     "./browser": "./src/browser.ts",
+    "./browser-profile": "./src/browser-profile.ts",
     "./interview": "./src/interview.ts",
     "./task": "./src/task.ts"
   },

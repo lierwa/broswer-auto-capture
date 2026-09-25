@@ -17,7 +17,7 @@ const parseWithSource = JSON.parse as (text: string,
 const evidenceKinds = new Set(["dom_structure", "dom_query", "natural_binding", "native_extraction",
   "native_action_dispatch", "native_action_result", "native_dom_event", "browser_context",
   "url_digest", "verified_natural_read", "verified_target_scroll", "verified_visible_wait",
-  "verified_natural_summary", "verified_output_assembly"])
+  "verified_natural_summary", "verified_output_assembly", "selection_function", "observation_diagnostic", "document_identity"])
 
 /** WHY：sourcePayloads 是 Python canonical bytes 的唯一词法锚；普通 request 仍负责结构和业务语义。 */
 export function naturalPayloadContext(envelope: Envelope, request: Record<string, JsonValue>) {

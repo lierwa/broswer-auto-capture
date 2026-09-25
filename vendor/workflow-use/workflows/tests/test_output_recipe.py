@@ -22,6 +22,32 @@ def put_evidence(_kind, value):
 
 
 class OutputRecipeTest(unittest.TestCase):
+    def test_indexed_consumer_uses_min_items_contract_without_empty_completion(self):
+        records = {'type': 'array', 'items': {'type': 'object', 'properties': {
+            'url': {'type': 'string'},
+        }, 'required': ['url'], 'additionalProperties': False}, 'minItems': 1, 'maxItems': 5}
+        segments = [
+            {'id': 's-a-0001', 'outputs': [{'schema': records}], 'bindings': []},
+            {'id': 's-a-0002', 'outputs': [], 'bindings': [{
+                'binding': {'source': 'node', 'nodeId': 'a-0001', 'path': [0, 'url']},
+            }]},
+        ]
+
+        self.assertEqual(compile_empty_list_branches({'mode': 'execution'}, None, segments), ([], []))
+
+        records['minItems'] = 0
+        branches, gaps = compile_empty_list_branches({'mode': 'execution'}, None, segments)
+        self.assertEqual(branches, [])
+        self.assertEqual([item.reason for item in gaps], ['natural_empty_list_control_required'])
+
+        segments[0]['outputs'][0]['schema'] = {'type': 'array', 'items': {
+            'type': 'array', 'items': {'type': 'string'}, 'maxItems': 5,
+        }, 'minItems': 1, 'maxItems': 5}
+        segments[1]['bindings'][0]['binding']['path'] = [0, 0]
+        branches, gaps = compile_empty_list_branches({'mode': 'execution'}, None, segments)
+        self.assertEqual(branches, [])
+        self.assertEqual([item.reason for item in gaps], ['natural_empty_list_control_required'])
+
     def test_result_binding_keeps_verified_sources_and_plan_producer_refs_separate(self):
         schema = {'type': 'object', 'properties': {
             'issues': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 5},
@@ -58,6 +84,54 @@ class OutputRecipeTest(unittest.TestCase):
 
         self.assertIsNone(binding)
         self.assertEqual(gaps[0].reason, 'natural_result_binding_invalid')
+
+    def test_result_binding_omits_unobserved_optional_field_without_dropping_its_owner(self):
+        schema = {'type': 'object', 'properties': {
+            'status': {'type': 'string'}, 'reason': {'type': 'string'},
+        }, 'required': ['status'], 'additionalProperties': False}
+        spec = SimpleNamespace(model_dump=lambda **_kwargs: {
+            'mode': 'data', 'schema': schema, 'fields': [
+                {'path': ['status'], 'description': 'Status', 'producerRef': 'status-owner'},
+                {'path': ['reason'], 'description': 'Optional reason', 'producerRef': 'reason-owner'},
+            ], 'edgeCases': [],
+        })
+        assembly = {'sourceRef': 'fact', 'fields': [
+            {'binding': {'source': 'constant', 'value': 'obtained'}, 'path': ['status']},
+        ], 'schema': schema, 'proofRefs': [{'ref': 'fixture:proof', 'digest': '1' * 64}]}
+
+        binding, gaps = compile_result_binding(spec, assembly, schema)
+
+        self.assertEqual(gaps, [])
+        self.assertEqual(binding['assignments'], [{
+            'to': ['status'], 'from': {'source': 'constant', 'value': 'obtained'},
+            'producerRef': 'status-owner',
+        }])
+        self.assertEqual(spec.model_dump()['fields'][1]['producerRef'], 'reason-owner')
+
+    def test_result_binding_splits_verified_root_object_across_declared_fields(self):
+        schema = {'type': 'object', 'properties': {
+            'keyword': {'type': 'string', 'minLength': 1}, 'message': {'type': 'string'},
+        }, 'required': ['keyword', 'message'], 'additionalProperties': False}
+        assembly = {'sourceRef': 'fact-assembly', 'fields': [{
+            'binding': {'source': 'node', 'nodeId': 'a-0004', 'path': []}, 'path': [],
+        }], 'schema': schema, 'proofRefs': [{'ref': 'fixture:proof', 'digest': '1' * 64}]}
+        spec = SimpleNamespace(model_dump=lambda **_kwargs: {
+            'contractVersion': 'bat-result-spec/v1', 'mode': 'data', 'schema': schema,
+            'fields': [
+                {'path': ['keyword'], 'description': 'Keyword', 'producerRef': 'queriedKeyword'},
+                {'path': ['message'], 'description': 'Message', 'producerRef': 'catalogResultText'},
+            ], 'edgeCases': [],
+        })
+
+        binding, gaps = compile_result_binding(spec, assembly, schema)
+
+        self.assertEqual(gaps, [])
+        self.assertEqual(binding['assignments'], [
+            {'to': ['keyword'], 'from': {'source': 'node', 'nodeId': 'a-0004', 'path': ['keyword']},
+             'producerRef': 'queriedKeyword'},
+            {'to': ['message'], 'from': {'source': 'node', 'nodeId': 'a-0004', 'path': ['message']},
+             'producerRef': 'catalogResultText'},
+        ])
 
     def test_empty_list_branch_precedes_indexed_consumer_and_omits_optional_detail(self):
         issues = {'type': 'array', 'items': {'type': 'object', 'properties': {
@@ -234,6 +308,23 @@ class OutputRecipeTest(unittest.TestCase):
         self.assertIsNone(fact)
         self.assertEqual(gaps[0].reason, 'natural_output_assembly_incomplete')
 
+    def test_output_assembly_names_uncovered_contract_path_without_sample_value(self):
+        schema = {'type': 'object', 'properties': {
+            'status': {'type': 'string', 'enum': ['obtained', 'unavailable']},
+        }, 'required': ['status'], 'additionalProperties': False}
+
+        fact, gaps = build_verified_output_assembly(
+            [], {'status': 'obtained'}, schema, put_evidence,
+            input_value={}, input_schema={'type': 'object', 'properties': {},
+                                           'required': [], 'additionalProperties': False},
+            requirement_text='Read the page and report its fields.')
+
+        self.assertIsNone(fact)
+        self.assertEqual([item.reason for item in gaps], [
+            'natural_output_assembly_incomplete', 'natural_output_uncovered_paths:[["status"]]',
+        ])
+        self.assertTrue(all('obtained' not in item.reason for item in gaps))
+
     def test_dynamic_input_array_is_bound_as_one_collection(self):
         issues_schema = {'type': 'array', 'items': {'type': 'object', 'properties': {
             'title': {'type': 'string'},
@@ -298,6 +389,44 @@ class OutputRecipeTest(unittest.TestCase):
             {'binding': {'source': 'node', 'nodeId': 'a-0001', 'path': ['body']},
              'path': ['detail', 'body']},
         ])
+
+    def test_verified_object_read_can_supply_a_scalar_root_result(self):
+        output_schema = {'type': 'string'}
+        final_output = 'Catalog result for alpha'
+        read_schema = {'type': 'object', 'properties': {'value': output_schema},
+                       'required': ['value'], 'additionalProperties': False}
+        specification = ReadSpec(
+            container='output[data-testid="result"]',
+            fields={'value': ReadField(selector=':scope')},
+            maxItems=1, outputSchema=read_schema)
+        value = {
+            'actionRef': 'a-0001', 'specification': specification.model_dump(mode='json'),
+            'outputPath': [], 'readPath': ['value'], 'output': {'value': final_output},
+            'resultDigest': '1' * 64, 'urlDigest': '2' * 64, 'targetId': 'tab-1',
+            'containerIdsDigest': '3' * 64, 'stable': True,
+        }
+        read_fact = ObservationFact(id='fact-read', kind='verified_natural_read', value=value,
+            sourceRefs=[EvidenceRef(ref='fixture:read', digest=digest(value))])
+        read_observation = SimpleNamespace(id='o-read', facts=[read_fact])
+
+        assembly, gaps = build_verified_output_assembly(
+            [read_observation], final_output, output_schema, put_evidence)
+
+        self.assertEqual(gaps, [])
+        trace = SimpleNamespace(
+            observations=[read_observation, SimpleNamespace(id='o-done', facts=[assembly])],
+            actions=[SimpleNamespace(id='a-0001', postObservationRef='o-read')],
+            finalResultRef=SimpleNamespace(digest=digest(final_output)))
+        segment = {'id': 's-a-0001', 'operation': {
+            'name': 'browser.read-fields', 'specification': specification.model_dump(mode='json')},
+            'outputs': [{'sourceRef': read_fact.id, 'schema': read_schema}]}
+
+        compiled, issues = compile_natural_output_assembly(trace, output_schema, [segment])
+
+        self.assertEqual(issues, [])
+        self.assertEqual(compiled['fields'], [{
+            'binding': {'source': 'node', 'nodeId': 'a-0001', 'path': ['value']}, 'path': [],
+        }])
 
     def test_declared_count_lowers_to_data_segment_and_recomputes_from_array(self):
         issues_schema = {'type': 'array', 'items': {'type': 'object', 'properties': {

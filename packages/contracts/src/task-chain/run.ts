@@ -22,6 +22,7 @@ export const taskResumeRequestSchema = z.object({
 }).strict()
 export const browserStateSummarySchema = z.object({
   sessionId: textSchema, tabId: textSchema, url: textSchema,
+  documentId: textSchema.optional(),
   observationDigest: digestSchema, observedAt: z.string().datetime(),
 }).strict()
 const originSchema = z.string().url().refine((value) => new URL(value).origin === value, "origin_required")

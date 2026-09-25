@@ -20,7 +20,7 @@ def navigation_request(registry):
                results=[ResultEvidence(errorPresent=False, ref=REF)], preObservationRef='o-0001',
                postObservationRefs={'0': 'o-0002'})]
     trace, issues = normalize_history(HistoryInput(source=TraceSource(version='0.13.8', historyRef='fixture:history'),
-                      judged=True, completed=True, records=records, observations=observations,
+                      completed=True, records=records, observations=observations,
                       finalResultRef=REF, redactionManifestRef=REF), registry)
     assert not issues
     schema = {'type': 'object', 'properties': {'url': {'type': 'string'}}, 'required': ['url'], 'additionalProperties': False}
@@ -48,6 +48,8 @@ class CompilerTests(unittest.TestCase):
 
     def test_navigation_has_complete_coverage_and_stable_parameter_binding(self):
         request = CompilationRequest.model_validate(navigation_request(self.registry))
+        self.assertEqual(request.trace.mediaType, 'application/vnd.bat.browser-use-trace+json;version=2')
+        self.assertNotIn('judged', request.trace.model_dump(mode='json'))
         result = compile_request(request, self.registry)
         self.assertFalse(result.gaps)
         self.assertEqual(len(result.coverage), 1)
@@ -56,6 +58,13 @@ class CompilerTests(unittest.TestCase):
         self.assertNotIn('fixture.invalid', str(result.segments))
         self.assertNotIn('outputAssembly', result.model_dump(mode='json'))
         self.assertEqual(result.canonicalDigest, compile_request(request, self.registry).canonicalDigest)
+
+        legacy = navigation_request(self.registry)
+        legacy['trace']['mediaType'] = 'application/vnd.bat.browser-use-trace+json;version=1'
+        legacy['trace']['judged'] = False
+        rehash(legacy, 'trace')
+        legacy_result = compile_request(CompilationRequest.model_validate(legacy), self.registry)
+        self.assertFalse(legacy_result.gaps)
 
     def test_not_dispatched_failure_gets_an_auditable_pre_observation(self):
         facts = [ObservationFact(id='fact-dispatch', kind='native_action_dispatch', value={

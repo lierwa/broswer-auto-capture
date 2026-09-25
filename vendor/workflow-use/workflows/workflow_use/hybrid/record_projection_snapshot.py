@@ -85,6 +85,18 @@ def _stable_snapshot_projection(snapshots, output_schema, output, mappings):
 def _projection_inputs(schema, value, path=None):
     path = [] if path is None else path
     output = []
+    if _scalar_schema(schema):
+        # WHY：ReadSpec 统一读取对象记录；根标量只在宿主投影边界包装成 value 字段，
+        # 最终映射仍写回原合同的空路径，不把适配形状泄漏给任务输出。
+        wrapped_schema = {
+            'type': 'object',
+            'properties': {'value': schema},
+            'required': ['value'],
+            'additionalProperties': False,
+        }
+        output.append((wrapped_schema, {'value': value}, [
+            HostReadMapping(outputPath=path, readPath=['value']),
+        ]))
     if isinstance(schema, dict) and schema.get('type') in ('object', 'array'):
         output.append((schema, value, [HostReadMapping(outputPath=path, readPath=[])]))
         if schema.get('type') == 'object' and isinstance(value, dict):
@@ -94,6 +106,10 @@ def _projection_inputs(schema, value, path=None):
             if name in value and isinstance(child, dict):
                 output.extend(_projection_inputs(child, value[name], [*path, name]))
     return sorted(output, key=lambda item: _leaf_count(item[1]), reverse=True)
+
+
+def _scalar_schema(schema):
+    return isinstance(schema, dict) and schema.get('type') in ('string', 'number', 'integer', 'boolean')
 
 
 def _object_projection_inputs(schema, value, path):

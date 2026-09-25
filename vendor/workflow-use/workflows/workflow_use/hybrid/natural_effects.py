@@ -28,6 +28,9 @@ TARGET_STATE_SCRIPT = """() => {
 }"""
 TARGET_VALUE_SCRIPT = '() => ({connected:Boolean(this.isConnected),value:this.value})'
 SCROLL_POSITION_SCRIPT = '() => ({x: window.scrollX, y: window.scrollY})'
+MEDIA_PLAYBACK_SCRIPT = """() => Array.from(document.querySelectorAll('video,audio')).some((node) =>
+  node.isConnected && node.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})
+  && !node.paused && !node.ended && node.readyState >= 2) ? 'playing' : 'not_playing'"""
 
 
 async def read_target_state(element) -> str:
@@ -63,6 +66,11 @@ async def read_page_effect(kind, page) -> str:
         return _canonical({key: 0 if value[key] == 0 else value[key] for key in ('x', 'y')})
     if kind == 'visible_overlays':
         return await visible_overlay_digest(page)
+    if kind == 'media_playback':
+        value = await page.evaluate(MEDIA_PLAYBACK_SCRIPT)
+        if value not in ('playing', 'not_playing'):
+            raise ValueError('media_playback_unavailable')
+        return value
     raise ValueError('unsupported_natural_effect_fact')
 
 

@@ -5,17 +5,19 @@ import re
 from .action_dispatch import NOT_DISPATCHED_RULE, not_dispatched_coverage
 from .dom_evidence import DomQueryEvidence
 from .evidence import ActionCoverage, NormalizedTrace, gap
+from .natural_reads import VerifiedNaturalRead, validate_compiled_query_read
 
 NATIVE_TEXT_LOOKUP_RULE = 'native_text_lookup_observation/v1'
 DOM_NODE_INSPECTION_RULE = 'dom_node_inspection_observation/v1'
 NATIVE_EXTRACTION_RULE = 'native_extraction_observation/v1'
+EXECUTION_EXTRACTION_RULE = 'execution_extraction_observation/v1'
 FAILED_NATIVE_DOM_LOOKUP_RULE = 'failed_native_dom_lookup_observation/v1'
 URL_DIGEST = re.compile(r'^[a-f0-9]{64}$')
 
 
-# WHY: search_page 只为首次 Agent 探索提供页面文本定位；准入必须由完整只读证据重算，不能成为复跑输出。
+# WHY: search_page/dropdown_options 仅提供原生只读文本发现；选择值仍需输入或需求绑定，不能成为复跑输出。
 def search_page_coverage(registry, action, pre, post):
-    if (registry is None or action.name != 'search_page' or action.effect != 'read'
+    if (registry is None or action.name not in ('search_page', 'dropdown_options') or action.effect != 'read'
             or action.status != 'succeeded' or action.resultRef is None
             or pre is None or post is None
             or pre.id != action.preObservationRef or post.id != action.postObservationRef
@@ -100,6 +102,15 @@ def native_extraction_coverage(registry, action, pre, post):
                           exclusionRule=NATIVE_EXTRACTION_RULE, evidenceRefs=refs)
 
 
+def execution_extraction_coverage(registry, action, pre, post, result_spec, output_schema):
+    """Execution reads are never safe to erase merely because the public result is null.
+
+    A native extract may choose a later target or prove the final browser state.  Until that value is
+    projected into a replayable read/decision contract, compilation must keep the action as a gap.
+    """
+    return None
+
+
 # WHY: 原生 DOM 查询失败只描述首次探索找路；完整同页 query 证据允许保留失败事实，但不能生成复跑动作。
 def failed_native_dom_lookup_coverage(registry, action, pre, post):
     if (registry is None or action.name != 'find_elements' or action.effect != 'read'
@@ -138,7 +149,45 @@ def failed_native_dom_lookup_coverage(registry, action, pre, post):
                           exclusionRule=FAILED_NATIVE_DOM_LOOKUP_RULE, evidenceRefs=refs)
 
 
-def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segment_ids: set[str], *, registry=None):
+def unused_verified_dom_read_coverage(registry, action, pre, post):
+    """Keep an unused complete query in source audit without replaying its pure DOM read."""
+    if (registry is None or action.name != 'find_elements' or action.effect != 'read'
+            or action.status != 'succeeded' or action.resultRef is None or pre is None or post is None
+            or pre.id != action.preObservationRef or post.id != action.postObservationRef
+            or not pre.tabId or pre.tabId != post.tabId or pre.url != post.url):
+        return None
+    try:
+        registry.validate_action(action.name, action.args)
+        queries = [fact for fact in post.facts if fact.kind == 'dom_query'
+                   and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
+        reads = [fact for fact in post.facts if fact.kind == 'verified_natural_read'
+                 and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
+        if len(queries) != 1 or len(reads) != 1:
+            return None
+        query = DomQueryEvidence.model_validate(queries[0].value)
+        read = VerifiedNaturalRead.model_validate(reads[0].value)
+        args = action.args if isinstance(action.args, dict) else {}
+        if (query.complete is not True or query.query.kind != 'css'
+                or query.query.value != args.get('selector')
+                or query.maxResults != args.get('max_results', 50)
+                or query.includeText != (args.get('include_text', True) is True)
+                or query.scope.tabId != pre.tabId or query.scope.frameId is not None
+                or query.scope.url != pre.url or query.scope.urlDigest != read.urlDigest):
+            return None
+        validate_compiled_query_read(read, action, pre, post)
+        if not queries[0].sourceRefs or not reads[0].sourceRefs:
+            return None
+    except Exception:
+        return None
+    refs = _unique_refs([action.resultRef, *pre.sourceRefs, *post.sourceRefs,
+                         *queries[0].sourceRefs, *reads[0].sourceRefs])
+    # WHY：TS runtime-scope 已验证该通用只读排除规则；新规则会断开跨层同页证据边界。
+    return ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
+                          exclusionRule='native_dom_lookup_observation/v1', evidenceRefs=refs)
+
+
+def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segment_ids: set[str], *, registry=None,
+                      result_spec=None, output_schema=None, consumed_query_ids=None):
     issues = []
     actions = {action.id: action for action in trace.actions}
     observations = {observation.id: observation for observation in trace.observations}
@@ -159,6 +208,16 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
                     and row.exclusionRule == 'agent_done_metadata/v1')
             lookup = (action.effect == 'read' and action.name == 'find_elements' and action.status == 'succeeded'
                       and row.exclusionRule == 'native_dom_lookup_observation/v1' and row.evidenceRefs)
+            post = observations.get(action.postObservationRef)
+            if lookup and post is not None and any(
+                    fact.kind == 'dom_query' and isinstance(fact.value, dict)
+                    and fact.value.get('actionRef') == action.id and fact.value.get('complete') is True
+                    for fact in post.facts):
+                expected = unused_verified_dom_read_coverage(
+                    registry, action, observations.get(action.preObservationRef),
+                    observations.get(action.postObservationRef))
+                lookup = (consumed_query_ids is not None and action.id not in consumed_query_ids
+                          and expected is not None and row == expected)
             failed_lookup = failed_native_dom_lookup_probe(
                 registry, action, observations.get(action.preObservationRef),
                 observations.get(action.postObservationRef), row)
@@ -170,16 +229,21 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
                 registry, action, observations.get(action.preObservationRef),
                 observations.get(action.postObservationRef))
             inspection = inspection is not None and row == inspection
-            extraction = native_extraction_coverage(
+            extraction = None if getattr(result_spec, 'mode', None) == 'execution' else native_extraction_coverage(
                 registry, action, observations.get(action.preObservationRef),
                 observations.get(action.postObservationRef))
             extraction = extraction is not None and row == extraction
+            execution_extraction = execution_extraction_coverage(
+                registry, action, observations.get(action.preObservationRef),
+                observations.get(action.postObservationRef), result_spec, output_schema)
+            execution_extraction = execution_extraction is not None and row == execution_extraction
             dispatch = not_dispatched_coverage(trace, action)
             skipped = (row.exclusionRule == NOT_DISPATCHED_RULE and dispatch is not None
                        and row.evidenceRefs == dispatch.evidenceRefs)
             field_probe = failed_bat_field_read_probe(registry, action, row)
             wait_probe = failed_bat_wait_probe(registry, trace, action, row)
             if (not done and not lookup and not failed_lookup and not text_lookup and not inspection and not extraction
+                    and not execution_extraction
                     and not skipped and not field_probe and not wait_probe):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'invalid_exclusion', 'reject_trace'))
         if row.disposition == 'supporting':

@@ -6,6 +6,7 @@ from .capability import TARGET_ACTIONS
 from .causal import delayed_post_for_conditions, supporting_wait, waits_owned_by_next_target
 from .coverage import (
     dom_inspection_coverage,
+    execution_extraction_coverage,
     failed_native_dom_lookup_coverage,
     native_extraction_coverage,
     search_page_coverage,
@@ -15,7 +16,10 @@ from .natural_binding_compile import anchored_navigation_binding, natural_bindin
 from .natural_compile_result import finalize_natural_compilation
 from .natural_readiness import NATURAL_SETTLE, consumer_readiness_by_action, with_consumer_readiness
 from .natural_reads import compile_verified_read
+from .natural_selection import bind_selection_function
 from .natural_target_compile import natural_target
+from .navigation import NAVIGATION_ACTIONS, cross_tab_navigation_allowed
+from .navigation_compile import navigation_postconditions
 from .postconditions import declared_checks
 from .registry import action_effect
 from .summary_compile import compile_verified_summary
@@ -24,12 +28,13 @@ from .visible_wait_compile import compile_visible_wait, failed_visible_wait_cove
 
 ADMITTED = frozenset({'navigate', 'go_back', 'wait', 'scroll', 'send_keys', *TARGET_ACTIONS})
 NATURAL_EFFECT_KINDS = {
-    'click': ('target_state', 'visible_overlays'),
+    'click': ('media_playback', 'target_state', 'visible_overlays'),
     'input': ('target_state',),
     'select_dropdown': ('target_state',),
     'dropdown_options': ('target_state',),
     'scroll': ('scroll_position',),
     'send_keys': ('visible_overlays',),
+    'wait': ('media_playback',),
 }
 TARGET_STATE_KEYS = frozenset({'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
                                'checked', 'selected', 'disabled'})
@@ -41,8 +46,8 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
     output_paths, wait_owners = [], {}
     if request.actionRegistryVersion != registry.schemaDigest or trace.source.version != registry.providerVersion:
         issues.append(gap('invalid_source', [], 'registry_version_mismatch', 'reject_trace'))
-    if not trace.judged or not trace.completed or trace.finalResultRef is None:
-        issues.append(gap('invalid_source', [], 'successful_judged_business_result_required', 'reject_trace'))
+    if not trace.completed or trace.finalResultRef is None:
+        issues.append(gap('invalid_source', [], 'completed_business_result_required', 'reject_trace'))
     observations = {item.id: item for item in trace.observations}
     consumer_readiness = consumer_readiness_by_action(trace, NATURAL_SETTLE)
     for action in trace.actions:
@@ -82,9 +87,17 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
         if inspection is not None:
             ledger.append(inspection)
             continue
-        extraction = native_extraction_coverage(registry, action, pre, post)
+        # WHY：execution 的公开输出虽为 null，页面读取仍可能决定后续目标或证明最终状态；
+        # 在形成可复跑读取/决策节点前不得把它降为仅供 Agent 使用的证据。
+        extraction = None if getattr(request.plan.resultSpec, 'mode', None) == 'execution' else \
+            native_extraction_coverage(registry, action, pre, post)
         if extraction is not None:
             ledger.append(extraction)
+            continue
+        execution_extraction = execution_extraction_coverage(
+            registry, action, pre, post, request.plan.resultSpec, output_schema)
+        if execution_extraction is not None:
+            ledger.append(execution_extraction)
             continue
         lookup = natural_dom_lookup_coverage(registry, action, pre, post)
         if lookup is not None:
@@ -102,12 +115,16 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
             consumer_readiness.get(action.id))
         issues.extend(action_issues)
         if segment is not None:
-            segments.append(segment)
-            for wait in waits:
-                wait_owners[wait.id] = segment['id']
-                before, after = observations[wait.preObservationRef], observations[wait.postObservationRef]
-                segment['proofRefs'].extend(ref.model_dump(mode='json') for ref in
-                                            [wait.resultRef, *before.sourceRefs, *after.sourceRefs])
+            inserted, segment, selection_issues = bind_selection_function(request, action, segments, segment)
+            issues.extend(selection_issues)
+            if segment is not None:
+                segments.extend(inserted)
+                segments.append(segment)
+                for wait in waits:
+                    wait_owners[wait.id] = segment['id']
+                    before, after = observations[wait.preObservationRef], observations[wait.postObservationRef]
+                    segment['proofRefs'].extend(ref.model_dump(mode='json') for ref in
+                                                [wait.resultRef, *before.sourceRefs, *after.sourceRefs])
         if path is not None:
             if action.name in ('extract', 'bat_read_fields'):
                 output_paths.extend(path)
@@ -160,11 +177,11 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
         return None, None, [gap('invalid_source', [action.id], 'successful_action_result_required', 'reject_trace')]
     if pre is None or post is None:
         return None, None, [gap('missing_observation', [action.id], 'action_pre_and_post_required')]
-    if pre.tabId != post.tabId:
+    if not cross_tab_navigation_allowed(action, pre, post):
         return None, None, [gap('unsupported_capability', [action.id], 'cross_tab_state_contract_required', 'add_capability')]
     if action.name == 'bat_summarize':
         return compile_verified_summary(request, action, pre, post, output_schema, prior_segments, prior_paths)
-    if action.name in ('extract', 'bat_read_fields'):
+    if action.name in ('extract', 'bat_read_fields', 'find_elements'):
         return compile_verified_read(request, action, pre, post, output_schema, prior_paths)
     if action.name == 'bat_scroll_to':
         return compile_target_scroll(request, action, pre, post)
@@ -281,6 +298,10 @@ def natural_dom_lookup_coverage(registry, action, pre, post):
                and fact.value.get('actionRef') == action.id]
     if len(queries) != 1:
         return None
+    # WHY：完整列表会决定后续动态目标，必须编译为 read-fields/数据节点；只有截断、空集等
+    # 不足以承载复跑决策的探索查询才允许留在 Agent 内部，避免把真实列表读取静默吞掉。
+    if queries[0].value.get('complete') is True:
+        return None
     scope = queries[0].value.get('scope') or {}
     if (scope.get('tabId') != pre.tabId or scope.get('frameId') is not None
             or scope.get('urlDigest') != before.value):
@@ -302,6 +323,22 @@ def natural_postconditions(action, pre, post, target, bindings, consumer=None):
             [{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': matched[0].id,
               'settle': NATURAL_SETTLE}], matched[0].sourceRefs, consumer, NATURAL_SETTLE)
         return conditions, refs, []
+    if action.name in NAVIGATION_ACTIONS:
+        navigation = navigation_postconditions(action, pre, post, consumer)
+        if navigation is not None:
+            return navigation
+    if action.name == 'wait':
+        playing = fact_value(post, 'media_playback')
+        if playing is not None and playing.value == 'playing':
+            return ([{'kind': 'media_playback', 'equals': 'playing', 'clauseRef': playing.id,
+                      'settle': NATURAL_SETTLE}], playing.sourceRefs, [])
+        before, after = fact_value(pre, 'url_digest'), fact_value(post, 'url_digest')
+        if (before is not None and after is not None and isinstance(after.value, str)
+                and before.value == after.value):
+            # WHY：固定等待本身没有业务副作用；复跑只需证明它没有把当前动态页面切走，
+            # 不能把样本 URL 固化成 equals，也不能因 DOM 在等待中异步变化而制造 gap。
+            return ([{'kind': 'url_digest', 'unchanged': True, 'clauseRef': after.id}],
+                    unique_refs([*before.sourceRefs, *after.sourceRefs]), [])
     target_condition = target_value_condition(action, post, target, bindings)
     if target_condition is not None:
         conditions, refs, issues = target_condition
@@ -338,6 +375,10 @@ def natural_effect_condition(action, pre, post):
     for kind in NATURAL_EFFECT_KINDS.get(action.name, ()):
         before, after = fact_value(pre, kind), fact_value(post, kind)
         if before is not None and after is not None and before.value != after.value:
+            if kind == 'media_playback' and after.value == 'playing':
+                condition = {'kind': kind, 'equals': 'playing', 'clauseRef': after.id,
+                             'settle': NATURAL_SETTLE}
+                return ([condition], after.sourceRefs, []), None
             if kind == 'target_state' and deterministic_target_state(after.value):
                 condition = {'kind': kind, 'equals': after.value, 'clauseRef': after.id,
                              'settle': NATURAL_SETTLE}
@@ -346,7 +387,8 @@ def natural_effect_condition(action, pre, post):
                 condition = {'kind': kind, 'equals': EMPTY_OVERLAYS, 'clauseRef': after.id,
                              'settle': NATURAL_SETTLE}
                 return ([condition], after.sourceRefs, []), None
-            limitation = ('scroll_position_change_not_completion_proof' if kind == 'scroll_position'
+            limitation = ('media_playback_change_not_completion_proof' if kind == 'media_playback'
+                          else 'scroll_position_change_not_completion_proof' if kind == 'scroll_position'
                           else 'visible_overlays_change_not_completion_proof' if kind == 'visible_overlays'
                           else 'target_state_value_not_deterministic')
     return None, limitation
@@ -360,7 +402,7 @@ def delayed_natural_post(trace, registry, action, pre):
     if immediate_natural_completion(action, pre, immediate):
         return None, []
     kinds = [kind for kind in NATURAL_EFFECT_KINDS.get(action.name, ()) if kind != 'scroll_position']
-    if action.name in ('navigate', 'go_back'):
+    if action.name in ('navigate', 'go_back', *NAVIGATION_ACTIONS):
         kinds.extend(['url_digest', 'url'])
     for kind in kinds:
         condition = {'kind': kind, 'changed': True, 'settle': NATURAL_SETTLE}
@@ -384,13 +426,15 @@ def immediate_natural_completion(action, pre, post):
         if any(fact.value.get('matched') is True for fact in facts):
             return True
     kinds = [kind for kind in NATURAL_EFFECT_KINDS.get(action.name, ()) if kind != 'scroll_position']
-    if action.name == 'go_back':
+    if action.name in ('go_back', *NAVIGATION_ACTIONS):
         kinds.extend(['url_digest', 'url'])
     for kind in kinds:
         before, after = fact_value(pre, kind), fact_value(post, kind)
         if before is None or after is None or before.value == after.value:
             continue
         if kind == 'target_state' and not deterministic_target_state(after.value):
+            continue
+        if kind == 'media_playback' and after.value != 'playing':
             continue
         if kind == 'visible_overlays' and after.value != EMPTY_OVERLAYS:
             continue

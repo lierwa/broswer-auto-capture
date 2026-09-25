@@ -1,6 +1,7 @@
 """Compile a callback-proven DOM target into an existing replay locator."""
+
 from .capability import TARGET_ACTIONS
-from .dom_evidence import DomQueryCandidate
+from .dom_evidence import DomQueryCandidate, unbound_collection_choice
 from .evidence import gap
 from .history_target import HistoryTargetIdentity
 
@@ -31,7 +32,24 @@ def natural_target(action, pre):
         return None, [], [gap('unsupported_capability', [action.id],
                               'natural_target_xpath_unavailable', 'add_capability')]
     target_scope = {'url': pre.url, **({'urlDigest': url_digest} if isinstance(url_digest, str) else {})}
+    raw_candidate = value.get('queryCandidate')
+    if raw_candidate is not None:
+        candidate = _validated_candidate(raw_candidate, value, pre)
+        if candidate is None:
+            return None, [], [gap('unsupported_capability', [action.id],
+                                  'natural_target_query_candidate_invalid', 'collect_evidence')]
+        return {'strategy': 'structure', 'scope': target_scope,
+                'container': candidate.container.model_dump(mode='json'),
+                'items': candidate.items.model_dump(mode='json'),
+                'ordinal': candidate.matchedItemOrdinal,
+                'withinItem': (candidate.withinItem.model_dump(mode='json')
+                               if candidate.withinItem is not None else None)}, fact.sourceRefs, []
     raw_history = value.get('historyTarget')
+    if action.name == 'click' and unbound_collection_choice(value):
+        # WHY：同一集合里的第 N 个元素只是一次试做的坐标；没有完整候选读取时，
+        # history XPath 会把动态业务选择伪装成可复跑的固定目标。
+        return None, [], [gap('missing_binding', [action.id],
+                              'collection_selection_read_required', 'collect_evidence')]
     if raw_history is not None:
         try:
             history = HistoryTargetIdentity.model_validate(raw_history)
@@ -43,13 +61,6 @@ def natural_target(action, pre):
                                   'natural_history_target_mismatch', 'reject_trace')]
         return {'strategy': 'history', 'identity': history.model_dump(mode='json'),
                 'scope': target_scope}, fact.sourceRefs, []
-    raw_candidate = value.get('queryCandidate')
-    if raw_candidate is not None:
-        candidate = _validated_candidate(raw_candidate, value, pre)
-        if candidate is None:
-            return None, [], [gap('unsupported_capability', [action.id],
-                                  'natural_target_query_candidate_invalid', 'collect_evidence')]
-        return {'strategy': 'css', 'value': candidate.items.value, 'scope': target_scope}, fact.sourceRefs, []
     xpath = nodes[0].get('xpath')
     if not isinstance(xpath, str) or not xpath:
         return None, [], [gap('unsupported_capability', [action.id],
@@ -70,7 +81,7 @@ def _validated_candidate(raw, structure, pre):
         and candidate.targetRef == structure.get('targetRef')
         and candidate.container.kind == 'css' and candidate.container.value == 'html'
         and candidate.items.kind == 'css' and bool(candidate.items.value)
-        and candidate.matchedItemOrdinal == 1 and candidate.withinItem is None
+        and candidate.matchedItemOrdinal is not None and candidate.withinItem is None
     ) else None
 
 

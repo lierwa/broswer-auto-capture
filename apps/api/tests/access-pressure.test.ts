@@ -1,13 +1,15 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import test from "node:test"
-import { CONTRACT_VERSION, taskPlanSchema, type JsonValue, type TaskChain, type TaskExecution,
+import { CONTRACT_VERSION, UNRECORDED_EXECUTION_CLEANUP, taskPlanSchema, type JsonValue, type TaskChain, type TaskExecution,
   type TaskRequirement, type TaskRun } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "@browser-capture/runtime"
 import { TaskPlanExecutor } from "../src/task-chain/plan-executor.js"
 import type { ProductStore } from "../src/database/store.js"
 import type { TaskContractRepository } from "../src/task-chain/repository.js"
 import type { TaskRuntimeHost } from "../src/task-chain/runtime-host.js"
+import { cleanupReport, RuntimeCleanupRequiredError, RUNNER_CLEANUP_STAGES,
+  type RunnerCleanupReport } from "../src/upstream-browser/cleanup.js"
 
 test("计划 each 在调度前去重；外部访问中断覆盖 continue 并熔断剩余输入", async () => {
   const successful = fixture(false)
@@ -45,7 +47,33 @@ test("取消状态不会被异步执行栈晚到的 abort 覆盖成暂停", asyn
   assert.equal(current.repository.execution(current.record.taskId, current.record.id).status, "cancelled")
 })
 
-function fixture(failFirst: boolean) {
+test("TaskPlanExecutor 分别保留 primary 与 cleanup 的四种组合", async () => {
+  const successConfirmed = fixture(false, confirmedCleanup())
+  await successConfirmed.executor.execute(successConfirmed.record, new AbortController().signal)
+  assert.equal(successConfirmed.record.status, "completed")
+  assert.equal(successConfirmed.record.cleanup.status, "confirmed")
+
+  const successUnconfirmed = fixture(false, unconfirmedCleanup())
+  await successUnconfirmed.executor.execute(successUnconfirmed.record, new AbortController().signal)
+  assert.equal(successUnconfirmed.record.status, "cleanup_required")
+  assert.equal(successUnconfirmed.record.cleanupResume?.status, "completed")
+  assert.deepEqual(successUnconfirmed.record.output && successUnconfirmed.record.output.kind === "value"
+    ? successUnconfirmed.record.output.value : null, [{ id: "first", value: "甲" }, { id: "second", value: "乙" }])
+
+  const primary = new Error("primary_failed")
+  const failedConfirmed = fixture(false, confirmedCleanup(), primary)
+  await failedConfirmed.executor.execute(failedConfirmed.record, new AbortController().signal)
+  assert.equal(failedConfirmed.record.status, "failed")
+  assert.equal(failedConfirmed.record.cleanup.status, "confirmed")
+
+  const failedUnconfirmed = fixture(false, unconfirmedCleanup(), primary)
+  await failedUnconfirmed.executor.execute(failedUnconfirmed.record, new AbortController().signal)
+  assert.equal(failedUnconfirmed.record.status, "cleanup_required")
+  assert.equal(failedUnconfirmed.record.cleanupResume?.status, "failed")
+  assert.match(failedUnconfirmed.record.cleanupResume?.reason ?? "", /primary_failed/)
+})
+
+function fixture(failFirst: boolean, cleanup?: RunnerCleanupReport, primaryError?: Error) {
   const taskId = "access-pressure-task", now = "2026-09-13T00:00:00.000Z"
   const item = { id: "item", version: 1, dialect: "bat-value-schema/v1" as const, schema: { type: "object" as const,
     properties: { id: { type: "string" as const }, value: { type: "string" as const } },
@@ -81,20 +109,30 @@ function fixture(failFirst: boolean) {
     authorizationId: randomUUID(), plan: { id: plan.id, version: 1, digest: planDigest }, requirement: plan.requirement,
     input: { items: [{ id: "first", value: "甲" }, { id: "first", value: "甲" }, { id: "second", value: "乙" }] },
     inputDigest: "a".repeat(64), pacing: { nodeDelayMs: 0 }, consumed: empty(), status: "queued", sequence: 0,
+    cleanup: { ...UNRECORDED_EXECUTION_CLEANUP }, cleanupResume: null,
     currentStepId: null, currentRunId: null,
     steps: [{ stepId, chain: chainRef, invocationIds: [], runIds: [], consumed: empty(), status: "pending", output: null, reason: null }],
-    output: null, reason: "等待执行", createdAt: now, updatedAt: now }
+    output: null, reason: "等待执行", reviews: [], createdAt: now, updatedAt: now }
   record.inputDigest = digestJson(record.input)
   const inputs: string[] = [], runs: TaskRun[] = []
   const repository = { plan: () => plan, requirement: () => requirement, chain: () => chain, runs: () => runs,
-    saveExecution: (value: TaskExecution) => value } as unknown as TaskContractRepository
+    saveExecution: (value: TaskExecution) => value, saveCleanupAudit: (value: unknown) => value } as unknown as TaskContractRepository
   const store = { snapshot: () => ({ active: false, confirmedVersion: 1 }) } as unknown as ProductStore
-  const host = { group: async (_input: unknown, work: (execute: (chain: TaskChain, request: { input: JsonValue }) => Promise<TaskRun>) => Promise<unknown>) => work(async (selected, request) => {
-    const value = request.input as { id: string; value: string }; inputs.push(value.id)
-    const run = failFirst && inputs.length === 1 ? failedRun(selected, request as never)
-      : completedRun(selected, request as never, value)
-    runs.push(run); return run
-  }) } as unknown as TaskRuntimeHost
+  const host = { group: async (group: { browserRunId: string; onCleanup?(report: RunnerCleanupReport): void },
+    work: (execute: (chain: TaskChain, request: { input: JsonValue }) => Promise<TaskRun>) => Promise<unknown>) => {
+    let primary: { status: "completed"; value: unknown } | { status: "failed"; error: Error }
+    if (primaryError) primary = { status: "failed", error: primaryError }
+    else primary = { status: "completed", value: await work(async (selected, request) => {
+      const value = request.input as { id: string; value: string }; inputs.push(value.id)
+      const run = failFirst && inputs.length === 1 ? failedRun(selected, request as never)
+        : completedRun(selected, request as never, value)
+      runs.push(run); return run
+    }) }
+    if (cleanup) group.onCleanup?.(cleanup)
+    if (cleanup?.status === "unconfirmed") throw new RuntimeCleanupRequiredError(group.browserRunId, cleanup, primary)
+    if (primary.status === "failed") throw primary.error
+    return primary.value
+  } } as unknown as TaskRuntimeHost
   return { executor: new TaskPlanExecutor(store, repository, host), record, inputs, repository, host }
 }
 
@@ -116,3 +154,13 @@ function failedRun(chain: TaskChain, request: { binding: TaskRun["binding"]; inp
 }
 
 function empty() { return { transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 } }
+
+function confirmedCleanup() {
+  return cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({ stage, status: "confirmed", code: null })), false)
+}
+
+function unconfirmedCleanup() {
+  return cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => stage === "close_protocol"
+    ? { stage, status: "unconfirmed", code: "cleanup_close_protocol_timeout" }
+    : { stage, status: "confirmed", code: null }), false)
+}

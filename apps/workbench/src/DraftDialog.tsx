@@ -9,7 +9,7 @@ export function DraftDialog({ state, version, open, onVersion, onConfirm, readOn
   const current = Boolean(draft) && currentDraft(state)?.version === draft?.version
   const markdown = projectDraftMarkdown(draft)
   return <ResizableDrawer title="需求草稿" open={open} onClose={() => onVersion(null)}>
-    <p className="detail-intro">确认后可生成任务计划；计划会按需核验真实来源，并形成可授权执行的任务步骤。</p>
+    <p className="detail-intro">确认后可生成链路草稿；系统会核验真实来源，只有你明确发布后才形成固定版本。</p>
     <div className="draft-version-label"><span>版本记录</span><Select.Root value={version === null ? "" : String(version)} onValueChange={(value) => onVersion(Number(value))}>
       <Select.Trigger aria-label="版本记录" placeholder="选择版本" /><Select.Content position="popper">{state.drafts.map((item) => <Select.Item key={item.version} value={String(item.version)}>v{item.version} · {item.title}</Select.Item>)}</Select.Content>
     </Select.Root></div>

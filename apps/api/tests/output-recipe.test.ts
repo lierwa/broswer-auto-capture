@@ -64,6 +64,9 @@ test("ResultBinding 只携带已验证来源和计划逻辑产生者", () => {
   assert.equal(hybridResultBindingSchema.safeParse({ ...binding, assignments: [
     { ...binding.assignments[0], formula: "count(items)" },
   ] }).success, false)
+  assert.equal(hybridResultBindingSchema.safeParse({ ...binding, assignments: [
+    { ...binding.assignments[0], producerRef: "catalogResultText" },
+  ] }).success, true)
 })
 
 test("空列表分支的两条输出路径写入同一结果变量", () => {

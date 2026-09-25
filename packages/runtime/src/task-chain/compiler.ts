@@ -158,7 +158,10 @@ function schemaAtPath(root: ValueSchema, path: (string | number)[]) {
 }
 
 function successors(node: ChainNode, edges: ReadonlyMap<string, ChainEdge>) {
-  return nodePorts(node).map((port) => edges.get(`${node.id}:${port}`)!.to)
+  return nodePorts(node).flatMap((port) => {
+    const edge = edges.get(`${node.id}:${port}`)
+    return edge ? [edge.to] : []
+  })
 }
 
 function assertReachability(chain: TaskChain, nodes: ReadonlyMap<string, ChainNode>, edges: ReadonlyMap<string, ChainEdge>) {
@@ -198,7 +201,8 @@ function assertBoundedCycles(chain: TaskChain, nodes: ReadonlyMap<string, ChainN
   for (const node of nodes.values()) {
     if (node.kind !== "loop") continue
     for (const outcome of nodePorts(node)) {
-      if (outcome !== "body" && reaches(edges.get(`${node.id}:${outcome}`)!.to, node.id)) {
+      const edge = edges.get(`${node.id}:${outcome}`)
+      if (outcome !== "body" && edge && reaches(edge.to, node.id)) {
         throw new Error("loop_terminal_outcome_cycles")
       }
     }

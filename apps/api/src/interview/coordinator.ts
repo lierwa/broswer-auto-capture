@@ -20,6 +20,13 @@ import {
   parseInterviewUIAuthoringCapabilities,
   questionFromAuthoringBlock,
 } from "./protocol.js"
+import {
+  createSourceResolutionTools,
+  PiSourceSearchObserver,
+  ReadOnlySourceResolver,
+  sourceResolutionOutput,
+} from "./source-resolution.js"
+import type { SourceResolution } from "@browser-capture/contracts/interview"
 
 interface Job {
   taskId: string
@@ -50,9 +57,11 @@ function failureReason(error: unknown) {
 }
 export class InterviewCoordinator {
   private job: Job | null = null
+  private readonly jobs = new Set<Job>()
   private closing = false
   private failed = false
-  constructor(readonly store: ProductStore, private aiModel: AIModelProvider, private interviewSkill: string) {}
+  constructor(readonly store: ProductStore, private aiModel: AIModelProvider, private interviewSkill: string,
+    private sourceResolver = new ReadOnlySourceResolver()) {}
   private available() {
     if (this.closing || this.failed) throw new DomainError("service_unavailable", "访谈服务已停止或持久化异常，请重启后恢复。", 503)
   }
@@ -85,8 +94,12 @@ export class InterviewCoordinator {
     if (turnId) {
       const job: Job = { taskId: id, turnId, controller: new AbortController(), done: Promise.resolve(), ui: ui! }
       this.job = job
+      this.jobs.add(job)
       // WHY：执行由服务持有，不依赖 HTTP 客户端消费；断线只取消观察，不取消模型轮次。
-      job.done = this.run(job).catch(() => { this.failed = true }).finally(() => { if (this.job === job) this.job = null })
+      job.done = this.run(job).catch(() => { this.failed = true }).finally(() => {
+        if (this.job === job) this.job = null
+        this.jobs.delete(job)
+      })
     }
     return this.snapshot(id)
   }
@@ -106,7 +119,7 @@ export class InterviewCoordinator {
     return this.snapshot(id)
   }
   private async run(job: Job) {
-    let output: InterviewOutput | undefined, reason: string | undefined
+    let output: InterviewOutput | undefined, sourceResolution: SourceResolution | undefined, reason: string | undefined
     let model: PreparedMainAIModel | undefined
     let confirmAcceptedStep: (() => Promise<boolean>) | undefined
     let committed = false
@@ -117,15 +130,18 @@ export class InterviewCoordinator {
       model = await this.aiModel.prepareMain(selection)
       const result = await this.runShared(job, model, signal)
       output = result.output
+      sourceResolution = result.sourceResolution
       confirmAcceptedStep = result.confirmAcceptedStep
     } catch (error) { output = undefined; reason = failureReason(error) }
     finally {
       try {
         this.store.mutate(job.taskId, (state) => {
           finishRound(state, job.turnId,
-            job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason)
+            job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason, sourceResolution)
           committed = state.turns.find((turn) => turn.id === job.turnId)?.status === "succeeded"
         })
+        // WHY：持久化终态已经是下一轮的唯一并发门；Pi 确认与模型关闭属于本轮收尾，不能让 UI 读到 idle 后又被旧 job 拒绝。
+        if (this.job === job) this.job = null
         // WHY：Pi candidate 只有在领域校验与 ProductStore 事务都完成后才可续接；确认失败不反写已提交业务事实。
         if (committed && confirmAcceptedStep) await confirmAcceptedStep().catch(() => false)
       } finally {
@@ -137,6 +153,11 @@ export class InterviewCoordinator {
     const state = this.store.snapshot(job.taskId)
     const assistantMessageId = state.turns.find((turn) => turn.id === job.turnId)!.assistantMessageId
     const { session: authoring, prompt } = createInterviewMainAuthoring(state, this.interviewSkill, job.ui)
+    let sourceResolution: SourceResolution | undefined
+    const piSearches = new PiSourceSearchObserver()
+    const sourceTools = createSourceResolutionTools({ resolver: this.sourceResolver, revision: state.revision,
+      onSearch: () => undefined,
+      piSearches, questionId: assistantMessageId, onResolution: (value) => { sourceResolution = value } })
     let streamedText = ""
     let pendingQuestion: InterviewOutput["question"] = null
     const parts: InterviewMessagePart[] = []
@@ -170,8 +191,10 @@ export class InterviewCoordinator {
       sessionId: job.taskId,
       messages: interviewCanonicalMessages(state),
       activeTask: prompt,
+      tools: sourceTools,
       signal,
       onEvent: (event) => {
+        piSearches.accept(event)
         const projection = event.type === "text.delta" ? acceptText(event.text) : undefined
         this.appendAIEvent(job, event, projection)
       },
@@ -186,15 +209,27 @@ export class InterviewCoordinator {
       const projection = acceptText(returnedText)
       if (projection) this.appendProjection(job, projection.text, projection.question)
     }
-    else if (returnedText !== streamedText) throw new Error("interview_authoring_stream_text_mismatch")
+    if (sourceResolution) return {
+      // WHY：来源 Question 由已校验候选生成，但搜索前后的可见正文仍属于本轮助手事实。
+      // 工具轮可能有多条 assistant 消息，不能用末条 outputText 覆盖已流出的完整正文。
+      output: sourceResolutionOutput(sourceResolution, job.turnId, {
+        assistantText: parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("").trim(),
+        question: null, draft: null, parts: parts.filter((part) => part.type === "text"),
+      }),
+      sourceResolution,
+      ...(generated.confirmAcceptedStep ? { confirmAcceptedStep: generated.confirmAcceptedStep } : {}),
+    }
+    if (returnedText !== streamedText) throw new Error("interview_authoring_stream_text_mismatch")
     const result = authoring.finish()
     if (result.textDelta) {
       appendTextPart(parts, job.turnId, result.textDelta)
       this.appendProjection(job, result.textDelta)
     }
-    const object = parseInterviewAuthoringOutput(result, this.store.snapshot(job.taskId), parts, job.turnId, assistantMessageId)
+    const object = parseInterviewAuthoringOutput(result, this.store.snapshot(job.taskId), parts, job.turnId,
+      assistantMessageId)
     return {
       output: object,
+      ...(sourceResolution ? { sourceResolution } : {}),
       ...(generated.confirmAcceptedStep ? { confirmAcceptedStep: generated.confirmAcceptedStep } : {}),
     }
   }
@@ -229,12 +264,14 @@ export class InterviewCoordinator {
       try { await delay(200, undefined, { signal }) } catch { return }
     }
   }
-  async waitForIdle() { await this.job?.done }
+  async waitForIdle() {
+    while (this.jobs.size) await Promise.all([...this.jobs].map((job) => job.done))
+  }
   async close() {
     if (this.closing) return
     if (this.job) this.cancel(this.job.taskId, this.job.turnId)
     this.closing = true
-    await this.job?.done
+    await this.waitForIdle()
   }
 }
 

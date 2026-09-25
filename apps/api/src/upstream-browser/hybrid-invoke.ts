@@ -1,5 +1,6 @@
 import { z } from "zod"
-import { budgetSchema, chainEdgePort, jsonValueSchema, valueSchemaSchema, versionReferenceSchema, type TaskChain, type VersionReference } from "@browser-capture/contracts"
+import { budgetSchema, chainEdgePort, jsonValueSchema, taskInputRequiresVariation, valueSchemaSchema,
+  versionReferenceSchema, type TaskChain, type VersionReference } from "@browser-capture/contracts"
 import { compileTaskChain, executableChainDigest } from "@browser-capture/runtime"
 import { isDeepStrictEqual } from "node:util"
 
@@ -12,7 +13,10 @@ export function projectVerifiedChild(chain: TaskChain) {
   const fingerprint = executableChainDigest(chain)
   const evidence = chain.validation.evidence.filter((item) => item.passed && item.chainDigest === fingerprint && item.modelCalls !== null)
   if (chain.validation.status !== "verified" || !evidence.some((sample) => sample.phase === "sample" && evidence.some((other) =>
-    other.phase === "verification" && other.inputDigest !== sample.inputDigest && other.runId !== sample.runId))) throw new Error("hybrid_invoked_chain_not_verified")
+    other.phase === "verification" && other.runId !== sample.runId
+    && (!taskInputRequiresVariation(chain.inputContract) || other.inputDigest !== sample.inputDigest)))) {
+    throw new Error("hybrid_invoked_chain_not_verified")
+  }
   compileTaskChain(chain)
   if (Object.keys(chain.variables).length) throw new Error("hybrid_child_control_mapping_unavailable")
   const operations = [], visited = new Set<string>(), nodes = new Map(chain.nodes.map((node) => [node.id, node]))

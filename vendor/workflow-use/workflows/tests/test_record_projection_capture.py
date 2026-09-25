@@ -490,6 +490,25 @@ class RecordProjectionCaptureTest(unittest.TestCase):
             {'outputPath': ['issues'], 'readPath': []},
         ])
 
+    def test_root_scalar_output_is_wrapped_only_inside_the_read_spec(self):
+        text = 'Catalog result for alpha'
+        root = page(Node('output', text=text, attributes={'data-testid': 'result'}))
+        summary = SimpleNamespace(url='https://example.test/catalog',
+            dom_state=SimpleNamespace(_root=SimpleNamespace(original_node=root)))
+        snapshots = HostSnapshotPair(first=summary, second=summary,
+            identity={'targetId': 'tab-1', 'url': 'https://example.test/catalog'})
+
+        captured = derive_host_read(snapshots, {'type': 'string'}, text)
+
+        self.assertEqual(captured.output, {'value': text})
+        self.assertEqual(captured.specification.outputSchema, {
+            'type': 'object', 'properties': {'value': {'type': 'string'}},
+            'required': ['value'], 'additionalProperties': False,
+        })
+        self.assertEqual([item.model_dump() for item in captured.mappings], [
+            {'outputPath': [], 'readPath': ['value']},
+        ])
+
     def test_partial_object_projection_maps_each_verified_field_to_the_final_object(self):
         title = Node('h1', text='Issue title', attributes={'class': 'title'})
         body = Node('div', text='Issue body', attributes={'class': 'body'})

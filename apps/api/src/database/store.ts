@@ -52,12 +52,15 @@ export class ProductStore {
     const read = <T extends { taskId: unknown }>(rows: T[]) => rows.map(({ taskId: _taskId, ...row }) => row)
     const turns = read(this.db.select().from(schema.turns).where(eq(schema.turns.taskId, id)).orderBy(asc(schema.turns.revision)).all())
     return interviewStateSchema.parse({ revision: task.revision, sequence: task.sequence, confirmedVersion: task.confirmedVersion,
+      policyVersion: task.interviewPolicyVersion,
       active: Boolean(task.activeTurnId), activeTurnId: task.activeTurnId, cancellationRequested: turns.some((turn) => turn.id === task.activeTurnId && turn.status === "cancelling"),
       messages: this.db.select().from(schema.messages).where(eq(schema.messages.taskId, id)).orderBy(asc(schema.messages.ordinal)).all().map((row) => row.body),
       drafts: read(this.db.select().from(schema.drafts).where(eq(schema.drafts.taskId, id)).orderBy(asc(schema.drafts.version)).all()),
       audits: read(this.db.select().from(schema.audits).where(eq(schema.audits.taskId, id)).orderBy(asc(schema.audits.ordinal)).all()), turns,
       decisions: read(this.db.select().from(schema.decisions).where(eq(schema.decisions.taskId, id)).orderBy(asc(schema.decisions.createdAt)).all()),
       unresolved: read(this.db.select().from(schema.questions).where(eq(schema.questions.taskId, id)).orderBy(asc(schema.questions.revision)).all()),
+      sourceResolutions: this.db.select().from(schema.sourceResolutions).where(eq(schema.sourceResolutions.taskId, id))
+        .orderBy(asc(schema.sourceResolutions.revision)).all().map((row) => row.body),
     })
   }
   list(): TaskSummary[] {
@@ -122,7 +125,8 @@ export class ProductStore {
   }
   insertTask(meta: TaskMeta, state: InterviewState) {
     const value = validateState(state)
-    this.db.insert(schema.tasks).values({ ...taskMetaSchema.parse(meta), revision: value.revision, sequence: value.sequence, confirmedVersion: value.confirmedVersion, activeTurnId: value.activeTurnId }).run()
+    this.db.insert(schema.tasks).values({ ...taskMetaSchema.parse(meta), revision: value.revision, sequence: value.sequence,
+      confirmedVersion: value.confirmedVersion, activeTurnId: value.activeTurnId, interviewPolicyVersion: value.policyVersion }).run()
     this.saveRows(meta.id, value)
   }
   mutate<T>(id: string, change: (state: InterviewState) => T): T {
@@ -132,19 +136,24 @@ export class ProductStore {
       const result = change(state)
       state.sequence += 1
       this.saveRows(id, validateState(state))
-      this.db.update(schema.tasks).set({ revision: state.revision, sequence: state.sequence, confirmedVersion: state.confirmedVersion, activeTurnId: state.activeTurnId, updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, id)).run()
+      this.db.update(schema.tasks).set({ revision: state.revision, sequence: state.sequence, confirmedVersion: state.confirmedVersion,
+        activeTurnId: state.activeTurnId, interviewPolicyVersion: state.policyVersion,
+        updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, id)).run()
       return result
     })
   }
   private saveRows(taskId: string, state: InterviewState) {
     // TRADE-OFF：F1 按任务在同一同步事务重投影小规模访谈表；每轮独立行，避免跨文件半提交。
     // 不在事务中等待模型；规模优化可改增量 upsert，不改变这些事实表的归属。
-    for (const table of [schema.messages, schema.drafts, schema.turns, schema.questions, schema.decisions, schema.audits]) this.db.delete(table).where(eq(table.taskId, taskId)).run()
+    for (const table of [schema.messages, schema.drafts, schema.turns, schema.questions, schema.decisions,
+      schema.sourceResolutions, schema.audits]) this.db.delete(table).where(eq(table.taskId, taskId)).run()
     if (state.messages.length) this.db.insert(schema.messages).values(state.messages.map((body, ordinal) => ({ taskId, id: body.id, ordinal, body }))).run()
     if (state.drafts.length) this.db.insert(schema.drafts).values(state.drafts.map((row) => ({ taskId, ...row }))).run()
     if (state.turns.length) this.db.insert(schema.turns).values(state.turns.map((row) => ({ taskId, ...row }))).run()
     if (state.unresolved.length) this.db.insert(schema.questions).values(state.unresolved.map((row) => ({ taskId, ...row }))).run()
     if (state.decisions.length) this.db.insert(schema.decisions).values(state.decisions.map((row) => ({ taskId, ...row }))).run()
+    if (state.sourceResolutions.length) this.db.insert(schema.sourceResolutions).values(state.sourceResolutions
+      .map((body) => ({ taskId, id: body.id, revision: body.revision, body }))).run()
     if (state.audits.length) this.db.insert(schema.audits).values(state.audits.map((row, ordinal) => ({ taskId, ordinal, ...row }))).run()
   }
   recoverInterrupted() {

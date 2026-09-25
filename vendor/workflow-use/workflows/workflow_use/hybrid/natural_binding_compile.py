@@ -19,6 +19,11 @@ def natural_bindings(request, action, pre, has_target, prior_segments=()):
             continue
         matches = [fact for fact in facts if fact.value.get('argumentPath') == key]
         if len(matches) != 1:
+            derived = derived_prior_read_binding(request, action, key, args[key], prior_segments) \
+                if not matches else None
+            if derived is not None:
+                decisions.append(derived)
+                continue
             issues.append(gap('missing_binding', [action.id],
                               'natural_binding_evidence_missing:' + key, 'collect_evidence'))
             continue
@@ -41,6 +46,36 @@ def natural_bindings(request, action, pre, has_target, prior_segments=()):
             'proofRefs': [ref.model_dump(mode='json') for ref in proof_refs],
             'binding': value.binding})
     return decisions, issues
+
+
+def derived_prior_read_binding(request, action, key, expected, prior_segments):
+    """Recover a deterministic source decision from earlier immutable verified reads."""
+    previous = []
+    for candidate in request.trace.actions:
+        if candidate.id == action.id:
+            break
+        post = next((item for item in request.trace.observations
+                     if item.id == candidate.postObservationRef), None)
+        if post is not None:
+            previous.extend(fact for fact in post.facts if fact.kind == 'verified_natural_read')
+    binding = binding_from_prior_reads(action.id, key, expected, previous)
+    if binding is None:
+        return None
+    sources = [fact for fact in previous if fact.id == binding.sourceReadRef]
+    if len(sources) != 1:
+        return None
+    kind = classify_binding(binding.binding, request.runtimeInputSchema,
+                            _prior_action_schemas(prior_segments))
+    refs = _binding_proof_refs(request, action, key, binding, kind,
+                               prior_segments, sources[0].sourceRefs)
+    if kind != 'prior_output' or refs is None:
+        return None
+    # WHY：这里只派生编译决策，不把当前编译器生成的事实塞回旧浏览器 trace。
+    return {'id': f'b-{action.id}-{key}', 'actionRef': action.id, 'argumentPath': key,
+            'kind': kind, 'sourceRef': sources[0].id, 'transform': None,
+            'derivation': 'prior_verified_read',
+            'proofRefs': [ref.model_dump(mode='json') for ref in refs],
+            'binding': binding.binding}
 
 
 def anchored_navigation_binding(request, action, pre, post, target, prior_segments=()):
@@ -98,6 +133,11 @@ def _binding_proof_refs(request, action, key, fact, kind, prior_segments, direct
         matched = (kind == 'authorized_constant'
                    and fact.taskQuote == fact.binding.get('value') == action.args[key]
                    and isinstance(fact.taskQuote, str) and fact.taskQuote in request.requirement.text)
+        return _unique_refs(direct_refs) if matched else None
+    if fact.provenance == 'plan_entry_url':
+        matched = (kind == 'authorized_constant' and action.name == 'navigate' and key == 'url'
+                   and fact.binding.get('value') == action.args[key]
+                   and fact.binding.get('value') in request.plan.entryUrls)
         return _unique_refs(direct_refs) if matched else None
     source = _verified_node_binding_source(request.trace, fact, prior_segments)
     if (fact.provenance != 'node_output' or kind != 'prior_output' or source is None

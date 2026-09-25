@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from browser_use.agent.views import ActionResult
 
-from workflow_use.hybrid.capability import OrdinaryCapability
+from workflow_use.hybrid.capability import OrdinaryCapability, navigation_tab_ids, reconcile_new_navigation_tab
 from workflow_use.hybrid.postconditions import PostconditionNotMet, SettlePolicy
 from workflow_use.hybrid.target_preparation import (
     assert_action_target,
@@ -51,6 +51,44 @@ class FakePage:
 
 
 class PreparationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_click_navigation_focuses_the_single_new_tab_before_postcondition_checks(self):
+        tab = lambda target_id, url: SimpleNamespace(target_id=target_id, url=url)
+        browser = SimpleNamespace(
+            agent_focus_target_id='old',
+            get_current_page=AsyncMock(return_value=SimpleNamespace(
+                get_url=AsyncMock(side_effect=['about:blank', 'https://example.test/result']))),
+            get_tabs=AsyncMock(side_effect=[
+                [tab('old', 'https://example.test/start')],
+                [tab('old', 'https://example.test/start'), tab('new', 'about:blank')],
+                [tab('old', 'https://example.test/start'), tab('new', 'https://example.test/result')],
+            ]),
+            on_SwitchTabEvent=AsyncMock())
+        browser.on_SwitchTabEvent.side_effect = lambda event: setattr(browser, 'agent_focus_target_id', event.target_id)
+
+        before = await navigation_tab_ids(browser)
+        await reconcile_new_navigation_tab(browser, before, attempts=2, interval=0)
+
+        event = browser.on_SwitchTabEvent.await_args.args[0]
+        self.assertEqual(event.target_id, 'new')
+
+    async def test_click_navigation_rejects_a_tab_that_stays_about_blank(self):
+        tab = lambda target_id, url: SimpleNamespace(target_id=target_id, url=url)
+        browser = SimpleNamespace(
+            agent_focus_target_id='old',
+            get_current_page=AsyncMock(return_value=SimpleNamespace(get_url=AsyncMock(return_value='about:blank'))),
+            get_tabs=AsyncMock(side_effect=[
+                [tab('old', 'https://example.test/start')],
+                [tab('old', 'https://example.test/start'), tab('new', 'about:blank')],
+                [tab('old', 'https://example.test/start'), tab('new', 'about:blank')],
+            ]),
+            on_SwitchTabEvent=AsyncMock())
+        browser.on_SwitchTabEvent.side_effect = lambda event: setattr(browser, 'agent_focus_target_id', event.target_id)
+
+        before = await navigation_tab_ids(browser)
+        with self.assertRaisesRegex(ValueError, 'new_navigation_tab_not_ready'):
+            await reconcile_new_navigation_tab(browser, before, attempts=2, interval=0)
+        browser.on_SwitchTabEvent.assert_awaited_once()
+
     async def test_offscreen_target_scrolls_then_rebinds_before_dispatch(self):
         before = FakeElement(11, {**READY, 'inView': False, 'hitRelation': 'outside'})
         after = FakeElement(22, {**READY, 'hitRelation': 'descendant'})
