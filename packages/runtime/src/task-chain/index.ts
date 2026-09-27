@@ -1,4 +1,5 @@
 export * from "./bindings.js"
+export { checkpointBrowserReceipt } from "./browser-checkpoint.js"
 export * from "./capabilities.js"
 export * from "./compiler.js"
 export { compactGeneratedFailureRoutes } from "./compact-failure-routes.js"

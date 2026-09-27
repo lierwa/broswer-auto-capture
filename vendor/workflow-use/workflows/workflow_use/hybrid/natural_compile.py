@@ -9,13 +9,18 @@ from .coverage import (
     execution_extraction_coverage,
     failed_native_dom_lookup_coverage,
     native_extraction_coverage,
+    native_dom_lookup_observation_coverage,
     search_page_coverage,
+    selection_validation_coverage,
 )
 from .evidence import ActionCoverage, EvidenceRef, digest, gap
+from .human_wait_compile import compile_human_wait
 from .natural_binding_compile import anchored_navigation_binding, natural_bindings
 from .natural_compile_result import finalize_natural_compilation
+from .natural_media_compile import bind_recorded_playback
 from .natural_readiness import NATURAL_SETTLE, consumer_readiness_by_action, with_consumer_readiness
 from .natural_reads import compile_verified_read
+from .natural_repeat import repeat_context, repeat_sample_coverage
 from .natural_selection import bind_selection_function
 from .natural_target_compile import natural_target
 from .navigation import NAVIGATION_ACTIONS, cross_tab_navigation_allowed
@@ -40,9 +45,11 @@ TARGET_STATE_KEYS = frozenset({'aria-expanded', 'aria-checked', 'aria-selected',
                                'checked', 'selected', 'disabled'})
 EMPTY_OVERLAYS = digest([])
 
-
 def compile_natural_request(request, registry, compilation_type, linear_graph, source_gaps=(), *, output_schema=None):
     trace, issues, segments, ledger = request.trace, list(source_gaps), [], []
+    repeat, repeat_issues = repeat_context(request)
+    issues.extend(repeat_issues)
+    repeat_advances = {row['advanceActionRef'] for row in repeat['value']['iterations']} if repeat else set()
     output_paths, wait_owners = [], {}
     if request.actionRegistryVersion != registry.schemaDigest or trace.source.version != registry.providerVersion:
         issues.append(gap('invalid_source', [], 'registry_version_mismatch', 'reject_trace'))
@@ -51,9 +58,16 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
     observations = {item.id: item for item in trace.observations}
     consumer_readiness = consumer_readiness_by_action(trace, NATURAL_SETTLE)
     for action in trace.actions:
+        if repeat and action.id in repeat['probeRefs'] and valid_native_action(registry, action):
+            ledger.append(repeat_sample_coverage(repeat, action))
+            continue
         not_dispatched = not_dispatched_coverage(trace, action) if valid_native_action(registry, action) else None
         if not_dispatched is not None:
             ledger.append(not_dispatched)
+            continue
+        validation = selection_validation_coverage(registry, action)
+        if validation is not None:
+            ledger.append(validation)
             continue
         failed_read = failed_bat_field_read_coverage(registry, action)
         if failed_read is not None:
@@ -69,7 +83,8 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
                 ownerSegmentId=wait_owners[action.id], exclusionRule='bounded_postcondition_wait/v1',
                 evidenceRefs=[action.resultRef] if action.resultRef else []))
             continue
-        if action.name == 'done' and action.status == 'succeeded':
+        # WHY：done 没有浏览器副作用；合法引用纠错须留审计，不能变成浏览器编译失败。
+        if action.name == 'done' and action.status in ('succeeded', 'failed') and valid_native_action(registry, action):
             ledger.append(ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
                 exclusionRule='agent_done_metadata/v1', evidenceRefs=[action.resultRef] if action.resultRef else []))
             continue
@@ -79,33 +94,9 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
             ledger.append(support)
             continue
         pre, post = observations.get(action.preObservationRef), observations.get(action.postObservationRef)
-        text_lookup = search_page_coverage(registry, action, pre, post)
-        if text_lookup is not None:
-            ledger.append(text_lookup)
-            continue
-        inspection = dom_inspection_coverage(registry, action, pre, post)
-        if inspection is not None:
-            ledger.append(inspection)
-            continue
-        # WHY：execution 的公开输出虽为 null，页面读取仍可能决定后续目标或证明最终状态；
-        # 在形成可复跑读取/决策节点前不得把它降为仅供 Agent 使用的证据。
-        extraction = None if getattr(request.plan.resultSpec, 'mode', None) == 'execution' else \
-            native_extraction_coverage(registry, action, pre, post)
-        if extraction is not None:
-            ledger.append(extraction)
-            continue
-        execution_extraction = execution_extraction_coverage(
-            registry, action, pre, post, request.plan.resultSpec, output_schema)
-        if execution_extraction is not None:
-            ledger.append(execution_extraction)
-            continue
-        lookup = natural_dom_lookup_coverage(registry, action, pre, post)
-        if lookup is not None:
-            ledger.append(lookup)
-            continue
-        failed_lookup = failed_native_dom_lookup_coverage(registry, action, pre, post)
-        if failed_lookup is not None:
-            ledger.append(failed_lookup)
+        observation_only = observation_only_coverage(request, registry, action, pre, post, output_schema)
+        if observation_only is not None:
+            ledger.append(observation_only)
             continue
         delayed, waits = delayed_natural_post(trace, registry, action, pre)
         if delayed is not None:
@@ -115,7 +106,8 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
             consumer_readiness.get(action.id))
         issues.extend(action_issues)
         if segment is not None:
-            inserted, segment, selection_issues = bind_selection_function(request, action, segments, segment)
+            inserted, segment, selection_issues = ([], segment, []) if action.id in repeat_advances else \
+                bind_selection_function(request, action, segments, segment)
             issues.extend(selection_issues)
             if segment is not None:
                 segments.extend(inserted)
@@ -139,8 +131,26 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
         issues = [item for item in issues if not (
             len(item.actionRefs) == 1 and item.actionRefs[0] in waits
             and item.reason == 'natural_postcondition_evidence_missing')]
+    issues.extend(bind_recorded_playback(trace, registry, segments))
     return finalize_natural_compilation(
-        request, registry, compilation_type, linear_graph, output_schema, segments, ledger, issues)
+        request, registry, compilation_type, linear_graph, output_schema, segments, ledger, issues, repeat=repeat)
+
+
+def observation_only_coverage(request, registry, action, pre, post, output_schema):
+    for classifier in (search_page_coverage, dom_inspection_coverage):
+        row = classifier(registry, action, pre, post)
+        if row is not None:
+            return row
+    # WHY：execution 的读取仍可能决定后续目标，不能因公开输出为 null 而抹掉读取职责。
+    if getattr(request.plan.resultSpec, 'mode', None) != 'execution':
+        row = native_extraction_coverage(registry, action, pre, post)
+        if row is not None:
+            return row
+    row = execution_extraction_coverage(registry, action, pre, post, request.plan.resultSpec, output_schema)
+    if row is not None:
+        return row
+    return (natural_dom_lookup_coverage(registry, action, pre, post)
+            or failed_native_dom_lookup_coverage(registry, action, pre, post))
 
 
 def valid_native_action(registry, action):
@@ -179,6 +189,8 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
         return None, None, [gap('missing_observation', [action.id], 'action_pre_and_post_required')]
     if not cross_tab_navigation_allowed(action, pre, post):
         return None, None, [gap('unsupported_capability', [action.id], 'cross_tab_state_contract_required', 'add_capability')]
+    if action.name == 'bat_request_human':
+        return compile_human_wait(action, pre, post)
     if action.name == 'bat_summarize':
         return compile_verified_summary(request, action, pre, post, output_schema, prior_segments, prior_paths)
     if action.name in ('extract', 'bat_read_fields', 'find_elements'):
@@ -283,32 +295,7 @@ def compile_target_scroll(request, action, pre, post):
 
 
 def natural_dom_lookup_coverage(registry, action, pre, post):
-    if action.name != 'find_elements' or action.status != 'succeeded' or action.resultRef is None:
-        return None
-    try:
-        registry.validate_action(action.name, action.args)
-    except Exception:
-        return None
-    if pre is None or post is None or pre.tabId != post.tabId:
-        return None
-    before, after = fact_value(pre, 'url_digest'), fact_value(post, 'url_digest')
-    if before is None or after is None or before.value != after.value:
-        return None
-    queries = [fact for fact in post.facts if fact.kind == 'dom_query' and isinstance(fact.value, dict)
-               and fact.value.get('actionRef') == action.id]
-    if len(queries) != 1:
-        return None
-    # WHY：完整列表会决定后续动态目标，必须编译为 read-fields/数据节点；只有截断、空集等
-    # 不足以承载复跑决策的探索查询才允许留在 Agent 内部，避免把真实列表读取静默吞掉。
-    if queries[0].value.get('complete') is True:
-        return None
-    scope = queries[0].value.get('scope') or {}
-    if (scope.get('tabId') != pre.tabId or scope.get('frameId') is not None
-            or scope.get('urlDigest') != before.value):
-        return None
-    references = unique_refs([action.resultRef, *queries[0].sourceRefs])
-    return ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
-                          exclusionRule='native_dom_lookup_observation/v1', evidenceRefs=references)
+    return native_dom_lookup_observation_coverage(registry, action, pre, post)
 
 
 def natural_postconditions(action, pre, post, target, bindings, consumer=None):
@@ -346,11 +333,15 @@ def natural_postconditions(action, pre, post, target, bindings, consumer=None):
             conditions, refs = with_consumer_readiness(
                 conditions, refs, consumer, NATURAL_SETTLE)
         return conditions, refs, issues
-    if consumer is not None:
+    if consumer is not None and action.name != 'scroll':
         conditions, refs = with_consumer_readiness([], [], consumer, NATURAL_SETTLE)
         return conditions, refs, []
     effect_condition, effect_limitation = natural_effect_condition(action, pre, post)
     if effect_condition is not None:
+        if consumer is not None:
+            conditions, refs, issues = effect_condition
+            conditions, refs = with_consumer_readiness(conditions, refs, consumer, NATURAL_SETTLE)
+            return conditions, refs, issues
         return effect_condition
     if action.name == 'scroll':
         return [], [], [gap('missing_effect_proof', [action.id],
@@ -377,6 +368,12 @@ def natural_effect_condition(action, pre, post):
         if before is not None and after is not None and before.value != after.value:
             if kind == 'media_playback' and after.value == 'playing':
                 condition = {'kind': kind, 'equals': 'playing', 'clauseRef': after.id,
+                             'settle': NATURAL_SETTLE}
+                return ([condition], after.sourceRefs, []), None
+            if kind == 'scroll_position':
+                # WHY：页面位置变化只证明 scroll 动作确实生效；结果完成仍由独立的
+                # ReadSpec、输出装配和集合范围证据核验，不能把滚动本身当作业务完成。
+                condition = {'kind': kind, 'changed': True, 'clauseRef': after.id,
                              'settle': NATURAL_SETTLE}
                 return ([condition], after.sourceRefs, []), None
             if kind == 'target_state' and deterministic_target_state(after.value):

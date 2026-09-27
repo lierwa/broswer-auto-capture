@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { Ajv2020 } from "ajv/dist/2020.js"
 import { artifactReferenceSchema, textSchema } from "./common.js"
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
@@ -49,39 +50,21 @@ export const taskOutputSchema = z.discriminatedUnion("kind", [
 export type TaskDataContract = z.infer<typeof taskDataContractSchema>
 export type TaskOutput = z.infer<typeof taskOutputSchema>
 
-function stringValidator(schema: Extract<ValueSchema, { type: "string" }>) {
-  let validator = z.string()
-  if (schema.minLength !== undefined) validator = validator.min(schema.minLength)
-  if (schema.maxLength !== undefined) validator = validator.max(schema.maxLength)
-  return schema.enum ? validator.refine((value) => schema.enum!.includes(value), "不在允许值中") : validator
-}
-
-function valueValidator(schema: ValueSchema): z.ZodType {
-  if (schema.type === "null") return z.null()
-  if (schema.type === "boolean") return z.boolean()
-  if (schema.type === "string") return stringValidator(schema)
-  if (schema.type === "number" || schema.type === "integer") {
-    let validator = schema.type === "integer" ? z.number().int() : z.number()
-    if (schema.minimum !== undefined) validator = validator.min(schema.minimum)
-    if (schema.maximum !== undefined) validator = validator.max(schema.maximum)
-    return validator
-  }
-  if (schema.type === "array") {
-    let validator = z.array(valueValidator(schema.items))
-    if (schema.minItems !== undefined) validator = validator.min(schema.minItems)
-    if (schema.maxItems !== undefined) validator = validator.max(schema.maxItems)
-    return validator
-  }
-  if (schema.type !== "object") throw new Error("unsupported_value_schema")
-  const properties = Object.fromEntries(Object.entries(schema.properties).map(([key, value]) =>
-    [key, schema.required.includes(key) ? valueValidator(value) : valueValidator(value).optional()]))
-  return schema.additionalProperties ? z.object(properties).catchall(jsonValueSchema) : z.strictObject(properties)
-}
+// WHY：动态schema在Python也由JSON Schema校验器消费；逐类型翻译为Zod会改变Unicode等值语义。
+const taskValueValidator = new Ajv2020({ strict: true, ownProperties: true,
+  coerceTypes: false, useDefaults: false, removeAdditional: false })
 
 /** 动态值也先验证 schema 版本；不能用类型断言跳过跨包校验。 */
 export function parseTaskValue(rawContract: unknown, rawValue: unknown): JsonValue {
   const contract = taskDataContractSchema.parse(rawContract)
-  return jsonValueSchema.parse(valueValidator(contract.schema).parse(jsonValueSchema.parse(rawValue)))
+  const value = jsonValueSchema.parse(rawValue)
+  try {
+    const validate = taskValueValidator.compile<JsonValue>(contract.schema)
+    return z.custom<JsonValue>((candidate) => validate(candidate), "数据不符合任务合同").parse(value)
+  } finally {
+    // WHY：Zod规范化产生新schema对象；使用Ajv公开释放接口，避免长期进程累积临时编译缓存。
+    taskValueValidator.removeSchema(contract.schema)
+  }
 }
 
 export function parseTaskOutput(rawContract: unknown, rawOutput: unknown): TaskOutput {

@@ -5,6 +5,7 @@ from .evidence import EvidenceRef, digest, gap
 from .natural_facts import IGNORED_TECHNICAL_PARAMETERS, NaturalBindingFact, is_native_parameter
 from .natural_reads import VerifiedNaturalRead, value_at_path
 from .prior_read_bindings import binding_from_prior_reads
+from .natural_repeat import derived_repeat_navigation_binding
 
 
 def natural_bindings(request, action, pre, has_target, prior_segments=()):
@@ -15,11 +16,15 @@ def natural_bindings(request, action, pre, has_target, prior_segments=()):
     for key in sorted(args):
         if has_target and key in ('index', 'element_index', 'xpath'):
             continue
+        # WHY：原生 viewport scroll 的显式 None 与缺省同义，不是需要绑定的元素目标。
+        if action.name == 'scroll' and key == 'index' and args[key] is None:
+            continue
         if key in IGNORED_TECHNICAL_PARAMETERS.get(action.name, frozenset()):
             continue
         matches = [fact for fact in facts if fact.value.get('argumentPath') == key]
         if len(matches) != 1:
-            derived = derived_prior_read_binding(request, action, key, args[key], prior_segments) \
+            derived = (derived_repeat_navigation_binding(request, action, key, args[key], prior_segments)
+                       or derived_prior_read_binding(request, action, key, args[key], prior_segments)) \
                 if not matches else None
             if derived is not None:
                 decisions.append(derived)

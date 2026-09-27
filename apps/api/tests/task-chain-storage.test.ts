@@ -13,7 +13,7 @@ import { TaskContractRepository } from "../src/task-chain/repository.js"
 const budget = { maxTransitions: 30, maxBrowserCommands: 10, maxActiveMs: 30_000,
   maxLlmCalls: 0, maxInvocations: 5, maxDepth: 3 }
 
-test("v17 新表保留旧 JSON 原字节并只读分类", async () => {
+test("v19 迁移保留旧表 JSON 原字节", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-task-contract-")), taskId = randomUUID()
   let store = await ProductStore.open(directory)
   store.taskAction({ type: "create", requestId: taskId })
@@ -22,17 +22,18 @@ test("v17 新表保留旧 JSON 原字节并只读分类", async () => {
   const file = path.join(directory, "workbench.sqlite"), legacyBody = ' { "legacy": true, "rows": [1, 2] }\n'
   const raw = new Database(file)
   try {
-    raw.exec("DROP TABLE taskExecutionCandidates; DROP TABLE taskDrafts; DROP TABLE taskExecutionCleanupAudits; DROP TABLE sourceResolutions; DROP TABLE taskReleases; DROP TABLE originAccessBlocks; DROP TABLE originAccessEvents; DROP TABLE taskArtifacts; DROP TABLE taskExecutions; DROP TABLE taskAuthoringJobs; DROP TABLE taskContracts; PRAGMA user_version=9")
+    raw.exec("DROP INDEX operations_task; ALTER TABLE operations DROP COLUMN taskId; PRAGMA user_version=18")
     raw.prepare("INSERT INTO plans(id,taskId,body) VALUES(?,?,?)").run("legacy-plan", created, legacyBody)
   } finally { raw.close() }
   store = await ProductStore.open(directory)
   try {
-    const repository = new TaskContractRepository(store)
-    assert.equal(repository.legacyOriginal(created, "plans", "legacy-plan"), legacyBody)
-    assert.deepEqual(repository.legacy(created), [{ source: "plans", id: "legacy-plan", status: "legacy_read_only",
-      reason: "缺少新协议版本，仅可读取或导出。" }])
     const migrated = new Database(file, { readonly: true })
-    try { assert.equal(migrated.pragma("user_version", { simple: true }), 17) } finally { migrated.close() }
+    try {
+      assert.equal(migrated.pragma("user_version", { simple: true }), 19)
+      const row = migrated.prepare("SELECT body FROM plans WHERE id = ? AND taskId = ?")
+        .get("legacy-plan", created) as { body: string } | undefined
+      assert.equal(row?.body, legacyBody)
+    } finally { migrated.close() }
   } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
 })
 

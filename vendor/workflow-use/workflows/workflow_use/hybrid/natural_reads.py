@@ -4,9 +4,8 @@ from jsonschema import Draft202012Validator
 from pydantic import Field, JsonValue, model_validator
 
 from .evidence import Contract, EvidenceRef, digest, gap
-from .field_read_params import FieldReadMapping, FieldReadToolParams, revalidate_field_read_mapping
 from .dom_evidence import DomQueryEvidence
-from .read import ReadField, ReadSpec, read_fields
+from .read import ReadField, ReadSampleCoverage, ReadSpec, read_fields
 from .targets import TargetResolver
 
 
@@ -37,6 +36,9 @@ class VerifiedNaturalRead(Contract):
     targetId: str = Field(min_length=1)
     containerIdsDigest: str = Field(pattern=r'^[a-f0-9]{64}$')
     stable: bool
+    readRef: str | None = None
+    coverage: ReadSampleCoverage | None = None
+    documentRootId: int | None = None
 
 
 class NaturalReadFailure(ValueError):
@@ -156,7 +158,7 @@ def find_elements_read_spec(query):
     """Project one complete native DOM query into the existing deterministic read capability."""
     value = query if isinstance(query, DomQueryEvidence) else DomQueryEvidence.model_validate(query)
     if (value.complete is not True or value.query.kind != 'css' or not value.includeText
-            or value.truncated is not False or value.total is None or value.total < 1
+            or value.truncated is not False or value.total is None
             or value.showing != value.total or value.total > value.maxResults
             or 'query_selector_redacted' in value.limitations):
         raise NaturalReadFailure('find_elements_read_query_incomplete')
@@ -175,7 +177,7 @@ def find_elements_read_spec(query):
     return ReadSpec(container=value.query.value,
         fields=fields, maxItems=value.maxResults, includeOrdinal=True,
         outputSchema={'type': 'array', 'items': item_schema,
-                      'minItems': 1, 'maxItems': value.maxResults})
+                      'minItems': 0, 'maxItems': value.maxResults})
 
 
 def runtime_read_specification(specification):
@@ -261,7 +263,8 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
             if internal_query:
                 validate_compiled_query_read(value, action, pre, post)
             else:
-                validate_compiled_read(value, output_schema, action, pre, post, [*prior_paths, *paths])
+                validate_compiled_read(value, output_schema, action, pre, post, [*prior_paths, *paths],
+                                       trace=request.trace)
             paths.append(value.outputPath)
     except Exception:
         return None, None, [gap('invalid_source', [action.id],
@@ -298,10 +301,12 @@ def validate_compiled_query_read(value, action, pre, post):
         raise ValueError('verified_query_read_cardinality_mismatch')
 
 
-def validate_compiled_read(value, output_schema, action, pre, post, prior_paths):
+def validate_compiled_read(value, output_schema, action, pre, post, prior_paths, trace=None):
     validate_compiled_read_identity(value, action, pre, post)
     if action.name == 'bat_read_fields':
-        validate_action_read_mapping(value, output_schema, action)
+        from .method_read_evidence import validate_method_read_mapping
+        validate_method_read_mapping(value, output_schema, action, trace)
+        return
     proposal = NaturalReadProposal(specification=value.specification, outputPath=value.outputPath,
                                    readPath=value.readPath, expected=value_at_path(value.output, value.readPath))
     target = validate_proposal(proposal, output_schema, prior_paths)
@@ -319,23 +324,6 @@ def validate_compiled_read_identity(value, action, pre, post):
     after = observation_fact(post, 'url_digest')
     if before != value.urlDigest or after != value.urlDigest:
         raise ValueError('verified_read_url_mismatch')
-
-
-def validate_action_read_mapping(value, output_schema, action):
-    if action.name != 'bat_read_fields':
-        raise ValueError('verified_read_action_mismatch')
-    try:
-        params = FieldReadToolParams.model_validate(action.args)
-        target = schema_at_path(output_schema, params.outputPath)
-        mapping = FieldReadMapping(specification=value.specification, outputPath=value.outputPath,
-                                   readPath=value.readPath)
-        expected = revalidate_field_read_mapping(params, target, mapping)
-    except Exception as error:
-        raise ValueError('verified_read_mapping_invalid') from error
-    if (expected.outputPath != value.outputPath or expected.readPath != value.readPath
-            or expected.specification.model_dump(mode='json')
-            != value.specification.model_dump(mode='json')):
-        raise ValueError('verified_read_mapping_mismatch')
 
 
 def observation_fact(observation, kind):

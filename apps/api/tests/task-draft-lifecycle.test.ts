@@ -1,13 +1,19 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import test from "node:test"
+import Database from "better-sqlite3"
 import { taskExecutionSchema, type TaskExecution } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "@browser-capture/runtime"
 import { extractionFixture } from "../../../packages/contracts/tests/task-chain-fixtures.js"
-import { createTaskDraft, draftReference, recordDraftTrial, updateTaskDraft } from "../src/task-chain/chain-revision.js"
+import { ProductStore } from "../src/database/store.js"
+import { createTaskDraft, draftReference, recordDraftTrial } from "../src/task-chain/chain-revision.js"
 import { DomainError } from "../src/errors.js"
 import { createChainPresentation } from "../src/task-chain/presentation.js"
 import { TaskProductService } from "../src/task-chain/product.js"
+import { TaskChainService } from "../src/task-chain/service.js"
 
 test("仅在当前草稿完成样本试跑和不同输入的独立复验后发布 Release", () => {
   const requirement = structuredClone(extractionFixture.requirement)
@@ -57,7 +63,7 @@ test("仅在当前草稿完成样本试跑和不同输入的独立复验后发�
   assert.equal(product.nextTrialMode(draft, { destination: "https://example.com" }), "sample")
   const sample = recordTrial("sample", "https://example.com")
   assert.deepEqual(product.draftReadiness(draft), { phase: "verification_needed", distinctInputRequired: true })
-  assert.throws(() => product.publishDraft(draft.taskId, draft), /代表试跑和独立复验/)
+  assert.throws(() => product.publishDraft(draft.taskId, draft, () => {}), /代表试跑和独立复验/)
   assert.equal(releases.length, 0)
   assert.equal(deleted, false)
   assert.throws(() => product.nextTrialMode(draft, { destination: "https://example.com" }), /另一组不同的业务输入/)
@@ -65,10 +71,10 @@ test("仅在当前草稿完成样本试跑和不同输入的独立复验后发�
   const verification = recordTrial("verification", "https://example.org")
   draft.validation.records.reverse()
   assert.deepEqual(product.draftReadiness(draft), { phase: "verification_needed", distinctInputRequired: true })
-  assert.throws(() => product.publishDraft(draft.taskId, draft), /代表试跑和独立复验/)
+  assert.throws(() => product.publishDraft(draft.taskId, draft, () => {}), /代表试跑和独立复验/)
   draft.validation.records.reverse()
   assert.deepEqual(product.draftReadiness(draft), { phase: "ready", distinctInputRequired: false })
-  const release = product.publishDraft(draft.taskId, draft)
+  const release = product.publishDraft(draft.taskId, draft, () => {})
   assert.equal(release.version, 1)
   assert.deepEqual(release.content, draft.content)
   assert.deepEqual(release.validation.map((item) => [item.phase, item.executionId]),
@@ -79,34 +85,68 @@ test("仅在当前草稿完成样本试跑和不同输入的独立复验后发�
   assert.equal(product.nextTrialMode(draft, { destination: "https://example.com" }), "sample")
 })
 
-test("显式浏览器预算修订换新版本并失效旧验证，不能越过计划步骤授权", () => {
-  const requirement = structuredClone(extractionFixture.requirement)
-  requirement.confirmation = { confirmedAt: "2026-09-24T00:00:00.000Z", requestId: randomUUID() }
-  const plan = structuredClone(extractionFixture.plan)
-  plan.requirement.digest = digestJson(requirement)
-  const source = structuredClone(extractionFixture.chain)
-  source.plan.digest = digestJson(plan)
-  source.budget.maxBrowserCommands = 15
-  const dataNode = source.nodes.find((node) => node.kind === "data")
-  if (dataNode?.kind === "data") dataNode.arguments = { source: { source: "node", nodeId: "observe", path: [] } }
-  source.validation.evidence.push({ phase: "sample", runId: randomUUID(),
-    chainDigest: executableChainDigest(source), inputDigest: "a".repeat(64), outputDigest: "b".repeat(64),
-    passed: false, modelCalls: 0, at: "2026-09-24T00:00:00.000Z" })
-  const draft = createTaskDraft({ taskId: plan.taskId, requirement, baseRelease: null, plan, chains: [source] })
-  draft.validation.records.push({ executionId: randomUUID(), revision: draft.revision, checksum: draft.checksum,
-    inputDigest: "a".repeat(64), completedAt: "2026-09-24T00:00:00.000Z" })
-  const updated = updateTaskDraft(draft, draft.revision, draft.checksum, source.id,
-    [{ type: "set_browser_command_budget", maxBrowserCommands: 24 }], 2)
-  const chain = updated.content.steps[0]!.chain
-  assert.equal(updated.revision, draft.revision + 1)
-  assert.notEqual(updated.checksum, draft.checksum)
-  assert.equal(chain.version, 2)
-  assert.equal(chain.budget.maxBrowserCommands, 24)
-  assert.deepEqual(chain.validation, { status: "candidate", evidence: [] })
-  assert.deepEqual(updated.validation.records, [])
-  assert.throws(() => updateTaskDraft(updated, updated.revision, updated.checksum, chain.id,
-    [{ type: "set_browser_command_budget", maxBrowserCommands: 41 }], 3),
-  (error: unknown) => error instanceof DomainError && error.code === "chain_budget_exceeds_plan_step")
+test("正式发布入口在回执写入失败时回滚 Release 和草稿删除，重试保持幂等", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-publish-atomic-"))
+  const store = await ProductStore.open(directory)
+  const connection = new Database(path.join(directory, "workbench.sqlite"))
+  try {
+    const taskId = store.taskAction({ type: "create", requestId: randomUUID() })
+    store.mutate(taskId, (state) => {
+      state.revision = 1
+      state.drafts.push({ version: 1, revision: 1, title: "发布事务", markdown: "# 发布事务", brief: null })
+      state.confirmedVersion = 1
+      state.decisions.push({ id: randomUUID(), revision: 1, kind: "draft_confirmation", text: "确认需求草稿 v1",
+        messageId: null, questionId: null, draftVersion: 1, createdAt: "2026-09-22T00:00:00.000Z" })
+    })
+    const browser = { setAuthorizationValidator: () => {}, owner: () => null }
+    const service = new TaskChainService(store, browser as never, {} as never, {} as never)
+    const requirementInput = structuredClone(extractionFixture.requirement)
+    requirementInput.taskId = taskId
+    requirementInput.confirmation = { confirmedAt: "2026-09-22T00:00:00.000Z", requestId: randomUUID() }
+    const requirement = service.repository.saveRequirement(requirementInput)
+    const plan = structuredClone(extractionFixture.plan)
+    plan.taskId = taskId
+    plan.requirement.digest = digestJson(requirement)
+    const chain = structuredClone(extractionFixture.chain)
+    chain.taskId = taskId
+    chain.plan.digest = digestJson(plan)
+    const draft = createTaskDraft({ taskId, requirement, baseRelease: null, plan, chains: [chain],
+      presentations: [createChainPresentation(chain)] })
+    for (const [mode, destination] of [["sample", "https://example.com"],
+      ["verification", "https://example.org"]] as const) {
+      const execution = completedDraftExecution(draft, mode, destination)
+      service.repository.saveExecution(execution)
+      service.repository.saveCandidate({ executionId: execution.id, taskId,
+        draft: draftReference(draft), content: structuredClone(draft.content), createdAt: execution.createdAt })
+      draft.validation.records.push({ executionId: execution.id, revision: draft.revision,
+        checksum: draft.checksum, inputDigest: execution.inputDigest, completedAt: execution.updatedAt })
+    }
+    service.repository.saveDraft(draft)
+    const command = { type: "publish_task_draft" as const, requestId: randomUUID(), draftId: draft.id,
+      expectedRevision: draft.revision, expectedChecksum: draft.checksum }
+    connection.exec("CREATE TRIGGER fail_publish_receipt BEFORE INSERT ON operations "
+      + "WHEN NEW.scope = 'task-draft:publish' BEGIN SELECT RAISE(ABORT, 'receipt_write_failed'); END")
+    assert.throws(() => service.dispatch(taskId, command), /receipt_write_failed/)
+    assert.equal(service.repository.draft(taskId)?.id, draft.id)
+    assert.deepEqual(service.repository.releases(taskId), [])
+    assert.equal(store.operation("task-draft:publish", command.requestId, command), undefined)
+    connection.exec("DROP TRIGGER fail_publish_receipt")
+    const first = service.dispatch(taskId, command)
+    assert.equal(first.release?.value.version, 1)
+    assert.equal(service.repository.draft(taskId), null)
+    assert.equal(service.repository.releases(taskId).length, 1)
+    const releaseId = first.release!.value.id
+    assert.equal(store.operation("task-draft:publish", command.requestId, command), releaseId)
+    assert.equal(service.dispatch(taskId, command).release?.value.id, releaseId)
+    assert.equal(service.repository.releases(taskId).length, 1)
+    assert.throws(() => service.dispatch(taskId, { ...command, expectedRevision: command.expectedRevision + 1 }),
+      /同一请求标识不能用于不同内容/)
+    assert.equal(service.repository.releases(taskId).length, 1)
+  } finally {
+    connection.close()
+    await store.close()
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 function completedDraftExecution(draft: ReturnType<typeof createTaskDraft>, mode: "sample" | "verification",

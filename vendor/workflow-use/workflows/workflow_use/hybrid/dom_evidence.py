@@ -133,31 +133,15 @@ class CollectionReadRequired(RuntimeError):
     """A native click was withheld so the Agent can read its changing collection first."""
 
     def __init__(self):
-        super().__init__('collection_selection_read_required: read a complete, scoped candidate collection before clicking; a broad page-wide control query is insufficient. For a unique link, read its href and navigate using that verified value')
+        super().__init__('collection_selection_read_required: use find_elements to read the complete, scoped candidate collection, select by the confirmed task rule, then click its current Browser-Use index. Candidate ordinals are not click indexes. Do not narrow the selector to the observed item identity or replace the selection with its sampled href. A broad page-wide control query is insufficient')
 
 
 def unbound_collection_choice(structure):
-    """Detect a repeated sibling choice with no verified collection query."""
+    """Detect an unbound choice within a repeated item, including nested controls."""
+    from .collection_structure import repeated_item_without_query
+
     value = structure if isinstance(structure, dict) else structure.model_dump(mode='json')
-    if value.get('queryCandidate') is not None:
-        return False
-    nodes = value.get('nodes', [])
-    target = next((node for node in nodes if node.get('id') == value.get('targetRef')), None)
-    if not isinstance(target, dict) or not target.get('parentRef'):
-        return False
-    parent = next((node for node in nodes if node.get('id') == target['parentRef']), None)
-    if not isinstance(parent, dict):
-        return False
-    if any(item.get('parentRef') == parent['id'] and item.get('truncated')
-           for item in (value.get('coverage') or {}).get('childSets', [])):
-        return False
-    target_classes = set(str((target.get('attributes') or {}).get('class') or '').split())
-    if not target_classes:
-        return False
-    siblings = [node for node in nodes if node.get('parentRef') == parent['id']
-                and node.get('tag') == target.get('tag')]
-    return any(node['id'] != target['id'] and target_classes.intersection(
-        str((node.get('attributes') or {}).get('class') or '').split()) for node in siblings)
+    return repeated_item_without_query(value)
 
 
 def capture_find_elements_query(summary, action_ref, arguments, redacted_arguments, tab_id):
@@ -199,11 +183,15 @@ def complete_find_elements_query(evidence, results):
     value.total = total
     value.showing = min(total, value.maxResults)
     value.truncated = value.showing < total
-    if total == 0:
-        value.limitations.append('zero_matches_not_collection')
     if value.truncated:
         value.limitations.append('query_result_truncated')
-    value.complete = (total > 0 and not value.truncated
+    scoped = bool(value.scope.tabId and value.scope.url and value.scope.urlDigest)
+    if not scoped:
+        value.limitations.append('query_scope_unavailable')
+    # WHY：0 条是当前 CSS 查询的完整空结果，可供继续/停止判断；它不证明业务全集为空。
+    # 已知计数与页面范围仍是必需证据，不能用“没取到”替代“确实没有”。
+    value.complete = (scoped and not value.truncated and value.query.kind == 'css'
+                      and value.scope.frameId is None
                       and 'query_selector_redacted' not in value.limitations)
     value.limitations = sorted(set(value.limitations))
     return value

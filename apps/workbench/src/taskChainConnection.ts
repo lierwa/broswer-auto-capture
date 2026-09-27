@@ -14,8 +14,6 @@ import {
 } from "@browser-capture/contracts/api"
 import {
   browserProfileStateSchema,
-  browserTargetSelectionStateSchema,
-  type BrowserTargetSelectionState,
 } from "@browser-capture/contracts/browser-profile"
 
 class TaskChainRequestError extends Error {
@@ -32,7 +30,6 @@ type ConnectionView = {
   acceptedExecution: AcceptedTaskExecution | null
   executionId: string | null
   eventBatch: TaskExecutionEventBatch | null
-  targetSelection: BrowserTargetSelectionState | null
   history: Partial<Record<HistoryKind, TaskWorkspaceHistoryPage>>
   historyBusy: HistoryKind | null
   diagnostics: TaskWorkspaceDiagnostics | null
@@ -42,7 +39,7 @@ type ConnectionView = {
 export class TaskChainConnection {
   private view: ConnectionView = {
     workspace: null, error: "", errorCode: null, pending: null, busy: false,
-    acceptedExecution: null, executionId: null, eventBatch: null, targetSelection: null,
+    acceptedExecution: null, executionId: null, eventBatch: null,
     history: {}, historyBusy: null, diagnostics: null, diagnosticsBusy: false,
   }
   private readonly listeners = new Set<() => void>()
@@ -199,56 +196,27 @@ export class TaskChainConnection {
     }
   }
 
-  async reloadTargetSelection(signal?: AbortSignal) {
-    try {
-      const response = await this.fetcher(`/api/browser-profile/target-selection?taskId=${encodeURIComponent(this.taskId)}`,
-        { signal: signal ?? null })
-      if (!response.ok) throw new Error()
-      const targetSelection = browserTargetSelectionStateSchema.parse(await response.json())
-      if (!signal?.aborted) this.update({ targetSelection })
-    } catch {
-      if (!signal?.aborted) this.update({ error: "无法读取浏览器目标选择状态。", errorCode: null })
-    }
-  }
-
-  async startTargetSelection(input: { draftId: string; chainId: string; nodeId: string;
-    expectedRevision: number; expectedChecksum: string }) {
+  async controlHandoff(action: "inspect" | "focus" | "end", executionId: string, expectedSequence: number) {
     if (this.view.busy) return false
     this.update({ busy: true, error: "", errorCode: null })
     try {
-      const response = await this.fetcher(`/api/browser-profile/target-selection?taskId=${encodeURIComponent(this.taskId)}`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          type: "start", requestId: crypto.randomUUID(), ...input,
-        }) })
+      const response = await this.fetcher(`/api/task-chain/handoff?taskId=${encodeURIComponent(this.taskId)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, executionId, expectedSequence, requestId: crypto.randomUUID() }),
+      })
       const value: unknown = await response.json()
       if (!response.ok) {
         const failure = value as { error?: string; code?: string }
-        throw new TaskChainRequestError(failure.error ?? "未能启动浏览器目标选择。", failure.code ?? null)
+        throw new TaskChainRequestError(failure.error ?? "浏览器现场操作未完成。", failure.code ?? null)
       }
-      this.update({ targetSelection: browserTargetSelectionStateSchema.parse(value) })
+      this.accept(value)
+      this.update({ error: "", errorCode: null })
       return true
     } catch (error) {
-      this.update({ error: error instanceof Error ? error.message : "未能启动浏览器目标选择。",
+      // WHY：刷新真实现场后再保留本次失败，避免 reload 的成功反馈吞掉聚焦拒绝。
+      await this.reload()
+      this.update({ error: error instanceof Error ? error.message : "浏览器现场操作未完成。",
         errorCode: error instanceof TaskChainRequestError ? error.code : null })
-      return false
-    } finally { this.update({ busy: false }) }
-  }
-
-  async cancelTargetSelection() {
-    const selectionId = this.view.targetSelection?.id
-    if (!selectionId || this.view.busy) return false
-    this.update({ busy: true, error: "", errorCode: null })
-    try {
-      const response = await this.fetcher(`/api/browser-profile/target-selection?taskId=${encodeURIComponent(this.taskId)}`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          type: "cancel", requestId: crypto.randomUUID(), selectionId,
-        }) })
-      const value: unknown = await response.json()
-      if (!response.ok) throw new Error((value as { error?: string }).error ?? "未能取消目标选择。")
-      this.update({ targetSelection: browserTargetSelectionStateSchema.parse(value) })
-      return true
-    } catch (error) {
-      this.update({ error: error instanceof Error ? error.message : "未能取消目标选择。", errorCode: null })
       return false
     } finally { this.update({ busy: false }) }
   }

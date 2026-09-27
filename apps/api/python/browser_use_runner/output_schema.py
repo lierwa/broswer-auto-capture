@@ -9,7 +9,8 @@ def output_model_for(schema, name):
         # optional means absent, not nullable, so restore the public contract at the adapter boundary.
         return model, lambda value: value.model_dump(mode='json', exclude_unset=True, exclude_none=True)
     model = create_model(name, value=(python_type(schema, name + 'Value'), ...), __config__=ConfigDict(extra='forbid'))
-    return model, lambda value: value.value
+    # WHY：根数组里的对象仍是 Pydantic 子模型；必须先转成 JSON 值再交给 JSON Schema 核验。
+    return model, lambda value: value.model_dump(mode='json')['value']
 
 
 def object_model(schema, name):

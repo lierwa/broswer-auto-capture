@@ -5,7 +5,7 @@ import { jsonValueSchema, stableChainNodeV2Schema, type JsonValue } from "@brows
 import { functionDraftSchema, functionSegmentSchema, hybridNaturalRequestSchema, readSpecificationSchema,
   type HybridCompilation } from "./hybrid-schema.js"
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
-import { validateAndMaterializeFunctionDraft } from "./hybrid-v2.js"
+import { validateSelectionDraft } from "./selection-validation.js"
 
 type Request = z.infer<typeof hybridNaturalRequestSchema>
 type Segment = z.infer<typeof functionSegmentSchema>
@@ -13,6 +13,7 @@ type Context = { request: Request; compilation: HybridCompilation;
   assertFact: ReturnType<typeof naturalPayloadContext>["assertFact"] }
 const evidence = z.object({ actionRef: z.string(), readFactRef: z.string(), requirementDigest: z.string(),
   draft: functionDraftSchema }).strict()
+const failureContext = z.object({ actionRefs: z.array(z.string()).max(1) }).strict()
 
 export async function withSelectionValidation(envelope: Parameters<typeof naturalPayloadContext>[0],
   request: Record<string, JsonValue>, signal: AbortSignal) {
@@ -24,9 +25,10 @@ export async function withSelectionValidation(envelope: Parameters<typeof natura
     // WHY：沙箱拒绝仍应保存这次真实来源与失败原因，不能在artifact写入前丢失整个准备证据。
     const reason = error instanceof Error && /^(selection_function_|function_)[a-z_]+$/.test(error.message)
       ? error.message : "selection_function_validation_failed"
+    const context = failureContext.safeParse(error instanceof Error ? error.cause : undefined)
     const { canonicalDigest: _digest, ...body } = envelope.compilation
     const next = { ...body, gaps: [...body.gaps, { id: "g-selection-validation", code: "invalid_source" as const,
-      actionRefs: [], clauseRefs: [], reason, resolution: "reject_trace" as const }] }
+      actionRefs: context.success ? context.data.actionRefs : [], clauseRefs: [], reason, resolution: "reject_trace" as const }] }
     const canonicalPayload = JSON.stringify(next)
     return { ...envelope, canonicalPayload, compilation: { ...next,
       canonicalDigest: createHash("sha256").update(canonicalPayload).digest("hex") } }
@@ -49,19 +51,20 @@ export async function validateSelectionFunctions(envelope: Parameters<typeof nat
   if (segments.length === 0) return
   const payload = naturalPayloadContext(envelope, request)
   for (const segment of segments) {
-    assertSelectionSource(segment, { request: payload.ordinary, compilation: envelope.compilation,
-      assertFact: payload.assertFact })
-    const draft = structuredClone(segment.draft), observed = draft.examples[0]!
-    const candidates = z.array(jsonValueSchema).parse(observed.input.candidates)
-    if (draft.examples.length < 3 || !draft.examples.some((example) => !isDeepStrictEqual(example.output, observed.output))
-      || !draft.examples.some((example) => Array.isArray(example.input.candidates)
-        && example.input.candidates.length !== candidates.length)) {
-      throw new Error("selection_function_variation_required")
+    try {
+      assertSelectionSource(segment, { request: payload.ordinary, compilation: envelope.compilation,
+        assertFact: payload.assertFact })
+      await validateSelectionDraft({ id: segment.id, label: segment.label, draft: segment.draft,
+        bindings: segment.inputBindings, timeoutMs: 1000, signal })
+    } catch (error) {
+      if (signal.aborted) throw error
+      // WHY：定位来自当前源码中实际动作与编译器的固定segment身份关系，不猜选择规则或改写来源。
+      const actionRefs = payload.ordinary.trace.actions
+        .filter((action) => segment.id === `selection-${action.id}`).map((action) => action.id)
+      throw new Error(error instanceof Error ? error.message : "selection_function_validation_failed", {
+        cause: { actionRefs },
+      })
     }
-    // WHY：打乱数组包装顺序而保留原 ordinal，保护筛选后下标冒充 DOM 身份的真实回归风险。
-    draft.examples.push({ input: { candidates: candidates.toReversed() }, output: observed.output })
-    await validateAndMaterializeFunctionDraft({ id: segment.id, label: segment.label, draft,
-      bindings: segment.inputBindings, timeoutMs: 1000, signal })
   }
 }
 

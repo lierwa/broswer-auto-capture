@@ -8,6 +8,7 @@ from pydantic import TypeAdapter
 from .compiler import compile_request
 from .registry import ActionRegistry
 from .request import CompilationRequest, NaturalCompilationRequest
+from .source_response import canonical_json
 
 REQUEST = TypeAdapter(CompilationRequest | NaturalCompilationRequest)
 
@@ -15,10 +16,9 @@ REQUEST = TypeAdapter(CompilationRequest | NaturalCompilationRequest)
 def compilation_response(request, registry, verified_children=(), source_gaps=(), *, output_schema=None):
     compilation = compile_request(request, registry, verified_children, source_gaps, output_schema=output_schema)
     result = compilation.model_dump(mode='json')
-    canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
     sources = _compilation_sources(request)
-    return {'compilation': result, 'canonicalPayload': canonical({k: v for k, v in result.items() if k != 'canonicalDigest'}),
-            'sourcePayloads': [canonical(value) for value in sources]}
+    return {'compilation': result, 'canonicalPayload': canonical_json({k: v for k, v in result.items() if k != 'canonicalDigest'}),
+            'sourcePayloads': [canonical_json(value) for value in sources]}
 
 
 def _compilation_sources(request):

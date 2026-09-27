@@ -1,5 +1,5 @@
 import { Button } from "@radix-ui/themes";
-import { ArrowRight, Check, FileText, LoaderCircle } from "lucide-react";
+import { ArrowRight, Check, FileText } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   buildCommonSurfaceReplyPayload,
@@ -8,8 +8,6 @@ import {
   createCommonQuestionSurface,
   type CommonSurfaceQuestion,
 } from "@agent-platform/ai-connect/ui-contracts";
-import { projectAIInvocationTimeline } from "@agent-platform/ai-connect-react/components/AIInvocationTimeline";
-import type { AIExtensionEvent } from "@agent-platform/ai-connect/browser";
 import {
   commonQuestionModules,
   createAnsweredInteractionTimelineEntry,
@@ -20,7 +18,8 @@ import {
   type InteractiveTimelineProps,
   type InteractiveTimelineValue,
 } from "@agent-platform/ai-connect-react/chat";
-import type { InterviewMessage, InterviewState } from "./interviewContract.js";
+import { currentDraft, type InterviewMessage, type InterviewState, type SourceResolution } from "./interviewContract.js";
+import { projectInterviewSearchActivity, projectInterviewSearchEntries } from "./interviewSearchTimeline.js";
 
 type TimelineSubmit = Parameters<InteractiveTimelineProps["commands"]["submit"]>[0];
 type QuestionSurface = NonNullable<InteractiveTimelineValue["presentedSurface"]>;
@@ -37,7 +36,8 @@ export const interviewQuestionRegistry = createQuestionModuleRegistry(commonQues
 export function projectInterviewTimeline(input: ProjectionInput): InteractiveTimelineValue {
   const latest = input.state.messages.at(-1);
   const active = activeQuestionMessage(input.state);
-  const activeSurface = active ? interviewQuestionSurface(active) : null;
+  const activeSurface = active ? interviewQuestionSurface(active,
+    input.state.sourceResolutions.find((item) => item.questionId === active.id)) : null;
   const activeInteraction = active && activeSurface
     ? {
         interactionId: active.id,
@@ -63,7 +63,7 @@ export function projectInterviewTimeline(input: ProjectionInput): InteractiveTim
         : errorMessage
           ? "error"
           : "idle",
-    hooks: projectInterviewActivity(input.state).hooks,
+    hooks: projectInterviewSearchActivity(input.state),
     currentRun: currentInterviewRun(input.state),
     canRetry: latest?.role === "assistant" && latest.status === "failed",
   });
@@ -96,6 +96,8 @@ function messageEntries(
   const entries = message.parts?.length
     ? orderedMessagePartEntries(message, createdAt)
     : legacyMessageEntry(message, createdAt);
+  // WHY：共享 InteractiveTimeline 的历史正文来自 entries；hooks 虽持久化，但不会单独显示搜索活动。
+  entries.unshift(...projectInterviewSearchEntries(message, createdAt));
   // WHY：终态 parts 是正文与 Card 顺序的权威；旧消息才读取 parser 过滤后的 message.text。
   // AI text.delta 仍只进入公共 lifecycle/activity hooks，避免重复或泄露结构协议。
   entries.push(...assistantContentEntries(message, index, createdAt, input));
@@ -163,16 +165,11 @@ function assistantContentEntries(
   ) });
   if (index === input.state.messages.length - 1 && input.state.confirmedVersion) {
     content.push({ id: "confirmed", node: (
-      <ConfirmedNext version={input.state.confirmedVersion} onPlan={input.onPlan} />
-    ) });
-  }
-  if (index === input.state.messages.length - 1 && input.state.cancellationRequested) {
-    content.push({ id: "cancelling", node: (
-      <div className="turn-status" role="status"><LoaderCircle size={13} className="spin" />正在停止，保留已有对话</div>
+      <ConfirmedNext onPlan={input.onPlan} />
     ) });
   }
   if (index === input.state.messages.length - 1 && message.status === "cancelled" && !input.blocked) {
-    content.push({ id: "cancelled-retry", node: (
+    content.push({ id: "turn-retry", node: (
       <Button size="1" variant="soft" onClick={() => void input.onRetry().catch(() => undefined)}>重新提交本轮</Button>
     ) });
   }
@@ -190,6 +187,9 @@ function answeredInteractionEntry(
   createdAt: number,
 ): ConversationEntry<InteractiveTimelineItem> | null {
   if (!decision.questionId) return null;
+  const source = state.messages.find((message) => message.id === decision.questionId);
+  const resolution = state.sourceResolutions.find((item) => item.questionId === decision.questionId);
+  const sourceSurface = source && resolution ? interviewQuestionSurface(source, resolution) : null;
   const answerMessage = decision.messageId
     ? state.messages.find((message) => message.id === decision.messageId)
     : undefined;
@@ -201,13 +201,12 @@ function answeredInteractionEntry(
         interactionId: decision.questionId,
         kind: "common_surface",
         state: "submitted",
-        surface: answerMessage.interactionReply.surface,
+        surface: sourceSurface ?? answerMessage.interactionReply.surface,
         surfaceSubmit: answerMessage.interactionReply.surfaceSubmit,
       },
     });
   }
-  const source = state.messages.find((message) => message.id === decision.questionId);
-  const surface = source ? interviewQuestionSurface(source) : null;
+  const surface = sourceSurface ?? (source ? interviewQuestionSurface(source) : null);
   if (!surface) return null;
   const data = answerData(source!, decision);
   if (!data) return null;
@@ -243,7 +242,7 @@ function activeQuestionMessage(state: InterviewState) {
 
 const optionId = (index: number) => `option:${index + 1}`;
 
-function interviewQuestionSurface(message: InterviewMessage): QuestionSurface | null {
+function interviewQuestionSurface(message: InterviewMessage, sourceResolution?: SourceResolution): QuestionSurface | null {
   if (message.role !== "assistant" || !message.question) return null;
   const question = message.question;
   let canonical: CommonSurfaceQuestion;
@@ -260,9 +259,29 @@ function interviewQuestionSurface(message: InterviewMessage): QuestionSurface | 
       }),
     } });
   } else canonical = question;
+  if (sourceResolution) canonical = previewSourceQuestion(canonical, sourceResolution);
   try {
     return createCommonQuestionSurface({ id: message.id, submitLabel: "提交回答", questions: [canonical] });
   } catch { return null; }
+}
+
+function previewSourceQuestion(question: CommonSurfaceQuestion, resolution: SourceResolution): CommonSurfaceQuestion {
+  if (question.type !== "choice" && question.type !== "multi_choice") return question;
+  const data = question.data as Record<string, unknown> & { options: Array<{ subtitle?: string }> };
+  // WHY：旧来源题板已持久化长摘要；只改有 sourceResolution 证据的展示副标题，不改原问题或业务选项。
+  return { ...question, data: { ...data, options: data.options.map((option) => ({
+    ...option, ...(option.subtitle ? { subtitle: sourceOptionPreview(option.subtitle, resolution) } : {}),
+  })) } } as CommonSurfaceQuestion;
+}
+
+function sourceOptionPreview(subtitle: string, resolution: SourceResolution) {
+  const candidate = resolution.candidates.find((item) => subtitle.includes(item.url));
+  if (!candidate) return subtitle;
+  const summary = subtitle.slice(subtitle.indexOf(candidate.url) + candidate.url.length)
+    .replace(/^\s*·\s*/u, "").replace(/\s+/gu, " ").trim();
+  const characters = Array.from(summary);
+  return [candidate.url, characters.length > 88 ? `${characters.slice(0, 88).join("")}…` : summary]
+    .filter(Boolean).join(" · ");
 }
 
 export function submittedInterviewAnswer(state: InterviewState, submission: TimelineSubmit) {
@@ -316,90 +335,6 @@ export function interviewMessageTimes(state: InterviewState) {
   return { byMessage, incomplete: state.messages.some((message) => !byMessage.has(message.id)) };
 }
 
-function projectInterviewActivity(state: InterviewState) {
-  return { hooks: state.messages.flatMap((message) => {
-    const queries = new Map<string, string>();
-    return projectAIInvocationTimeline(message.aiEvents, (event) =>
-      projectSearchHook(event, message.id, queries)).hooks.map((hook) => ({
-      ...hook, relatedMessageId: message.id,
-    }));
-  }) };
-}
-
-type TimelineHook = ReturnType<typeof projectAIInvocationTimeline>["hooks"][number];
-
-function projectSearchHook(event: AIExtensionEvent, messageId: string, queries: Map<string, string>): TimelineHook | null {
-  if (event.namespace !== "agent-platform.pi-agent-session") return null;
-  const payload = asRecord(event.payload);
-  if (!payload || !["web_search", "search_sources"].includes(String(payload.toolName))) return null;
-  const type = payload.type;
-  if (!["tool.execution.started", "tool.execution.completed", "tool.execution.failed"].includes(String(type))) return null;
-  const callId = payload.callId;
-  if (typeof callId !== "string" || !callId) return null;
-  if (type === "tool.execution.started") queries.set(callId, searchQuery(payload.input));
-  const output = asRecord(payload.output);
-  const details = asRecord(output?.details);
-  const query = searchQuery(details) || queries.get(callId) || "公开资料";
-  const unavailable = type === "tool.execution.failed" || Boolean(details?.error)
-    || details?.successfulQueries === 0 || details?.status === "unavailable";
-  const status: TimelineHook["status"] = type === "tool.execution.started" ? "running"
-    : unavailable ? "error" : "completed";
-  const refs = type === "tool.execution.completed" ? searchResultRefs(output) : [];
-  return {
-    kind: "tool-progress", status,
-    title: status === "running" ? "正在搜索公开资料" : status === "error" ? "公开搜索未完成" : "公开搜索完成",
-    description: [query, ...refs].join(" · ").slice(0, 600),
-    createdAt: event.createdAt, relatedMessageId: messageId,
-  };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
-}
-
-function searchQuery(value: unknown) {
-  const input = asRecord(value);
-  if (typeof input?.query === "string") return input.query.trim();
-  return Array.isArray(input?.queries) ? input.queries.filter((item): item is string => typeof item === "string").join("、") : "";
-}
-
-function searchResultRefs(output: Record<string, unknown> | null) {
-  const refs = new Set<string>();
-  const contentTexts = (Array.isArray(output?.content) ? output.content : []).flatMap((content) => {
-    const text = asRecord(content)?.text;
-    return typeof text === "string" ? [text] : [];
-  });
-  const definitions = new Map<string, string>();
-  for (const text of contentTexts) {
-    for (const match of text.matchAll(/^\s{0,3}\[([^\]\r\n]+)\]:\s*<?(https?:\/\/[^\s>]+)>?/gmu)) {
-      definitions.set(match[1]!.trim().toLowerCase(), match[2]!);
-    }
-  }
-  const add = (value: unknown) => {
-    if (typeof value !== "string") return;
-    try {
-      const url = new URL(value);
-      if (["http:", "https:"].includes(url.protocol)) { url.hash = ""; refs.add(url.href); }
-    } catch { /* 搜索结果不是可引用的 HTTP URL。 */ }
-  };
-  for (const text of contentTexts) {
-    for (const match of text.matchAll(/\[[^\]\r\n]+\]\((https?:\/\/[^\s)]+)\)|^\s*(https?:\/\/\S+)\s*$/gmu)) {
-      add(match[1] ?? match[2]);
-      if (refs.size === 2) return [...refs];
-    }
-    for (const match of text.matchAll(/\[([^\]\r\n]+)\]\[([^\]\r\n]+)\]/gu)) {
-      add(definitions.get(match[2]!.trim().toLowerCase()));
-      if (refs.size === 2) return [...refs];
-    }
-    try {
-      const parsed = asRecord(JSON.parse(text));
-      for (const result of Array.isArray(parsed?.results) ? parsed.results : []) add(asRecord(result)?.url);
-    } catch { /* 普通搜索文本仍可通过链接语法提取引用。 */ }
-    if (refs.size >= 2) return [...refs].slice(0, 2);
-  }
-  return [...refs].slice(0, 2);
-}
-
 function currentInterviewRun(state: InterviewState): InteractiveTimelineValue["currentRun"] {
   const latest = state.messages.at(-1);
   if (!state.active && latest?.status !== "failed") return null;
@@ -419,15 +354,16 @@ export function interviewErrorMessage(message: InterviewMessage | undefined) {
   return message?.role === "assistant" && message.status === "failed" ? "本轮结果未提交，可以重试。" : undefined;
 }
 
-function ConfirmedNext({ version, onPlan }: { version: number; onPlan(): void }) {
-  return <div className="confirmed-next"><Check size={16} /><div><strong>需求 v{version} 已确认</strong>
-    <p>接下来系统会依据这份范围完成任务准备，必要时请你提供代表输入或处理登录等人工步骤。</p></div>
-    <Button variant="soft" onClick={onPlan}>打开链路画布<ArrowRight size={14} /></Button></div>;
+function ConfirmedNext({ onPlan }: { onPlan(): void }) {
+  return <div className="confirmed-next"><Check size={16} /><strong>草案已确认</strong>
+    <Button variant="soft" onClick={onPlan}>打开链路<ArrowRight size={14} /></Button></div>;
 }
 
 function TurnArtifacts({ item, state, onDraft }: { item: InterviewMessage; state: InterviewState; onDraft: (v: number) => void }) {
+  const latest = currentDraft(state)?.version === item.draftVersion;
+  const label = latest ? "当前草案" : `历史草案 v${item.draftVersion}`;
   return <button type="button" className="draft-artifact" onClick={() => onDraft(item.draftVersion!)}>
-    <FileText size={22} /><span><strong>{state.drafts.find((draft) => draft.version === item.draftVersion)?.title ?? "需求草稿"}</strong>
-      <small>需求草稿 · v{item.draftVersion} · {state.confirmedVersion === item.draftVersion ? "已确认" : "查看内容"}</small>
+    <FileText size={22} /><span><strong>{state.drafts.find((draft) => draft.version === item.draftVersion)?.title ?? "准备计划草案"}</strong>
+      <small>{label}{!latest && state.confirmedVersion === item.draftVersion ? " · 曾确认" : ""}</small>
     </span><ArrowRight size={16} /></button>;
 }

@@ -14,7 +14,7 @@ export function DraftControls({ readiness, busy, running, onTrial, onPublish }: 
   const verifying = phase === "verification_needed"
   return <div className="draft-controls" aria-label="草稿试跑与发布">
     <Badge color={ready ? "green" : "amber"} variant="soft">
-      {running ? "正在试跑" : ready ? "双次验证有效" : verifying ? "待独立复跑检查" : "待代表试跑"}
+      {running ? "验证中" : ready ? "可发布" : verifying ? "待独立复验" : "待试跑"}
     </Badge>
     <Button size="1" variant="soft" disabled={busy || running} onClick={onTrial}
       title={verifying && readiness?.distinctInputRequired ? "请用另一组不同的业务输入完成独立复跑检查。" : undefined}>
@@ -24,11 +24,4 @@ export function DraftControls({ readiness, busy, running, onTrial, onPublish }: 
       <Send size={13} aria-hidden="true" />发布
     </Button>
   </div>
-}
-
-export function nextCopyId(nodeId: string, nodes: Array<{ id: string }>) {
-  const base = `${nodeId.slice(0, 55)}Copy`
-  let candidate = base, index = 2
-  while (nodes.some((node) => node.id === candidate)) candidate = `${base}${index++}`
-  return candidate
 }

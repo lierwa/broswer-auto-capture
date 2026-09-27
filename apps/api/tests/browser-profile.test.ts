@@ -1,78 +1,122 @@
 import assert from "node:assert/strict"
+import { randomUUID } from "node:crypto"
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
-import { randomUUID } from "node:crypto"
 import { BrowserProfileService } from "../src/browser/profile-service.js"
+import { readProfileOwner, saveProfileOwner } from "../src/browser/profile-owner.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
+import type { RunnerProcess } from "../src/upstream-browser/service.js"
+import { ownedRunnerDirectory } from "../src/upstream-browser/runner-ownership.js"
 
-test("专用浏览器复用固定本机 profile，并在完成后释放唯一浏览器所有权", async () => {
-  const calls: Array<{ profilePath: string }> = []
-  let closes = 0
-  const service = new BrowserProfileService("D:\\work\\browser-auto-tool", "D:\\bat-data", () => ({
-    startProfile: async (config) => { calls.push(config) },
-    pickProfileTarget: async () => { throw new Error("not selecting") },
-    close: async () => {
-      closes++
-      return cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({ stage, status: "not_required", code: null })), false)
+const confirmed = cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({ stage, status: "not_required", code: null })), false)
+const uncertain = cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => stage === "browser_close"
+  ? { stage, status: "unconfirmed", code: "cleanup_browser_close_failed" }
+  : { stage, status: "not_required", code: null }), true)
+type ProfileRunner = Pick<RunnerProcess, "startProfile" | "handoff" | "recoverProfile" | "close">
+async function fixture() {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-profile-test-"))
+  const marker = path.join(directory, "browser-profile", "owner.pending")
+  let ownerId = "", closes = 0, starts = 0, recoveries = 0
+  const behavior = { failRecovery: false, handoffReport: confirmed, recoveryReport: confirmed }
+  const createRunner = (): ProfileRunner => ({
+    startProfile: async (config, persist) => {
+      starts++; ownerId = config.ownerId
+      assert.equal(path.resolve(config.profilePath), path.resolve(directory, "browser-profile", "default"))
+      await persist({ ownerId, pid: 1234, started: 123, executable: "python.exe",
+        temporaryDirectory: path.join(tmpdir(), `bat-hybrid-owner-${randomUUID()}`),
+        launcher: { pid: 1234, started: 123, executable: "python.exe" } })
+      assert.equal((await readProfileOwner(marker)).runner?.ownerId, ownerId)
     },
-  }))
-
-  assert.deepEqual(service.snapshot(), { status: "closed", openedAt: null })
-  const opened = await service.control({ type: "open" }, () => {})
-  assert.equal(opened.status, "open")
-  assert.equal(calls.length, 1)
-  assert.equal(path.normalize(calls[0]!.profilePath), path.normalize("D:\\bat-data\\browser-profile\\default"))
-
-  const closed = await service.control({ type: "close" }, () => {})
-  assert.deepEqual(closed, { status: "closed", openedAt: null })
-  assert.equal(closes, 1)
-})
-
-test("任务占用浏览器时不打开账号管理浏览器", async () => {
-  let created = false
-  const service = new BrowserProfileService("D:\\work\\browser-auto-tool", "D:\\bat-data", () => {
-    created = true
-    throw new Error("runner must not be created")
+    handoff: async () => ({ report: behavior.handoffReport,
+      lease: { ownerId, leaseId: ownerId, active: true, reason: null, targetDigest: "a".repeat(64) } }),
+    recoverProfile: async (input) => {
+      recoveries++
+      if (behavior.failRecovery) throw new Error("hybrid_profile_runner_active")
+      return { report: behavior.recoveryReport,
+        window: { ownerId: input.ownerId, leaseId: input.leaseId, active: false, reason: null, targetDigest: null } }
+    },
+    close: async () => { closes++; return confirmed },
   })
+  return { directory, marker, behavior, createRunner, counters: () => ({ closes, starts, recoveries }),
+    service: new BrowserProfileService(process.cwd(), directory, createRunner),
+    cleanup: () => rm(directory, { recursive: true, force: true }) }
+}
 
-  await assert.rejects(service.control({ type: "open" }, () => { throw Object.assign(new Error("busy"), {
-    code: "browser_busy", status: 409,
-  }) }))
-  assert.equal(created, false)
-  assert.deepEqual(service.snapshot(), { status: "closed", openedAt: null })
+test("交付后持久化身份，独立核验仅释放本次 owner 并保留登录目录", async () => {
+  const f = await fixture()
+  try {
+    assert.equal((await f.service.control({ type: "open" }, () => {})).status, "open")
+    const owner = await readProfileOwner(f.marker)
+    assert.equal(owner.cleanup?.status, "confirmed")
+    await mkdir(owner.profilePath, { recursive: true })
+    await writeFile(path.join(owner.profilePath, "login-sentinel"), "preserve")
+    assert.deepEqual(await f.service.control({ type: "close" }, () => {}), { status: "closed", openedAt: null })
+    assert.deepEqual(f.counters(), { starts: 1, recoveries: 1, closes: 1 })
+    assert.equal(await readFile(path.join(owner.profilePath, "login-sentinel"), "utf8"), "preserve")
+    await assert.rejects(readFile(f.marker), { code: "ENOENT" })
+  } finally { await f.cleanup() }
 })
-
-test("目标选择复用同一 Profile runner，返回受限 hybrid target 后自动关闭", async () => {
-  let resolveTarget!: (value: { target: { strategy: "history"; scope: { url: string }; identity: {
-    schemaVersion: "browser-use.dom-interacted-element/v1"; nodeName: string; xPath: string; elementHash: string;
-    stableHash: null; axNameDigest: null; attributes: [] } }; tag: string; strategy: "history" }) => void
-  const target = new Promise<Parameters<typeof resolveTarget>[0]>((resolve) => { resolveTarget = resolve })
-  let starts = 0, closes = 0
-  const service = new BrowserProfileService("D:\\work\\browser-auto-tool", "D:\\bat-data", () => ({
-    startProfile: async (config) => { starts++; assert.equal(config.startUrl, "https://example.test/form") },
-    pickProfileTarget: async () => target,
-    close: async () => { closes++; return cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({
-      stage, status: "confirmed", code: null,
-    })), false) },
-  }))
-  const command = { type: "start" as const, requestId: randomUUID(), draftId: randomUUID(),
-    chainId: randomUUID(), nodeId: "submit",
-    expectedRevision: 2, expectedChecksum: "a".repeat(64) }
-  const accepted = await service.targetControl(command, { taskId: "task-1", startUrl: "https://example.test/form" }, () => {})
-  assert.equal(accepted.status, "opening")
-  await service.targetControl(command, { taskId: "task-1", startUrl: "https://example.test/form" }, () => {
-    throw new Error("idempotent retry must not recheck ownership")
-  })
-  resolveTarget({ target: { strategy: "history", scope: { url: "https://example.test/form" }, identity: {
-    schemaVersion: "browser-use.dom-interacted-element/v1", nodeName: "button", xPath: "/button[1]",
-    elementHash: "1", stableHash: null, axNameDigest: null, attributes: [],
-  } }, tag: "button", strategy: "history" })
-  for (let index = 0; index < 20 && service.targetSelection().status !== "selected"; index++) {
-    await new Promise((resolve) => setImmediate(resolve))
-  }
-  assert.equal(service.targetSelection().status, "selected")
-  assert.equal(service.targetSelection().target && (service.targetSelection().target as { strategy: string }).strategy, "history")
-  assert.equal(service.snapshot().status, "closed")
-  assert.equal(starts, 1)
-  assert.equal(closes, 2)
+test("未确认保留身份，重启后可独立重验；验证 runner 始终关闭", async () => {
+  const f = await fixture()
+  try {
+    await f.service.control({ type: "open" }, () => {})
+    f.behavior.failRecovery = true
+    await assert.rejects(f.service.control({ type: "close" }, () => {}), { code: "browser_profile_cleanup_required" })
+    assert.equal(f.service.snapshot().status, "cleanup_required")
+    assert.ok((await readProfileOwner(f.marker)).runner)
+    assert.equal(f.counters().closes, 1)
+    const restarted = new BrowserProfileService(process.cwd(), f.directory, f.createRunner)
+    await assert.rejects(restarted.control({ type: "open" }, () => {}), { code: "browser_profile_already_open" })
+    f.behavior.failRecovery = false
+    assert.equal((await restarted.control({ type: "recover" }, () => {})).status, "closed")
+    assert.equal(f.counters().starts, 1)
+  } finally { await f.cleanup() }
+})
+test("handoff 或恢复 runner 清理未确认不得投影为成功", async () => {
+  const f = await fixture()
+  try {
+    f.behavior.handoffReport = uncertain
+    await assert.rejects(f.service.control({ type: "open" }, () => {}), { code: "browser_profile_cleanup_required" })
+    assert.equal(f.service.snapshot().openedAt, null)
+    f.behavior.recoveryReport = uncertain
+    await assert.rejects(f.service.control({ type: "recover" }, () => {}), { code: "browser_profile_cleanup_required" })
+    assert.ok((await readProfileOwner(f.marker)).runner)
+  } finally { await f.cleanup() }
+})
+test("空历史标记明确阻塞，不猜身份或启动恢复 runner", async () => {
+  const f = await fixture()
+  try {
+    await mkdir(path.dirname(f.marker), { recursive: true }); await writeFile(f.marker, "")
+    const legacy = new BrowserProfileService(process.cwd(), f.directory, () => { throw new Error("must not start") })
+    await assert.rejects(legacy.control({ type: "recover" }, () => {}), { code: "browser_profile_legacy_owner_unknown" })
+    assert.equal(await readFile(f.marker, "utf8"), "")
+    assert.equal(legacy.snapshot().status, "cleanup_required")
+  } finally { await f.cleanup() }
+})
+test("任务占用时不创建 Profile runner 或 owner 标记", async () => {
+  const f = await fixture()
+  try {
+    await assert.rejects(f.service.control({ type: "open" }, () => { throw new Error("busy") }))
+    assert.equal(f.counters().starts, 0); assert.equal(f.service.snapshot().status, "closed")
+    await assert.rejects(readFile(f.marker), { code: "ENOENT" })
+  } finally { await f.cleanup() }
+})
+test("临时目录必须位于精确受管根并具有同 owner 身份", async () => {
+  const f = await fixture(), temporary = await mkdtemp(path.join(tmpdir(), "bat-hybrid-owner-"))
+  try {
+    await f.service.control({ type: "open" }, () => {})
+    const owner = await readProfileOwner(f.marker)
+    owner.runner!.temporaryDirectory = temporary
+    await writeFile(path.join(temporary, "runner-owner.json"), JSON.stringify({ ...owner.runner, ownerId: randomUUID() }))
+    await saveProfileOwner(f.marker, owner)
+    await assert.rejects(f.service.control({ type: "close" }, () => {}), { code: "browser_profile_cleanup_required" })
+    assert.ok(await readFile(path.join(temporary, "runner-owner.json")))
+    await assert.rejects(ownedRunnerDirectory({ ...owner.runner!, temporaryDirectory: f.directory }), /profile_temporary_owner_invalid/)
+    await writeFile(path.join(temporary, "runner-owner.json"), JSON.stringify(owner.runner))
+    assert.equal(await ownedRunnerDirectory(owner.runner!), temporary)
+    assert.equal((await f.service.control({ type: "recover" }, () => {})).status, "closed")
+    await assert.rejects(readFile(path.join(temporary, "runner-owner.json")), { code: "ENOENT" })
+  } finally { await f.cleanup(); await rm(temporary, { recursive: true, force: true }) }
 })

@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto"
 import { z } from "zod"
 import type { JsonValue, TaskCheckpoint } from "@browser-capture/contracts"
+import { checkpointBrowserReceipt } from "@browser-capture/runtime"
+import { isCompleteDiscovery } from "./hybrid-discovery.js"
 
 export const RUNTIME_SCOPE_FROM = "runtimeScopeFrom"
 export const RUNTIME_SCOPE_READ_ONLY = "runtimeScopeReadOnlySameDocument"
+export const RUNTIME_SCOPE_SAME_DOCUMENT = "runtimeScopeSameDocument"
 
 type EvidenceReference = { ref: string; digest: string }
 type NaturalFact = { id: string; kind: string; value: JsonValue; sourceRefs: EvidenceReference[] }
@@ -30,7 +33,7 @@ const hash = z.string().regex(/^[a-f0-9]{64}$/)
 const browserOperations = new Set(["browser.workflow-step", "browser.read-fields"])
 
 /** WHY：marker 只能来自完整源证据；这里不修改 Python 编译产物，也不推断站点语义。 */
-export function classifyRuntimeScopeDecisions(input: { compilation: Compilation; trace: NaturalTrace; assertFact: AssertFact }) {
+export function classifyRuntimeScopeDecisions(input: { compilation: Compilation; trace: NaturalTrace; assertFact: AssertFact; discoveries?: ReadonlySet<string> }) {
   if (input.compilation.compilerVersion !== "bat-hybrid/2") return [] as RuntimeScopeDecision[]
   const result: RuntimeScopeDecision[] = []
   for (const segment of input.compilation.segments) {
@@ -40,7 +43,7 @@ export function classifyRuntimeScopeDecisions(input: { compilation: Compilation;
   return result
 }
 
-function classifySegment(segmentId: string, input: { compilation: Compilation; trace: NaturalTrace; assertFact: AssertFact }): RuntimeScopeDecision {
+function classifySegment(segmentId: string, input: { compilation: Compilation; trace: NaturalTrace; assertFact: AssertFact; discoveries?: ReadonlySet<string> }): RuntimeScopeDecision {
   const { compilation, trace, assertFact } = input
   const incoming = compilation.controlGraph.edges.filter((edge) => edge.to === segmentId)
   if (incoming.length !== 1 || incoming[0]!.outcome !== "success") return limited(segmentId, "runtime_scope_direct_predecessor_unproven")
@@ -61,6 +64,11 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
   const observations = new Map(trace.observations.map((observation) => [observation.id, observation]))
   let boundary = observations.get(previousAction.postObservationRef)
   if (!boundary) return limited(segmentId, "runtime_scope_predecessor_post_missing")
+  const predecessorBoundary = boundary
+  let intermediateReadOnlyDrift = false
+  let failedFieldReadProbe = false
+  let preparationValidationProbe = false
+  let discoveryProbe = false
   const intermediate = trace.actions.slice(previousIndex + 1, currentIndex)
   for (const action of intermediate) {
     const row = compilation.coverage.find((item) => item.actionRef === action.id)
@@ -74,14 +82,31 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
       && (row.exclusionRule === "native_dom_lookup_observation/v1"
         || row.exclusionRule === "native_text_lookup_observation/v1"
         || row.exclusionRule === "dom_node_inspection_observation/v1")) {
-      boundary = advanceReadOnlyBoundary(boundary, action, observations, assertFact, "read")
-      if (!boundary) return limited(segmentId, "runtime_scope_read_exclusion_discontinuous")
+      const discovery = isCompleteDiscovery(action, observations.get(action.postObservationRef ?? ""))
+      if (discovery && !input.discoveries?.has(action.id)) return limited(segmentId, "runtime_scope_discovery_unproven")
+      const next = advanceReadOnlyBoundary(boundary, action, observations, assertFact, discovery ? "discovery" : "read")
+      if (!next) return limited(segmentId, "runtime_scope_read_exclusion_discontinuous")
+      discoveryProbe ||= discovery
+      if (!sameUrlIdentity(boundary, next, assertFact)) intermediateReadOnlyDrift = true
+      boundary = next
       continue
     }
     if (row.disposition === "agent_internal"
       && row.exclusionRule === "failed_native_dom_lookup_observation/v1") {
       boundary = advanceFailedLookupBoundary(boundary, action, row, observations, assertFact)
       if (!boundary) return limited(segmentId, "runtime_scope_failed_lookup_discontinuous")
+      continue
+    }
+    if (row.disposition === "agent_internal" && row.exclusionRule === "failed_bat_field_read_probe/v1") {
+      boundary = advanceFailedFieldReadBoundary(boundary, action, row, observations, assertFact)
+      if (!boundary) return limited(segmentId, "runtime_scope_failed_field_read_discontinuous")
+      failedFieldReadProbe = true
+      continue
+    }
+    if (row.disposition === "agent_internal" && row.exclusionRule === "preparation_selection_validation/v1") {
+      boundary = advancePreparationValidationBoundary(boundary, action, row, observations, assertFact)
+      if (!boundary) return limited(segmentId, "runtime_scope_selection_validation_discontinuous")
+      preparationValidationProbe = true
       continue
     }
     if (row.disposition === "agent_internal" && row.exclusionRule === "native_action_not_dispatched/v1") {
@@ -94,10 +119,19 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
   }
   const before = observations.get(currentAction.preObservationRef)
   if (!before) return limited(segmentId, "runtime_scope_source_boundary_changed")
-  const readOnlySameDocument = !sameUrlIdentity(boundary, before, assertFact)
-  if (readOnlySameDocument && !sameDocumentReadBoundary(boundary, before, currentAction, assertFact)) {
+  const finalReadOnlyDrift = !sameUrlIdentity(boundary, before, assertFact)
+  if (finalReadOnlyDrift && !sameDocumentReadBoundary(boundary, before, currentAction, assertFact)) {
     return limited(segmentId, "runtime_scope_source_boundary_changed")
   }
+  if ((intermediateReadOnlyDrift || failedFieldReadProbe || preparationValidationProbe || discoveryProbe)
+    && !sameDocumentIdentity(predecessorBoundary, before, assertFact)) {
+    return limited(segmentId, "runtime_scope_source_boundary_changed")
+  }
+  // WHY：跨 URL 的中间只读刷新只授权读取；点击等动作不能借此绕过原精确页面边界。
+  if (intermediateReadOnlyDrift && compilation.segments.find((item) => item.id === segmentId)?.operation?.name !== "browser.read-fields") {
+    return limited(segmentId, "runtime_scope_read_only_target_required")
+  }
+  const readOnlySameDocument = intermediateReadOnlyDrift || finalReadOnlyDrift
   const scope = segmentScope(compilation.segments.find((item) => item.id === segmentId)!)
   const sourceDigest = urlIdentity(before, assertFact)?.urlDigest
   if (!scope?.urlDigest || scope.urlDigest !== sourceDigest) return limited(segmentId, "runtime_scope_static_scope_unproven")
@@ -107,14 +141,12 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
 function sameDocumentReadBoundary(previous: NaturalObservation, current: NaturalObservation,
   action: NaturalAction, assertFact: AssertFact) {
   if (action.name !== "find_elements" || action.effect !== "read" || action.status !== "succeeded"
-    || !previous.tabId || previous.tabId !== current.tabId) return false
+    || !sameDocumentIdentity(previous, current, assertFact)) return false
   const identity = z.object({ targetId: z.string().min(1), documentDigest: hash }).strict()
   const left = soleFact(previous, "document_identity"), right = soleFact(current, "document_identity")
   if (!left || !right) return false
-  assertFact(left, previous.id); assertFact(right, current.id)
   const a = identity.safeParse(left.value), b = identity.safeParse(right.value)
-  if (!a.success || !b.success || a.data.targetId !== previous.tabId
-    || b.data.targetId !== current.tabId || a.data.documentDigest !== b.data.documentDigest) return false
+  if (!a.success || !b.success) return false
   const matches = current.facts.filter((fact) => fact.kind === "observation_diagnostic" && isRecord(fact.value)
     && fact.value.actionRef === action.id && fact.value.phase === "before_action_read_refresh"
     && fact.value.outcome === "readonly_observation_refreshed")
@@ -130,6 +162,17 @@ function sameDocumentReadBoundary(previous: NaturalObservation, current: Natural
     && baseline.documentDigest === a.data.documentDigest && refreshed.documentDigest === b.data.documentDigest
     && baseline.urlDigest === urlIdentity(previous, assertFact)?.urlDigest
     && refreshed.urlDigest === urlIdentity(current, assertFact)?.urlDigest
+}
+
+function sameDocumentIdentity(previous: NaturalObservation, current: NaturalObservation, assertFact: AssertFact) {
+  if (!previous.tabId || previous.tabId !== current.tabId) return false
+  const left = soleFact(previous, "document_identity"), right = soleFact(current, "document_identity")
+  if (!left || !right) return false
+  assertFact(left, previous.id); assertFact(right, current.id)
+  const identity = z.object({ targetId: z.string().min(1), documentDigest: hash }).strict()
+  const a = identity.safeParse(left.value), b = identity.safeParse(right.value)
+  return a.success && b.success && a.data.targetId === previous.tabId
+    && b.data.targetId === current.tabId && a.data.documentDigest === b.data.documentDigest
 }
 
 function browserPredecessor(initial: string, compilation: Compilation) {
@@ -153,13 +196,17 @@ function ownerAction(compilation: Compilation, segmentId: string) {
 }
 
 function advanceReadOnlyBoundary(boundary: NaturalObservation, action: NaturalAction,
-  observations: Map<string, NaturalObservation>, assertFact: AssertFact, kind: "read" | "wait") {
-  const admitted = action.status === "succeeded" && (kind === "read" ? action.effect === "read"
+  observations: Map<string, NaturalObservation>, assertFact: AssertFact, kind: "read" | "wait" | "discovery") {
+  const admitted = action.status === "succeeded" && (kind !== "wait" ? action.effect === "read"
     : action.effect === "none" && action.name === "wait")
   if (!admitted || !action.preObservationRef || !action.postObservationRef) return undefined
   const before = observations.get(action.preObservationRef), after = observations.get(action.postObservationRef)
-  if (!before || !after || !sameUrlIdentity(boundary, before, assertFact)
+  if (!before || !after || !(sameUrlIdentity(boundary, before, assertFact)
+      || kind !== "wait" && sameDocumentReadBoundary(boundary, before, action, assertFact))
     || !sameUrlIdentity(before, after, assertFact)) return undefined
+  // WHY：完整探查须先通过全局消费/回执核验，且不可用同 URL 穿透不同文档。
+  if (kind === "discovery" && (!sameDocumentIdentity(boundary, before, assertFact)
+    || !sameDocumentIdentity(before, after, assertFact))) return undefined
   return after
 }
 
@@ -188,6 +235,37 @@ function advanceFailedLookupBoundary(boundary: NaturalObservation, action: Natur
   const required = uniqueReferences([action.resultRef, ...(before.sourceRefs ?? []), ...(after.sourceRefs ?? []),
     ...beforeUrl.sourceRefs, ...afterUrl.sourceRefs, ...fact.sourceRefs])
   if (!sameReferenceSet(row.evidenceRefs ?? [], required)) return undefined
+  return after
+}
+
+function advanceFailedFieldReadBoundary(boundary: NaturalObservation, action: NaturalAction,
+  row: Compilation["coverage"][number], observations: Map<string, NaturalObservation>, assertFact: AssertFact) {
+  if (action.name !== "bat_read_fields" || action.effect !== "read" || action.status !== "failed"
+    || !action.resultRef || !action.preObservationRef || !action.postObservationRef
+    || row.ownerSegmentId !== null || !sameReferenceSet(row.evidenceRefs ?? [], [action.resultRef])) return undefined
+  const before = observations.get(action.preObservationRef), after = observations.get(action.postObservationRef)
+  // WHY：失败字段探查不产生读取方法；仅完整证据证明未换页、未换文档时才能从控制流排除。
+  if (!before || !after || !sameUrlIdentity(boundary, before, assertFact)
+    || !sameUrlIdentity(before, after, assertFact) || typeof boundary.url !== "string"
+    || boundary.url !== before.url || before.url !== after.url
+    || !sameDocumentIdentity(boundary, before, assertFact)
+    || !sameDocumentIdentity(before, after, assertFact)) return undefined
+  return after
+}
+
+function advancePreparationValidationBoundary(boundary: NaturalObservation, action: NaturalAction,
+  row: Compilation["coverage"][number], observations: Map<string, NaturalObservation>, assertFact: AssertFact) {
+  if (action.name !== "bat_validate_selection" || action.effect !== "none"
+    || (action.status !== "succeeded" && action.status !== "failed")
+    || !action.resultRef || !action.preObservationRef || !action.postObservationRef
+    || row.ownerSegmentId !== null || !sameReferenceSet(row.evidenceRefs ?? [], [action.resultRef])) return undefined
+  const before = observations.get(action.preObservationRef), after = observations.get(action.postObservationRef)
+  // WHY：仅有工具名称不足以穿透页面边界；纯计算也须有同页同文档、同 tab 的前后证据。
+  if (!before || !after || !sameUrlIdentity(boundary, before, assertFact)
+    || !sameUrlIdentity(before, after, assertFact) || typeof boundary.url !== "string"
+    || boundary.url !== before.url || before.url !== after.url
+    || !sameDocumentIdentity(boundary, before, assertFact)
+    || !sameDocumentIdentity(before, after, assertFact)) return undefined
   return after
 }
 
@@ -272,23 +350,37 @@ export type HybridBrowserState = Readonly<{ sessionId: string; tabId: string; ur
 /** 当前运行 scope 只存在于一个 capability 闭包内；失败会清空，实例之间不会共享。 */
 export class HybridRuntimeScopeState {
   private previous: { nodeId: string; browser: HybridBrowserState } | null = null
+  private resumed: { nodeId: string; browser: HybridBrowserState } | null = null
+  private pendingDocument: HybridBrowserState | null = null
 
-  async commandConfig(name: string, config: Record<string, unknown>, observe: () => Promise<HybridBrowserState>) {
-    try { return await this.resolveCommandConfig(name, config, observe) }
+  async commandConfig(name: string, config: Record<string, unknown>, observe: () => Promise<HybridBrowserState>, nodeId?: string) {
+    this.pendingDocument = null
+    try {
+      if (this.resumed && this.resumed.nodeId === nodeId && config[RUNTIME_SCOPE_FROM] !== undefined) {
+        scopePredecessors(name, config)
+        assertExistingScope(name, config)
+        const browser = await observe()
+        if (!sameBrowserPage(this.resumed.browser, browser) || !this.resumed.browser.documentId
+          || this.resumed.browser.documentId !== browser.documentId) throw new Error("hybrid_runtime_scope_page_changed")
+        // WHY：人工恢复授权只归当前节点；新鲜现场替换旧作用域，不能伪造一个已成功的前驱动作。
+        const { [RUNTIME_SCOPE_FROM]: _marker, [RUNTIME_SCOPE_READ_ONLY]: _mode,
+          [RUNTIME_SCOPE_SAME_DOCUMENT]: _document, ...plain } = config
+        if (config[RUNTIME_SCOPE_SAME_DOCUMENT] === true) this.pendingDocument = browser
+        return replaceScope(name, plain, { url: browser.url, urlDigest: digestRuntimeUrl(browser.url) })
+      }
+      return await this.resolveCommandConfig(name, config, observe)
+    }
     catch (error) { this.clear(); throw error }
   }
 
   private async resolveCommandConfig(name: string, config: Record<string, unknown>, observe: () => Promise<HybridBrowserState>) {
-    const marker = config[RUNTIME_SCOPE_FROM]
     const readOnlySameDocument = config[RUNTIME_SCOPE_READ_ONLY]
-    const { [RUNTIME_SCOPE_FROM]: _marker, [RUNTIME_SCOPE_READ_ONLY]: _mode, ...plain } = config
-    if (readOnlySameDocument !== undefined && (readOnlySameDocument !== true
-      || name !== "browser.read-fields" || marker === undefined)) throw new Error("hybrid_runtime_read_scope_invalid")
-    if (marker === undefined) return plain
-    if (typeof marker !== "string" || !marker) throw new Error("hybrid_runtime_scope_marker_invalid")
-    if (!browserOperations.has(name)) throw new Error("hybrid_runtime_scope_command_unsupported")
+    const { [RUNTIME_SCOPE_FROM]: _marker, [RUNTIME_SCOPE_READ_ONLY]: _mode,
+      [RUNTIME_SCOPE_SAME_DOCUMENT]: _document, ...plain } = config
+    const predecessors = scopePredecessors(name, config)
+    if (!predecessors) return plain
     if (!this.previous) throw new Error("hybrid_runtime_scope_predecessor_missing")
-    if (this.previous.nodeId !== marker) throw new Error("hybrid_runtime_scope_predecessor_mismatch")
+    if (!predecessors.includes(this.previous.nodeId)) throw new Error("hybrid_runtime_scope_predecessor_mismatch")
     assertExistingScope(name, plain)
     const browser = await observe()
     const sameDocument = Boolean(this.previous.browser.documentId && browser.documentId
@@ -297,26 +389,57 @@ export class HybridRuntimeScopeState {
     if (readOnlySameDocument === true ? !sameDocument : !sameBrowserPage(this.previous.browser, browser)) {
       throw new Error("hybrid_runtime_scope_page_changed")
     }
+    if (config[RUNTIME_SCOPE_SAME_DOCUMENT] === true && !sameDocument) throw new Error("hybrid_runtime_scope_document_changed")
+    if (config[RUNTIME_SCOPE_SAME_DOCUMENT] === true) this.pendingDocument = browser
     return replaceScope(name, plain, { url: browser.url, urlDigest: digestRuntimeUrl(browser.url) })
   }
 
-  succeed(nodeId: string, browser: HybridBrowserState) { this.previous = { nodeId, browser } }
-  clear() { this.previous = null }
+  succeed(nodeId: string, browser: HybridBrowserState) {
+    const expected = this.pendingDocument
+    // WHY：同页证明贯穿动作前后；先验正文档，再接纳成功，避免刷新同URL后覆盖原身份。
+    if (expected && (!expected.documentId || expected.documentId !== browser.documentId
+      || expected.sessionId !== browser.sessionId || expected.tabId !== browser.tabId)) {
+      this.clear()
+      throw new Error("hybrid_runtime_scope_document_changed")
+    }
+    this.pendingDocument = null; this.previous = { nodeId, browser }; this.resumed = null
+  }
+  clear() { this.previous = null; this.resumed = null; this.pendingDocument = null }
+
+  resumeHuman(nodeId: string, browser: HybridBrowserState) { this.clear(); this.resumed = { nodeId, browser } }
 
   restore(checkpoint: TaskCheckpoint, browser: HybridBrowserState) {
     this.clear()
     if (checkpoint.pendingEffect || checkpoint.resumeWhen || !checkpoint.browser
       || !sameCheckpointBrowser(checkpoint.browser, browser)) return false
-    const last = checkpoint.events.at(-1)
-    if (!last || last.status !== "finished" || last.outcome !== "success") return false
-    this.succeed(last.nodeId, browser)
+    const receipt = checkpointBrowserReceipt(checkpoint)
+    if (!receipt || receipt.outcome !== "success") return false
+    this.succeed(receipt.nodeId, browser)
     return true
   }
 }
 
+function scopePredecessors(name: string, config: Record<string, unknown>) {
+  const marker = config[RUNTIME_SCOPE_FROM], mode = config[RUNTIME_SCOPE_READ_ONLY]
+  if (config[RUNTIME_SCOPE_SAME_DOCUMENT] !== undefined
+    && (config[RUNTIME_SCOPE_SAME_DOCUMENT] !== true || marker === undefined || !browserOperations.has(name))) {
+    throw new Error("hybrid_runtime_scope_document_marker_invalid")
+  }
+  if (mode !== undefined && (mode !== true || name !== "browser.read-fields" || marker === undefined)) {
+    throw new Error("hybrid_runtime_read_scope_invalid")
+  }
+  if (marker === undefined) return null
+  const predecessors = typeof marker === "string" ? [marker] : marker
+  if (!Array.isArray(predecessors) || predecessors.length < 1 || predecessors.length > 2
+    || predecessors.some((item) => typeof item !== "string" || !item)
+    || new Set(predecessors).size !== predecessors.length) throw new Error("hybrid_runtime_scope_marker_invalid")
+  if (!browserOperations.has(name)) throw new Error("hybrid_runtime_scope_command_unsupported")
+  return predecessors as string[]
+}
+
 function assertExistingScope(name: string, config: Record<string, unknown>) {
   const scope = name === "browser.read-fields" ? config.scope
-    : isRecord(config.target) ? config.target.scope : undefined
+    : isRecord(config.target) ? config.target.scope : scrollReadCondition(config)?.scope
   if (!isRecord(scope) || typeof scope.url !== "string" || !scope.url) {
     throw new Error("hybrid_runtime_scope_static_scope_missing")
   }
@@ -324,8 +447,24 @@ function assertExistingScope(name: string, config: Record<string, unknown>) {
 
 function replaceScope(name: string, config: Record<string, unknown>, scope: { url: string; urlDigest: string }) {
   if (name === "browser.read-fields") return { ...config, scope }
+  if (scrollReadCondition(config)) return { ...config,
+    postconditions: (config.postconditions as Record<string, unknown>[]).map((condition) =>
+      condition.kind === "read_fields" ? { ...condition, scope } : condition) }
   const target = config.target as Record<string, unknown>
-  return { ...config, target: { ...target, scope } }
+  const previous = isRecord(target.scope) ? target.scope.url : undefined
+  const postconditions = Array.isArray(config.postconditions) ? config.postconditions.map((condition) =>
+    isRecord(condition) && condition.kind === "read_fields" && condition.transition === true
+      && isRecord(condition.scope) && condition.scope.url === previous ? { ...condition, scope } : condition)
+    : config.postconditions
+  // WHY：同页按钮的消费者读取也跟随当前运行URL；跨页消费者仍保留自己的目的地证明。
+  return { ...config, target: { ...target, scope }, postconditions }
+}
+
+function scrollReadCondition(config: Record<string, unknown>) {
+  if (config.actionName !== "scroll" || config.target !== null || !Array.isArray(config.postconditions)) return undefined
+  const reads = config.postconditions.filter((item) => isRecord(item) && item.kind === "read_fields" && item.transition === true)
+  // WHY：无元素目标的原生滚动，以已证明的消费者读取作为作用域；不虚构locator。
+  return reads.length === 1 && isRecord(reads[0]) ? reads[0] : undefined
 }
 
 function sameBrowserPage(left: HybridBrowserState, right: HybridBrowserState) {

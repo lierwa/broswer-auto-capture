@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { randomUUID } from "node:crypto"
 import { parseAIEvent } from "@agent-platform/ai-connect/client"
+import { createCommonQuestionFromPanel } from "@agent-platform/ai-connect/integration/authoring/question"
 import { CommonContentUIProtocol } from "@agent-platform/ai-connect/ui-contracts"
 import { emptyInterview, type InterviewMessage, type InterviewMessagePart } from "@browser-capture/contracts/interview"
 import {
@@ -11,6 +13,15 @@ import {
   parseInterviewOutput,
   settleInterviewMessageParts,
 } from "../src/interview/protocol.js"
+import { recordUserProvidedSources } from "../src/interview/source-resolution.js"
+import { beginRound, confirmDraft, finishRound } from "../src/interview/transitions.js"
+
+const entry = "https://example.org/"
+function sourcedState() {
+  const state = structuredClone(emptyInterview)
+  recordUserProvidedSources(state, entry, 1)
+  return state
+}
 
 function calloutFixture() {
   const { session } = createInterviewMainAuthoring(structuredClone(emptyInterview), "test skill", {
@@ -80,16 +91,18 @@ test("消息 parts 的真实内容不一致时继续拒绝终态", () => {
 })
 
 test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草稿", () => {
-  const state = structuredClone(emptyInterview)
+  const state = sourcedState()
   const { session } = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   })
   const markdown = [
     "# 任务目标", "播放指定内容并定位到目标时间。",
-    "# 已知上下文与输入", "目标由用户给出。",
-    "# 范围与约束", "不替换为其他内容。",
-    "# 结果与完成", "本任务没有业务数据输出；先核实内容身份，再播放并以播放状态和当前位置核验完成。",
+    "## 已确认来源", "仅使用 example.org；具体页面由试做调查。",
+    "## 试做入口", `1. ${entry}`,
+    "## 运行输入", "- 无",
+    "## 代表试做", "从已确认入口核实内容身份，再播放并定位。",
+    "## 结果与完成", "- 交付：完成状态\n- 页面交付：保留现场\n目标内容正在播放且当前位置为 180 秒。",
     "# 可观察完成标准", "目标内容正在播放且当前位置为 180 秒。",
     "# 需要现场调查", "核实最新内容身份和访问条件。",
     "# 执行权限与确认点", "本草稿确认不授权浏览器操作。",
@@ -111,7 +124,7 @@ test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草�
 })
 
 test("实际 composed prompt 只提供一个通用 raw Markdown 草稿示例", () => {
-  const state = structuredClone(emptyInterview)
+  const state = sourcedState()
   const authored = createInterviewMainAuthoring(state, "test skill", {
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
@@ -119,30 +132,88 @@ test("实际 composed prompt 只提供一个通用 raw Markdown 草稿示例", (
   const markdowns = authored.prompt.match(/<interview-markdown .*?<\/interview-markdown>/gs) ?? []
   assert.equal(markdowns.length, 1)
   assert.doesNotMatch(authored.prompt, /interview-result/)
-  authored.session.push(`<authoring>${markdowns[0]}</authoring>`)
+  authored.session.push(`<authoring>${markdowns[0]!.replace("已选来源候选的真实 URL", entry)}</authoring>`)
   const generic = parseInterviewAuthoringOutput(authored.session.finish(), state, [], "run")
   assert.equal(generic.draft?.title, "short title")
   assert.equal(generic.draft?.brief, null)
-  assert.match(generic.draft?.markdown ?? "", /Complete browser-automation requirement/)
-  assert.match(authored.prompt, /完整对话语境/)
-  assert.match(authored.prompt, /不得按关键词、网站或预设任务类别判断/)
+  assert.match(generic.draft?.markdown ?? "", /已确认的业务目标/)
+  assert.match(authored.prompt, /根据完整对话决定/)
+  assert.match(authored.prompt, /不按关键词或网站猜/)
+  assert.match(authored.prompt, /结果形状：记录列表/)
+  assert.match(authored.prompt, /不把平行文本列表冒充成组记录/)
 })
 
 test("动作型与数据型草稿都明确结果形态且继续写 brief=null", () => {
-  const state = structuredClone(emptyInterview)
+  const state = sourcedState()
   const action = parseInterviewOutput({ assistantText: "已整理播放完成条件。", question: null, draft: {
     title: "播放任务", brief: null,
-    markdown: "# 任务目标\n播放目标内容。\n\n# 结果与完成\n没有业务数据输出；以目标内容正在播放作为完成事实。",
+    markdown: `# 任务目标\n播放目标内容。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n从入口调查并播放目标内容。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n以目标内容正在播放作为完成事实。`,
   } }, state)
   const data = parseInterviewOutput({ assistantText: "已整理列表结果。", question: null, draft: {
     title: "列表任务", brief: null,
-    markdown: "# 任务目标\n读取列表。\n\n# 结果与完成\n返回标题与链接；空列表返回空数组且不进入详情页。",
+    markdown: `# 任务目标\n读取列表。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n从入口读取列表。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：记录列表\n- 页面交付：无需保留\n- 字段：标题（文本）：每项的标题\n- 字段：链接（文本）：同一项的链接\n空列表时说明不足且不进入详情页。`,
   } }, state)
   assert.equal(action.draft?.brief, null)
   assert.equal(data.draft?.brief, null)
   assert.throws(() => parseInterviewOutput({ assistantText: "缺少结果段。", question: null, draft: {
     title: "无效草稿", brief: null, markdown: "# 任务目标\n播放目标内容。",
   } }, state), /interview_result_and_completion_required/)
+})
+
+test("访谈数据草案缺少结果形状时拒绝本轮，保留上一有效草案", () => {
+  const state = sourcedState()
+  const markdown = `# 任务目标\n读取页面数据。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n从入口读取数据。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：单条记录\n- 页面交付：无需保留\n- 字段：标题（文本）：页面标题\n读取不到时报告原因。`
+  const candidate = { assistantText: "已整理数据草案。", question: null,
+    draft: { title: "数据任务", brief: null, markdown } }
+  const first = beginRound(state, { type: "message", requestId: randomUUID(), expectedRevision: 0,
+    text: "读取已确认来源的页面标题。" })
+  const valid = parseInterviewOutput(candidate, state)
+  finishRound(state, first, "succeeded", { ...valid, parts: [] })
+  const priorDrafts = structuredClone(state.drafts)
+  assert.equal(priorDrafts.length, 1)
+
+  const second = beginRound(state, { type: "message", requestId: randomUUID(), expectedRevision: 1,
+    text: "请继续整理数据结果。" })
+  const missingShape = { ...candidate, draft: { ...candidate.draft,
+    markdown: markdown.replace("- 结果形状：单条记录\n", "") } }
+  const authored = createInterviewMainAuthoring(state, "test skill", {
+    schemaVersion: 1, packages: [CommonContentUIProtocol],
+  })
+  authored.session.push(`<authoring><interview-markdown title="${missingShape.draft.title}">${missingShape.draft.markdown}</interview-markdown></authoring>`)
+  assert.throws(() => parseInterviewAuthoringOutput(authored.session.finish(), state, [], second),
+    /preparation_draft_result_shape_required/)
+  finishRound(state, second, "failed", undefined, "preparation_draft_result_shape_required")
+  assert.deepEqual(state.drafts, priorDrafts)
+  assert.equal(state.turns.at(-1)?.status, "failed")
+})
+
+test("自由文本澄清旧题板后允许草案；失败轮次不篡改旧题板", () => {
+  const state = sourcedState()
+  state.revision = 1
+  const question = createCommonQuestionFromPanel({ id: "access", panel: { mode: "choice",
+    prompt: "你是否具备并愿意使用所需访问资格？", options: [
+      { id: "yes", label: "具备并愿意使用" }, { id: "no", label: "不具备或不愿使用" },
+    ],
+  } })
+  state.messages.push(message({ id: "access", role: "assistant", text: "请确认访问资格。", question }))
+  state.unresolved.push({ id: "access", revision: 1, question, status: "open", answerMessageId: null })
+  const draft = { title: "播放任务", brief: null, markdown: `# 任务目标\n播放最新正片。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n从入口调查最新正片并尝试播放。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n播放成功才算完成；看不了则报告原因。` }
+  const candidate = { assistantText: "已按你的要求整理。", question: null, draft }
+  assert.throws(() => parseInterviewOutput(candidate, state), /interview_unresolved_items_open/)
+
+  const first = beginRound(state, { type: "message", requestId: randomUUID(), expectedRevision: 1,
+    text: "我不确定有没有会员；看不了就报告原因，不要换播旧集。" })
+  assert.equal(parseInterviewOutput(candidate, state).draft?.title, "播放任务")
+  assert.equal(state.unresolved[0]?.status, "open")
+  finishRound(state, first, "failed", undefined, "模拟本轮后续失败")
+  assert.equal(state.unresolved[0]?.status, "open")
+
+  const retry = beginRound(state, { type: "retry", requestId: randomUUID(), expectedRevision: 2 })
+  const output = parseInterviewOutput(candidate, state)
+  finishRound(state, retry, "succeeded", { ...output, parts: [] })
+  assert.equal(state.unresolved[0]?.status, "superseded")
+  confirmDraft(state, 1)
+  assert.equal(state.confirmedVersion, 1)
 })
 
 test("访谈注册 choice 与 multi_choice，缺失或未启用 free_form 都不进入业务状态", () => {
@@ -166,6 +237,23 @@ test("访谈注册 choice 与 multi_choice，缺失或未启用 free_form 都不
     authored.session.push(`<authoring>${panel}</authoring>`)
     assert.throws(() => parseInterviewAuthoringOutput(authored.session.finish(), state, [], "run"), /interview_authoring_invalid/)
   }
+})
+
+test("用户自身资格问题可无推荐答案，多个推荐仍被协议拒绝", () => {
+  const state = structuredClone(emptyInterview)
+  const ui = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
+  const question = '<question-panel mode="choice" prompt="你是否具备并愿意使用所需访问资格？">' +
+    '<question-option slot="yes" label="具备且愿意使用"></question-option>' +
+    '<question-option slot="no" label="不具备或不愿使用"></question-option></question-panel>'
+  const authored = createInterviewMainAuthoring(state, "test skill", ui)
+  authored.session.push(`<authoring>${question}</authoring>`)
+  const parsed = parseInterviewAuthoringOutput(authored.session.finish(), state, [], "run")
+  assert.ok(parsed.question && "type" in parsed.question && parsed.question.type === "choice")
+  assert.deepEqual(parsed.question.data.options.map((option) => option.recommended), [false, false])
+
+  const invalid = createInterviewMainAuthoring(state, "test skill", ui)
+  invalid.session.push(`<authoring>${question.replaceAll('<question-option slot=', '<question-option recommended="true" slot=')}</authoring>`)
+  assert.throws(() => parseInterviewAuthoringOutput(invalid.session.finish(), state, [], "run"), /interview_question_projection_invalid/)
 })
 
 test("Question 与草稿混用或产生多个草稿时拒绝", () => {

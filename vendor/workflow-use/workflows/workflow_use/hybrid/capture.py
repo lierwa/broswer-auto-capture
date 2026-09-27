@@ -19,7 +19,8 @@ from .dom_evidence import (
 )
 from .dom_reference_tool import sanitized_inspection_result
 from .evidence import EvidenceRef, TraceSource, digest, gap
-from .field_read_evidence import FieldReadEvidenceFailure, verified_field_read
+from .field_read_evidence import FieldReadEvidenceFailure
+from .method_read_evidence import verified_method_read as verified_field_read
 from .history import from_agent_history
 from .host_read_facts import attach_host_read_facts
 from .natural_effects import read_page_effect, read_target_state, read_target_value
@@ -202,7 +203,8 @@ class EvidenceCollector(ObservationCapture):
             self.dispatch_audit.close()
 
     async def find_elements_read_facts(self, query, results, step):
-        if query.complete is not True or len(results) != 1 or results[0].error:
+        # WHY：纯属性探查只提供原生 DOM 定位信息；缺少文本投影合同，不能强造业务读取或来源缺口。
+        if query.includeText is not True or query.complete is not True or len(results) != 1 or results[0].error:
             return []
         try:
             result_ref = self.results[(step, 0)]
@@ -406,12 +408,12 @@ class EvidenceCollector(ObservationCapture):
         completed = ((history.is_done() is True and history.is_successful() is True)
                      if source_completed is None else source_completed)
         if completed and final_output is not None:
-            final_output = self.attach_host_reads(final_output)
             attach_prior_read_bindings(self, history)
             assembly, assembly_gaps = build_verified_output_assembly(
                 self.observations, final_output, self.output_schema, self.put_evidence,
                 input_value=self.input_value, input_schema=self.input_schema,
-                requirement_text=self.requirement_text, result_spec=self.result_spec)
+                requirement_text=self.requirement_text, result_spec=self.result_spec,
+                selected_read_refs=getattr(self.field_read_records, 'selected_refs', ()))
             capture_gaps.extend(assembly_gaps)
             destination = self.done_post_observation(history)
             if assembly is not None and destination is not None:

@@ -17,7 +17,8 @@ async def navigation_tab_ids(browser):
             if isinstance(getattr(tab, 'target_id', None), str) and tab.target_id}
 
 
-async def reconcile_new_navigation_tab(browser, prior_tabs, *, attempts=100, interval=0.3, max_ms=30000):
+async def reconcile_new_navigation_tab(browser, prior_tabs, *, attempts=100, interval=0.3, max_ms=30000,
+                                       original_target_id=None):
     """Adopt only one action-created tab, then read its live URL within a bounded budget.
 
     This is navigation convergence, not DOM readiness. The ordinary postconditions still
@@ -34,6 +35,8 @@ async def reconcile_new_navigation_tab(browser, prior_tabs, *, attempts=100, int
         if not added:
             if selected is not None:
                 raise ValueError('new_navigation_tab_disappeared')
+            if original_target_id is not None and str(browser.agent_focus_target_id) != original_target_id:
+                raise ValueError('navigation_tab_focus_changed')
             empty_samples += 1
             if empty_samples < min(2, attempts):
                 raise NavigationTabPending('navigation_tab_discovery_pending')
@@ -67,6 +70,21 @@ async def reconcile_new_navigation_tab(browser, prior_tabs, *, attempts=100, int
         if selected is None and isinstance(error, NavigationTabPending):
             return None
         raise ValueError('new_navigation_tab_not_ready') from error
+
+
+def navigation_action_owner(browser, prior_tabs):
+    session_id = getattr(browser, 'id', None)
+    target_id = getattr(browser, 'agent_focus_target_id', None)
+    if (not isinstance(session_id, str) or not session_id or not isinstance(target_id, str)
+            or target_id not in prior_tabs):
+        raise ValueError('navigation_action_owner_unavailable')
+    return {'sessionId': session_id, 'targetId': target_id}
+
+
+def assert_navigation_owner(browser, owner):
+    if (getattr(browser, 'id', None) != owner['sessionId']
+            or getattr(browser, 'agent_focus_target_id', None) != owner['targetId']):
+        raise ValueError('navigation_action_owner_changed')
 
 
 async def reconcile_captured_navigation(collector, results):

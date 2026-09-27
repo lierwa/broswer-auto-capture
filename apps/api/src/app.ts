@@ -6,8 +6,8 @@ import { z } from "zod"
 import { createAI, localStore, parseModelSelection, type AI } from "@agent-platform/ai-connect/server"
 import { mountAI } from "@agent-platform/ai-connect/fastify"
 import { interviewCommandSchema } from "@browser-capture/contracts/interview"
-import { browserTargetSelectionCommandSchema } from "@browser-capture/contracts/browser-profile"
-import { taskCommandSchema, taskIdSchema } from "@browser-capture/contracts/task"
+import { taskChainCommandSchema } from "@browser-capture/contracts"
+import { taskCommandSchema, taskDeleteCommandSchema, taskIdSchema } from "@browser-capture/contracts/task"
 import { ProductStore } from "./database/store.js"
 import { importLegacy } from "./database/importLegacy.js"
 import { InterviewCoordinator } from "./interview/coordinator.js"
@@ -21,6 +21,7 @@ import type { RuntimeCapabilityFactory } from "./task-chain/runtime-host.js"
 import { OriginAccessGate } from "./browser/origin-access-gate.js"
 import { BrowserProfileService } from "./browser/profile-service.js"
 import { PythonUpstreamBrowserRuntime, type UpstreamBrowserRuntime } from "./upstream-browser/service.js"
+import { TaskDeletionService } from "./task-deletion.js"
 
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
 export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider;
@@ -53,6 +54,7 @@ export async function createApplication(options: AppOptions) {
   }
   catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   const browserProfile = new BrowserProfileService(options.root, options.directory)
+  const deletion = new TaskDeletionService(store, coordinator, browser, browserProfile, taskChain, options.directory)
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
   app.addHook("onRequest", async (request, reply) => {
     const host = request.headers.host ?? ""
@@ -71,7 +73,7 @@ export async function createApplication(options: AppOptions) {
     const status = publicStatus(error)
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
-  routes(app, coordinator, browser, browserProfile, taskChain, store, ai, options.developmentIdentity)
+  routes(app, coordinator, browser, browserProfile, taskChain, deletion, store, ai, options.developmentIdentity)
   await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
   app.addHook("preClose", async () => { await browserProfile.shutdown(); await taskChain.close(); await browser.close(); await coordinator.close() })
   app.addHook("onClose", async () => { ai.close(); await store.close() })
@@ -99,7 +101,8 @@ const taskHistoryQuery = taskQuery.extend({ kind: z.enum(["releases", "execution
   offset: z.coerce.number().int().nonnegative().default(0),
   limit: z.coerce.number().int().min(1).max(100).default(20) })
 function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService,
-  browserProfile: BrowserProfileService, taskChain: TaskChainService, store: ProductStore, ai: AI,
+  browserProfile: BrowserProfileService, taskChain: TaskChainService, deletion: TaskDeletionService,
+  store: ProductStore, ai: AI,
   developmentIdentity?: { pid: number; root: string; stop?: () => void }) {
   app.get("/api/health", () => ({ service: "browser-capture-api", version: 1,
     ...(developmentIdentity ? { development: { pid: developmentIdentity.pid, root: developmentIdentity.root } } : {}) }))
@@ -127,44 +130,45 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
     }
   })
   app.get("/api/browser-profile", () => browserProfile.snapshot())
-  app.post("/api/browser-profile", async (request) => browserProfile.control(request.body, () => {
-    if (browser.owner() || taskChain.isAnyActive()) {
-      throw new DomainError("browser_busy", "当前任务正在使用浏览器，请完成或停止后再管理账号。", 409)
-    }
-  }))
-  app.get("/api/browser-profile/target-selection", (request) => {
-    store.task(taskQuery.parse(request.query).taskId)
-    return browserProfile.targetSelection()
-  })
-  app.post("/api/browser-profile/target-selection", async (request, reply) => {
-    const taskId = taskQuery.parse(request.query).taskId
-    const command = browserTargetSelectionCommandSchema.parse(request.body)
-    const context = command.type === "start" ? taskChain.targetSelectionContext(taskId, command) : {}
-    const state = await browserProfile.targetControl(command, { taskId, ...context }, () => {
+  app.post("/api/browser-profile", async (request) => {
+    deletion.assertWritable()
+    return browserProfile.control(request.body, () => {
       if (browser.owner() || taskChain.isAnyActive()) {
-        throw new DomainError("browser_busy", "当前任务正在使用浏览器，请完成或停止后再选择目标。", 409)
+        throw new DomainError("browser_busy", "当前任务正在使用浏览器，请完成或停止后再管理账号。", 409)
       }
     })
-    return reply.code(command.type === "start" ? 202 : 200).send(state)
   })
   app.get("/api/tasks", () => taskChain.projectTasks(coordinator.list()))
   app.post("/api/tasks", (request) => {
     const command = taskCommandSchema.parse(request.body)
+    if (command.type !== "create") deletion.assertWritable()
     if (command.type === "archive" && command.archived && (browser.isActive(command.id) || taskChain.isActive(command.id))) throw new DomainError("browser_busy", "请先停止计划或授权运行，再归档任务。", 409)
     const id = coordinator.taskAction(command)
     return { id, tasks: taskChain.projectTasks(coordinator.list()) }
   })
+  app.delete("/api/tasks", async (request) => {
+    const command = taskDeleteCommandSchema.parse(request.body)
+    const id = await deletion.delete(command)
+    return { id, tasks: taskChain.projectTasks(coordinator.list()) }
+  })
   app.get("/api/interview", (request) => coordinator.snapshot(taskQuery.parse(request.query).taskId))
   app.get("/api/browser", (request) => browser.snapshot(taskQuery.parse(request.query).taskId))
-  app.post("/api/browser", (request) => browser.control(taskQuery.parse(request.query).taskId, request.body))
+  app.post("/api/browser", (request) => {
+    deletion.assertWritable()
+    return browser.control(taskQuery.parse(request.query).taskId, request.body)
+  })
   app.get("/api/task-chain", (request) => taskChain.snapshot(taskQuery.parse(request.query).taskId))
-  app.post("/api/task-chain", (request, reply) => {
-    const type = request.body && typeof request.body === "object" && "type" in request.body ? request.body.type : null
-    if (browserProfile.isBusy() && !["cancel_authoring", "cancel_execution",
-      "cancel_chain_adjustment", "reject_chain_adjustment"].includes(String(type))) {
+  app.post("/api/task-chain", async (request, reply) => {
+    deletion.assertWritable()
+    const command = taskChainCommandSchema.parse(request.body)
+    if (browserProfile.isBusy() && !["cancel_authoring", "cancel_execution"].includes(command.type)) {
       throw new DomainError("browser_profile_busy", "请先在浏览器账号设置中完成操作并关闭专用浏览器。", 409)
     }
-    return reply.code(202).send(taskChain.dispatch(taskQuery.parse(request.query).taskId, request.body, true))
+    return reply.code(202).send(await taskChain.dispatchAsync(taskQuery.parse(request.query).taskId, command))
+  })
+  app.post("/api/task-chain/handoff", async (request) => {
+    deletion.assertWritable()
+    return taskChain.controlBrowserHandoff(taskQuery.parse(request.query).taskId, request.body)
   })
   app.get("/api/task-chain/events", (request) => {
     const query = executionEventsQuery.parse(request.query)
@@ -177,14 +181,11 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
   app.get("/api/task-chain/diagnostics", (request) => {
     return taskChain.diagnostics(taskQuery.parse(request.query).taskId)
   })
-  app.get("/api/task-chain/legacy", (request, reply) => {
-    const query = legacyQuery.parse(request.query), body = taskChain.legacyOriginal(query.taskId, query.source, query.id)
-    return reply.type("application/json; charset=utf-8").send(body)
-  })
   app.get("/api/task-chain/artifact", (request) => {
     const query = artifactQuery.parse(request.query); return taskChain.repository.artifact(query.taskId, query.artifactId)
   })
   app.post("/api/interview", (request, reply) => {
+    deletion.assertWritable()
     const id = taskQuery.parse(request.query).taskId, command = interviewCommandSchema.parse(request.body)
     const state = coordinator.dispatch(id, command)
     if (command.type === "confirm") taskChain.snapshot(id)
@@ -198,14 +199,14 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
 }
 const modelSettingsBody = z.object({ selection: z.unknown() }).strict()
 const developmentShutdownSchema = z.object({ pid: z.number().int().positive(), root: z.string().min(1) }).strict()
-const legacyQuery = taskQuery.extend({ source: z.enum(["plans", "chains", "executions"]), id: z.string().min(1) })
 const artifactQuery = taskQuery.extend({ artifactId: z.string().uuid() })
 function sensitiveAIPath(method: string, url: string) {
   const pathName = url.split("?", 1)[0]
   return pathName === "/api/model-settings" || pathName === "/api/browser-profile"
     || pathName?.startsWith("/api/browser-profile/")
     || pathName === "/api/ai" || pathName?.startsWith("/api/ai/")
-    || method === "POST" && pathName === "/api/task-chain"
+    || method === "POST" && (pathName === "/api/task-chain" || pathName === "/api/task-chain/handoff")
+    || method === "DELETE" && pathName === "/api/tasks"
 }
 function samePath(left: string, right: string) {
   const normalize = (value: string) => path.resolve(value).replaceAll("\\", "/").toLowerCase()

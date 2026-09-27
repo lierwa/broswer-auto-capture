@@ -79,14 +79,100 @@ export class ProductStore {
     return previous?.resultId
   }
   recordOperation(scope: string, requestId: string, input: unknown, resultId: string) {
-    this.db.insert(schema.operations).values({ scope, requestId, digest: digest(input), resultId }).run()
+    const taskId = this.operationOwner(scope, resultId)
+    if (!taskId) throw new DomainError("operation_owner_unknown", "无法确认请求记录所属任务，操作已停止。", 409)
+    this.db.insert(schema.operations).values({ scope, requestId, digest: digest(input), resultId, taskId }).run()
   }
-  legacyContractRows(taskId: string) {
+  private operationOwner(scope: string, resultId: string): string | null {
+    if (scope === "tasks") return this.connection.prepare("SELECT id FROM tasks WHERE id = ?").get(resultId)
+      ? resultId : null
+    if (this.connection.prepare("SELECT id FROM tasks WHERE id = ?").get(scope)) return scope
+    // WHY：旧全局幂等键没有 owner；只接受存活事实的唯一任务归属，不能从 UUID 或命令名称猜测。
+    const rows = this.connection.prepare(`SELECT DISTINCT taskId FROM (
+      SELECT taskId FROM taskAuthoringJobs WHERE id = ? UNION ALL
+      SELECT taskId FROM taskExecutions WHERE id = ? UNION ALL
+      SELECT taskId FROM taskDrafts WHERE id = ? UNION ALL
+      SELECT taskId FROM taskReleases WHERE releaseId = ? UNION ALL
+      SELECT taskId FROM taskArtifacts WHERE artifactId = ? UNION ALL
+      SELECT taskId FROM plans WHERE id = ? UNION ALL
+      SELECT taskId FROM chains WHERE id = ? UNION ALL
+      SELECT taskId FROM executions WHERE id = ? UNION ALL
+      SELECT taskId FROM taskContracts WHERE recordId = ? OR entityId = ? UNION ALL
+      SELECT taskId FROM taskExecutions WHERE EXISTS (
+        SELECT 1 FROM json_each(taskExecutions.body, '$.reviews')
+        WHERE json_extract(value, '$.id') = ?)
+    )`).all(...Array(11).fill(resultId)) as Array<{ taskId: string }>
+    return rows.length === 1 ? rows[0]!.taskId : null
+  }
+  taskAuthoringPrivateOwners(taskId: string) {
     this.task(taskId)
-    const read = (source: "plans" | "chains" | "executions") => this.connection
-      .prepare(`SELECT id, body FROM ${source} WHERE taskId = ? ORDER BY rowid`).all(taskId)
-      .map((row) => ({ source, ...(row as { id: string; body: string }) }))
-    return [...read("plans"), ...read("chains"), ...read("executions")]
+    return this.connection.prepare(`SELECT id, json_extract(body,'$.browserRunId') AS browserRunId
+      FROM taskAuthoringJobs WHERE taskId = ?`).all(taskId)
+      .map((row) => row as { id: string; browserRunId: string | null })
+  }
+  assertTaskDeletionReady(taskId: string, expectedUpdatedAt: string) {
+    const task = this.task(taskId)
+    if (task.updatedAt !== expectedUpdatedAt) conflict("任务已变化，请刷新列表后重新确认删除。")
+    if (task.activeTurnId) conflict("访谈仍在处理，请先等待或停止。")
+    const pending = (table: string, condition: string) => this.connection
+      .prepare(`SELECT 1 FROM ${table} WHERE taskId = ? AND (${condition}) LIMIT 1`).get(taskId)
+    if (pending("taskAuthoringJobs", "status IN ('queued','running','waiting_for_human')"))
+      conflict("准备任务或人工等待尚未结束，请先完成或停止。")
+    if (pending("taskExecutions", `status IN ('queued','running','paused','waiting_for_human','cleanup_required')
+      OR json_extract(body,'$.cleanup.status') IN ('pending','unconfirmed')`))
+      conflict("运行或资源清理尚未结束，请先完成或清理。")
+    if (pending("taskExecutions", `json_extract(body,'$.browserHandoff.status') IN ('active','pending')
+      OR (json_extract(body,'$.browserHandoff.status') = 'unavailable'
+        AND json_extract(body,'$.browserHandoff.leaseId') IS NOT NULL)`)) {
+      conflict("原浏览器窗口仍由本任务租约持有，请先结束并核验窗口。")
+    }
+    if (pending("browserRuns", "json_extract(body,'$.status') IN ('running','waiting_human','cleanup_required')"))
+      conflict("浏览器运行或清理尚未结束，请先完成或清理。")
+  }
+  activeBrowserWindowLease(exceptExecutionId?: string): { taskId: string; executionId: string } | null {
+    // WHY：交付给用户的窗口不再属于 runner 清理总账，但共享 Profile 在精确结束前不能被另一运行接管。
+    const row = this.connection.prepare(`SELECT taskId, id AS executionId FROM taskExecutions
+      WHERE id <> ? AND (json_extract(body,'$.browserHandoff.status') IN ('active','pending')
+      OR (json_extract(body,'$.browserHandoff.status') = 'unavailable'
+        AND json_extract(body,'$.browserHandoff.leaseId') IS NOT NULL)) LIMIT 1`)
+      .get(exceptExecutionId ?? "") as { taskId: string; executionId: string } | undefined
+    return row ?? null
+  }
+  taskBrowserWindowLease(taskId: string): string | null {
+    const row = this.connection.prepare(`SELECT id FROM taskExecutions WHERE taskId = ?
+      AND status NOT IN ('queued','running')
+      AND (json_extract(body,'$.browserHandoff.status') = 'active'
+        OR (json_extract(body,'$.browserHandoff.status') IN ('pending','unavailable')
+          AND json_extract(body,'$.browserHandoff.leaseId') IS NOT NULL))
+      ORDER BY updatedAt DESC LIMIT 1`).get(taskId) as { id: string } | undefined
+    return row?.id ?? null
+  }
+  deleteTask(taskId: string, expectedUpdatedAt: string) {
+    this.assertAvailable()
+    return this.connection.transaction(() => {
+      this.assertTaskDeletionReady(taskId, expectedUpdatedAt)
+      // WHY：旧 operation 无 owner 列；仅在仍可由任务 scope 或唯一存活结果事实证明归属时定向删除。
+      const operations = this.connection.prepare("SELECT scope, requestId, resultId, taskId FROM operations")
+        .all() as Array<{ scope: string; requestId: string; resultId: string; taskId: string | null }>
+      const removeOperation = this.connection.prepare("DELETE FROM operations WHERE scope = ? AND requestId = ?")
+      for (const operation of operations) {
+        if (operation.taskId === taskId || operation.taskId === null
+          && this.operationOwner(operation.scope, operation.resultId) === taskId) {
+          removeOperation.run(operation.scope, operation.requestId)
+        }
+      }
+      const children = ["taskExecutionCandidates", "taskExecutionCleanupAudits", "chains", "executions", "plans",
+        "taskContracts", "taskAuthoringJobs", "taskExecutions", "taskArtifacts", "taskReleases", "taskDrafts",
+        "browserRuns", "messages", "drafts", "turns", "questions", "decisions", "sourceResolutions", "audits",
+        "taskWorkspaceSequences"] as const
+      for (const table of children) this.connection.prepare(`DELETE FROM ${table} WHERE taskId = ?`).run(taskId)
+      // WHY：早期 researchRuns 在部分 v18 本地库已移除，仍存在于另一条正式迁移路径；按真实表事实清理。
+      if (this.connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='researchRuns'").get()) {
+        this.connection.prepare("DELETE FROM researchRuns WHERE taskId = ?").run(taskId)
+      }
+      this.connection.prepare("DELETE FROM tasks WHERE id = ?").run(taskId)
+      return taskId
+    })()
   }
   sharedModelSelection(subjectId: string): ModelSelection | undefined {
     this.assertAvailable()

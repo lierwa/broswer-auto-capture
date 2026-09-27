@@ -24,15 +24,38 @@ export class TaskPlanExecutor {
       if (taskPlanExecutionIssues(plan).length) return this.finish(record, "blocked", "计划输入输出合同不再满足执行约束，需要生成新计划。",
         { classification: "version", code: "plan_contract_invalid", repairable: false })
       const chains = this.boundChains(record, plan)
+      const managedWindow = Boolean(record.release && !(record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER).headless)
+      const resumingWindow = record.browserHandoff.status === "active"
       record.status = "running"; record.sequence++; record.reason = "正在执行本次计划固定的链路版本。"
       record.cleanup = { status: "pending", attempt: record.cleanup.attempt + 1, code: null,
         evidenceDigest: null, updatedAt: new Date().toISOString() }
       record.cleanupResume = null
       record.result = projectExecutionResult(this.repository, record); this.save(record)
-      const browserRunId = stableUuid(record.id, "browser", String(record.sequence))
+      // WHY：人工处理后重新接管的是同一 execution 的同一现场；sequence 只标识记录变更，不是浏览器所有权。
+      const browserRunId = managedWindow ? stableUuid(record.id, "managed-window")
+        : stableUuid(record.id, "browser", String(record.sequence))
+      if (managedWindow) {
+        // WHY：启动前持久化本 execution 的确定 owner；中断后只能用同一 owner 核验现场。
+        record.browserHandoff = { ...record.browserHandoff, status: "pending",
+          leaseId: browserRunId, ownerId: browserRunId, updatedAt: new Date().toISOString() }
+        this.bump(record)
+      }
       await this.host.group({ taskId: record.taskId, authorizationId: record.authorizationId, browserRunId,
         requirementVersion: record.requirement.version, purpose: record.mode ?? "replay", chains, input: record.input, signal,
         ...(!record.mode || record.mode === "replay" ? { browser: record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER } : {}),
+        ...(managedWindow ? { managedWindow: { ownerId: browserRunId, resume: resumingWindow },
+          handoffPurpose: () => record.status === "waiting_for_human" || record.status === "paused" ? "human_wait" as const
+            : record.status === "completed" && plan.browserHandoff === "keep_open" ? "delivery" as const : null,
+          onHandoff: (purpose, lease) => {
+            record.browserHandoff = { status: "active", purpose, leaseId: lease.leaseId, ownerId: lease.ownerId,
+              targetDigest: lease.targetDigest, reason: null, updatedAt: new Date().toISOString() }
+            this.bump(record)
+          }, onHandoffFailure: (purpose, _reason) => {
+            // WHY：回执丢失后私有租约可能仍有效；只保留确定 owner，后续必须独立 inspect 核验。
+            record.browserHandoff = { status: "unavailable", purpose, leaseId: browserRunId, ownerId: browserRunId,
+              targetDigest: null, reason: "browser_handoff_failed", updatedAt: new Date().toISOString() }
+            this.bump(record)
+          } } : {}),
         ...executionBudget(plan, chains), consumed: record.consumed, ...(pacing ? { pacing } : {}),
         scopeConsumption: Object.fromEntries(record.steps.map((step) => [step.stepId, step.consumed])),
         onConsumption: (scopeId, snapshot) => {
@@ -46,6 +69,7 @@ export class TaskPlanExecutor {
       if (observedCleanup) this.saveCleanupAudit(record, observedCleanup.ownerId, observedCleanup.report)
       this.confirmCleanup(record, observedCleanup?.report.evidenceDigest
         ?? this.saveOwnerVerification(record, browserRunId, true, null))
+      this.settleHandoff(record, plan.browserHandoff === "keep_open", resumingWindow)
     } catch (error) {
       if (error instanceof RuntimeCleanupRequiredError) {
         this.saveCleanupAudit(record, error.ownerId, error.report)
@@ -66,7 +90,24 @@ export class TaskPlanExecutor {
         }
       }
     }
+    if (record.browserHandoff.status === "pending" && record.status !== "queued" && record.status !== "running") {
+      record.browserHandoff = { status: "unavailable", purpose: null,
+        leaseId: record.browserHandoff.leaseId, ownerId: record.browserHandoff.ownerId,
+        targetDigest: null, reason: "browser_handoff_not_confirmed", updatedAt: new Date().toISOString() }
+      this.bump(record)
+    }
     return record
+  }
+
+  private settleHandoff(record: TaskExecution, keepOpen: boolean, resumingWindow: boolean) {
+    if (record.browserHandoff.status !== "pending") return
+    const unavailable = record.status === "waiting_for_human" || record.status === "paused"
+      || record.status === "completed" && keepOpen
+    record.browserHandoff = { status: unavailable ? "unavailable" : resumingWindow ? "ended" : "not_requested",
+      purpose: null, leaseId: unavailable ? record.browserHandoff.leaseId : null,
+      ownerId: unavailable ? record.browserHandoff.ownerId : null, targetDigest: null,
+      reason: unavailable ? "browser_handoff_missing" : null, updatedAt: new Date().toISOString() }
+    this.bump(record)
   }
 
   private finishPrimaryFailure(record: TaskExecution, error: unknown, signal: AbortSignal) {

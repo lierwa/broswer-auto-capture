@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { ChainPresentation, TaskChain, TaskExecutionEventBatch } from "@browser-capture/contracts"
 import { edgePortLabel, eventsForStep, focusChainEdges, nodeRunTone, overviewChainEdges,
-  stageProgress, stageRunTone } from "../src/chainWorkbenchProjection.js"
+  stageRunTone } from "../src/chainWorkbenchProjection.js"
 import { actionPresentation, terminalPresentation } from "../src/chainNodePresentation.js"
 import { buildCanvasGraph } from "../src/ChainCanvasGraph.js"
 
@@ -27,7 +27,7 @@ test("完成终态与阶段出口只按本次事件上色，运行中不能提�
     { id: "second", kind: "function", label: "第二动作" },
     { id: "terminal", kind: "terminal", label: "完成", status: "completed", reason: "完成" }] } as TaskChain
   const graph = (events: TaskExecutionEventBatch, focus = false) => buildCanvasGraph(visibleChain, presentation,
-    focus ? stageOne : null, null, "TB", false, events, () => {}, () => {})
+    focus ? stageOne : null, events, () => {}, () => {})
   assert.equal(graph(batch).nodes.find((node) => node.id === "__end:terminal")?.data.tone, "idle")
   const ended = { ...batch, status: "completed", events: [...batch.events,
     executionEvent(4, "second", "finished", "success"), executionEvent(5, "terminal", "finished", "success")] } as TaskExecutionEventBatch
@@ -59,7 +59,6 @@ test("真实离开阶段后未走分支显示跳过，残留 started 不伪造�
   const branchedStage = { ...stageOne, nodeIds: ["first", "unused-branch"] }
   assert.equal(stageRunTone(branchedStage, batch), "success")
   assert.equal(nodeRunTone("unused-branch", batch, branchedStage), "skipped")
-  assert.deepEqual(stageProgress(branchedStage, batch), { completed: 1, skipped: 1, total: 2 })
   assert.equal(stageRunTone(stageTwo, ended), "ended")
   assert.equal(overviewChainEdges(chain, presentation, ended).some((edge) => edge.tone === "running"), false)
   assert.equal(stageRunTone(stageTwo, { ...batch, status: "paused" }), "waiting")

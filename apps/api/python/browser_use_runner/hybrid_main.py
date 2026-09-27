@@ -18,28 +18,62 @@ from pydantic import Field, JsonValue, TypeAdapter
 from workflow_use.hybrid.capability import OrdinaryCapability
 from workflow_use.hybrid.evidence import Contract, digest
 from workflow_use.hybrid.read import ReadSpec, read_fields
+from workflow_use.hybrid.rendered_field_text import FieldReadError
 from workflow_use.hybrid.author import AuthorInput, author_step, author_tools_for_result_spec
 from workflow_use.hybrid.__main__ import compilation_response
 from workflow_use.hybrid.request import CompilationRequest, NaturalCompilationRequest
 from workflow_use.hybrid.invokes import VerifiedChild
 from workflow_use.hybrid.registry import ActionRegistry
 from workflow_use.hybrid.target_preparation import current_document_id
+from workflow_use.hybrid.human_wait import HumanWaitControl
 from browser_use_runner.ai_connect import AIConnectModel
 from browser_use_runner.output_schema import output_model_for
-from browser_use_runner.target_picker import pick_target
 from browser_use_runner.hybrid_compile import compile_offline
 from browser_use_runner.popup_resume import PopupResumeAdapter
 from browser_use_runner.diagnostic_channel import DiagnosticChannel
+from browser_use_runner.author_transport import write_author_result
+from browser_use_runner.author_request_loop import AuthorRequestLoop
+from browser_use_runner.site_scope import origin, normalize_allowed_site, allowed_domain_patterns, allowed_url
+from browser_use_runner.managed_window import ManagedWindow
+from browser_use_runner.attached_window import AttachedWindow
+from browser_use_runner.profile_owner import current_profile_owner, recover_profile_owner
 
 
 from browser_use_runner.hybrid_commands import (
     AllowedSite, StartConfig, ProfileStartConfig, StepCommand, ReadCommand, TargetReadinessCommand,
-    ReadScope, COMMAND, Envelope, StartRequest, ProfileStartRequest, ProfilePickTargetRequest,
-    ExecuteRequest, ObserveRequest, CloseRequest, AuthorModel, AuthorRequest, CompileRequest, REQUEST,
+    ReadScope, COMMAND, Envelope, StartRequest, ProfileStartRequest, ProfileOwnerRequest, ProfileRecoverRequest,
+    ExecuteRequest, ObserveRequest, HandoffRequest, ManagedWindowRequest, CloseRequest,
+    AuthorModel, AuthorRequest, AuthorResumeRequest, CompileRequest, REQUEST,
 )
 
 
 SAFE_ERROR_CODE = re.compile(r'[a-z][a-z_0-9]{1,100}')
+SAFE_READ_FAILURE_CODES = frozenset({
+    'read_container_resolution_failed', 'read_collection_limit', 'read_input_limit',
+    'read_single_object_required', 'read_output_schema_mismatch', 'read_field_projection_failed',
+    'read_field_projection_invalid', 'read_field_value_limit', 'ambiguous_or_missing_read_field',
+    'read_field_not_text', 'read_text_affix_invalid', 'read_number_not_finite',
+    'read_boolean_invalid', 'read_field_native_projection_failed',
+})
+READ_STAGE_NOTES = {
+    'bat_read_scope_pre': 'inner_pre_scope', 'bat_read_scope_post': 'inner_post_scope',
+    'bat_read_collection_snapshot': 'target_snapshot', 'bat_read_collection_query': 'target_query',
+}
+
+
+def read_stage_code(stage, error):
+    # WHY：阶段和异常类都来自固定枚举；第三方异常名、消息与页面内容不能进入 fd3。
+    if isinstance(error, TimeoutError):
+        kind = 'timeout_error'
+    elif isinstance(error, OSError):
+        kind = 'os_error'
+    elif isinstance(error, RuntimeError):
+        kind = 'runtime_error'
+    elif isinstance(error, ValueError):
+        kind = 'value_error'
+    else:
+        kind = 'other_error'
+    return f'hybrid_read_{stage}_{kind}'
 
 
 def safe_runtime_error_code(error):
@@ -57,7 +91,8 @@ def safe_runtime_error_code(error):
         if source == managed or managed in source.parents:
             return message
         traceback = traceback.tb_next
-    return message if re.fullmatch(r'(?:hybrid_|ordinary_|capture_|read_|target_selection_)[a-z_0-9]{1,100}', message) else ''
+    return message if message in SAFE_READ_FAILURE_CODES or re.fullmatch(
+        r'(?:hybrid_|ordinary_|capture_|read_|target_selection_)[a-z_0-9]{1,100}', message) else ''
 
 
 def assert_runtime():
@@ -67,58 +102,6 @@ def assert_runtime():
             or version('workflow-use') != '0.2.11'
             or version('mcp') != '1.29.1' or version('tenacity') != '9.1.2'):
         raise ValueError('hybrid_runtime_version_or_source_mismatch')
-
-
-def origin(url):
-    value = urlsplit(url)
-    if value.scheme not in ('https', 'http') or not value.hostname or value.username or value.password:
-        raise ValueError('hybrid_origin_invalid')
-    return value.scheme + '://' + value.netloc
-
-
-def normalize_allowed_site(site):
-    if isinstance(site, AllowedSite):
-        site = site.model_dump()
-    domain = site['domain']
-    if domain != domain.strip().lower().rstrip('.') or any(mark in domain for mark in ('/', '\\', '@', '?', '#', '*')):
-        raise ValueError('hybrid_allowed_site_invalid')
-    bracketed = f'[{domain}]' if ':' in domain and not domain.startswith('[') else domain
-    parsed = urlsplit(f"{site['scheme']}://{bracketed}")
-    comparable = domain.strip('[]')
-    if not parsed.hostname or parsed.hostname.lower() != comparable or parsed.username or parsed.password:
-        raise ValueError('hybrid_allowed_site_invalid')
-    if site['includeSubdomains'] and ':' in domain:
-        raise ValueError('hybrid_allowed_site_invalid')
-    return {**site, 'domain': domain}
-
-
-def allowed_domain_patterns(sites):
-    patterns = []
-    for raw in sites:
-        site = normalize_allowed_site(raw)
-        host = f"[{site['domain']}]" if ':' in site['domain'] and not site['domain'].startswith('[') else site['domain']
-        authority = host + (f":{site['port']}" if site['port'] is not None else '')
-        patterns.append(f"{site['scheme']}://{authority}/*")
-        if site['includeSubdomains']:
-            patterns.append(f"{site['scheme']}://*.{authority}/*")
-    return patterns
-
-
-def allowed_url(url, sites):
-    try:
-        value = urlsplit(url)
-        port = value.port
-    except (TypeError, ValueError):
-        return False
-    if value.scheme not in ('https', 'http') or not value.hostname or value.username or value.password:
-        return False
-    host = value.hostname.lower()
-    for raw in sites:
-        site = normalize_allowed_site(raw)
-        host_matches = host == site['domain'] or (site['includeSubdomains'] and host.endswith('.' + site['domain']))
-        if value.scheme == site['scheme'] and port == site['port'] and host_matches:
-            return True
-    return False
 
 
 def owned_browser(profile_path, *, headless, allowed_domains=None):
@@ -160,6 +143,10 @@ class Runner:
         self.diagnostic = diagnostic or (lambda _event: None)
         self.close_task = None
         self.popup_resume = None
+        self.managed_window = None
+        self.human_wait = None
+        self.author_request_id = None
+        self.publish_human_wait = None
 
     async def handle(self, raw):
         request = REQUEST.validate_json(json.dumps(raw, allow_nan=False))
@@ -167,14 +154,30 @@ class Runner:
             return await self.start(request.config.model_dump())
         if isinstance(request, ProfileStartRequest):
             return await self.start_profile(request.config.model_dump())
-        if isinstance(request, ProfilePickTargetRequest):
-            if self.browser is None:
-                raise ValueError('hybrid_session_not_started')
-            return await pick_target(self.browser, request.timeoutMs)
+        if isinstance(request, (ProfileOwnerRequest, ProfileRecoverRequest)):
+            if self.browser is not None:
+                raise ValueError('hybrid_profile_owner_requires_offline_runner')
+            return (current_profile_owner(request.ownerId, request.launcherPid) if isinstance(request, ProfileOwnerRequest)
+                    else recover_profile_owner(request.profilePath, request.ownerId, request.leaseId, request.runner))
         if isinstance(request, ExecuteRequest):
             return await self.execute(request.command.model_dump())
         if isinstance(request, ObserveRequest):
             return await self.observe()
+        if isinstance(request, HandoffRequest):
+            return await self.handoff()
+        if isinstance(request, ManagedWindowRequest):
+            if self.browser is not None:
+                raise ValueError('hybrid_managed_window_controlled')
+            if AttachedWindow.has_lease(request.profilePath, request.ownerId):
+                window = AttachedWindow(request.profilePath, request.ownerId)
+                return await getattr(window, request.action)(request.leaseId)
+            window = ManagedWindow(request.profilePath, request.ownerId)
+            action = 'inspect' if request.action == 'verify_closed' else request.action
+            return getattr(window, action)(request.leaseId)
+        if isinstance(request, AuthorResumeRequest):
+            if self.human_wait is None or request.authorRequestId != self.author_request_id:
+                raise ValueError('hybrid_human_author_request_mismatch')
+            return await self.human_wait.resume(request.waitpointId)
         if isinstance(request, CompileRequest):
             assert_runtime()
             if self.browser is not None:
@@ -187,13 +190,16 @@ class Runner:
             if endpoint.scheme != 'http' or endpoint.hostname != '127.0.0.1' or endpoint.username or endpoint.password:
                 raise ValueError('hybrid_model_bridge_invalid')
             models = {purpose: AIConnectModel(**request.model.model_dump(), purpose=purpose)
-                      for purpose in ('agent', 'extract', 'semantic_annotation')}
+                      for purpose in ('agent', 'judge', 'extract', 'semantic_annotation')}
             previous = self.browser.browser_profile.keep_alive
             self.browser.browser_profile.keep_alive = True
+            self.author_request_id = request.id
+            self.human_wait = HumanWaitControl(self.browser, lambda url: allowed_url(url, self.allowed_sites),
+                lambda wait: self.publish_human_wait(str(request.id), wait)) if self.publish_human_wait else None
             self.diagnostic({'phase': 'author', 'status': 'started'})
             try:
                 result = await author_step(self.browser, request.source.model_dump(mode='json', by_alias=True), models, output_model_for,
-                                            diagnostic=self.diagnostic)
+                                            diagnostic=self.diagnostic, human_wait=self.human_wait)
             except asyncio.CancelledError:
                 self.diagnostic({'phase': 'author', 'status': 'cancelled'})
                 raise
@@ -204,6 +210,9 @@ class Runner:
                 self.diagnostic({'phase': 'author', 'status': 'completed'})
                 return result
             finally:
+                if self.human_wait is not None:
+                    self.human_wait.cancel()
+                self.human_wait, self.author_request_id = None, None
                 self.browser.browser_profile.keep_alive = previous
         return await self.close()
 
@@ -222,11 +231,24 @@ class Runner:
         profile_path.mkdir(parents=True, exist_ok=True)
         self.profile_path = profile_path.resolve()
         # WHY：browser-use 复用公开 URL glob 在派发前拦截；本运行器仍在动作前后独立核验结构化站点边界。
-        self.browser = owned_browser(self.profile_path, headless=config.headless,
-                                     allowed_domains=allowed_domain_patterns(self.allowed_sites))
-        await self.browser.start()
-        self.popup_resume = PopupResumeAdapter(self.browser)
-        await reset_automation_tabs(self.browser)
+        domains = allowed_domain_patterns(self.allowed_sites)
+        window_config = config.existingBrowser or config.managedWindow
+        if window_config is not None:
+            if config.headless:
+                raise ValueError('hybrid_managed_window_requires_visible')
+            attached = config.existingBrowser is not None or (window_config.resume
+                       and AttachedWindow.has_lease(self.profile_path, window_config.ownerId))
+            self.managed_window = (AttachedWindow(self.profile_path, window_config.ownerId,
+                                   config.existingBrowser.cdpUrl if config.existingBrowser else None)
+                                   if attached else ManagedWindow(self.profile_path, window_config.ownerId))
+            self.browser = await self.managed_window.start(resume=window_config.resume, allowed_domains=domains)
+        else:
+            self.browser = owned_browser(self.profile_path, headless=config.headless, allowed_domains=domains)
+            await self.browser.start()
+        if not isinstance(self.managed_window, AttachedWindow):
+            self.popup_resume = PopupResumeAdapter(self.browser)
+        if not isinstance(self.managed_window, AttachedWindow) and (window_config is None or not window_config.resume):
+            await reset_automation_tabs(self.browser)
         session = await self.browser.get_or_create_cdp_session()
         session.cdp_client.register.Network.responseReceived(self.record_document_response)
         await session.cdp_client.send.Network.enable(session_id=session.session_id)
@@ -245,14 +267,11 @@ class Runner:
         self.profile_path = profile_path.resolve()
         # WHY: 这是用户直接管理专用账号状态的浏览器，不执行自动化命令，因此不设置站点白名单；
         # 任务准备和复跑仍各自使用已确认需求推导的第一方站点边界。
-        if config.startUrl is not None:
-            origin(config.startUrl)
-        self.browser = owned_browser(self.profile_path, headless=config.headless)
-        await self.browser.start()
+        if config.headless:
+            raise ValueError('hybrid_managed_window_requires_visible')
+        self.managed_window = ManagedWindow(self.profile_path, config.ownerId)
+        self.browser = await self.managed_window.start(resume=False, allowed_domains=None)
         self.popup_resume = PopupResumeAdapter(self.browser)
-        if config.startUrl is not None:
-            page = await self.browser.get_current_page()
-            await page.goto(config.startUrl)
         return {'mode': 'profile/v1', 'modelCalls': 0}
 
     def record_document_response(self, event, _session_id):
@@ -280,29 +299,61 @@ class Runner:
         if isinstance(command, StepCommand) and command.actionName == 'navigate':
             if not allowed_url(command.args.get('url', ''), self.allowed_sites):
                 raise ValueError('hybrid_origin_denied')
+            # WHY：前次同 URL 的拒绝不能冒充本次响应；仅本次派发记录可归因。
+            self.document_status.pop(document_key(command.args['url']), None)
         else:
-            await self.assert_page_scope()
+            try:
+                await self.assert_page_scope()
+            except Exception as error:
+                if (not isinstance(command, ReadCommand)
+                        or isinstance(error, ValueError) and str(error) == 'hybrid_origin_denied'):
+                    raise
+                raise RuntimeError(read_stage_code('pre_scope', error)) from error
         self.commands += 1
         if isinstance(command, StepCommand):
-            output = await self.capability.execute_checked(command.actionName, command.args, command.target, command.postconditions)
+            try:
+                output = await self.capability.execute_checked(command.actionName, command.args, command.target, command.postconditions)
+            except RuntimeError as error:
+                # WHY：HTTP 拒绝也可能令原生导航先失败；保留同次主文档证据，不重发动作。
+                if command.actionName == 'navigate' and str(error) == 'ordinary_action_failed':
+                    self.assert_document_access(command.args['url'])
+                raise
         elif isinstance(command, ReadCommand):
             scope = command.scope.model_dump(exclude_none=True) if command.scope is not None else None
             try:
                 output = await read_fields(self.browser, command.specification, scope=scope)
             except Exception as error:
-                # WHY：原生查询可能携带选择器、页面文本或依赖异常；跨 fd3 只传固定阶段码。
-                raise RuntimeError('hybrid_read_collection_failed') from error
+                # WHY：仅读取层固定错误码可穿过 fd3；字段名、页面正文和依赖消息留在 owner 内。
+                if isinstance(error, (FieldReadError, ValueError)) and str(error) in SAFE_READ_FAILURE_CODES:
+                    code = str(error)
+                else:
+                    stage = next((name for note, name in READ_STAGE_NOTES.items()
+                                  if note in getattr(error, '__notes__', ())), 'fields')
+                    code = read_stage_code(stage, error)
+                raise RuntimeError(code) from error
         else:
             output = await self.capability.target_readiness(command.actionName, command.target)
-        await self.assert_page_scope()
+        try:
+            await self.assert_page_scope()
+        except Exception as error:
+            if (not isinstance(command, ReadCommand)
+                    or isinstance(error, ValueError) and str(error) == 'hybrid_origin_denied'):
+                raise
+            raise RuntimeError(read_stage_code('post_scope', error)) from error
         try:
             browser = await self.observe()
         except Exception as error:
             if not isinstance(command, ReadCommand):
                 raise
             # WHY：读取已完成时，后续 DOM 观察失败不能被误判为字段查询失败或重发读取。
-            raise RuntimeError('hybrid_read_observation_failed') from error
-        self.assert_document_access(browser['url'])
+            raise RuntimeError(read_stage_code('observation', error)) from error
+        try:
+            self.assert_document_access(browser['url'])
+        except Exception as error:
+            if not isinstance(command, ReadCommand) or str(error) in (
+                    'capture_authentication_required', 'capture_access_denied', 'capture_rate_limited'):
+                raise
+            raise RuntimeError(read_stage_code('document_access', error)) from error
         return {'output': output, 'browser': browser, 'browserCommands': self.commands, 'modelCalls': 0}
 
     async def assert_page_scope(self):
@@ -350,6 +401,19 @@ class Runner:
             self.close_task = asyncio.create_task(self._close())
         return await asyncio.shield(self.close_task)
 
+    async def handoff(self):
+        if self.browser is None or self.managed_window is None:
+            raise ValueError('hybrid_managed_window_not_started')
+        if self.capability is not None:
+            await self.capability.close()
+        self.capability = None
+        if self.popup_resume is not None:
+            self.popup_resume.close()
+            self.popup_resume = None
+        result = await self.managed_window.handoff(self.browser)
+        self.browser = None
+        return result
+
     async def ensure_closed(self):
         return await self.close()
 
@@ -358,7 +422,10 @@ class Runner:
         capability, browser = self.capability, self.browser
         try:
             stages.append(await close_stage('capability_close', capability, 'cleanup_capability_close_failed'))
-            stages.append(await close_stage('browser_close', browser, 'cleanup_browser_close_failed'))
+            if self.managed_window is not None:
+                stages.append(await self.managed_window.close(browser))
+            else:
+                stages.append(await close_stage('browser_close', browser, 'cleanup_browser_close_failed'))
         finally:
             if self.popup_resume is not None:
                 self.popup_resume.close()
@@ -368,6 +435,7 @@ class Runner:
             self.document_status = {}
             self.profile_path = None
             self.allowed_sites = []
+            self.managed_window = None
         return {'closed': all(stage['status'] != 'unconfirmed' for stage in stages), 'stages': stages}
 
 
@@ -401,6 +469,8 @@ async def main():
     diagnostics = DiagnosticChannel()
     runner = Runner(diagnostics.emit)
     channel = os.fdopen(3, 'w', buffering=1)
+    runner.publish_human_wait = lambda identity, wait: channel.write(json.dumps(
+        {'id': identity, 'event': 'human_wait', 'wait': wait}, ensure_ascii=False, allow_nan=False) + '\n')
     current = asyncio.current_task()
     loop = asyncio.get_running_loop()
     for name in (signal.SIGINT, signal.SIGTERM):
@@ -409,24 +479,7 @@ async def main():
         except NotImplementedError:
             signal.signal(name, lambda *_: loop.call_soon_threadsafe(current.cancel))
     try:
-        while line := await asyncio.to_thread(sys.stdin.readline):
-            request = json.loads(line)
-            identity = request.get('id')
-            try:
-                result = await runner.handle(request)
-                response = {'id': identity, 'ok': True, 'result': result}
-            except Exception as error:
-                # WHY: read_* 是不含页面内容的有限诊断码；保留它才能区分 selector/数量/schema 失败，
-                # workflow_use.hybrid 自有的 snake_case 错误同样是稳定合同；通过异常栈限定来源，
-                # 同时继续拒绝把任意依赖异常、页面正文或敏感值送回产品日志。
-                safe_code = safe_runtime_error_code(error)
-                response_code = (safe_code if request.get('type') == 'profile_pick_target'
-                                 and safe_code.startswith('target_selection_') else 'hybrid_runner_failed')
-                response = {'id': identity, 'ok': False, 'code': response_code,
-                            'reason': type(error).__name__ + (':' + safe_code if safe_code else '')}
-            channel.write(json.dumps(response, ensure_ascii=False, allow_nan=False) + '\n')
-            if request.get('type') == 'close':
-                break
+        await AuthorRequestLoop(runner, channel, diagnostics, safe_runtime_error_code).run()
     finally:
         try:
             await runner.ensure_closed()

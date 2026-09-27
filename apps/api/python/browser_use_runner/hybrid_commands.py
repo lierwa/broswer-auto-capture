@@ -1,12 +1,13 @@
 """Typed runner transport contracts, shared by native authoring and replay."""
 from typing import Annotated, Literal
 from uuid import UUID
-from pydantic import Field, JsonValue, TypeAdapter
-from workflow_use.hybrid.evidence import Contract
+from pydantic import Field, JsonValue, TypeAdapter, model_validator
+from workflow_use.hybrid.evidence import CompilationGap, Contract
 from workflow_use.hybrid.read import ReadSpec
 from workflow_use.hybrid.author import AuthorInput
 from workflow_use.hybrid.request import CompilationRequest, NaturalCompilationRequest
 from workflow_use.hybrid.invokes import VerifiedChild
+from browser_use_runner.profile_owner import RunnerOwnership
 
 
 class AllowedSite(Contract):
@@ -16,17 +17,34 @@ class AllowedSite(Contract):
     includeSubdomains: bool
 
 
+class ManagedWindowConfig(Contract):
+    ownerId: UUID
+    resume: bool = False
+
+
+class ExistingBrowserConfig(ManagedWindowConfig):
+    cdpUrl: str = Field(min_length=1, repr=False)
+
+
 class StartConfig(Contract):
     headless: bool
     profilePath: str
     allowedOrigins: list[str] = Field(min_length=1, max_length=32)
     allowedSites: list[AllowedSite] = Field(min_length=1, max_length=32)
+    managedWindow: ManagedWindowConfig | None = None
+    existingBrowser: ExistingBrowserConfig | None = None
+
+    @model_validator(mode='after')
+    def exclusive_window_owner(self):
+        if self.managedWindow is not None and self.existingBrowser is not None:
+            raise ValueError('hybrid_window_owner_modes_exclusive')
+        return self
 
 
 class ProfileStartConfig(Contract):
     profilePath: str
     headless: bool = False
-    startUrl: str | None = None
+    ownerId: UUID
 
 
 class StepCommand(Contract):
@@ -74,9 +92,18 @@ class ProfileStartRequest(Envelope):
     config: ProfileStartConfig
 
 
-class ProfilePickTargetRequest(Envelope):
-    type: Literal['profile_pick_target']
-    timeoutMs: int = Field(ge=10000, le=300000)
+class ProfileOwnerRequest(Envelope):
+    type: Literal['profile_owner']
+    ownerId: UUID
+    launcherPid: int = Field(gt=0)
+
+
+class ProfileRecoverRequest(Envelope):
+    type: Literal['profile_recover']
+    profilePath: str
+    ownerId: UUID
+    leaseId: UUID
+    runner: RunnerOwnership
 
 
 class ExecuteRequest(Envelope):
@@ -86,6 +113,18 @@ class ExecuteRequest(Envelope):
 
 class ObserveRequest(Envelope):
     type: Literal['hybrid_observe']
+
+
+class HandoffRequest(Envelope):
+    type: Literal['hybrid_handoff']
+
+
+class ManagedWindowRequest(Envelope):
+    type: Literal['hybrid_managed_window']
+    action: Literal['focus', 'inspect', 'end', 'verify_closed']
+    profilePath: str
+    ownerId: UUID
+    leaseId: UUID
 
 
 class CloseRequest(Envelope):
@@ -104,11 +143,18 @@ class AuthorRequest(Envelope):
     source: AuthorInput
 
 
+class AuthorResumeRequest(Envelope):
+    type: Literal['hybrid_author_resume']
+    authorRequestId: UUID
+    waitpointId: UUID
+
+
 class CompileRequest(Envelope):
     type: Literal['hybrid_compile']
     request: CompilationRequest | NaturalCompilationRequest
     outputSchema: dict[str, JsonValue]
     verifiedChildren: list[VerifiedChild] = Field(default_factory=list, max_length=100)
+    sourceGaps: list[CompilationGap] = Field(default_factory=list)
 
 
 class AnnotateRequest(CompileRequest):
@@ -117,4 +163,4 @@ class AnnotateRequest(CompileRequest):
     model: AuthorModel
 
 
-REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfilePickTargetRequest | ExecuteRequest | ObserveRequest | CloseRequest | AuthorRequest | CompileRequest | AnnotateRequest, Field(discriminator='type')])
+REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | CloseRequest | AuthorRequest | AuthorResumeRequest | CompileRequest | AnnotateRequest, Field(discriminator='type')])

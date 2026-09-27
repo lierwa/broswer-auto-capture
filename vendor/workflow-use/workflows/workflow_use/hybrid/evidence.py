@@ -84,6 +84,7 @@ class NormalizedTraceBase(Contract):
                                  'native_action_dispatch', 'native_action_result', 'native_dom_event', 'browser_context',
                                  'verified_natural_read', 'verified_target_scroll', 'verified_visible_wait',
                                  'verified_natural_summary', 'verified_output_assembly', 'selection_function',
+                                 'verified_human_resume',
                                  'observation_diagnostic', 'document_identity'}:
                     value_digest = digest(fact.value)
                     if any(reference.digest != value_digest for reference in fact.sourceRefs):

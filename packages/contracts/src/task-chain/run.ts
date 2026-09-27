@@ -44,7 +44,9 @@ export const nodeExecutionEventSchema = z.object({
   sequence: z.number().int().nonnegative(), at: z.string().datetime(), invocationId: identitySchema,
   nodeId: keySchema, status: z.enum(["planned", "started", "finished"]),
   outcome: keySchema.nullable(), idempotencyKey: textSchema, stableKey: textSchema.nullable(),
+  browserStateDigest: digestSchema.optional(),
 }).strict().refine((event) => (event.status === "finished") === (event.outcome !== null), "只有完成事件携带出口")
+  .refine((event) => !event.browserStateDigest || event.status === "finished", "browser_receipt_requires_finished")
 export const modelCallAuditSchema = z.object({
   callId: identitySchema, invocationId: identitySchema, nodeId: keySchema, purpose: modelCallPurposeSchema,
   model: textSchema, intendedAt: z.string().datetime(), status: z.enum(["intended", "completed", "failed", "interrupted"]),
@@ -64,6 +66,7 @@ export const taskCheckpointSchema = z.object({
     activeStableKey: textSchema.nullable().default(null) }).strict()),
   invocations: z.array(invocationProgressSchema), outputs: z.record(keySchema, taskOutputSchema),
   artifacts: z.array(artifactReferenceSchema), browser: browserStateSummarySchema.nullable(),
+  browserNodeId: keySchema.optional(),
   consumed: consumptionSchema, events: z.array(nodeExecutionEventSchema), modelCalls: z.array(modelCallAuditSchema),
   auditComplete: z.boolean(),
   externalFailure: externalFailureSchema.nullable().optional(),

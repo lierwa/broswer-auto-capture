@@ -16,7 +16,7 @@ from workflow_use.hybrid.author_callbacks import AuthorCaptureStopped
 from workflow_use.hybrid.capture import EvidenceCollector
 from workflow_use.hybrid.evidence import EvidenceRef, digest
 from workflow_use.hybrid.observation_scope import (
-    SourceObservationScope, live_document_sample, summary_document_digest,
+    ObservationRefreshRequired, SourceObservationScope, live_document_sample, summary_document_digest,
 )
 from workflow_use.hybrid.navigation import navigation_tab_ids, reconcile_new_navigation_tab
 from workflow_use.hybrid.snapshot_consistency import (
@@ -91,7 +91,9 @@ class ObservationScopeTests(unittest.IsolatedAsyncioTestCase):
                 page.get_target_info.return_value = {'targetId': 'tab-1', 'url': 'https://example.test/next'}
             else:
                 native_document(browser).return_value['root']['children'][0]['backendNodeId'] = 22
-            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'observation_changed_after_capture'):
+            expected = ((ObservationRefreshRequired, 'observation_refresh_required') if changed == 'url'
+                        else (ValueError, 'observation_changed_after_capture'))
+            with self.subTest(changed=changed), self.assertRaisesRegex(*expected):
                 await scope.verify_before_action(observed, 1)
             self.assertEqual(browser.get_browser_state_summary.await_count, 1)
             self.assertEqual(scope.diagnostics[-1]['outcome'], 'changed_after_capture')
@@ -148,7 +150,9 @@ class ReadOnlyRefreshTests(unittest.IsolatedAsyncioTestCase):
                 native_document(browser).return_value['root']['children'][0]['backendNodeId'] = 22
             if change == 'tab':
                 page.get_target_info.return_value['targetId'] = browser.agent_focus_target_id = 'tab-2'
-            with self.subTest(name=name, change=change), self.assertRaisesRegex(ValueError, 'observation_changed_after_capture'):
+            expected = ((ObservationRefreshRequired, 'observation_refresh_required') if change == 'url'
+                        else (ValueError, 'observation_changed_after_capture'))
+            with self.subTest(name=name, change=change), self.assertRaisesRegex(*expected):
                 await scope.verify_before_action(observed, 1, index, name)
             self.assertEqual(browser.get_browser_state_summary.await_count, 1)
 

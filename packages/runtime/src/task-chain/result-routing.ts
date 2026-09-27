@@ -32,7 +32,7 @@ export function resolveNodeResultRoute(state: RuntimeState, node: ChainNode, res
 
 function waitForCapabilityHuman(state: RuntimeState, node: Extract<ChainNode, { kind: "capability" }>, reason?: string) {
   syncCheckpoint(state); state.checkpoint.id = randomUUID()
-  // WHY：人工处理后仍以当前 URL 的 fresh summary 为恢复门，不把按钮回执当作成功。
+  // WHY：缺省 URL 条件只核验同一现场；业务完成仍需重试可重复能力或满足显式人工条件。
   state.checkpoint.resumeWhen = node.human?.resumeWhen
     ?? (node.capability.name.startsWith("browser.") ? { operator: "exists", path: ["url"] } : null)
   state.run.checkpoint = structuredClone(state.checkpoint); state.run.status = "waiting_for_human"

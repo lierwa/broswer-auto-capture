@@ -43,9 +43,127 @@ test("只读scope跨URL必须保留同文档重新观察证据", () => {
   }
 })
 
+function intermediateReadFixture() {
+  const post = { id: "post", tabId: "tab", url: oldUrl, facts: [
+    fact("url_digest", digestRuntimeUrl(oldUrl)), fact("document_identity", identity)] }
+  const refreshed = { id: "refreshed", tabId: "tab", url: nextUrl, facts: [
+    fact("url_digest", digestRuntimeUrl(nextUrl)), fact("document_identity", identity),
+    fact("observation_diagnostic", { actionRef: "a1", phase: "before_action_read_refresh",
+      outcome: "readonly_observation_refreshed", baseline: sample(oldUrl), current: sample(nextUrl) })] }
+  const after = { id: "after", tabId: "tab", url: nextUrl, facts: [
+    fact("url_digest", digestRuntimeUrl(nextUrl)), fact("document_identity", identity)] }
+  const before = { id: "before", tabId: "tab", url: nextUrl, facts: [
+    fact("url_digest", digestRuntimeUrl(nextUrl)), fact("document_identity", identity)] }
+  return { compilation: { compilerVersion: "bat-hybrid/2", segments: [
+    { id: "s0", kind: "deterministic", operation: { name: "browser.workflow-step" }, target: null },
+    { id: "s2", kind: "deterministic", operation: { name: "browser.read-fields" },
+      target: { scope: { url: nextUrl, urlDigest: digestRuntimeUrl(nextUrl) } } },
+  ], controlGraph: { edges: [{ from: "s0", to: "s2", outcome: "success" }] }, coverage: [
+    { actionRef: "a0", disposition: "compiled", ownerSegmentId: "s0", exclusionRule: null },
+    { actionRef: "a1", disposition: "agent_internal", ownerSegmentId: null,
+      exclusionRule: "native_dom_lookup_observation/v1" },
+    { actionRef: "a2", disposition: "compiled", ownerSegmentId: "s2", exclusionRule: null },
+  ] }, trace: { actions: [
+    { id: "a0", name: "navigate", effect: "navigation", status: "succeeded", preObservationRef: null,
+      postObservationRef: "post" },
+    { id: "a1", name: "find_elements", effect: "read", status: "succeeded", preObservationRef: "refreshed",
+      postObservationRef: "after" },
+    { id: "a2", name: "find_elements", effect: "read", status: "succeeded", preObservationRef: "before",
+      postObservationRef: null },
+  ], observations: [post, refreshed, after, before] }, assertFact: () => {} }
+}
+
+test("导航后未编译的只读刷新可把同文档URL变化传给后续字段读取", () => {
+  const input = intermediateReadFixture()
+  assert.deepEqual(classifyRuntimeScopeDecisions(input), [
+    { segmentId: "s2", runtimeScopeFrom: "s0", readOnlySameDocument: true }])
+  const missingDiagnostic = intermediateReadFixture()
+  missingDiagnostic.trace.observations[1]!.facts.pop()
+  assert.equal(classifyRuntimeScopeDecisions(missingDiagnostic)[0]!.limitation,
+    "runtime_scope_read_exclusion_discontinuous")
+  const differentDocument = intermediateReadFixture()
+  differentDocument.trace.observations[1]!.facts[1]!.value = { ...identity, documentDigest: "b".repeat(64) }
+  assert.equal(classifyRuntimeScopeDecisions(differentDocument)[0]!.limitation,
+    "runtime_scope_read_exclusion_discontinuous")
+  const laterDocumentChange = intermediateReadFixture()
+  laterDocumentChange.trace.observations[3]!.facts[1]!.value = { ...identity, documentDigest: "b".repeat(64) }
+  assert.equal(classifyRuntimeScopeDecisions(laterDocumentChange)[0]!.limitation,
+    "runtime_scope_source_boundary_changed")
+  const click = intermediateReadFixture()
+  click.compilation.segments[1]!.operation.name = "browser.workflow-step"
+  assert.equal(classifyRuntimeScopeDecisions(click)[0]!.limitation,
+    "runtime_scope_read_only_target_required")
+})
+
+function failedFieldReadFixture(): Parameters<typeof classifyRuntimeScopeDecisions>[0] {
+  const input: Parameters<typeof classifyRuntimeScopeDecisions>[0] = intermediateReadFixture()
+  for (const observation of input.trace.observations) {
+    observation.url = nextUrl
+    observation.facts = [fact("url_digest", digestRuntimeUrl(nextUrl)), fact("document_identity", identity)]
+  }
+  Object.assign(input.trace.actions[1]!, { name: "bat_read_fields", status: "failed",
+    resultRef: { ref: "failed-read-result", digest: "f".repeat(64) } })
+  input.trace.actions[2]!.name = "bat_read_fields"
+  Object.assign(input.compilation.coverage[1]!, { exclusionRule: "failed_bat_field_read_probe/v1",
+    evidenceRefs: [{ ref: "failed-read-result", digest: "f".repeat(64) }] })
+  return input
+}
+
+test("失败字段探查仅在结果引用和连续同文档边界均获证明时保留读取scope", () => {
+  assert.deepEqual(classifyRuntimeScopeDecisions(failedFieldReadFixture()), [
+    { segmentId: "s2", runtimeScopeFrom: "s0" }])
+  for (const mutate of [
+    (value: ReturnType<typeof failedFieldReadFixture>) => { value.trace.actions[1]!.effect = "navigation" },
+    (value: ReturnType<typeof failedFieldReadFixture>) => { value.trace.actions[1]!.name = "click" },
+    (value: ReturnType<typeof failedFieldReadFixture>) => { value.trace.actions[1]!.name = "navigate" },
+    (value: ReturnType<typeof failedFieldReadFixture>) => { value.trace.actions[1]!.status = "succeeded" },
+    (value: ReturnType<typeof failedFieldReadFixture>) => { value.trace.actions[1]!.resultRef!.digest = "e".repeat(64) },
+    (value: ReturnType<typeof failedFieldReadFixture>) => { value.compilation.coverage[1]!.evidenceRefs = [] },
+    (value: ReturnType<typeof failedFieldReadFixture>) => {
+      value.compilation.coverage[1]!.evidenceRefs!.push({ ref: "extra", digest: "e".repeat(64) })
+    },
+    (value: ReturnType<typeof failedFieldReadFixture>) => {
+      value.trace.observations[2]!.url = oldUrl
+      value.trace.observations[2]!.facts[0]!.value = digestRuntimeUrl(oldUrl)
+    },
+    (value: ReturnType<typeof failedFieldReadFixture>) => { value.trace.observations[1]!.tabId = "other" },
+    (value: ReturnType<typeof failedFieldReadFixture>) => {
+      value.trace.observations[2]!.facts[1]!.value = { ...identity, documentDigest: "b".repeat(64) }
+    },
+    (value: ReturnType<typeof failedFieldReadFixture>) => {
+      value.trace.observations[3]!.facts[1]!.value = { ...identity, documentDigest: "b".repeat(64) }
+    },
+  ]) {
+    const changed = failedFieldReadFixture(); mutate(changed)
+    const decision = classifyRuntimeScopeDecisions(changed)[0]!
+    assert.ok(decision.limitation)
+    assert.equal(decision.runtimeScopeFrom, undefined)
+  }
+})
+
 const browser = (url = oldUrl, documentId = "document-1") => ({ sessionId: "session", tabId: "tab", url,
   documentId, observationDigest: "1".repeat(64), observedAt: "2026-09-21T00:00:00.000Z" })
 const config = { scope: { url: nextUrl }, [RUNTIME_SCOPE_FROM]: "s1", [RUNTIME_SCOPE_READ_ONLY]: true }
+
+test("循环读取只接受已证明的初始或推进前驱，并核验当前实际页面", async () => {
+  const repeated = { scope: { url: oldUrl }, [RUNTIME_SCOPE_FROM]: ["entry", "advance"] }
+  for (const nodeId of ["entry", "advance"]) {
+    const state = new HybridRuntimeScopeState(); state.succeed(nodeId, browser(nextUrl))
+    assert.deepEqual(await state.commandConfig("browser.read-fields", repeated, async () => browser(nextUrl)),
+      { scope: { url: nextUrl, urlDigest: digestRuntimeUrl(nextUrl) } })
+  }
+  for (const previous of ["query", "unrelated"]) {
+    const state = new HybridRuntimeScopeState(); state.succeed(previous, browser(nextUrl))
+    await assert.rejects(state.commandConfig("browser.read-fields", repeated, async () => browser(nextUrl)),
+      /scope_predecessor_mismatch/)
+  }
+  const state = new HybridRuntimeScopeState(); state.succeed("advance", browser(nextUrl))
+  await assert.rejects(state.commandConfig("browser.read-fields", repeated, async () => browser(oldUrl)), /scope_page_changed/)
+  for (const marker of [[], ["entry", "entry"], ["entry", "advance", "other"], ["entry", 1]]) {
+    await assert.rejects(new HybridRuntimeScopeState().commandConfig("browser.read-fields",
+      { ...repeated, [RUNTIME_SCOPE_FROM]: marker }, async () => browser()), /scope_marker_invalid/)
+  }
+})
 
 test("复跑只读以当前同文档URL绑定且不调用模型或重派动作", async () => {
   const state = new HybridRuntimeScopeState(); state.succeed("s1", browser())

@@ -37,7 +37,10 @@ class ActionRegistry(Contract):
             raise ValueError('live_registry_required')
         self._validator.validate({name: args})
         result = self._action_model.model_validate({name: args})
-        if digest(result.model_dump(mode='json', exclude_unset=True)) != digest({name: args}):
+        # WHY：TS 的 JSON number 会把 4.0 序列化为 4；复用 JSON Schema 的值语义，
+        # 不把合法数值规范化误判为改参，字符串/布尔和真实改值仍必须拒绝。
+        if not Draft202012Validator({'const': {name: args}}).is_valid(
+                result.model_dump(mode='json', exclude_unset=True)):
             raise ValueError('action_arguments_changed_by_validation')
         return result
 
@@ -45,9 +48,9 @@ class ActionRegistry(Contract):
 # WHY: 这是已核验的效果保守分类，绝不是 action 注册表或允许名单。
 # 未评估动作仍由公开 schema 识别并完整保留；默认按最高效果处理，不能排除。
 EFFECTS = {
-    'done': 'none', 'wait': 'none', 'screenshot': 'read', 'find_elements': 'read',
+    'done': 'none', 'wait': 'none', 'bat_validate_selection': 'none', 'screenshot': 'read', 'find_elements': 'read',
     'search_page': 'read', 'extract': 'read', 'bat_inspect_dom': 'read', 'bat_read_fields': 'read', 'bat_wait_for': 'read',
-    'bat_summarize': 'read',
+    'bat_summarize': 'read', 'bat_request_human': 'read',
     'dropdown_options': 'read',
     'navigate': 'navigation', 'go_back': 'navigation', 'switch': 'navigation', 'close': 'navigation',
     'scroll': 'ui_state', 'bat_scroll_to': 'ui_state',

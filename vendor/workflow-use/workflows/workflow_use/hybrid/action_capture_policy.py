@@ -27,6 +27,8 @@ class ActionCapturePolicy:
 # registration change must fail the focused registry test until its capture semantics are classified.
 ACTION_CAPTURE_POLICIES = {
     'done': ActionCapturePolicy('terminal'),
+    'bat_validate_selection': ActionCapturePolicy('read'),
+    'bat_request_human': ActionCapturePolicy('read'),
     'wait': ActionCapturePolicy('read'),
     'navigate': ActionCapturePolicy('document'),
     'search': ActionCapturePolicy('document'),

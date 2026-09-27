@@ -7,6 +7,7 @@ import {
 } from "@browser-capture/contracts"
 import { applyWrites, evaluatePredicate, readObservation, readPath, resolveBinding, resolveBindings, type BindingContext } from "./bindings.js"
 import { withBrowserCommandAccounting } from "./browser-consumption.js"
+import { recordBrowserCheckpoint, validateBrowserCheckpoint } from "./browser-checkpoint.js"
 import { compileTaskChain, type CompiledTaskChain } from "./compiler.js"
 import { executeDataOperation } from "./data.js"
 import { executeDelegatedLlm } from "./delegated-llm.js"
@@ -26,6 +27,7 @@ export type RuntimeState = {
   capabilities: TaskChainCapabilities; signal: AbortSignal; pauseAtCheckpoint: boolean
   pacing: RuntimeNodePacing | null
   resumingNodeId: string | null; resumeObservation: JsonValue | null
+  resumeBrowser: TaskCheckpoint["browser"]
 }
 export class TaskChainRuntime {
   private active = false
@@ -81,7 +83,7 @@ function startState(compiled: CompiledTaskChain, rawRequest: unknown, capabiliti
     input, budget: compiled.chain.budget, sequence: 0, status: "running", outputs: {}, checkpoint, consumed,
     outcome: null, events: [], modelCalls: [], auditComplete: true, externalFailure: null })
   return { compiled, run, context: { input, nodeOutputs: {}, variables: {} }, checkpoint,
-    capabilities, signal, pauseAtCheckpoint: false, pacing: null, resumingNodeId: null, resumeObservation: null }
+    capabilities, signal, pauseAtCheckpoint: false, pacing: null, resumingNodeId: null, resumeObservation: null, resumeBrowser: null }
 }
 async function resumeState(compiled: CompiledTaskChain, rawRequest: unknown, rawResume: unknown, rawCheckpoint: unknown,
   capabilities: TaskChainCapabilities, signal: AbortSignal): Promise<RuntimeState> {
@@ -100,7 +102,8 @@ async function resumeState(compiled: CompiledTaskChain, rawRequest: unknown, raw
       resumeVerificationResultSchema.parse(await capabilities.verifyResume?.(checkpoint, signal)
         ?? { ok: false, reason: "resume_verifier_unavailable" }))
     : resumeVerificationResultSchema.parse({ ok: true })
-  if (verification.browser) checkpoint.browser = verification.browser
+  // WHY：新的观察时间不能改写已绑定历史回执；恢复现场只在本次实际浏览器结果完成时进入新回执。
+  if (verification.browser && checkpoint.browserNodeId === undefined) checkpoint.browser = verification.browser
   if (checkpoint.pendingEffect) checkpoint.pendingEffect.status = "uncertain"
   const context = { input, nodeOutputs: structuredClone(checkpoint.nodeOutputs), variables: structuredClone(checkpoint.variables) }
   const resumeConditionFailed = checkpoint.resumeWhen !== null && (verification.observation === undefined
@@ -120,6 +123,7 @@ async function resumeState(compiled: CompiledTaskChain, rawRequest: unknown, raw
   }
   return { compiled, run, context, checkpoint: structuredClone(checkpoint), capabilities, signal,
     pauseAtCheckpoint: false, pacing: null, resumingNodeId: checkpoint.cursor,
+    resumeBrowser: verification.browser ?? checkpoint.browser,
     resumeObservation: verification.observation === undefined ? null : verification.observation }
 }
 function assertReferences(compiled: CompiledTaskChain, binding: TaskRun["binding"], input: JsonValue) {
@@ -129,6 +133,7 @@ function assertReferences(compiled: CompiledTaskChain, binding: TaskRun["binding
     || binding.inputDigest !== digestJson(input)) throw new Error("run_binding_mismatch")
 }
 function validateCheckpointValues(compiled: CompiledTaskChain, checkpoint: TaskCheckpoint) {
+  validateBrowserCheckpoint(checkpoint, compiled.nodes)
   for (const [nodeId, value] of Object.entries(checkpoint.nodeOutputs)) {
     const node = compiled.nodes.get(nodeId)
     if (!node) throw new Error("checkpoint_node_unknown")
@@ -201,7 +206,7 @@ async function executeNode(state: RuntimeState) {
     validateWrittenVariables(state, node)
   }
   if (result.artifacts) state.checkpoint.artifacts.push(...result.artifacts)
-  if (result.browser !== undefined) state.checkpoint.browser = result.browser
+  const browserStateDigest = recordBrowserCheckpoint(state.checkpoint, node, result)
   if (result.externalFailure) {
     state.checkpoint.externalFailure = structuredClone(result.externalFailure)
     state.run.externalFailure = structuredClone(result.externalFailure)
@@ -209,8 +214,10 @@ async function executeNode(state: RuntimeState) {
     || node.kind === "capability" && node.capability.name.startsWith("browser.")) && result.outcome === "success") {
     state.checkpoint.externalFailure = null; state.run.externalFailure = null
   }
-  recordEvent(state, node, "finished", result.outcome, idempotencyKey, stableKey)
+  recordEvent(state, node, "finished", result.outcome, idempotencyKey, stableKey, browserStateDigest)
+  syncCheckpoint(state)
   state.resumingNodeId = null
+  state.resumeBrowser = null
   if (node.kind === "terminal") {
     await finishTerminal(state, node)
     return
@@ -219,11 +226,6 @@ async function executeNode(state: RuntimeState) {
   if (!edge) return
   state.checkpoint.cursor = edge.to
   state.checkpoint.resumeWhen = node.kind === "checkpoint" && state.checkpoint.browser ? node.resumeWhen : null
-  state.checkpoint.sequence = state.run.sequence
-  state.checkpoint.nodeOutputs = structuredClone(state.context.nodeOutputs)
-  state.checkpoint.variables = structuredClone(state.context.variables)
-  state.checkpoint.consumed = structuredClone(state.run.consumed)
-  state.checkpoint.outputs = structuredClone(state.run.outputs)
   state.run.checkpoint = structuredClone(state.checkpoint)
   if (node.kind === "checkpoint") {
     state.checkpoint.id = randomUUID()
@@ -294,9 +296,13 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
 async function executeCapability(state: RuntimeState, node: Extract<ChainNode, { kind: "capability" }>,
   idempotencyKey: string, stableKey: string | null): Promise<NodeCapabilityResult> {
   if (resumesCapabilityFromObservation(state)) {
-    // WHY：无数据 capability 在人工处理后只消费现场核验，不重新派发原副作用；带数据输出仍必须重新执行并校验合同。
+    // WHY：只有链路声明的完成条件能够证明人工已完成当前动作，URL 存在只证明仍有页面。
     return { outcome: "success", output: node.outputContract.schema.type === "null"
-      ? null : structuredClone(state.resumeObservation), browser: state.checkpoint.browser ?? undefined }
+      ? null : structuredClone(state.resumeObservation), browser: state.resumeBrowser ?? state.checkpoint.browser ?? undefined }
+  }
+  if (state.resumingNodeId === node.id && state.resumeObservation !== null && !node.human && node.effect === "external_write") {
+    return { outcome: "human_required", reason: "此步骤包含外部写入，缺少人工完成的验证条件；为避免重复操作，仍保留等待。",
+      browser: state.resumeBrowser ?? state.checkpoint.browser ?? undefined }
   }
   const invocation = { binding: state.run.binding, node, input: resolveBindings(node.input, state.context),
     config: structuredClone(node.config), idempotencyKey,
@@ -326,8 +332,7 @@ async function executeCapability(state: RuntimeState, node: Extract<ChainNode, {
 function resumesCapabilityFromObservation(state: RuntimeState) {
   const node = state.compiled.nodes.get(state.checkpoint.cursor)
   return node?.kind === "capability" && state.resumingNodeId === node.id && state.resumeObservation !== null
-    && (node.human && observationMatches(node.human.resumeWhen, state.resumeObservation, state.context)
-      || !node.human && node.outputContract.schema.type === "null")
+    && node.human !== undefined && observationMatches(node.human.resumeWhen, state.resumeObservation, state.context)
 }
 
 function resolveTarget(target: Extract<ChainNode, { kind: "browser" | "observe" }>["target"], context: BindingContext) {
@@ -346,7 +351,7 @@ function observationMatches(condition: Extract<ChainNode, { kind: "observe" }>["
 }
 async function executeHuman(state: RuntimeState, node: Extract<ChainNode, { kind: "human" }>): Promise<NodeCapabilityResult> {
   if (state.resumingNodeId === node.id && state.resumeObservation !== null) {
-    return { outcome: "success", output: structuredClone(state.resumeObservation), browser: state.checkpoint.browser ?? undefined }
+    return { outcome: "success", output: structuredClone(state.resumeObservation), browser: state.resumeBrowser ?? state.checkpoint.browser ?? undefined }
   }
   if (!state.capabilities.human) throw new Error("human_capability_unavailable")
   syncCheckpoint(state)
@@ -420,21 +425,29 @@ async function executeInvoke(state: RuntimeState, node: Extract<ChainNode, { kin
   const truncated = node.iteration.mode === "each" && unique.length > node.iteration.maxItems
   const outputs: JsonValue[] = [], failures: string[] = []
   for (const { item, stableKey } of selected) {
-    const completed = state.checkpoint.invocations.find((entry) =>
-      entry.chain.id === node.chain.id && entry.stableKey === stableKey && entry.status === "completed")
-    if (completed) { if (completed.output) outputs.push(invokedOutput(completed.output)); continue }
     if (node.iteration.mode === "each") writeVariable(state, node.iteration.itemVariable, item)
-    const invocationId = stableUuid(state.run.binding.runId, node.id, stableKey)
     const childInput = node.iteration.mode === "each" ? resolveBinding(node.input, state.context) : rawInput!
+    const inputDigest = digestJson(childInput)
+    // WHY：父节点、外层循环、子链版本与本次输入共同定义调用；仅凭子链 ID 和稳定键会串用已完成输出。
+    const invocationId = stableUuid(idempotencyKey, stableKey, node.chain.id, String(node.chain.version), node.chain.digest, inputDigest)
     let progress = state.checkpoint.invocations.find((entry) => entry.invocationId === invocationId)
+    if (progress && (progress.stableKey !== stableKey || progress.inputDigest !== inputDigest
+      || progress.chain.id !== node.chain.id || progress.chain.version !== node.chain.version
+      || progress.chain.digest !== node.chain.digest)) throw new Error("invoke_progress_identity_mismatch")
+    if (progress?.status === "completed") { if (progress.output) outputs.push(invokedOutput(progress.output)); continue }
+    // WHY：旧检查点的 ID 不含外层现场，不能在恢复时猜测它对应哪次已发生的外部效果。
+    const legacyId = stableUuid(state.run.binding.runId, node.id, stableKey)
+    if (!progress && state.checkpoint.invocations.some((entry) => entry.invocationId === legacyId)) {
+      throw new Error("invoke_progress_legacy_identity_unverifiable")
+    }
     if (!progress) {
-      progress = { invocationId, chain: node.chain, stableKey, inputDigest: digestJson(childInput), status: "pending", output: null, checkpointId: null, reason: null }
+      progress = { invocationId, chain: node.chain, stableKey, inputDigest, status: "pending", output: null, checkpointId: null, reason: null }
       state.checkpoint.invocations.push(progress)
       state.capabilities.accountConsumption?.({ invocations: 1 })
       state.run.consumed.invocations += 1
     }
     progress.status = "running"
-    const childIdempotencyKey = `${idempotencyKey}:${stableKey}`
+    const childIdempotencyKey = `${idempotencyKey}:${invocationId}`
     await beginEffect(state, "invoke", node.id, stableKey, childIdempotencyKey)
     let result
     try {

@@ -66,5 +66,25 @@ export function useTasks() {
     } catch (failure) { if (input.type === "create") setPendingCreate(createId.current); setError(failure instanceof Error ? failure.message : "任务操作未完成。"); return false }
     finally { mutating.current = false; setBusy(false) }
   }
-  return { tasks, selected, visited, ready, busy, pendingCreate, error: error || loadError, select, action, reload: () => setReloadKey((value) => value + 1) }
+  async function remove(task: TaskSummary) {
+    if (mutating.current) return false
+    mutationEpoch.current += 1
+    mutating.current = true; setBusy(true); setError("")
+    try {
+      const response = await fetch("/api/tasks", { method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: task.id, expectedUpdatedAt: task.updatedAt, confirm: true }) })
+      const value: unknown = await response.json()
+      if (!response.ok) throw new Error(z.object({ error: z.string() }).parse(value).error)
+      const result = responseSchema.parse(value)
+      if (result.id !== task.id || result.tasks.some((item) => item.id === task.id)) throw new Error("删除结果无法核验，请刷新列表。")
+      mutationEpoch.current += 1
+      setTasks(result.tasks)
+      setVisited((current) => current.filter((id) => id !== task.id))
+      if (selection.current === task.id) select(result.tasks.find((item) => !item.archived)?.id ?? null)
+      return true
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "任务删除未完成。"); return false }
+    finally { mutating.current = false; setBusy(false) }
+  }
+  return { tasks, selected, visited, ready, busy, pendingCreate, error: error || loadError, select, action, remove,
+    reload: () => setReloadKey((value) => value + 1) }
 }

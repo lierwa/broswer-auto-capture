@@ -161,7 +161,9 @@ async def enrich_find_elements_result(raw_action, browser_session, result):
             return ({'contextOutcome': 'failed'} if isinstance(arguments, dict) else {})
         script = """(() => {
           const selector = %s;
-          const names = ['data-testid', 'role', 'aria-label', 'data-component', 'name', 'href', 'datetime'];
+          const requested = %s;
+          const defaults = ['data-testid', 'role', 'aria-label', 'data-component', 'name', 'href', 'datetime'];
+          const names = [...new Set([...requested, ...defaults])].slice(0, 7);
           const nodes = Array.from(document.querySelectorAll(selector));
           const contexts = [];
           const targets = [];
@@ -173,7 +175,7 @@ async def enrich_find_elements_result(raw_action, browser_session, result):
               const attrs = {};
               for (const name of names) {
                 const value = current.getAttribute(name);
-                if (value) attrs[name] = value.slice(0, 240);
+                if (value !== null) attrs[name] = value.slice(0, 240);
               }
               chain.push({tag: current.tagName.toLowerCase(), attrs});
             }
@@ -183,8 +185,9 @@ async def enrich_find_elements_result(raw_action, browser_session, result):
               targets.push({index, tag: node.tagName.toLowerCase(), text, attrs: chain[0].attrs});
             }
           }
-          return {matchCount: nodes.length, contexts, targets};
-        })()""" % json.dumps(selector)
+          return {matchCount: nodes.length, contexts, targets,
+                  omittedRequestedAttributeCount: Math.max(0, new Set(requested).size - names.length)};
+        })()""" % (json.dumps(selector), json.dumps(arguments.get('attributes') or []))
         session = await browser_session.get_or_create_cdp_session()
         evaluated = await session.cdp_client.send.Runtime.evaluate(
             params={'expression': script, 'returnByValue': True, 'awaitPromise': True},
@@ -198,10 +201,11 @@ async def enrich_find_elements_result(raw_action, browser_session, result):
                                     + json.dumps(structure, ensure_ascii=False, separators=(',', ':')))
         targets = structure.get('targets')
         if isinstance(targets, list) and targets:
-            # WHY：上游 find_elements 的详细属性只在下一步可见，长期记忆只留命中数量；
-            # 后续动作因此拿不到刚发现的 href/属性并反复查询。只持久化前五个有界目标摘要，
-            # 同时明确查询序号不是 Browser-Use 点击序号，避免把两套索引混用。
-            retained = {'selector': selector, 'matchCount': structure.get('matchCount'), 'targets': targets}
+            # WHY：上游 MessageManager 优先 long_term_memory，find_elements 的详细属性不进入消息；
+            # 保留请求属性（含空串布尔属性），仍限五个目标、七个属性、每值240字，超限明确计数。
+            # 查询序号不是 Browser-Use 点击序号，避免两套索引混用。
+            retained = {'selector': selector, 'matchCount': structure.get('matchCount'), 'targets': targets,
+                        'omittedRequestedAttributeCount': structure.get('omittedRequestedAttributeCount', 0)}
             guidance = (' Retained DOM targets (query indexes are not Browser-Use click indexes; use a current '
                         'clickable index, or navigate a returned href, or form the next CSS query from attributes): '
                         + json.dumps(retained, ensure_ascii=False, separators=(',', ':')))

@@ -15,7 +15,9 @@ export async function finishTerminal(state: RuntimeState, node: Extract<ChainNod
       : node.status === "blocked" ? { status: "blocked", reason, evidence: artifacts, code: "terminal_blocked" }
         : node.status === "failed" ? { status: "failed", reason, evidence: artifacts, code: "terminal_failed" }
           : { status: "cancelled", reason, evidence: artifacts }
-  state.run.checkpoint = null
+  // WHY：失败/限额/取消终点仍需保留已读取的部分结果与执行事实；不能把它们当成完整业务输出。
+  if (node.status === "completed") state.run.checkpoint = null
+  else { syncCheckpoint(state); state.run.checkpoint = structuredClone(state.checkpoint) }
 }
 
 export async function pauseRun(state: RuntimeState,
@@ -38,10 +40,11 @@ export async function failRun(state: RuntimeState, error: unknown) {
 }
 
 export function recordEvent(state: RuntimeState, node: ChainNode, status: "planned" | "started" | "finished",
-  outcome: NodeOutcome | null, idempotencyKey: string, stableKey: string | null) {
+  outcome: NodeOutcome | null, idempotencyKey: string, stableKey: string | null, browserStateDigest?: string) {
   state.run.sequence += 1
   state.run.events.push({ sequence: state.run.sequence, at: now(state).toISOString(),
-    invocationId: state.run.binding.invocationId, nodeId: node.id, status, outcome, idempotencyKey, stableKey })
+    invocationId: state.run.binding.invocationId, nodeId: node.id, status, outcome, idempotencyKey, stableKey,
+    ...(browserStateDigest === undefined ? {} : { browserStateDigest }) })
 }
 
 export function syncCheckpoint(state: RuntimeState) {

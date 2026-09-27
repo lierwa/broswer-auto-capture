@@ -14,7 +14,8 @@ def attach_host_read_facts(collector, final_output):
     for item in collector.host_read_captures:
         try:
             capture = item.get('capture') or derive_host_read(
-                item['snapshots'], collector.output_schema, final_output)
+                item['snapshots'], collector.output_schema, final_output,
+                getattr(collector, 'completed_queries', ()))
         except Exception:
             continue
         mappings = list(capture.mappings) or [

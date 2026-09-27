@@ -1,7 +1,7 @@
 """Keep only replay reads whose values feed a real action or final result."""
 
 from .action_dispatch import NOT_DISPATCHED_RULE, not_dispatched_coverage
-from .coverage import unused_verified_dom_read_coverage
+from .coverage import native_dom_lookup_observation_coverage, unused_verified_dom_read_coverage
 from .evidence import gap
 from .natural_readiness import consumer_readiness_by_action
 
@@ -12,11 +12,56 @@ def consumed_query_ids(trace, segments):
     for segment in segments:
         for key in ('bindings', 'target', 'inputBindings'):
             references.update(_node_refs(segment.get(key)))
+    facts = [fact for observation in trace.observations for fact in observation.facts]
+    fact_actions = {fact.id: fact.value.get('actionRef') for fact in facts if isinstance(fact.value, dict)}
     for observation in trace.observations:
         for fact in observation.facts:
             if fact.kind == 'verified_output_assembly' and isinstance(fact.value, dict):
                 references.update(_node_refs(fact.value.get('fields')))
+            if fact.kind == 'repeat_method' and isinstance(fact.value, dict):
+                references.update(row.get(key) for row in fact.value.get('iterations', [])
+                    for key in ('readActionRef', 'continuationActionRef', 'advanceActionRef')
+                    if isinstance(row, dict) and isinstance(row.get(key), str))
+            if fact.kind in ('natural_binding', 'dom_structure', 'selection_function', 'verified_output_assembly'):
+                references.update(_node_refs(fact.value))
+                references.update(_source_read_refs(fact.value, fact_actions))
     return {reference.removeprefix('s-') for reference in references}
+
+
+def _source_read_refs(value, fact_actions):
+    if isinstance(value, list):
+        return {ref for item in value for ref in _source_read_refs(item, fact_actions)}
+    if not isinstance(value, dict):
+        return set()
+    found = {value[key] for key in ('readActionRef', 'queryActionRef') if isinstance(value.get(key), str)}
+    found.update(fact_actions[value[key]] for key in ('sourceReadRef', 'readFactRef')
+                 if isinstance(value.get(key), str) and isinstance(fact_actions.get(value[key]), str))
+    for child in value.values():
+        found.update(_source_read_refs(child, fact_actions))
+    return found
+
+
+def retire_unused_discovery(request, registry, ledger, issues, consumed):
+    observations = {item.id: item for item in request.trace.observations}
+    actions = {item.id: item for item in request.trace.actions}
+    replacements = {}
+    for row in ledger:
+        if row.disposition != 'not_compilable' or row.actionRef in consumed:
+            continue
+        action = actions.get(row.actionRef)
+        if action is None:
+            continue
+        proven = native_dom_lookup_observation_coverage(registry, action,
+            observations.get(action.preObservationRef), observations.get(action.postObservationRef),
+            allow_complete_discovery=True)
+        if proven is not None:
+            replacements[action.id] = proven
+    # WHY：只撤销无执行消费者的探查所派生的读取缺口；原 trace/sourceGaps 不写回，也不补造读取事实。
+    unresolved = [issue for issue in issues if not (
+        issue.code == 'missing_effect_proof' and issue.resolution == 'collect_evidence'
+        and len(issue.actionRefs) == 1 and issue.actionRefs[0] in replacements and not issue.clauseRefs
+        and issue.reason in ('find_elements_read_evidence_missing', 'natural_field_read_evidence_missing'))]
+    return [replacements.get(row.actionRef, row) for row in ledger], unresolved
 
 
 def _node_refs(value):
@@ -32,7 +77,7 @@ def _node_refs(value):
     return found
 
 
-def prune_unused_queries(request, registry, segments, ledger):
+def prune_unused_queries(request, registry, segments, ledger, *, repeat_lookup_ids=frozenset()):
     """Retire only a proven, pure find_elements read with no value consumer."""
     consumed = consumed_query_ids(request.trace, segments)
     actions = {item.id: item for item in request.trace.actions}
@@ -43,7 +88,8 @@ def prune_unused_queries(request, registry, segments, ledger):
         action_id = segment['id'].removeprefix('s-')
         action = actions.get(action_id)
         if (segment.get('operation', {}).get('name') != 'browser.read-fields'
-                or action is None or action.name != 'find_elements' or action_id in consumed):
+                or action is None or action.name != 'find_elements' or action_id in consumed
+                or action_id in repeat_lookup_ids):
             retained.append(segment)
             continue
         original = coverage.get(action_id)
@@ -74,7 +120,7 @@ def rebind_consumer_readiness(trace, segments, ledger):
     previous_readiness = consumer_readiness_by_action(trace)
     readiness = consumer_readiness_by_action(
         trace, allowed_consumer_ids=allowed, proven_not_dispatched_ids=harmless)
-    issues = []
+    issues, unproven = [], set()
     for segment in segments:
         if segment.get('operation', {}).get('name') != 'browser.workflow-step':
             continue
@@ -92,6 +138,8 @@ def rebind_consumer_readiness(trace, segments, ledger):
             issues.append(gap('missing_effect_proof', [segment['id'].removeprefix('s-')],
                               'consumer_readiness_live_read_required', 'collect_evidence'))
         segment['postconditions'] = [*direct, *([current['condition']] if current else [])]
+        if not segment['postconditions']:
+            unproven.add(segment['id'])
         old = previous_readiness.get(segment['id'].removeprefix('s-'))
         if previous and old is not None and previous[0] == old['condition']:
             obsolete = {_ref_key(item) for item in old['proofRefs']}
@@ -102,6 +150,11 @@ def rebind_consumer_readiness(trace, segments, ledger):
             refs = [*segment.get('proofRefs', []),
                     *[item.model_dump(mode='json') for item in current['proofRefs']]]
             segment['proofRefs'] = list({(item['ref'], item['digest']): item for item in refs}.values())
+    # WHY：失去唯一消费者后态的动作只能留下 typed gap 与不可编译审计，不能输出空后态执行段。
+    segments[:] = [segment for segment in segments if segment['id'] not in unproven]
+    ledger[:] = [row.model_copy(update={'disposition': 'not_compilable', 'ownerSegmentId': None,
+                                       'exclusionRule': None})
+                 if row.ownerSegmentId in unproven else row for row in ledger]
     return issues
 
 

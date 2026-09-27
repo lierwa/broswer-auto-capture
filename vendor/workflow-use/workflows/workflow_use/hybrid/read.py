@@ -71,11 +71,20 @@ class ReadField(Contract):
         return value
 
 
+class ReadSampleCoverage(Contract):
+    scope: Literal['current_dom_matches'] = 'current_dom_matches'
+    total: int = Field(ge=0)
+    sampled: int = Field(ge=0)
+    sampleLimit: int = Field(gt=0, le=300)
+    runtimeTruncated: bool
+
+
 class ReadSpec(Contract):
     container: str = Field(min_length=1, max_length=2000)
     fields: dict[str, ReadField] = Field(min_length=1, max_length=100)
     maxItems: int = Field(gt=0, le=300)
     includeOrdinal: bool = False
+    requireComplete: bool = False
     maxInputBytes: int | None = Field(default=None, gt=0)
     outputSchema: dict[str, JsonValue]
 
@@ -91,6 +100,8 @@ class ReadSpec(Contract):
         value = serialize(self)
         if not self.includeOrdinal:
             value.pop('includeOrdinal', None)
+        if not self.requireComplete:
+            value.pop('requireComplete', None)
         if self.maxInputBytes is None:
             value.pop('maxInputBytes', None)
         return value
@@ -100,7 +111,7 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
   const projected = Object.create(null);
   for (const field of fields) {
     const name = field.name;
-    const limit = field.multiple ? field.maxValues + 1 : 2;
+    const limit = field.sampleLimit ?? (field.multiple ? field.maxValues + 1 : 2);
     const matches = [];
     let selfMatched;
     let selected;
@@ -118,6 +129,7 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
     }
     projected[name] = {
       selfMatched,
+      ...(field.sampleLimit === undefined ? {} : {totalMatches: selected.length + (selfMatched ? 1 : 0)}),
       values: matches.slice(0, limit).map((node) => {
         if (field.resolveUrl) {
           const resolved = node[field.attribute];
@@ -141,38 +153,39 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
 }"""
 
 
-async def read_fields(browser, specification: ReadSpec, *, scope=None):
+async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None):
     resolver = TargetResolver(browser)
-    target_id = await resolver.assert_scope(scope) if scope is not None else None
+    target_id = None
+    if page is not None:
+        info = await page.get_target_info()
+        target_id = info.get('targetId') if isinstance(info, dict) else None
+        if not isinstance(target_id, str) or not target_id:
+            raise ValueError('page_identity_unavailable')
+        scope = scope if scope is not None else {'url': await page.get_url()}
+    if scope is not None:
+        try:
+            target_id = await resolver.assert_scope(scope, target_id)
+        except Exception as error:
+            # WHY：页面身份读取失败不能被报告为字段投影失败；保留原异常交给 owner 安全投影。
+            error.add_note('bat_read_scope_pre')
+            raise
     try:
-        elements = await resolver.resolve_collection(specification.container, scope)
+        elements = await resolver.resolve_collection(specification.container, scope, page=page)
     except RuntimeError as error:
-        if 'DOM Error while querying' not in str(error):
+        if ('bat_read_collection_query' not in getattr(error, '__notes__', ())
+                or 'DOM Error while querying' not in str(error)):
             raise
         # WHY：公开集合查询只证明容器无法定位，不能把 CDP 的泛化错误猜成 CSS 语法错误。
         raise FieldReadError('read_container_resolution_failed', field_name='container',
                              reason='container_not_resolved') from error
     # WHY：列表容器应描述完整稳定集合；输出合同的 maxItems 负责确定性选择 DOM 顺序前缀，
     # 不应把“前 N 条”再次推给模型编码成依赖页面包装层的 nth-child selector。
-    if specification.includeOrdinal and len(elements) > specification.maxItems:
+    if (specification.includeOrdinal or specification.requireComplete) and len(elements) > specification.maxItems:
         # WHY：动态选择必须读取完整集合；截断会把“已读末项”误当成真实末项。
         raise FieldReadError('read_collection_limit', field_name='container',
                              match_count=len(elements), reason='complete_collection_required')
     elements = elements[:specification.maxItems]
-    output, consumed, native_context = [], 0, {}
-    for ordinal, element in enumerate(elements, start=1):
-        fragments = await project_fields(browser, element, specification.fields, native_context)
-        consumed += sum(len(value.encode()) for values in fragments.values()
-                        for value in values if isinstance(value, str))
-        if specification.maxInputBytes is not None and consumed > specification.maxInputBytes:
-            raise ValueError('read_input_limit')
-        record = {name: read_projected_field(name, fragments.get(name), field)
-                  for name, field in specification.fields.items()
-                  if not (field.optionalAttribute and fragments.get(name) == [None])}
-        if specification.includeOrdinal:
-            # WHY：纯函数筛选/排序后仍返回原集合身份，不能将过滤后下标当成 DOM ordinal。
-            record['ordinal'] = ordinal
-        output.append(record)
+    output = await project_field_records(browser, specification, elements)
     if specification.outputSchema.get('type') == 'object':
         if specification.maxItems != 1 or len(output) != 1:
             raise FieldReadError('read_single_object_required', field_name='container',
@@ -184,15 +197,44 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None):
         # WHY：字段类型/长度等投影结果不符合合同是可修复的 selector 结果，不应折叠成未知工具失败。
         raise FieldReadError('read_output_schema_mismatch', reason='projected_output_invalid') from error
     if scope is not None:
-        await resolver.assert_scope(scope, target_id)
+        try:
+            await resolver.assert_scope(scope, target_id)
+        except Exception as error:
+            error.add_note('bat_read_scope_post')
+            raise
     return output
 
 
-async def project_fields(browser, element, fields, native_context):
+async def project_field_records(browser, specification: ReadSpec, elements, *, field_samples=None):
+    """Share field projection without changing the caller-owned collection boundary."""
+    output, consumed, native_context = [], 0, {}
+    for ordinal, element in enumerate(elements, start=1):
+        fragments = await project_fields(browser, element, specification.fields, native_context,
+                                         field_samples=field_samples)
+        consumed += sum(len(value.encode()) for values in fragments.values()
+                        for value in values if isinstance(value, str))
+        if specification.maxInputBytes is not None and consumed > specification.maxInputBytes:
+            raise ValueError('read_input_limit')
+        record = {name: read_projected_field(name, fragments.get(name), field)
+                  for name, field in specification.fields.items()
+                  if not (field.optionalAttribute and fragments.get(name) == [None])}
+        if specification.includeOrdinal:
+            # WHY：纯函数筛选/排序后仍返回原集合身份，不能将过滤后下标当成 DOM ordinal。
+            record['ordinal'] = ordinal
+        output.append(record)
+    return output
+
+
+async def project_fields(browser, element, fields, native_context, *, field_samples=None):
     projection = [{'name': name, 'selector': field.selector, 'multiple': field.multiple,
                    'maxValues': field.maxValues, 'attribute': field.attribute,
                    'resolveUrl': field.resolveUrl, 'textSource': field.textSource}
                   for name, field in fields.items()]
+    # WHY：采样只限制宿主本次投影，不改写正式 ReadSpec 或把业务值全部取回后再截取。
+    if field_samples is not None:
+        for field in projection:
+            if field['name'] in field_samples:
+                field['sampleLimit'] = field_samples[field['name']]['limit']
     try:
         raw = await element.evaluate(FIELD_PROJECTION_SCRIPT, projection)
         result = json.loads(raw)
@@ -203,14 +245,23 @@ async def project_fields(browser, element, fields, native_context):
                              reason='invalid_selector')
     if not isinstance(result, dict) or set(result) != set(fields):
         raise ValueError('read_field_projection_invalid')
-    if any(not _projected_values_valid(value) for value in result.values()):
+    if any(not _projected_values_valid(value, sampling=field_samples is not None and name in field_samples)
+           for name, value in result.items()):
         raise ValueError('read_field_projection_invalid')
+    if field_samples is not None:
+        for name, sample in field_samples.items():
+            total = result[name]['totalMatches']
+            if len(result[name]['values']) != min(total, sample['limit']):
+                raise ValueError('read_field_projection_invalid')
+            sample['total'] = total
     result = await replace_shadow_text(browser, element, projection, result, native_context)
     return {name: [item['value'] for item in value['values']] for name, value in result.items()}
 
 
-def _projected_values_valid(value):
-    return (isinstance(value, dict) and set(value) == {'selfMatched', 'values'}
+def _projected_values_valid(value, *, sampling=False):
+    keys = {'selfMatched', 'values', 'totalMatches'} if sampling else {'selfMatched', 'values'}
+    return (isinstance(value, dict) and set(value) == keys
+            and (not sampling or type(value['totalMatches']) is int and value['totalMatches'] >= 0)
             and isinstance(value['selfMatched'], bool) and isinstance(value['values'], list)
             and all(isinstance(item, dict) and set(item) == {'value', 'hasShadow'}
                     and isinstance(item['value'], (str, type(None)))

@@ -54,27 +54,32 @@ export function ChainRunDialog({ open, onOpenChange, workspace, connection, mode
     }
   }
 
-  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Content className="task-run-dialog dialog-scroll" maxWidth="620px">
+  return <Dialog.Root open={open} onOpenChange={(next) => {
+    if (!next && connection.snapshot().busy) return
+    onOpenChange(next)
+  }}><Dialog.Content className="task-run-dialog dialog-scroll" maxWidth="620px">
     <Dialog.Title>{independent ? "独立复跑检查" : mode === "trial" ? "试跑当前草稿" : "运行已发布任务"}</Dialog.Title>
-    <Dialog.Description size="2">{mode === "trial"
-      ? independent ? `这次将独立检查同一草稿${workspace.draftReadiness?.distinctInputRequired ? "；请使用另一组不同的业务输入" : ""}。后续修改不会改写本次执行。`
-        : "本次 execution 固定绑定当前草稿；后续修改不会改写它。"
-      : "本次 execution 固定绑定当前发布内容；画布只显示这一轮的事件。"}</Dialog.Description>
+    <Dialog.Description size="2">{independent
+      ? workspace.draftReadiness?.distinctInputRequired ? "请使用另一组不同的业务输入。" : "再次运行以完成独立复验。"
+      : mode === "trial" ? "检查这条链路能否完成本次任务。" : "按当前发布版本运行。"}</Dialog.Description>
     {connection.snapshot().error && <Callout.Root color="red"><Callout.Text>{connection.snapshot().error}</Callout.Text>
       <Button type="button" onClick={() => void connection.retry()}>重试同一请求</Button></Callout.Root>}
     {!plan ? <p role="status">当前没有可执行内容。</p> : input !== undefined && <form ref={formRef}
       onSubmit={(event) => { event.preventDefault(); void submit() }}>
       {parameterized && <ValueSchemaForm contract={plan.inputContract} value={input}
         onChange={(value) => { setInput(value); setInputError("") }} disabled={connection.snapshot().busy} />}
-      {!parameterized && <p className="run-dialog-fixed-input">此任务没有运行参数，将直接使用画布中保存的动作配置。</p>}
       {inputError && <p className="error-text" role="alert">{inputError}</p>}
       {mode === "run" && <details className="run-settings"><summary>运行设置</summary>
-        <label className="run-browser-setting"><Checkbox checked={headless} disabled={connection.snapshot().busy}
+        <label className="run-browser-setting"><Checkbox checked={headless}
+          disabled={connection.snapshot().busy || plan.browserHandoff === "keep_open"}
           onCheckedChange={(checked) => setHeadless(checked === true)} />
-          <span><strong>无界面运行（Headless）</strong><small>关闭时打开可见的浏览器窗口；仅影响本次运行。</small></span>
+          <span><strong>无界面运行（Headless）</strong><small>{plan.browserHandoff === "keep_open"
+            ? "当前发布版本需要交付原页面，本次须使用可见窗口。"
+            : "关闭时打开可见的浏览器窗口；仅影响本次运行。"}</small></span>
         </label>
         <ReplayPacingControl value={pacing} disabled={connection.snapshot().busy} onValueChange={setPacing} /></details>}
       <Flex className="dialog-actions" gap="2"><Button type="button" variant="soft" color="gray"
+        disabled={connection.snapshot().busy}
         onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={connection.snapshot().busy}>
         {connection.snapshot().busy ? "正在提交…" : independent ? "开始独立复跑" : mode === "trial" ? "开始试跑" : "开始运行"}</Button></Flex>
     </form>}

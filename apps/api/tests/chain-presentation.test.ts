@@ -6,7 +6,7 @@ import {
   type ChainPresentationContent, type StableChainNode, type TaskChain,
 } from "@browser-capture/contracts"
 import { executableChainDigest } from "@browser-capture/runtime"
-import { capabilityDescriptor, replaceCapability } from "../src/task-chain/capability-descriptors.js"
+import { CAPABILITY_DESCRIPTOR_REGISTRY_VERSION, capabilityDescriptors } from "../src/task-chain/capability-descriptors.js"
 import { createChainPresentation, createStepChainPresentation } from "../src/task-chain/presentation.js"
 
 test("阶段图服务端校验覆盖节点、入口、出口和布局", () => {
@@ -35,12 +35,9 @@ test("步骤展示只改变冻结的 presentation，不改写执行图", () => {
     /链路展示结构与当前执行图不一致/)
 })
 
-test("descriptor 只允许精确匹配的通用能力", () => {
-  assert.equal(capabilityDescriptor("browser.workflow-step", 2)?.targetMode, "live_browser_picker")
-  assert.equal(capabilityDescriptor("browser.workflow-step", 1), null)
-  const unknown = fixtureChain(randomUUID())
-  assert.throws(() => replaceCapability(unknown, { type: "replace_capability", nodeId: "first",
-    capability: { name: "browser.unknown", version: 1 }, config: {} }), /没有可编辑 descriptor/)
+test("展示版本保留精确的 descriptor registry 标识", () => {
+  assert.equal(CAPABILITY_DESCRIPTOR_REGISTRY_VERSION, "bat-capability-descriptors/v1")
+  assert.equal(capabilityDescriptors().find((item) => item.capability.name === "browser.workflow-step")?.capability.version, 2)
 })
 
 function fixtureChain(taskId: string): TaskChain {

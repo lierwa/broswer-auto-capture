@@ -91,6 +91,8 @@ export const taskPlanSchema = z.object({
   requirement: requirementReferenceSchema, summary: textSchema,
   // WHY：入口由需求和规划确定，不是用户每次复跑填写的业务输入；optional 只用于读取旧计划。
   entryUrls: taskPlanEntryUrlsSchema.optional(),
+  // WHY：交付活页面与数据结果独立；旧计划缺失时只能表示无交付约定，不能倒推为已留窗。
+  browserHandoff: z.enum(["keep_open", "close"]).optional(),
   inputContract: taskDataContractSchema, outputContract: taskDataContractSchema,
   steps: z.array(taskPlanStepSchema).min(1).max(100), output: valueBindingSchema, budget: budgetSchema,
   completion: z.array(completionConditionSchema).min(1),

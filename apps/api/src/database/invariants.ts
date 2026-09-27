@@ -23,6 +23,10 @@ export function validateState(input: InterviewState) {
     }
   }
   for (const resolution of state.sourceResolutions.filter((item) => item.status === "open" || item.status === "needs_clarification")) {
+    // WHY：同一用户消息可提及多个 URL；尚未轮到展示的原文候选保持待决，不伪造 Question 归属。
+    if (resolution.status === "open" && resolution.provider === "user_provided"
+      && resolution.outcome === "provided" && resolution.questionId === null
+      && resolution.selectedCandidateId === null && resolution.candidates.length === 1) continue
     if (!resolution.questionId || !state.unresolved.some((question) => question.id === resolution.questionId)) {
       throw new Error("来源解析缺少 Question 归属")
     }

@@ -42,6 +42,7 @@ export const audits = sqliteTable("audits", {
 }, (table) => [primaryKey({ columns: [table.taskId, table.ordinal] })])
 export const operations = sqliteTable("operations", {
   scope: text().notNull(), requestId: text().notNull(), digest: text().notNull(), resultId: text().notNull(),
+  taskId: text().references(() => tasks.id),
 }, (table) => [primaryKey({ columns: [table.scope, table.requestId] })])
 export const imports = sqliteTable("imports", { id: text().primaryKey(), digest: text().notNull(), createdAt: text().notNull() })
 export const aiSettings = sqliteTable("aiSettings", {
@@ -68,7 +69,7 @@ export const taskContracts = sqliteTable("taskContracts", {
   body: text({ mode: "json" }).$type<TaskContract>().notNull(), createdAt: text().notNull(), updatedAt: text().notNull(),
 }, (table) => [uniqueIndex("task_contract_identity").on(table.kind, table.entityId, table.version)])
 export const taskAuthoringJobs = sqliteTable("taskAuthoringJobs", {
-  id: text().primaryKey(), taskId: taskId(), type: text({ enum: ["plan", "chain", "prepare", "repair", "adjustment"] }).notNull(),
+  id: text().primaryKey(), taskId: taskId(), type: text({ enum: ["plan", "chain", "prepare", "repair"] }).notNull(),
   status: text().notNull(), sequence: integer().notNull(), updatedAt: text().notNull(),
   body: text({ mode: "json" }).$type<TaskAuthoringJob>().notNull(),
 })

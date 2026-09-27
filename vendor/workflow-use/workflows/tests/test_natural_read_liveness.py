@@ -7,6 +7,7 @@ from workflow_use.hybrid.action_dispatch import not_dispatched_coverage
 from workflow_use.hybrid.coverage import unused_verified_dom_read_coverage, validate_coverage
 from workflow_use.hybrid.dom_evidence import DomQueryEvidence, DomScope
 from workflow_use.hybrid.evidence import ActionCoverage, EvidenceRef, ObservationFact, digest
+from workflow_use.hybrid.natural_compile import natural_postconditions
 from workflow_use.hybrid.natural_read_liveness import (
     consumed_query_ids,
     prune_unused_queries,
@@ -147,6 +148,47 @@ class NaturalReadLivenessTests(unittest.TestCase):
         self.assertEqual(issues, [])
         self.assertEqual(len(retained), len(segments))
         self.assertEqual(coverage[0].disposition, 'compiled')
+
+    def test_scroll_keeps_physical_effect_after_all_following_reads_are_pruned(self):
+        trace, segments, ledger = self.fixture()
+        producer = trace.actions[0]
+        producer.name, producer.effect = 'scroll', 'ui_state'
+        producer.args = {'down': True, 'pages': 1}
+        before, after = trace.observations[:2]
+        before.facts.append(fact('scroll-before', 'scroll_position', '{"x":0,"y":0}'))
+        after.facts.append(fact('scroll-after', 'scroll_position', '{"x":0,"y":600}'))
+        consumer = consumer_readiness_by_action(trace)[producer.id]
+        conditions, refs, gaps = natural_postconditions(producer, before, after, None, [], consumer)
+        self.assertEqual(gaps, [])
+        segments[0]['postconditions'] = conditions
+        segments[0]['proofRefs'] = [ref.model_dump(mode='json') for ref in refs]
+        segments[-1]['bindings'] = []
+        retained, coverage, _consumed, gaps = prune_unused_queries(
+            SimpleNamespace(trace=trace), REGISTRY, segments, ledger)
+
+        self.assertEqual(gaps, [])
+        self.assertEqual(rebind_consumer_readiness(trace, retained, coverage), [])
+        self.assertEqual([segment['id'] for segment in retained], ['s-a-0001', 's-a-0005'])
+        self.assertEqual(retained[0]['postconditions'][0]['kind'], 'scroll_position')
+        self.assertEqual(retained[0]['postconditions'][0]['clauseRef'], 'scroll-after')
+
+    def test_lost_only_consumer_proof_returns_gap_without_invalid_segment(self):
+        trace, segments, ledger = self.fixture()
+        segments[0]['postconditions'] = segments[0]['postconditions'][1:]
+        segments[-1]['bindings'] = []
+        ledger.insert(0, ActionCoverage(actionRef='a-0001', disposition='compiled',
+                                       ownerSegmentId='s-a-0001', evidenceRefs=[REF]))
+        retained, coverage, _consumed, gaps = prune_unused_queries(
+            SimpleNamespace(trace=trace), REGISTRY, segments, ledger)
+
+        self.assertEqual(gaps, [])
+        gaps = rebind_consumer_readiness(trace, retained, coverage)
+        self.assertEqual([gap.reason for gap in gaps], ['consumer_readiness_live_read_required'])
+        self.assertEqual([segment['id'] for segment in retained], ['s-a-0005'])
+        self.assertTrue(all(segment['postconditions'] for segment in retained))
+        self.assertEqual(coverage[0].disposition, 'not_compilable')
+        self.assertIsNone(coverage[0].ownerSegmentId)
+        self.assertEqual(coverage[0].evidenceRefs, [REF])
 
 
 if __name__ == '__main__':

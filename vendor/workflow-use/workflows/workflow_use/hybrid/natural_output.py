@@ -7,6 +7,8 @@ from .evidence import Contract, EvidenceRef, ObservationFact, digest, gap
 from .natural_reads import VerifiedNaturalRead, schema_at_path, value_at_path
 from .natural_result_binding import build_result_derivation_fields
 from .summary_compile import compiled_summary_fields, summary_capture_fields
+from .method_read_schema import compatible_read_schema, representative_schema
+from .result_schema import ResultSchemaFailure, assert_result_count_schema, assert_result_read_schema
 
 
 class NaturalOutputField(Contract):
@@ -50,15 +52,25 @@ class UncoveredOutputPaths(ValueError):
 
 
 def build_verified_output_assembly(observations, final_output, output_schema, put_evidence, *,
-                                   input_value=None, input_schema=None, requirement_text='', result_spec=None):
+                                   input_value=None, input_schema=None, requirement_text='', result_spec=None,
+                                   selected_read_refs=None):
     """Build one fact only when verified reads cover every final-output leaf exactly once."""
     facts = _facts(observations, 'verified_natural_read')
     summary_facts = _facts(observations, 'verified_natural_summary')
     actions = _action_refs([*facts, *summary_facts])
     try:
         Draft202012Validator.check_schema(output_schema)
-        Draft202012Validator(output_schema).validate(final_output)
-        reads = [_verified_read(fact) for _observation, fact in facts]
+        if selected_read_refs is not None:
+            facts = [(observation, fact) for observation, fact in facts
+                     if fact.value.get('readRef') in selected_read_refs]
+        sample_paths = [fact.value['outputPath'] for _observation, fact in facts
+                        if fact.value.get('coverage') is not None]
+        Draft202012Validator(representative_schema(
+            output_schema, sample_paths, result_spec=result_spec, output=final_output)).validate(final_output)
+        # WHY：同一次探索可有纯 DOM 范围查询和真正的输出读取；只让 schema 与最终值
+        # 同时相等的事实进入结果装配，其余读取仍由动作覆盖与消费者绑定独立核验。
+        reads = [value for _observation, fact in facts
+                 if _matches_final_output(value := _verified_read(fact), final_output, output_schema)]
         summaries = summary_capture_fields(observations, output_schema)
         read_fields = [_field(value) for value in reads]
         fields = [*read_fields, *[field for field, _actual in summaries]]
@@ -72,10 +84,11 @@ def build_verified_output_assembly(observations, final_output, output_schema, pu
             expected = _value_at(final_output, field['path'])
             source_schema = schema_at_path(value.specification.outputSchema, value.readPath)
             target_schema = schema_at_path(output_schema, field['path'])
-            if source_schema != target_schema:
+            if not compatible_read_schema(source_schema, target_schema):
                 raise ValueError('natural_output_schema_mismatch')
             Draft202012Validator(value.specification.outputSchema).validate(value.output)
-            Draft202012Validator(target_schema).validate(actual)
+            target_check = representative_schema(target_schema, [[]]) if value.coverage else target_schema
+            Draft202012Validator(target_check).validate(actual)
             if digest(actual) != digest(expected):
                 raise ValueError('natural_output_value_mismatch')
         for field, actual in summaries:
@@ -97,7 +110,8 @@ def build_verified_output_assembly(observations, final_output, output_schema, pu
                            sourceRefs=[reference]), []
 
 
-def compile_natural_output_assembly(trace, output_schema, segments, runtime_input_schema=None, requirement_text=''):
+def compile_natural_output_assembly(trace, output_schema, segments, runtime_input_schema=None,
+                                    requirement_text='', result_spec=None):
     """Compile a unique assembly fact only when every binding matches its read fact and segment."""
     matches = _facts(trace.observations, 'verified_output_assembly')
     if not matches:
@@ -119,9 +133,14 @@ def compile_natural_output_assembly(trace, output_schema, segments, runtime_inpu
         if sorted(map(digest, actual)) != sorted(map(digest, expected)):
             raise ValueError('natural_output_fields_mismatch')
         reconstructed = _assemble_verified_output(output_schema, compiled)
-        Draft202012Validator(output_schema).validate(reconstructed)
+        sample_paths = [fact.value['outputPath'] for _obs, fact in _facts(trace.observations, 'verified_natural_read')
+                        if fact.value.get('coverage') is not None and _field(_verified_read(fact)) in actual]
+        Draft202012Validator(representative_schema(
+            output_schema, sample_paths, result_spec=result_spec, output=reconstructed)).validate(reconstructed)
         if digest(reconstructed) != value.outputDigest:
             raise ValueError('natural_output_digest_mismatch')
+    except ResultSchemaFailure as error:
+        return None, [gap('missing_effect_proof', error.action_refs, str(error), 'collect_evidence')]
     except Exception:
         return None, [_assembly_gap([], 'natural_output_assembly_invalid', invalid=True)]
     return {'sourceRef': fact.id, 'fields': actual, 'schema': value.schemaValue,
@@ -130,8 +149,11 @@ def compile_natural_output_assembly(trace, output_schema, segments, runtime_inpu
 
 def _compiled_fields(trace, segments, output_schema, assembly_fields, runtime_input_schema, requirement_text):
     output = []
+    assembled = [field.executable() for field in assembly_fields]
     for observation, fact in _facts(trace.observations, 'verified_natural_read'):
         value = _verified_read(fact)
+        if _field(value) not in assembled:
+            continue
         action = next((item for item in trace.actions if item.id == value.actionRef), None)
         if action is None or action.postObservationRef != observation.id:
             raise ValueError('natural_output_read_observation_mismatch')
@@ -147,16 +169,15 @@ def _compiled_fields(trace, segments, output_schema, assembly_fields, runtime_in
         source_schema = schema_at_path(value.specification.outputSchema, value.readPath)
         target_schema = schema_at_path(output_schema, field['path'])
         actual = value_at_path(value.output, value.readPath)
-        if source_schema != target_schema:
-            raise ValueError('natural_output_schema_mismatch')
+        assert_result_read_schema(source_schema, target_schema, value)
         Draft202012Validator(value.specification.outputSchema).validate(value.output)
-        Draft202012Validator(target_schema).validate(actual)
+        target_check = representative_schema(target_schema, [[]]) if value.coverage else target_schema
+        Draft202012Validator(target_check).validate(actual)
+        if value.coverage is not None:
+            done = next((action for action in reversed(trace.actions) if action.name == 'done'), None)
+            if done is None or value.readRef not in done.args.get('readRefs', []):
+                raise ValueError('natural_output_read_reference_unselected')
         output.append((field, actual))
-    compiled_reads = [item for item in segments if _item(_item(item, 'operation'), 'name') == 'browser.read-fields']
-    if len(compiled_reads) != len({value.actionRef for value in
-                                   [_verified_read(fact) for _observation, fact in _facts(
-                                       trace.observations, 'verified_natural_read')]}):
-        raise ValueError('natural_output_read_segment_mismatch')
     output.extend(compiled_summary_fields(trace, segments, output_schema))
     dynamic = {digest(field): actual for field, actual in output}
     for field in assembly_fields:
@@ -183,8 +204,9 @@ def _compiled_fields(trace, segments, output_schema, assembly_fields, runtime_in
             matches = [actual for candidate, actual in output if candidate['binding'] == source]
             if len(matches) != 1 or not isinstance(matches[0], list):
                 raise ValueError('natural_output_count_source_invalid')
+            _assert_count_schema(trace, source, target_schema)
             actual = len(matches[0])
-            Draft202012Validator(target_schema).validate(actual)
+            # WHY：派生样本先由真实数组算出；同版 ResultSpec 的代表校验在完整重建后统一执行。
             output.append((executable, actual))
             continue
         else:
@@ -194,6 +216,13 @@ def _compiled_fields(trace, segments, output_schema, assembly_fields, runtime_in
     if len(output) != len(assembly_fields):
         raise ValueError('natural_output_fields_mismatch')
     return output
+
+
+def _assert_count_schema(trace, source, target_schema):
+    for _observation, fact in _facts(trace.observations, 'verified_natural_read'):
+        read = _verified_read(fact)
+        if _field(read)['binding'] == source:
+            assert_result_count_schema(target_schema, read)
 
 
 def _verified_read(fact):
@@ -209,6 +238,16 @@ def _assert_fact_digest(fact):
 def _field(value):
     return NaturalOutputField(binding={'source': 'node', 'nodeId': value.actionRef, 'path': value.readPath},
                               path=value.outputPath).executable()
+
+
+def _matches_final_output(value, final_output, output_schema):
+    try:
+        return (compatible_read_schema(schema_at_path(value.specification.outputSchema, value.readPath),
+                schema_at_path(output_schema, value.outputPath))
+                and digest(value_at_path(value.output, value.readPath))
+                == digest(_value_at(final_output, value.outputPath)))
+    except Exception:
+        return False
 
 
 def _static_output_fields(final_output, output_schema, covered, input_value, input_schema, requirement_text):

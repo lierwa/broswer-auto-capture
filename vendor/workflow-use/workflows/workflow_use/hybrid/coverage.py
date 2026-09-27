@@ -4,15 +4,31 @@ import re
 
 from .action_dispatch import NOT_DISPATCHED_RULE, not_dispatched_coverage
 from .dom_evidence import DomQueryEvidence
-from .evidence import ActionCoverage, NormalizedTrace, gap
+from .evidence import ActionCoverage, NormalizedTrace, digest, gap
 from .natural_reads import VerifiedNaturalRead, validate_compiled_query_read
+from .native_discovery import native_discovery_proof
 
 NATIVE_TEXT_LOOKUP_RULE = 'native_text_lookup_observation/v1'
 DOM_NODE_INSPECTION_RULE = 'dom_node_inspection_observation/v1'
 NATIVE_EXTRACTION_RULE = 'native_extraction_observation/v1'
 EXECUTION_EXTRACTION_RULE = 'execution_extraction_observation/v1'
 FAILED_NATIVE_DOM_LOOKUP_RULE = 'failed_native_dom_lookup_observation/v1'
+PREPARATION_SELECTION_VALIDATION_RULE = 'preparation_selection_validation/v1'
 URL_DIGEST = re.compile(r'^[a-f0-9]{64}$')
+
+
+def selection_validation_coverage(registry, action):
+    """A registered pure preparation computation owns no replay browser segment."""
+    if (registry is None or action.name != 'bat_validate_selection' or action.effect != 'none'
+            or action.status not in ('succeeded', 'failed') or action.resultRef is None):
+        return None
+    try:
+        registry.validate_action(action.name, action.args)
+    except Exception:
+        return None
+    # WHY：成功与失败都保留真实校验回执；纯准备计算不得混入普通链路或隐藏浏览器副作用。
+    return ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
+                          exclusionRule=PREPARATION_SELECTION_VALIDATION_RULE, evidenceRefs=[action.resultRef])
 
 
 # WHY: search_page/dropdown_options 仅提供原生只读文本发现；选择值仍需输入或需求绑定，不能成为复跑输出。
@@ -186,6 +202,72 @@ def unused_verified_dom_read_coverage(registry, action, pre, post):
                           exclusionRule='native_dom_lookup_observation/v1', evidenceRefs=refs)
 
 
+def native_dom_lookup_observation_coverage(registry, action, pre, post, *, allow_complete_discovery=False):
+    """Classify a proven local discovery query without lending it business-read semantics."""
+    if (registry is None or action.name != 'find_elements' or action.effect != 'read'
+            or action.status != 'succeeded' or action.resultRef is None or pre is None or post is None
+            or pre.id != action.preObservationRef or post.id != action.postObservationRef
+            or not pre.tabId or pre.tabId != post.tabId or pre.url != post.url):
+        return None
+    before = [fact for fact in pre.facts if fact.kind == 'url_digest']
+    after = [fact for fact in post.facts if fact.kind == 'url_digest']
+    queries = [fact for fact in post.facts if fact.kind == 'dom_query'
+               and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
+    if (len(before) != 1 or len(after) != 1 or len(queries) != 1
+            or not isinstance(before[0].value, str) or not URL_DIGEST.fullmatch(before[0].value)
+            or before[0].value != after[0].value):
+        return None
+    try:
+        registry.validate_action(action.name, action.args)
+        query = DomQueryEvidence.model_validate(queries[0].value)
+        args = action.args
+        if (query.query.kind != 'css' or query.query.value != args.get('selector')
+                or query.includeText != (args.get('include_text', True) is True)
+                or query.requestedAttributes != sorted(set(args.get('attributes') or []))
+                or query.maxResults != args.get('max_results', 50)
+                or query.scope.tabId != pre.tabId or query.scope.frameId is not None
+                or query.scope.url != pre.url or query.scope.urlDigest != before[0].value
+                or not queries[0].sourceRefs or any(ref.digest != digest(query.model_dump(mode='json'))
+                                                  for ref in queries[0].sourceRefs)):
+            return None
+        # WHY：只有最终消费分析证明无执行依赖时，完整文本探查才可保留为准备审计。
+        # 已有 verified read 仍走独立的读取活性验证；不能靠“只读”吞掉业务值来源。
+        if query.complete and ((query.includeText and not allow_complete_discovery)
+                               or query.total is None or query.truncated is not False
+                               or query.total != query.showing or query.total > query.maxResults):
+            return None
+        if any(fact.kind == 'verified_natural_read' and isinstance(fact.value, dict)
+               and fact.value.get('actionRef') == action.id for fact in post.facts):
+            return None
+        discovery_refs = native_discovery_proof(action, pre, post, query) if (
+            allow_complete_discovery and query.complete and query.includeText) else []
+        if discovery_refs is None:
+            return None
+    except Exception:
+        return None
+    refs = _unique_refs([action.resultRef, *pre.sourceRefs, *post.sourceRefs,
+                        *before[0].sourceRefs, *after[0].sourceRefs, *queries[0].sourceRefs, *discovery_refs])
+    return ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
+                          exclusionRule='native_dom_lookup_observation/v1', evidenceRefs=refs)
+
+
+def native_dom_lookup_exclusion(registry, action, pre, post, row, consumed_query_ids):
+    if row.exclusionRule != 'native_dom_lookup_observation/v1':
+        return False
+    if consumed_query_ids is not None and action.id in consumed_query_ids:
+        return False
+    expected = native_dom_lookup_observation_coverage(registry, action, pre, post)
+    if expected is not None:
+        return row == expected
+    expected = unused_verified_dom_read_coverage(registry, action, pre, post)
+    if consumed_query_ids is None:
+        return False
+    if expected is not None:
+        return row == expected
+    expected = native_dom_lookup_observation_coverage(registry, action, pre, post, allow_complete_discovery=True)
+    return expected is not None and row == expected
+
+
 def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segment_ids: set[str], *, registry=None,
                       result_spec=None, output_schema=None, consumed_query_ids=None):
     issues = []
@@ -206,18 +288,8 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
         if row.disposition == 'agent_internal':
             done = (action.effect == 'none' and action.name == 'done'
                     and row.exclusionRule == 'agent_done_metadata/v1')
-            lookup = (action.effect == 'read' and action.name == 'find_elements' and action.status == 'succeeded'
-                      and row.exclusionRule == 'native_dom_lookup_observation/v1' and row.evidenceRefs)
-            post = observations.get(action.postObservationRef)
-            if lookup and post is not None and any(
-                    fact.kind == 'dom_query' and isinstance(fact.value, dict)
-                    and fact.value.get('actionRef') == action.id and fact.value.get('complete') is True
-                    for fact in post.facts):
-                expected = unused_verified_dom_read_coverage(
-                    registry, action, observations.get(action.preObservationRef),
-                    observations.get(action.postObservationRef))
-                lookup = (consumed_query_ids is not None and action.id not in consumed_query_ids
-                          and expected is not None and row == expected)
+            lookup = native_dom_lookup_exclusion(registry, action, observations.get(action.preObservationRef),
+                                                 observations.get(action.postObservationRef), row, consumed_query_ids)
             failed_lookup = failed_native_dom_lookup_probe(
                 registry, action, observations.get(action.preObservationRef),
                 observations.get(action.postObservationRef), row)
@@ -242,14 +314,17 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
                        and row.evidenceRefs == dispatch.evidenceRefs)
             field_probe = failed_bat_field_read_probe(registry, action, row)
             wait_probe = failed_bat_wait_probe(registry, trace, action, row)
+            selection_probe = selection_validation_coverage(registry, action)
+            selection_probe = selection_probe is not None and row == selection_probe
             if (not done and not lookup and not failed_lookup and not text_lookup and not inspection and not extraction
                     and not execution_extraction
-                    and not skipped and not field_probe and not wait_probe):
+                    and not skipped and not field_probe and not wait_probe and not selection_probe):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'invalid_exclusion', 'reject_trace'))
         if row.disposition == 'supporting':
-            if (action.name != 'wait' or action.effect != 'none' or action.status != 'succeeded'
+            from .natural_repeat import validate_repeat_coverage
+            if (not validate_repeat_coverage(trace, row) and (action.name != 'wait' or action.effect != 'none' or action.status != 'succeeded'
                     or row.exclusionRule not in ('unchanged_wait_after_proven_effect/v1', 'bounded_postcondition_wait/v1')
-                    or not row.evidenceRefs):
+                    or not row.evidenceRefs)):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'unproven_supporting_action', 'reject_trace'))
         if row.disposition == 'retry_attempt':
             successor = next((a for a in trace.actions if a.retryOf == action.id and a.status == 'succeeded'), None)

@@ -14,14 +14,19 @@ import type { ModelAudit } from "./model-bridge.js"
 import { runnerAuthorRequestSchema, runnerAuthorResultSchema, runnerCloseRequestSchema,
   runnerReplayRequestSchema, runnerReplayResultSchema, runnerResponseSchema, runnerStartRequestSchema,
   type RunnerRequest } from "./protocol.js"
-import { hybridProfilePickTargetRequestSchema, hybridProfilePickTargetResultSchema,
-  hybridProfileStartRequestSchema, hybridStartRequestSchema, type HybridRunnerRequest } from "./hybrid-protocol.js"
+import { hybridProfileStartRequestSchema, hybridStartRequestSchema, hybridHandoffRequestSchema,
+  hybridManagedWindowRequestSchema, hybridManagedWindowResultSchema, hybridWindowLeaseSchema,
+  profileOwnerRequestSchema, profileRecoverRequestSchema,
+  type HybridRunnerRequest } from "./hybrid-protocol.js"
 import { withHybridAuthoring, recompileHybridSource, type HybridAuthoringProgress,
   type HybridAuthorSession } from "./hybrid-exploration.js"
 import { cleanupReport, pythonCleanupResultSchema, type RunnerCleanupReport,
   type RunnerCleanupCode, type RunnerCleanupStage } from "./cleanup.js"
 import { verifyForkSource } from "../../../../vendor/workflow-use/verify-source.mjs"
 import { browserAllowedSites } from "./site-scope.js"
+import { runnerOwnershipSchema, type RunnerOwnership } from "./runner-ownership.js"
+import { authoringHumanEventSchema, authoringHumanResumeResultSchema, hybridAuthorResumeRequestSchema,
+  type AuthoringHumanHandlers } from "./hybrid-author-human.js"
 
 export type UpstreamAuthorResult = ReturnType<typeof runnerAuthorResultSchema.parse> & { modelCalls: ModelCallReport[] }
 export type UpstreamReplayResult = ReturnType<typeof runnerReplayResultSchema.parse> & { modelCalls: ModelCallReport[] }
@@ -37,12 +42,17 @@ export interface UpstreamBrowserRuntime {
   withSession<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string },
     work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T>
   withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
-    headless?: boolean;
+    headless?: boolean; managedWindow?: { ownerId: string; resume: boolean };
+    handoffPurpose?: () => "delivery" | "human_wait" | null;
+    onHandoff?: (purpose: "delivery" | "human_wait", lease: ReturnType<typeof hybridWindowLeaseSchema.parse>) => void;
+    onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
     onCleanup?: (report: RunnerCleanupReport) => void },
     work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T>
   withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
-    onProgress?: (event: HybridAuthoringProgress) => void },
+    onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
     work: (session: HybridAuthorSession) => Promise<T>): Promise<T>
+  managedWindowAction?(input: { action: "inspect" | "focus" | "end" | "verify_closed"; ownerId: string; leaseId: string }):
+    Promise<{ window: ReturnType<typeof hybridManagedWindowResultSchema.parse>; report: RunnerCleanupReport }>
 }
 
 export class UpstreamProtocolError extends Error {
@@ -62,21 +72,34 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
   }
 
   withAuthoring<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
-    onProgress?: (event: HybridAuthoringProgress) => void },
+    onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
     work: (session: HybridAuthorSession) => Promise<T>): Promise<T> {
     return withHybridAuthoring({ ...input, root: this.options.root, directory: this.options.directory,
       subject: this.options.subject }, work)
   }
 
   withCapabilities<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
-    headless?: boolean;
+    headless?: boolean; managedWindow?: { ownerId: string; resume: boolean };
+    handoffPurpose?: () => "delivery" | "human_wait" | null;
+    onHandoff?: (purpose: "delivery" | "human_wait", lease: ReturnType<typeof hybridWindowLeaseSchema.parse>) => void;
+    onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
     onCleanup?: (report: RunnerCleanupReport) => void },
     work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T> {
     return withHybridCapabilities({ root: this.options.root, directory: this.options.directory, ownerId: input.ownerId,
       signal: input.signal, allowedOrigins: input.allowedOrigins,
       ...(input.headless !== undefined ? { headless: input.headless } : {}),
+      ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}),
+      ...(input.handoffPurpose ? { handoffPurpose: input.handoffPurpose } : {}),
+      ...(input.onHandoff ? { onHandoff: input.onHandoff } : {}),
+      ...(input.onHandoffFailure ? { onHandoffFailure: input.onHandoffFailure } : {}),
       ...(input.onCleanup ? { onCleanup: input.onCleanup } : {}),
       canRestoreByNavigation: input.canRestoreByNavigation ?? false }, work)
+  }
+
+  managedWindowAction(input: { action: "inspect" | "focus" | "end" | "verify_closed"; ownerId: string; leaseId: string }) {
+    const runner = new RunnerProcess(this.options.root, new AbortController().signal)
+    return runner.managedWindowAction({ ...input,
+      profilePath: path.join(this.options.directory, "browser-profile", "default") })
   }
 
   async withSession<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string },
@@ -89,11 +112,14 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
 export class RunnerProcess {
   private child: ChildProcess | null = null
   private temporaryDirectory: string | null = null
-  private readonly pending = new Map<string, { resolve(value: JsonValue): void; reject(error: Error): void }>()
+  private readonly pending = new Map<string, { resolve(value: JsonValue): void; reject(error: unknown): void;
+    onHumanWait?: AuthoringHumanHandlers["onHumanWait"]; waitpointId?: string; resuming?: boolean;
+    resumes?: { authorRequestId: string; waitpointId: string } }>()
   private lines: readline.Interface | null = null
   private diagnosticLines: readline.Interface | null = null
   private termination: Promise<void> | null = null
   private cleanup: Promise<RunnerCleanupReport> | null = null
+  private managedWindow: { ownerId: string; profilePath: string } | null = null
   constructor(private readonly root: string, private readonly signal: AbortSignal,
     private readonly onDiagnostic?: (line: string) => void,
     private readonly lifecycle: { runnerScript?: string; closeTimeoutMs?: number; childCloseTimeoutMs?: number;
@@ -110,28 +136,71 @@ export class RunnerProcess {
   }
 
   async startHybrid(config: Omit<ReturnType<typeof hybridStartRequestSchema.parse>["config"], "allowedSites">) {
+    const endpoint = this.envValue("BAT_UPSTREAM_BROWSER_CDP_URL")
+    // WHY：显式本机连接复用用户浏览器；所有权只覆盖任务窗口，不能沿用独占进程清理。
+    const connection = endpoint ? { ...config, managedWindow: undefined,
+      existingBrowser: { cdpUrl: endpoint, ownerId: config.managedWindow?.ownerId ?? randomUUID(),
+        resume: config.managedWindow?.resume ?? false } } : config
+    const windowOwner = connection.existingBrowser ?? connection.managedWindow
+    this.managedWindow = windowOwner ? { ownerId: windowOwner.ownerId,
+      profilePath: config.profilePath } : null
+    const request = hybridStartRequestSchema.parse({ id: randomUUID(), type: "hybrid_start",
+      config: { ...connection, allowedSites: browserAllowedSites(config.allowedOrigins) } })
     await this.launch("main.py")
-    await this.request(hybridStartRequestSchema.parse({ id: randomUUID(), type: "hybrid_start",
-      config: { ...config, allowedSites: browserAllowedSites(config.allowedOrigins) } }))
+    await this.request(request)
   }
 
-  async startProfile(config: ReturnType<typeof hybridProfileStartRequestSchema.parse>["config"]) {
+  async startProfile(config: ReturnType<typeof hybridProfileStartRequestSchema.parse>["config"],
+    onOwnership: (owner: RunnerOwnership) => Promise<void>) {
+    this.managedWindow = { ownerId: config.ownerId, profilePath: config.profilePath }
     await this.launch("main.py")
+    const owner = runnerOwnershipSchema.parse(await this.request(profileOwnerRequestSchema.parse({
+      id: randomUUID(), type: "profile_owner", ownerId: config.ownerId, launcherPid: this.child?.pid })))
+    if (owner.ownerId !== config.ownerId || path.resolve(owner.temporaryDirectory) !== this.temporaryDirectory
+      || owner.launcher.pid !== this.child?.pid) throw new Error("hybrid_profile_runner_owner_mismatch")
+    await onOwnership(owner)
     await this.request(hybridProfileStartRequestSchema.parse({ id: randomUUID(), type: "profile_start", config }))
   }
 
-  async pickProfileTarget(timeoutMs = 180_000) {
-    const request = hybridProfilePickTargetRequestSchema.parse({ id: randomUUID(), type: "profile_pick_target", timeoutMs })
-    return hybridProfilePickTargetResultSchema.parse(await this.request(request))
+  async recoverProfile(input: Omit<ReturnType<typeof profileRecoverRequestSchema.parse>, "id" | "type">) {
+    await this.launch("main.py")
+    let window: ReturnType<typeof hybridManagedWindowResultSchema.parse>
+    try { window = hybridManagedWindowResultSchema.parse(await this.request(profileRecoverRequestSchema.parse({
+      id: randomUUID(), type: "profile_recover", ...input }))) }
+    catch (error) { await this.close(); throw error }
+    return { window, report: await this.close() }
   }
 
   async startCompiler() { await this.launch("main.py") }
+
+  async handoff(): Promise<{ report: RunnerCleanupReport; lease: ReturnType<typeof hybridWindowLeaseSchema.parse> }> {
+    if (!this.managedWindow) throw new Error("hybrid_managed_window_not_started")
+    const lease = hybridWindowLeaseSchema.parse(await this.request(hybridHandoffRequestSchema.parse({
+      id: randomUUID(), type: "hybrid_handoff" })))
+    const report = await this.close()
+    return { report, lease }
+  }
+
+  async managedWindowAction(input: { action: "inspect" | "focus" | "end" | "verify_closed"; profilePath: string;
+    ownerId: string; leaseId: string }) {
+    await this.launch("main.py")
+    let window: ReturnType<typeof hybridManagedWindowResultSchema.parse>
+    try {
+      window = hybridManagedWindowResultSchema.parse(await this.request(hybridManagedWindowRequestSchema.parse({
+        id: randomUUID(), type: "hybrid_managed_window", ...input })))
+    } catch (error) {
+      await this.close()
+      throw error
+    }
+    return { window, report: await this.close() }
+  }
 
   private async launch(entry: string) {
     this.signal.throwIfAborted()
     if (this.child) throw new Error("upstream_runner_already_started")
     if (this.cleanup) throw new Error("upstream_runner_already_closed")
-    this.temporaryDirectory = await mkdtemp(path.join(tmpdir(), "bat-hybrid-owner-"))
+    const ownerDirectory = await mkdtemp(path.join(tmpdir(), "bat-hybrid-owner-"))
+    this.temporaryDirectory = ownerDirectory
     const python = this.envValue("BAT_UPSTREAM_BROWSER_PYTHON")
       ?? path.join(this.root, "work", "upstream-browser-hybrid", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python")
     const script = this.lifecycle.runnerScript ?? path.join(this.root, "apps", "api", "python", "browser_use_runner", entry)
@@ -140,6 +209,9 @@ export class RunnerProcess {
       PYTHONPATH: [path.join(this.root, "vendor", "workflow-use", "workflows"), path.join(this.root, "apps", "api", "python")].join(path.delimiter),
       PYTHONDONTWRITEBYTECODE: "1", ANONYMIZED_TELEMETRY: "false",
       BROWSER_USE_CLOUD_SYNC: "false", BROWSER_USE_SETUP_LOGGING: "false",
+      // WHY：Windows 持久 Profile 可能由较新的系统 Chrome 创建；交给现有 Browser-Use owner
+      // 查找系统浏览器，避免默认旧 Chromium 降级启动。owner 临时目录不含 bundled 浏览器。
+      ...(process.platform === "win32" ? { PLAYWRIGHT_BROWSERS_PATH: ownerDirectory } : {}),
       ...this.lifecycle.runnerEnvironment,
       ...(this.onDiagnostic ? { BAT_SOURCE_LIFECYCLE_DIAGNOSTICS: "1" } : {}) },
       stdio: ["pipe", "ignore", "ignore", "pipe", this.onDiagnostic ? "pipe" : "ignore"] })
@@ -155,9 +227,14 @@ export class RunnerProcess {
     }
     child.once("error", (error) => this.rejectAll(error))
     child.once("close", (code) => this.rejectAll(new Error(`upstream_runner_closed:${code ?? "signal"}`)))
-    const abort = () => { child.stdin?.end(); void this.terminate(child).catch(() => {}) }
+    const abort = () => {
+      // WHY：取消原因属于本次请求，进程退出只属于清理；必须先保留原 reason，避免被 exit code 覆盖。
+      this.rejectAll(this.signal.reason)
+      child.stdin?.end(); void this.terminate(child).catch(() => {})
+    }
     this.signal.addEventListener("abort", abort, { once: true })
     child.once("close", () => this.signal.removeEventListener("abort", abort))
+    if (this.signal.aborted) abort()
   }
 
   async author(input: Omit<ReturnType<typeof runnerAuthorRequestSchema.parse>, "id" | "type">) {
@@ -181,7 +258,8 @@ export class RunnerProcess {
           notRequired("child_exit"), notRequired("process_tree"))
       } else {
         await this.closeChild(child, stages)
-        activeResources = !hasExited(child)
+        activeResources = !hasExited(child) || (this.managedWindow !== null
+          && stages.some((stage) => stage.stage === "browser_close" && stage.status === "unconfirmed"))
       }
     } finally {
       this.lines?.close(); this.diagnosticLines?.close(); this.child = null
@@ -266,27 +344,63 @@ export class RunnerProcess {
     return hasExited(child)
   }
 
-  request(request: RunnerRequest | HybridRunnerRequest): Promise<JsonValue> {
+  request(request: RunnerRequest | HybridRunnerRequest, onHumanWait?: AuthoringHumanHandlers["onHumanWait"]): Promise<JsonValue> {
     this.signal.throwIfAborted()
     const child = this.child
     if (!child?.stdin?.writable) return Promise.reject(new Error("upstream_runner_unavailable"))
     return new Promise<JsonValue>((resolve, reject) => {
-      this.pending.set(request.id, { resolve, reject })
+      this.pending.set(request.id, { resolve, reject, ...(onHumanWait ? { onHumanWait } : {}),
+        ...(request.type === "hybrid_author_resume" ? { resumes: request } : {}) })
       child.stdin!.write(`${JSON.stringify(request)}\n`, (error) => { if (error) { this.pending.delete(request.id); reject(error) } })
     }).then((value) => { this.signal.throwIfAborted(); return value })
   }
   private accept(line: string) {
     let raw: unknown
     try { raw = JSON.parse(line) } catch { return this.rejectAll(new Error("upstream_protocol_invalid")) }
+    if (raw && typeof raw === "object" && "event" in raw) return this.acceptHumanWait(raw)
     const response = runnerResponseSchema.safeParse(raw)
     if (!response.success) return this.rejectAll(new Error("upstream_protocol_invalid"))
     const pending = this.pending.get(response.data.id)
     if (!pending) return
     this.pending.delete(response.data.id)
-    if (response.data.ok) pending.resolve(response.data.result)
+    if (response.data.ok) {
+      if (pending.resumes) {
+        const parsed = authoringHumanResumeResultSchema.safeParse(response.data.result)
+        if (!parsed.success) { pending.reject(new Error("upstream_human_resume_invalid")); return }
+        const author = this.pending.get(pending.resumes.authorRequestId)
+        // WHY：fd3 可在同一读事件内交付 ACK 和下一处等待；先清旧身份，Promise 回调不能阻挡新事件。
+        if (author?.waitpointId === pending.resumes.waitpointId) {
+          delete author.waitpointId; author.resuming = false
+        }
+      }
+      pending.resolve(response.data.result)
+    }
     else pending.reject(new UpstreamProtocolError(response.data.code, response.data.reason ?? null))
   }
-  private rejectAll(error: Error) { for (const pending of this.pending.values()) pending.reject(error); this.pending.clear() }
+  private acceptHumanWait(raw: unknown) {
+    const event = authoringHumanEventSchema.safeParse(raw)
+    if (!event.success) return this.rejectAll(new Error("upstream_human_protocol_invalid"))
+    const { id, wait } = event.data, pending = this.pending.get(id)
+    if (!pending?.onHumanWait || pending.waitpointId) {
+      return this.rejectAll(new Error("upstream_human_handler_unavailable"))
+    }
+    pending.waitpointId = wait.id
+    try {
+      pending.onHumanWait(wait, async () => {
+        // WHY：继续只作用于仍在等待的原请求；旧闭包或并发点击不能唤醒另一准备任务。
+        if (this.pending.get(id) !== pending || pending.waitpointId !== wait.id || pending.resuming) {
+          throw new Error("upstream_human_wait_changed")
+        }
+        pending.resuming = true
+        try {
+          const result = await this.request(hybridAuthorResumeRequestSchema.parse({ id: randomUUID(),
+            type: "hybrid_author_resume", authorRequestId: id, waitpointId: wait.id }))
+          authoringHumanResumeResultSchema.parse(result)
+        } finally { if (pending.waitpointId === wait.id) pending.resuming = false }
+      })
+    } catch (error) { this.rejectAll(error) }
+  }
+  private rejectAll(error: unknown) { for (const pending of this.pending.values()) pending.reject(error); this.pending.clear() }
 }
 
 class CloseProtocolTimeout extends Error {}

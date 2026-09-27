@@ -17,6 +17,7 @@ import type { AIModelProvider, PreparedAIModel, PreparedMainAIModel } from "../a
 import type { BrowserService } from "../browser/service.js"
 import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
 import type { RunnerCleanupReport } from "../upstream-browser/cleanup.js"
+import { hybridWindowLeaseSchema } from "../upstream-browser/hybrid-protocol.js"
 import type { TaskContractRepository } from "./repository.js"
 import { explorationStepSubmissionSchema, traceEvent, validateExplorationResult,
   type ExplorationStepResult, type ExplorationTrace } from "./exploration-trace.js"
@@ -39,6 +40,10 @@ type RuntimeGroup = Readonly<{
   scopeBudgets?: Readonly<Record<string, TaskBudget>>;
   onConsumption?: (scopeId: string, snapshot: BudgetSnapshot) => void;
   onCleanup?: (report: RunnerCleanupReport) => void;
+  managedWindow?: { ownerId: string; resume: boolean };
+  handoffPurpose?: () => "delivery" | "human_wait" | null;
+  onHandoff?: (purpose: "delivery" | "human_wait", lease: z.infer<typeof hybridWindowLeaseSchema>) => void;
+  onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
   pacing?: RuntimeNodePacing;
   browser?: TaskExecution["browser"];
 }>
@@ -245,6 +250,10 @@ export class TaskRuntimeHost {
       return this.upstream.withCapabilities<T>({ signal: input.signal, ownerId: input.browserRunId,
         allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation,
         ...(input.browser ? { headless: input.browser.headless } : {}),
+        ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}),
+        ...(input.handoffPurpose ? { handoffPurpose: input.handoffPurpose } : {}),
+        ...(input.onHandoff ? { onHandoff: input.onHandoff } : {}),
+        ...(input.onHandoffFailure ? { onHandoffFailure: input.onHandoffFailure } : {}),
         ...(input.onCleanup ? { onCleanup: input.onCleanup } : {}) }, (capabilities) =>
         work(this.executor(capabilities, input.purpose, input.signal, ledger, 0, input.pacing)))
     }

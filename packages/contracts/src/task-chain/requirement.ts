@@ -18,6 +18,8 @@ export const taskRequirementSchema = z.object({
     sources: z.array(z.object({ resolutionId: identitySchema, label: textSchema, url: z.string().url(),
       origin: z.string().url(), domain: textSchema, provider: textSchema,
       query: textSchema }).strict()),
+    // WHY：旧确认记录没有入口事实；optional 保持历史 digest 原样，新草案的确认门强制非空。
+    entries: z.array(z.object({ url: z.string().url(), resolutionId: identitySchema }).strict()).optional(),
     resultExpectation: textSchema, unresolvedItemCount: z.literal(0),
   }).strict().nullable().optional(),
 }).strict()

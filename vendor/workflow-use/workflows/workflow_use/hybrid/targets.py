@@ -198,15 +198,24 @@ class TargetResolver:
         backend_id = await self._resolve_backend(target, page, mapping, target_id)
         return await page.get_element(backend_id)
 
-    async def resolve_collection(self, selector, scope=None):
+    async def resolve_collection(self, selector, scope=None, *, page=None):
         _nonempty(selector, 'target_query_required')
-        if scope is None:
+        if page is None and scope is None:
             page = await self.browser.get_current_page()
             if page is None:
                 raise ValueError('page_unavailable')
+        elif page is None:
+            try:
+                page, _, _ = await self._snapshot(scope, require_mapping=False)
+            except Exception as error:
+                error.add_note('bat_read_collection_snapshot')
+                raise
+        try:
             return await page.get_elements_by_css_selector(selector)
-        page, _, _ = await self._snapshot(scope, require_mapping=False)
-        return await page.get_elements_by_css_selector(selector)
+        except Exception as error:
+            # WHY：只标记公开 B-U 集合查询的异常边界；原异常类型、消息和调用栈仍由调用方处理。
+            error.add_note('bat_read_collection_query')
+            raise
 
     async def assert_scope(self, scope, expected_target_id=None):
         """Verify a read's live page identity before/after work without duplicating scope rules."""

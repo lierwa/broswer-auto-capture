@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto"
 import Fastify from "fastify"
 import { z } from "zod"
 import type { AI, AIEvent, ModelSelection } from "@agent-platform/ai-connect/server"
+import { validateSelectionRequest } from "./selection-validation.js"
 
 export const modelPurposeSchema = z.enum(["agent", "judge", "workflow_generation", "variable_suggestion",
   "extract", "output_conversion", "semantic_annotation"])
@@ -25,6 +26,11 @@ type Subject = Pick<AISubject, "generate" | "generateObject"> & {
   verifyCapabilities(...args: Parameters<AISubject["verifyCapabilities"]>): Promise<unknown>
 }
 
+function authorized(authorization: string | undefined, token: string) {
+  const supplied = Buffer.from(authorization ?? ""), expected = Buffer.from(`Bearer ${token}`)
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected)
+}
+
 /** WHY：HTTP 独立于上游 stdout/stderr；账号与凭据只在 TS AI Connect 内，Python 只有本次桥的随机口令。 */
 export async function openModelBridge(input: {
   subject: Subject; selection: ModelSelection; signal: AbortSignal; onAudit(audit: ModelAudit): void;
@@ -38,9 +44,14 @@ export async function openModelBridge(input: {
   const signal = AbortSignal.any([input.signal, lifetime.signal])
   const app = Fastify({ logger: false, bodyLimit: 20 * 1024 * 1024, requestTimeout: 180_000 })
   app.setErrorHandler((_error, _request, reply) => reply.code(400).send({ error: "bridge_request_invalid" }))
+  if (input.allowedPurposes?.includes("agent")) app.post("/validate-selection", async (request, reply) => {
+    if (!authorized(request.headers.authorization, token)) return reply.code(401).send({ error: "bridge_unauthorized" })
+    // WHY：纯验证没有模型或浏览器副作用，允许Agent纠正程序后重复请求；/invoke的模型请求仍按UUID去重。
+    const result = await validateSelectionRequest(request.body, signal)
+    return reply.code(result.valid || result.reason !== "bridge_cancelled" ? 200 : 409).send(result)
+  })
   app.post("/invoke", async (request, reply) => {
-    const supplied = Buffer.from(request.headers.authorization ?? ""), expected = Buffer.from(`Bearer ${token}`)
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+    if (!authorized(request.headers.authorization, token)) {
       return reply.code(401).send({ error: "bridge_unauthorized" })
     }
     const parsed = modelRequestSchema.safeParse(request.body)

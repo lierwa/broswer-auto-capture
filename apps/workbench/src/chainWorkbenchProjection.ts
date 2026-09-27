@@ -40,12 +40,6 @@ export function stageRunTone(stage: ChainStage, batch: TaskExecutionEventBatch |
   return tones.some((tone) => tone !== "idle") ? batch?.status === "running" ? "running" : inactiveTone(batch) : "idle"
 }
 
-export function stageProgress(stage: ChainStage, batch: TaskExecutionEventBatch | null) {
-  const tones = stage.nodeIds.map((id) => nodeRunTone(id, batch, stage))
-  return { completed: tones.filter((tone) => tone === "success").length,
-    skipped: tones.filter((tone) => tone === "skipped").length, total: tones.length }
-}
-
 function stageExitEvent(stage: ChainStage, batch: TaskExecutionEventBatch | null) {
   const latest = batch?.events.findLast((item) => stage.nodeIds.includes(item.event.nodeId))
   // WHY：确认真实离开阶段即可完成；未走的业务分支不能令前一阶段永远运行中。

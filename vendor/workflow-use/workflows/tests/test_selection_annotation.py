@@ -15,6 +15,7 @@ from workflow_use.hybrid.evidence import (
 from workflow_use.hybrid.selection_annotation import (
     SelectionProgram,
     annotate_selections,
+    bounded_selection_annotation,
     bounded_selection_program,
     selection_action_context,
 )
@@ -24,6 +25,16 @@ CONTEXT = SimpleNamespace(requirementText='Choose the eligible item.', task='Cho
 PROGRAM = {'source': 'function main({candidates}) { return candidates[0].ordinal; }', 'examples': [
     {'candidates': [{'text': 'changed', 'ordinal': 2}], 'ordinal': 2},
     {'candidates': [{'text': 'another', 'ordinal': 3}], 'ordinal': 3}]}
+
+
+def success(program):
+    return {'outcome': 'program', 'program': program, 'reason': None}
+
+
+def refusal(reason):
+    return {'outcome': 'insufficient_evidence', 'program': None, 'reason': reason}
+
+
 READ = SimpleNamespace(output=[{'text': 'sample', 'ordinal': 1}],
     specification=SimpleNamespace(outputSchema={'type': 'array'}, maxItems=10))
 
@@ -59,7 +70,7 @@ class SelectionAnnotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_existing_fact_is_never_rewritten_and_only_missing_action_is_annotated(self):
         trace = trace_with_clicks(existing=True)
         original = trace.model_dump(mode='json')
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=PROGRAM)))
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=success(PROGRAM))))
         target, read = annotation_dependencies()
         with target, read:
             updated, gaps = await annotate_selections(CONTEXT, trace, model)
@@ -68,7 +79,7 @@ class SelectionAnnotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated.observations[0], trace.observations[0])
         self.assertEqual(updated.observations[1].facts[0].value['actionRef'], 'a-0002')
         self.assertEqual(model.ainvoke.await_count, 1)
-        self.assertIs(model.ainvoke.call_args.kwargs['output_format'], bounded_selection_program(10))
+        self.assertIs(model.ainvoke.call_args.kwargs['output_format'], bounded_selection_annotation(10))
         self.assertNotIn('actionRef', SelectionProgram.model_fields)
         self.assertEqual(bounded_selection_program(50).model_json_schema()['$defs'][
             'SelectionExampleBounded50']['properties']['ordinal']['maximum'], 50)
@@ -88,7 +99,7 @@ class SelectionAnnotationTests(unittest.IsolatedAsyncioTestCase):
         program = {'source': PROGRAM['source'], 'examples': [
             {'candidates': [{'text': 'changed', 'ordinal': 4}], 'ordinal': 4},
             {'candidates': [{'text': 'another', 'ordinal': 2}], 'ordinal': 2}]}
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=program)))
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=success(program))))
         trace = trace_with_clicks(count=1)
         with patch('workflow_use.hybrid.selection_annotation.natural_target',
                    return_value=({'ordinal': 1}, [], [])), patch(
@@ -102,7 +113,7 @@ class SelectionAnnotationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bounded_model_instance_is_accepted_by_base_program(self):
         # WHY：真实结构化模型返回 Pydantic 实例；不同基类会把有效输出误判为不可用。
-        completion = bounded_selection_program(10).model_validate(PROGRAM)
+        completion = bounded_selection_annotation(10).model_validate(success(PROGRAM))
         model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=completion)))
         target, read = annotation_dependencies()
         with target, read:
@@ -114,7 +125,7 @@ class SelectionAnnotationTests(unittest.IsolatedAsyncioTestCase):
         program = {'source': PROGRAM['source'], 'examples': [
             {'candidates': [{'text': 'changed', 'ordinal': 2}], 'ordinal': 3},
             {'candidates': [{'text': 'another', 'ordinal': 4}], 'ordinal': 4}]}
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=program)))
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=success(program))))
         target, read = annotation_dependencies()
         with target, read:
             updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(count=1), model)
@@ -146,15 +157,48 @@ class SelectionAnnotationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_or_omitted_program_retains_gap_without_retrying_that_action(self):
         model = SimpleNamespace(ainvoke=AsyncMock(side_effect=[
-            SimpleNamespace(completion={}), SimpleNamespace(completion=PROGRAM)]))
+            SimpleNamespace(completion={}), SimpleNamespace(completion=success(PROGRAM))]))
         target, read = annotation_dependencies()
         with target, read:
             updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(), model)
         self.assertEqual(model.ainvoke.await_count, 2)
         self.assertEqual([(item.actionRefs, item.reason) for item in gaps],
-                         [(['a-0001'], 'selection_annotation_unavailable')])
+                         [(['a-0001'], 'selection_annotation_invalid_response')])
         self.assertEqual(updated.observations[0].facts, [])
         self.assertEqual(updated.observations[1].facts[0].value['actionRef'], 'a-0002')
+
+    async def test_legal_refusal_keeps_source_without_fake_selection_fact(self):
+        trace = trace_with_clicks(count=1)
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(
+            completion=refusal('candidate_fields_insufficient'))))
+        target, read = annotation_dependencies()
+        with target, read:
+            updated, gaps = await annotate_selections(CONTEXT, trace, model)
+        self.assertEqual(updated.observations[0].facts, [])
+        self.assertEqual(trace.observations[0].facts, [])
+        self.assertEqual([(item.code, item.reason, item.resolution) for item in gaps],
+                         [('missing_binding', 'selection_annotation_candidate_fields_insufficient', 'collect_evidence')])
+        self.assertEqual(model.ainvoke.await_count, 1)
+
+    async def test_requirement_conflict_returns_to_intent_confirmation(self):
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(
+            completion=refusal('observed_choice_conflicts_requirement'))))
+        target, read = annotation_dependencies()
+        with target, read:
+            updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(count=1), model)
+        self.assertEqual(updated.observations[0].facts, [])
+        self.assertEqual([(item.code, item.reason, item.resolution) for item in gaps],
+                         [('ambiguous_clause_alignment', 'selection_annotation_observed_choice_conflicts_requirement',
+                           'confirm_intent')])
+
+    async def test_model_service_failure_is_not_evidence_refusal(self):
+        model = SimpleNamespace(ainvoke=AsyncMock(side_effect=RuntimeError('provider_failed')))
+        target, read = annotation_dependencies()
+        with target, read:
+            updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(count=1), model)
+        self.assertEqual(updated.observations[0].facts, [])
+        self.assertEqual([(item.code, item.reason) for item in gaps],
+                         [('missing_binding', 'selection_annotation_unavailable')])
 
     async def test_missing_selection_count_is_bounded_before_model_work(self):
         model = SimpleNamespace(ainvoke=AsyncMock())

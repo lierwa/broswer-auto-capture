@@ -95,8 +95,8 @@ TARGET_PREPARATION_SCRIPT = r"""() => {
     scrollContainer: scrollContainer || {tag:'window', id:null, scrollTop:scrollY, scrollLeft:scrollX}};
 }"""
 
-async def current_document_id(browser):
-    page = await browser.get_current_page()
+async def current_document_id(browser, *, page=None):
+    page = page if page is not None else await browser.get_current_page()
     if page is None:
         raise ValueError('page_unavailable')
     try:

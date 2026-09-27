@@ -6,9 +6,10 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, stop
 
 from .dialog_event_bridge import DialogEventBridge
 from .postconditions import (PostconditionNotMet, SettlePolicy, capture_check_baselines, declared_checks,
-                             settle_policy, verify_declared)
+                             settle_policy, verify_declared, action_result_readiness)
 from .native_event_capture import NativeEventCapture
-from .navigation import NAVIGATION_ACTIONS, navigation_tab_ids, reconcile_new_navigation_tab
+from .navigation import (NAVIGATION_ACTIONS, navigation_tab_ids, reconcile_new_navigation_tab,
+                         navigation_action_owner, assert_navigation_owner)
 from .physical_input import dispatch_physical_click
 from .registry import ActionRegistry
 from .scroll_observation import inspect_page_scroll, scroll_dispatch_metadata, scroll_failure_code
@@ -59,15 +60,24 @@ class OrdinaryCapability:
         await capture_check_baselines(self.browser, checks)
         prior_tabs = await navigation_tab_ids(self.browser) \
             if action_name in NAVIGATION_ACTIONS and expects_url_change(postconditions) else None
+        consumer_index = action_result_readiness(action_name, postconditions)
+        owner = navigation_action_owner(self.browser, prior_tabs) if consumer_index is not None else None
         prepared = await self.resolve_target(target, action_name=action_name) \
             if action_name in TARGET_ACTIONS and target is not None else None
+        if owner is not None:
+            assert_navigation_owner(self.browser, owner)
         result = await self.execute(action_name, args, target, native_dialog_policy=native_dialog_policy,
                                     _prepared=prepared)
         if prior_tabs is not None:
             started = asyncio.get_running_loop().time()
             options = {} if policy is None else {'attempts': policy.maxAttempts,
                 'interval': policy.intervalMs / 1000, 'max_ms': policy.maxMs}
-            await reconcile_new_navigation_tab(self.browser, prior_tabs, **options)
+            selected = await reconcile_new_navigation_tab(self.browser, prior_tabs,
+                **options, **({'original_target_id': owner['targetId']} if owner is not None else {}))
+            if owner is not None:
+                owner = {**owner, 'targetId': selected or owner['targetId']}
+                assert_navigation_owner(self.browser, owner)
+                checks[consumer_index].parameters['_actionResultOwner'] = owner
             if policy is not None:
                 remaining = policy.maxMs - int((asyncio.get_running_loop().time() - started) * 1000)
                 if remaining <= 0:
@@ -90,6 +100,7 @@ class OrdinaryCapability:
         finally:
             for check in checks:
                 check.parameters.pop('_retainedElement', None)
+                check.parameters.pop('_actionResultOwner', None)
         return result.model_dump(mode='json')
 
     async def execute(self, action_name: str, args: dict, target: dict | None = None, *, native_dialog_policy=None,

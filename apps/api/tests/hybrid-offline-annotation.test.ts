@@ -4,61 +4,62 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
-import { z } from "zod"
-import { jsonValueSchema } from "@browser-capture/contracts"
+import { jsonValueSchema, type JsonValue } from "@browser-capture/contracts"
 import { recompileHybridSource } from "../src/upstream-browser/hybrid-exploration.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
 import { digestCanonicalJson, validateHybridResponse } from "../src/upstream-browser/hybrid-materializer.js"
 import type { ModelAudit } from "../src/upstream-browser/model-bridge.js"
+import { canonical, naturalSourceFixture } from "./helpers/natural-source.js"
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex")
 const selection = { connectionId: randomUUID(), modelId: "fixture", reasoningEffort: "medium" as const }
-const gap = (reason: string) => ({ id: "missing-selection", code: "missing_binding", actionRefs: ["a2"],
+const gap = (reason: string) => ({ id: "missing-selection", code: "missing_binding", actionRefs: ["a-0001"],
   clauseRefs: [], reason, resolution: "collect_evidence" as const })
-const fact = (id: string, kind: string, value: Record<string, string>) => {
-  const digest = digestCanonicalJson(value)
+const sourceGap = { id: "source-gap", code: "missing_observation", actionRefs: [] as string[],
+  clauseRefs: [] as string[], reason: "fixture_capture_gap", resolution: "collect_evidence" as const }
+const pythonFloat = (value: string) => value.replace('"number":1', '"number":1.0')
+const fact = (id: string, kind: string, value: Record<string, JsonValue>, preserveFloat = false) => {
+  const digest = preserveFloat ? hash(pythonFloat(canonical(value))) : digestCanonicalJson(value)
   return { id, kind, value, sourceRefs: [{ ref: `sha256:${digest}`, digest }] }
 }
 
 function fixture(reason = "selection_function_evidence_required") {
-  const requirement = { id: "requirement", version: 1, sourceDigest: "1".repeat(64),
-    text: "Choose the requested item", taskText: "Choose the requested item" }
-  const plan = { id: "plan", version: 1, sourceDigest: "2".repeat(64), stepId: "choose", callMode: "once",
-    entryUrls: ["https://example.test/"], inputSchemaDigest: "3".repeat(64), outputSchemaDigest: "3".repeat(64),
-    resultSpec: { contractVersion: "bat-result-spec/v1", mode: "execution" }, semanticOperations: [] }
-  const trace = { source: { historyRef: "fixture", sample: 1 }, actions: [
-    { id: "a2", name: "click", status: "succeeded", preObservationRef: "o1", postObservationRef: "o2" }],
-    observations: [{ id: "o1", facts: [fact("browser", "browser_context", { title: "fixture" })] },
-      { id: "o2", facts: [] as ReturnType<typeof fact>[] }], completed: true }
-  return pack(requirement, plan, trace, reason)
+  return pack(traceOf(), reason)
 }
 
-function pack(requirement: object, plan: object, trace: ReturnType<typeof traceOf>, reason: string) {
-  const sourcePayloads = [requirement, plan, trace, { type: "null" }, []]
-    .map((value) => JSON.stringify(value).replace('"sample":1', '"sample":1.0'))
-  const digests = sourcePayloads.map(hash)
+function pack(trace: ReturnType<typeof traceOf>, reason: string,
+  previous?: ReturnType<typeof naturalSourceFixture>) {
+  const source = naturalSourceFixture({ trace, lexicalizeTrace: pythonFloat,
+    ...(previous ? { requirement: JSON.parse(previous.sourcePayloads[0]!) as Record<string, JsonValue>,
+      plan: JSON.parse(previous.sourcePayloads[1]!) as Record<string, JsonValue> } : {}) })
+  const digests = source.sourcePayloads.map(hash)
   const body = { mediaType: "application/vnd.bat.hybrid-compilation+json;version=1", compilerVersion: "bat-hybrid/2",
     sourceDigests: [...digests, "4".repeat(64)], segments: [], controlGraph: { entry: "", edges: [], terminals: [] },
-    coverage: [], gaps: reason ? [gap(reason)] : [] }
+    coverage: [], gaps: reason ? [sourceGap, gap(reason)] : [sourceGap] }
   const canonicalPayload = JSON.stringify(body)
   const response = validateHybridResponse({ compilation: { ...body, canonicalDigest: hash(canonicalPayload) },
-    canonicalPayload, sourcePayloads })
-  const request = z.record(z.string(), jsonValueSchema).parse({ compilerVersion: "bat-hybrid/2", actionRegistryVersion: "4".repeat(64),
-    requirement: { ...requirement, digest: digests[0] }, plan: { ...plan, digest: digests[1] },
-    trace: { ...trace, digest: digests[2] }, runtimeInputSchema: { type: "null" } })
-  return { request, response }
+    canonicalPayload, sourcePayloads: source.sourcePayloads })
+  return { ...source, sourceGaps: [sourceGap], response }
 }
 
-function traceOf() { return { source: { historyRef: "", sample: 1 }, actions: [
-  { id: "", name: "", status: "", preObservationRef: "", postObservationRef: "" }],
-  observations: [{ id: "", facts: [] as ReturnType<typeof fact>[] }], completed: true } }
+function traceOf() {
+  const reference = { ref: "fixture:observation", digest: "0".repeat(64) }
+  return { mediaType: "application/vnd.bat.browser-use-trace+json;version=2",
+    source: { provider: "browser-use", version: "fixture", historyRef: "fixture" }, completed: true,
+    actions: [{ id: "a-0001", stepIndex: 0, actionIndex: 0, name: "click", args: {}, status: "succeeded",
+      preObservationRef: "o-0001", resultRef: null, postObservationRef: "o-0002", effect: "ui_state", retryOf: null }],
+    observations: [{ id: "o-0001", sequence: 0, url: "https://example.test/", tabId: "tab-1",
+      facts: [fact("browser", "browser_context", { number: 1, title: "fixture" }, true)], sourceRefs: [reference] },
+      { id: "o-0002", sequence: 1, url: "https://example.test/", tabId: "tab-1",
+        facts: [] as ReturnType<typeof fact>[], sourceRefs: [reference] }],
+    finalResultRef: null, redactionManifestRef: reference }
+}
 
 function annotated(source: ReturnType<typeof fixture>, tamper: boolean) {
-  const trace = JSON.parse(source.response.sourcePayloads[2]!) as ReturnType<typeof traceOf>
-  trace.observations[0]!.facts.push(fact("selection-a2", "selection_function", { actionRef: "a2" }))
+  const trace = JSON.parse(source.sourcePayloads[2]!) as ReturnType<typeof traceOf>
+  trace.observations[0]!.facts.push(fact("selection-a-0001", "selection_function", { actionRef: "a-0001" }))
   if (tamper) trace.actions[0]!.status = "failed"
-  return pack(JSON.parse(source.response.sourcePayloads[0]!), JSON.parse(source.response.sourcePayloads[1]!),
-    trace, "selection_function_evidence_required")
+  return pack(trace, "selection_function_evidence_required", source)
 }
 
 async function harness(source: ReturnType<typeof fixture>, authorized: boolean, tamper = false) {
@@ -71,14 +72,19 @@ async function harness(source: ReturnType<typeof fixture>, authorized: boolean, 
     createRunner: () => ({ startCompiler: async () => { counts.compiler++ },
       request: async (command) => {
         commands.push(command.type)
-        assert.match(JSON.stringify(command), /"sample":1\.0/)
+        if (command.type !== "hybrid_compile" && command.type !== "hybrid_annotate") {
+          throw new Error("unexpected_fixture_command")
+        }
+        assert.match(JSON.stringify(command), /"number":1\.0/)
+        assert.deepEqual(command.sourceGaps, source.sourceGaps)
         if (command.type === "hybrid_compile") return jsonValueSchema.parse(source.response)
         assert.equal(command.type, "hybrid_annotate")
         const requestId = randomUUID()
         for (const type of ["generation.started", "generation.completed"] as const) {
           audit!({ requestId, purpose: "semantic_annotation", event: { type } as ModelAudit["event"] })
         }
-        return jsonValueSchema.parse(annotated(source, tamper))
+        const result = annotated(source, tamper)
+        return jsonValueSchema.parse({ request: result.request, response: result.response })
       }, close: async () => { counts.runnerClosed++
         return cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({ stage, status: "not_required", code: null })), false) } }),
     openBridge: async (input) => { counts.bridges++; audit = input.onAudit
@@ -88,7 +94,8 @@ async function harness(source: ReturnType<typeof fixture>, authorized: boolean, 
   try {
     const original = structuredClone(source)
     const invoke = recompileHybridSource({ root: process.cwd(), directory, signal: new AbortController().signal,
-      request: source.request, sourceResponse: source.response, outputSchema: { type: "null" }, verifiedChildren: [],
+      canonicalRequest: source.canonicalRequest, sourceGaps: source.sourceGaps,
+      outputSchema: { type: "null" }, verifiedChildren: [],
       subject: {} as NonNullable<Parameters<typeof recompileHybridSource>[0]["subject"]>,
       ...(authorized ? { annotation: { selection, ownerId: randomUUID(), onProgress: (event: unknown) => progress.push(event) } } : {}),
     }, dependencies)

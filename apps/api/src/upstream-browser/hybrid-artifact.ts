@@ -1,21 +1,20 @@
 import { z } from "zod"
-import { jsonValueSchema, parseTaskValue, valueBindingSchema, type JsonValue, type TaskPlan, type TaskPlanStep,
+import { jsonValueSchema, parseTaskValue, type JsonValue, type TaskPlan, type TaskPlanStep,
   type TaskExecutionFailureEvidence, type TaskRequirement } from "@browser-capture/contracts"
 import { digestJson, resolveBinding } from "@browser-capture/runtime"
 import type { ModelCallReport } from "@browser-capture/runtime"
 import { hybridCompilerResponseSchema, hybridNaturalRequestSchema, naturalBindingFactValueSchema } from "./hybrid-schema.js"
 import { digestCanonicalJson, materializeHybridChain, validateHybridRequestSources,
   validateHybridResponse } from "./hybrid-materializer.js"
-import { assertHybridBranchEvidence, bindHybridControl, hybridStepAuthority } from "./hybrid-authority.js"
 import { isDeepStrictEqual } from "node:util"
 import type { ResolveHybridChild } from "./hybrid-invoke.js"
-import { hybridAuthorResultSchema } from "./hybrid-protocol.js"
-import type { HybridSourceResult } from "./hybrid-exploration.js"
+import { parseCapturedSource, type HybridSourceResult, type CapturedSourceReceipt } from "./hybrid-captured-source.js"
 import { browserUseTask, naturalRequirementText } from "./task-request.js"
-import { naturalPayloadContext } from "./hybrid-natural-payload.js"
+import { naturalPayloadContext, naturalSourceContext } from "./hybrid-natural-payload.js"
+import { requiresSemanticAnnotationAudit } from "./hybrid-selection-audit.js"
 
 export const hybridArtifactMediaType = "application/vnd.bat.workflow-use+json;version=2"
-export const hybridSourceMediaType = "application/vnd.bat.workflow-use-source+json;version=2"
+export const hybridSourceMediaType = "application/vnd.bat.workflow-use-source+json;version=3"
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
 const sourceReference = z.object({ localRef: z.string().min(1), digest: hash }).strict()
 export const hybridArtifactSchema = z.object({
@@ -26,46 +25,35 @@ export const hybridArtifactSchema = z.object({
     stepId: z.string().min(1), inputDigest: hash }).strict(),
   compilationRequest: jsonValueSchema, compilerResponse: hybridCompilerResponseSchema,
   source: z.object({ history: sourceReference, sourceSuccess: z.literal(true),
-    // 只为读取既有不可变 artifact 保留；新 artifact 不写入且任何路径都不把它当作门。
-    sourceValidated: z.literal(true).optional(),
     closed: z.literal(true) }).strict(),
   modelCalls: z.array(z.object({ callId: z.string().min(1), purpose: z.enum(["agent", "judge", "extract", "semantic_annotation"]),
     model: z.string(), intendedAt: z.string().datetime(), status: z.enum(["intended", "completed", "failed", "interrupted"]),
     reportedInvocations: z.number().int().nonnegative().nullable() }).strict()),
 }).strict()
 
-const sourceArtifactSchema = z.object({ mode: z.literal("workflow-use-source/v2"), status: z.literal("explored"), closed: z.boolean(),
+const sourceArtifactSchema = z.object({ mode: z.literal("workflow-use-source/v3"), status: z.literal("received"),
   requirementDigest: hash, planDigest: hash, stepId: z.string(), inputDigest: hash, forkSourceDigest: hash,
-  result: hybridAuthorResultSchema, modelCalls: hybridArtifactSchema.shape.modelCalls }).strict()
+  result: jsonValueSchema, modelCalls: hybridArtifactSchema.shape.modelCalls }).strict()
 
 export function readHybridSourceArtifact(raw: unknown) {
   const artifact = sourceArtifactSchema.parse(raw)
-  const envelope = validateHybridResponse(artifact.result.response)
-  const request = z.record(z.string(), jsonValueSchema).parse(artifact.result.request)
-  validateHybridRequestSources(envelope, request)
-  if (envelope.compilation.compilerVersion === "bat-hybrid/2") {
-    naturalPayloadContext(envelope, request).assertTraceEvidence()
-  }
-  return artifact
+  return { ...artifact, result: parseCapturedSource(artifact.result, artifact.forkSourceDigest, artifact.modelCalls) }
 }
 
 export function createHybridSourceArtifact(requirement: TaskRequirement, plan: TaskPlan, stepId: string,
-  input: JsonValue, source: HybridSourceResult, closed = true, repair?: TaskExecutionFailureEvidence) {
-  const { forkSourceDigest, modelCalls, ...result } = source
-  const artifact = sourceArtifactSchema.parse({ mode: "workflow-use-source/v2", status: "explored", closed,
+  input: JsonValue, source: CapturedSourceReceipt) {
+  // WHY：只保存一次接收原文；来源准入在保存之后独立校验，拒绝也留下可追查事实。
+  return sourceArtifactSchema.parse({ mode: "workflow-use-source/v3", status: "received",
     requirementDigest: digestJson(requirement), planDigest: digestJson(plan), stepId, inputDigest: digestJson(input),
-    forkSourceDigest, result, modelCalls })
-  const envelope = validateHybridResponse(result.response)
-  const request = z.record(z.string(), jsonValueSchema).parse(result.request)
-  validateHybridRequestSources(envelope, request)
-  if (envelope.compilation.compilerVersion === "bat-hybrid/2") {
-    const step = plan.steps.find((item) => item.id === stepId)
-    if (!step) throw new Error("hybrid_natural_step_missing")
-    assertNaturalSourceIdentity(request, requirement, plan, step, input, result.history,
-      repair,
-      naturalPayloadContext(envelope, request))
-  }
-  return artifact
+    ...source })
+}
+
+export function assertCapturedSourceIdentity(requirement: TaskRequirement, plan: TaskPlan, stepId: string,
+  input: JsonValue, source: HybridSourceResult) {
+  const step = plan.steps.find((item) => item.id === stepId)
+  if (!step) throw new Error("hybrid_natural_step_missing")
+  assertNaturalSourceIdentity(source.request, requirement, plan, step, input, source.history,
+    undefined, naturalSourceContext(source.canonicalRequest))
 }
 
 /** WHY：只有正常结束的来源和零 gap 的编译产物能写 candidate；模型只拥有独立的探索调用审计。 */
@@ -81,15 +69,12 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
   const request = z.record(z.string(), jsonValueSchema).parse(input.request)
   validateHybridRequestSources(envelope, request)
   if (envelope.compilation.compilerVersion === "bat-hybrid/2") {
+    const payload = naturalPayloadContext(envelope, request)
     const natural = assertNaturalSourceIdentity(
       request, input.requirement, input.plan, input.step, input.stepInput, input.source.history,
-      input.repair,
-      naturalPayloadContext(envelope, request))
-    const hasNaturalSummaryProof = natural.trace.observations.some((observation) =>
-      observation.facts.some((fact) => fact.kind === "verified_natural_summary" || fact.kind === "selection_function"))
-    // WHY：verified_natural_read 是纯 DOM 读取；summary/selection 模型派生内容
-    // 必须存在 semantic_annotation 调用审计。
-    assertSourceModelAudit(input.modelCalls, hasNaturalSummaryProof)
+      input.repair, payload)
+    assertSourceModelAudit(input.modelCalls, requiresSemanticAnnotationAudit({ request: natural,
+      compilation: envelope.compilation, assertFact: payload.assertFact, transportRequest: payload.transportRequest }))
     const chain = materializeHybridChain({ response: envelope, request, plan: input.plan,
       step: input.step, version: input.version, model: input.model,
       ...(input.resolveChild ? { resolveChild: input.resolveChild } : {}) })
@@ -101,37 +86,13 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
       compilationRequest: request, compilerResponse: envelope, source: input.source, modelCalls: input.modelCalls })
     return { artifact, chain }
   }
-  const authority = hybridStepAuthority(input.requirement, input.step.id)
-  const sources = z.object({ requirement: z.object({ clauses: jsonValueSchema }).passthrough(), control: jsonValueSchema,
-    acceptedAnnotations: jsonValueSchema, trace: z.object({ digest: hash, source: z.object({ historyRef: z.string() }).passthrough() }).passthrough() }).passthrough().parse(input.request)
-  const annotations = z.array(z.record(z.string(), jsonValueSchema)).parse(sources.acceptedAnnotations)
-  const proposed = annotations.slice(authority.acceptedAnnotations.length)
-  if (!isDeepStrictEqual(authority.clauses, sources.requirement.clauses)
-    || !isDeepStrictEqual(bindHybridControl(authority, input.request), sources.control)
-    || !isDeepStrictEqual(authority.acceptedAnnotations, annotations.slice(0, authority.acceptedAnnotations.length))
-    || proposed.some((item) => item.kind !== "semantic_operation")) {
-    throw new Error("hybrid_confirmed_authority_mismatch")
-  }
-  if (input.source.history.digest !== sources.trace.digest || input.source.history.localRef !== sources.trace.source.historyRef) {
-    throw new Error("hybrid_history_reference_mismatch")
-  }
-  assertHybridSampleBindings(input.request, input.stepInput)
-  assertHybridBranchEvidence(authority, input.stepInput, input.request)
-  assertSourceModelAudit(input.modelCalls, proposed.length > 0)
-  const chain = materializeHybridChain({ response: envelope, request: input.request, plan: input.plan,
-    step: input.step, version: input.version, model: input.model, ...(input.resolveChild ? { resolveChild: input.resolveChild } : {}) })
-  const artifact = hybridArtifactSchema.parse({ mode: "workflow-use-artifact/v2", status: "candidate",
-    forkSourceDigest: input.forkSourceDigest,
-    task: { requirementId: input.requirement.id, requirementVersion: input.requirement.version, requirementDigest: digestJson(input.requirement),
-      planId: input.plan.id, planVersion: input.plan.version, planDigest: digestJson(input.plan), stepId: input.step.id, inputDigest: digestJson(input.stepInput) },
-    compilationRequest: input.request, compilerResponse: envelope, source: input.source, modelCalls: input.modelCalls })
-  return { artifact, chain }
+  throw new Error("hybrid_current_source_required")
 }
 
-function assertNaturalSourceIdentity(raw: Record<string, JsonValue>, requirement: TaskRequirement, plan: TaskPlan,
+function assertNaturalSourceIdentity(raw: unknown, requirement: TaskRequirement, plan: TaskPlan,
   step: TaskPlanStep, input: JsonValue, history: { localRef: string; digest: string },
   repair: TaskExecutionFailureEvidence | undefined,
-  payload: ReturnType<typeof naturalPayloadContext>) {
+  payload: Pick<ReturnType<typeof naturalPayloadContext>, "assertFact" | "assertTraceEvidence">) {
   const source = hybridNaturalRequestSchema.parse(raw)
   const requirementText = naturalRequirementText(requirement).text
   const taskText = browserUseTask({ requirement, plan, step, resolvedInput: input, ...(repair ? { repair } : {}) })
@@ -156,7 +117,7 @@ function assertNaturalSourceIdentity(raw: Record<string, JsonValue>, requirement
 }
 
 function assertNaturalRuntimeInputBindings(source: z.infer<typeof hybridNaturalRequestSchema>, input: JsonValue,
-  payload: ReturnType<typeof naturalPayloadContext>) {
+  payload: Pick<ReturnType<typeof naturalPayloadContext>, "assertFact" | "assertTraceEvidence">) {
   for (const observation of source.trace.observations) for (const fact of observation.facts) {
     if (fact.kind !== "natural_binding") continue
     payload.assertFact(fact, observation.id)
@@ -187,38 +148,6 @@ function assertSourceModelAudit(calls: ModelCallReport[], annotations: boolean) 
   for (const purpose of ["agent"]) {
     if (![...settled.values()].some((call) => call.purpose === purpose && call.status === "completed"
       && (call.reportedInvocations ?? 0) > 0)) throw new Error("hybrid_source_model_audit_missing")
-  }
-}
-
-export function assertHybridSampleBindings(raw: unknown, input: JsonValue) {
-  const request = z.object({ requirement: z.object({ clauses: z.array(z.object({ expression: jsonValueSchema }).passthrough()) }).passthrough(),
-    trace: z.object({ actions: z.array(z.object({ name: z.string(), args: z.record(z.string(), jsonValueSchema) }).passthrough()) }).passthrough(),
-    control: z.object({ selections: z.array(z.object({ id: z.string(), actionRefs: z.array(z.string()),
-      target: z.record(z.string(), jsonValueSchema) }).passthrough()) }).passthrough(),
-  }).passthrough().parse(raw)
-  const authority = z.object({ actionName: z.string(), argumentPath: z.string(), binding: valueBindingSchema,
-    actionRefs: z.array(z.string()).nullable().optional(), selectionRef: z.string().nullable().optional() }).strict()
-  for (const clause of request.requirement.clauses) {
-    const expression = authority.safeParse(clause.expression)
-    if (!expression.success || expression.data.binding.source !== "input") continue
-    const expected = resolveBinding(expression.data.binding, { input, variables: {}, nodeOutputs: {} })
-    for (const action of request.trace.actions.filter((action) => action.name === expression.data.actionName
-      && (!expression.data.actionRefs || expression.data.actionRefs.includes(String(action.id)))
-      && (!expression.data.selectionRef || request.control.selections.some((selection) => selection.id === expression.data.selectionRef
-        && selection.actionRefs.includes(String(action.id)))))) {
-      const actual = action.args[expression.data.argumentPath]
-      if (actual === undefined || digestJson(actual) !== digestJson(expected)) throw new Error("hybrid_sample_input_mismatch")
-    }
-  }
-  for (const selection of request.control.selections) {
-    if (!("ordinalBinding" in selection.target)) continue
-    const target = z.object({ ordinal: z.number().int().positive(), ordinalBinding: valueBindingSchema }).passthrough()
-      .parse(selection.target)
-    if (!(["input", "constant"] as string[]).includes(target.ordinalBinding.source)) {
-      throw new Error("hybrid_target_ordinal_binding_unconsumable")
-    }
-    const ordinal = resolveBinding(target.ordinalBinding, { input, variables: {}, nodeOutputs: {} })
-    if (ordinal !== target.ordinal) throw new Error("hybrid_sample_target_ordinal_mismatch")
   }
 }
 

@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto"
+import { assertNaturalHumanSegment } from "./hybrid-natural-human.js"
+import { assertNaturalDiscoveryExclusions } from "./hybrid-discovery.js"
+import { assertActionResultReadiness } from "./hybrid-consumer-readiness.js"
 import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 import { CONTRACT_VERSION, jsonValueSchema, predicateSchema, requiredNodeOutcomes, taskChainSchema, taskPlanSchema, taskPlanExecutionIssues,
@@ -12,9 +15,10 @@ import { materializeHybridOutput } from "./hybrid-output.js"
 import { assertHybridChild, type ResolveHybridChild } from "./hybrid-invoke.js"
 import { naturalPayloadContext, validateHybridRequestSources } from "./hybrid-natural-payload.js"
 import { materializeNaturalResult } from "./hybrid-result.js"
+import { assertRepeatAwareBinding, materializeNaturalRepeats, validateNaturalRepeats, type ValidatedNaturalRepeat } from "./hybrid-natural-repeat.js"
 import { RUNTIME_SCOPE_FROM, RUNTIME_SCOPE_READ_ONLY, classifyRuntimeScopeDecisions, type RuntimeScopeDecision } from "./hybrid-runtime-scope.js"
 import { materializeNaturalSummary } from "./hybrid-summary.js"
-import { assertNaturalBinding, assertResultDataSegment, assertNaturalReadSegment } from "./hybrid-natural-materialization.js"
+import { assertResultDataSegment, assertNaturalReadSegment } from "./hybrid-natural-materialization.js"
 import { materializeSelectionFunction } from "./hybrid-selection.js"
 import { detectNaturalPreparations, type NaturalPreparation } from "./hybrid-preparation.js"
 import { materializeOrderedBranch, materializePreparationGraph, systemPromptForSemanticOperation, upgradeStableGraph } from "./hybrid-v2.js"
@@ -60,11 +64,16 @@ export function materializeHybridChain(input: MaterializeHybridInput): TaskChain
   const payload = compilation.compilerVersion === "bat-hybrid/2"
     ? naturalPayloadContext(envelope, request) : (validateHybridRequestSources(envelope, request), null)
   const { authority, context } = sourceContext(compilation, request, input.plan, input.step, payload)
+  const discoveries = context.version === 2 ? assertNaturalDiscoveryExclusions({ compilation, request: context.request, payload: context.payload }) : new Set<string>()
+  const repeats = context.version === 2 && compilation.compilerVersion === "bat-hybrid/2"
+    ? validateNaturalRepeats({ compilation, request: context.request, assertFact: context.payload.assertFact,
+      outputSchema: input.step.outputContract.schema }) : []
   const preparations = context.version === 2 && compilation.compilerVersion === "bat-hybrid/2"
     ? detectNaturalPreparations({ compilation, request: context.request, assertFact: context.payload.assertFact }) : []
   const runtimeScopes = new Map(context.version === 2 ? classifyRuntimeScopeDecisions({
-    compilation, trace: context.request.trace, assertFact: context.payload.assertFact,
+    compilation, trace: context.request.trace, assertFact: context.payload.assertFact, discoveries,
   }).flatMap((decision) => decision.runtimeScopeFrom ? [[decision.segmentId, decision] as const] : []) : [])
+  if (context.version === 2) assertActionResultReadiness(context, compilation, runtimeScopes)
   const missingTargetProducers = new Set(compilation.compilerVersion === "bat-hybrid/2"
     ? (compilation.resultBranches ?? []).flatMap((raw) => {
       const branch = hybridResultBranchSchema.parse(raw)
@@ -85,7 +94,7 @@ export function materializeHybridChain(input: MaterializeHybridInput): TaskChain
       return summary.nodes
     }
     return [materializeSegment(segment, context, input.model, compilation, input.resolveChild,
-      runtimeScopes.get(segment.id), missingTargetProducers.has(segment.id))]
+      runtimeScopes.get(segment.id), missingTargetProducers.has(segment.id), repeats)]
   })
   removeOptionalPreparationRuntimeScopes(nodes, preparations)
   const variables: Record<string, TaskDataContract> = {}
@@ -100,6 +109,8 @@ export function materializeHybridChain(input: MaterializeHybridInput): TaskChain
   }
   const control = authority ? effectiveControl(request) : { selections: [], branches: [], loops: [], invokes: [] }
   const loops = materializeLoops(control, compilation, variables)
+  const naturalLoops = materializeNaturalRepeats(repeats, { plan, step: input.step, nodes, variables, compilation, edges })
+  loops.push(...naturalLoops.loops); nodes.push(...naturalLoops.branches)
   nodes.push(...materializeBranches(control))
   if (context.version === 2 && compilation.compilerVersion === "bat-hybrid/2") {
     const resultBranches = (compilation.resultBranches ?? []).map((raw) => {
@@ -113,21 +124,27 @@ export function materializeHybridChain(input: MaterializeHybridInput): TaskChain
   }
   for (const loop of loops) {
     const initializer = initializeCursor(loop)
-    for (const edge of edges) if (edge.to === loop.id && !loop.body.exits.includes(edge.from)) edge.to = initializer.id
-    if (entry === loop.id) entry = initializer.id
+    const nextInitializer = naturalLoops.initializers.get(loop.id), firstInitializer = nextInitializer ?? initializer
+    for (const edge of edges) if (edge.to === loop.id && !loop.body.exits.includes(edge.from)) edge.to = firstInitializer.id
+    if (entry === loop.id) entry = firstInitializer.id
+    if (nextInitializer) {
+      edges.push(...nextInitializer.outcomes.map((outcome) => ({ from: nextInitializer.id, outcome,
+        to: outcome === "success" ? initializer.id : outcome })))
+      nodes.push(nextInitializer)
+    }
     edges.push(...initializer.outcomes.map((outcome) => ({ from: initializer.id, outcome,
       to: outcome === "success" ? loop.id : outcome })))
     nodes.push(initializer, loop)
   }
   return finalizeMaterializedChain(input, compilation, context, authority,
-    { nodes, variables, edges, entry, loops, preparations })
+    { nodes, variables, edges, entry, loops, preparations, repeats })
 }
 
 function finalizeMaterializedChain(input: MaterializeHybridInput, compilation: HybridCompilation,
   context: SourceContext, authority: Authority | null, graph: {
     nodes: Array<StableChainNode | StableChainNodeV2>; variables: Record<string, TaskDataContract>;
     edges: Array<{ from: string; outcome: string; to: string }>; entry: string;
-    loops: ReturnType<typeof materializeLoops>; preparations: NaturalPreparation[];
+    loops: ReturnType<typeof materializeLoops>; preparations: NaturalPreparation[]; repeats: ValidatedNaturalRepeat[];
   }): TaskChain {
   const { nodes, variables, edges, loops, preparations } = graph
   let entry = graph.entry
@@ -142,7 +159,7 @@ function finalizeMaterializedChain(input: MaterializeHybridInput, compilation: H
     outputSchema = variables[variable]!.schema
     output = { source: "variable", name: variable, path: [] }
   }
-  const assembly = materializeSelectedOutput(authority, context, compilation, input.step.outputContract.schema)
+  const assembly = materializeSelectedOutput(authority, context, compilation, input.step.outputContract.schema, graph.repeats)
   if (assembly) {
     for (const edge of edges) if (edge.to === "completed") edge.to = assembly.entry
     if (entry === "completed") entry = assembly.entry
@@ -192,6 +209,9 @@ function finalizeMaterializedChain(input: MaterializeHybridInput, compilation: H
       invalidationConditions: [authority ? "需求、控制合同、能力版本或证明条件改变。"
         : "需求、来源证据、能力版本或证明条件改变。"] },
     implementationSummary: `workflow-use hybrid ${compilation.canonicalDigest}`, validation: { status: "candidate", evidence: [] } })
+  if (graph.repeats.length) for (const key of Object.keys(chain.budget) as Array<keyof TaskPlan["budget"]>) {
+    chain.budget[key] = Math.min(chain.budget[key], input.plan.budget[key], input.step.budget[key])
+  }
   return compactGeneratedFailureRoutes(chain)
 }
 
@@ -267,7 +287,8 @@ function sourceContext(compilation: HybridCompilation, request: Record<string, J
 }
 
 function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }>, context: SourceContext, model: string, compilation: HybridCompilation,
-  resolveChild?: ResolveHybridChild, runtimeScope?: RuntimeScopeDecision, missingTargetOutcome = false): StableChainNode {
+  resolveChild?: ResolveHybridChild, runtimeScope?: RuntimeScopeDecision, missingTargetOutcome = false,
+  repeats: ValidatedNaturalRepeat[] = []): StableChainNode {
   const base = { id: segment.id, label: segment.id, writes: [] }
   if (segment.kind === "explicit_llm") {
     if (context.version !== 1) throw new Error("explicit_llm_declaration_missing")
@@ -287,6 +308,13 @@ function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }
       iteration: { mode: "once" }, outputContract: contract(segment.id, child.outputSchema), outcomes: [...requiredNodeOutcomes.invoke] }
   }
   const operation = segment.operation
+  if (operation.name === "browser.wait-for-human") {
+    if (context.version !== 2) throw new Error("hybrid_human_source_required")
+    const human = assertNaturalHumanSegment(segment, context.request, compilation, context.payload.assertFact)
+    return { ...base, label: human.prompt, kind: "capability", capability: { name: operation.name, version: 1 },
+      human, config: {}, input: {}, effect: "read", timeoutMs: 10000,
+      outputContract: unit, outcomes: [...requiredNodeOutcomes.capability] }
+  }
   if (operation.name === "data.transform") {
     if (context.version !== 2) throw new Error("hybrid_result_derivation_source_invalid")
     const source = assertResultDataSegment(segment, context, compilation)
@@ -308,7 +336,7 @@ function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }
     if (context.version === 2) {
       if (!("binding" in decision) || decision.binding === undefined) throw new Error("hybrid_natural_binding_missing")
       bindings[decision.argumentPath] = rewriteBinding(
-        assertNaturalBinding(decision, context.request.trace, context.payload), compilation)
+        assertRepeatAwareBinding(decision, segment.id, repeats, context.request, context.payload), compilation)
       continue
     }
     const clause = context.authority.requirement.clauses.find((item) => item.id === decision.sourceRef)
@@ -357,13 +385,13 @@ export function digestCanonicalJson(value: JsonValue): string {
 }
 
 function materializeSelectedOutput(authority: Authority | null, context: SourceContext,
-  compilation: HybridCompilation, outputSchema: ValueSchema) {
+  compilation: HybridCompilation, outputSchema: ValueSchema, repeats: ValidatedNaturalRepeat[]) {
   if (authority) return materializeHybridOutput(authority.requirement.clauses, compilation,
     (binding) => rewriteBinding(binding, compilation))
   if (context.version !== 2 || compilation.compilerVersion !== "bat-hybrid/2") {
     throw new Error("hybrid_natural_source_mismatch")
   }
-  return materializeNaturalResult({ compilation, request: context.request, payload: context.payload, outputSchema,
+  return materializeNaturalResult({ compilation, request: context.request, payload: context.payload, outputSchema, repeats,
     rewrite: (binding) => rewriteBinding(binding, compilation) })
 }
 

@@ -3,8 +3,9 @@ import { stableUuid } from "@browser-capture/runtime"
 import { currentDraft } from "@browser-capture/contracts/interview"
 import type { ProductStore } from "../database/store.js"
 import type { TaskContractRepository } from "./repository.js"
-import { assertRequirementReady, selectedSourceFacts } from "../interview/source-resolution.js"
+import { assertRequirementReady, preparationEntryFacts, selectedSourceFacts } from "../interview/source-resolution.js"
 import { resultAndCompletionBody } from "../interview/protocol.js"
+import { parsePreparationDraft } from "../interview/preparation-draft.js"
 
 export function syncConfirmedRequirement(store: ProductStore, repository: TaskContractRepository, taskId: string): TaskRequirement | null {
   const state = store.snapshot(taskId), draft = currentDraft(state)
@@ -14,9 +15,12 @@ export function syncConfirmedRequirement(store: ProductStore, repository: TaskCo
   if (!confirmation) return null
   const existing = repository.findRequirement(taskId, draft.version)
   if (existing?.revision === draft.revision) return existing
-  assertRequirementReady(state, draft.markdown)
+  assertRequirementReady(state, draft.markdown, true)
+  parsePreparationDraft(draft.markdown)
   const resultExpectation = resultAndCompletionBody(draft.markdown)
-  const sources = selectedSourceFacts(state)
+  const entries = preparationEntryFacts(state, draft.markdown)
+  const entryResolutions = new Set(entries.map((entry) => entry.resolutionId))
+  const sources = selectedSourceFacts(state).filter((source) => entryResolutions.has(source.resolutionId))
   const decisions = state.decisions.filter((decision) => decision.kind !== "draft_confirmation")
     .map(({ id, kind, text, createdAt }) => ({ id, kind: kind as "option" | "free_text", text, createdAt }))
   const requirement = taskRequirementSchema.parse({
@@ -34,7 +38,7 @@ export function syncConfirmedRequirement(store: ProductStore, repository: TaskCo
     confirmation: { confirmedAt: confirmation.createdAt,
       requestId: stableUuid(taskId, "confirmation", String(draft.version), confirmation.id) },
     confirmationFacts: state.policyVersion >= 1 ? {
-      decisions, sources, resultExpectation, unresolvedItemCount: 0,
+      decisions, sources, entries, resultExpectation, unresolvedItemCount: 0,
     } : null,
   })
   return repository.saveRequirement(requirement)

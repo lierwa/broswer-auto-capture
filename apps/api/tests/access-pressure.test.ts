@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import test from "node:test"
-import { CONTRACT_VERSION, UNRECORDED_EXECUTION_CLEANUP, taskPlanSchema, type JsonValue, type TaskChain, type TaskExecution,
+import { CONTRACT_VERSION, UNRECORDED_BROWSER_HANDOFF, UNRECORDED_EXECUTION_CLEANUP, taskPlanSchema, type JsonValue, type TaskChain, type TaskExecution,
   type TaskRequirement, type TaskRun } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "@browser-capture/runtime"
 import { TaskPlanExecutor } from "../src/task-chain/plan-executor.js"
@@ -43,8 +43,10 @@ test("取消状态不会被异步执行栈晚到的 abort 覆盖成暂停", asyn
 
   const result = await current.executor.execute(current.record, controller.signal)
 
-  assert.equal(result.status, "cancelled")
-  assert.equal(current.repository.execution(current.record.taskId, current.record.id).status, "cancelled")
+  // WHY：取消事实留在 cleanupResume；缺少 runner 清理回执时仍须进入 cleanup_required。
+  assert.equal(result.status, "cleanup_required")
+  assert.equal(result.cleanupResume?.status, "cancelled")
+  assert.equal(current.repository.execution(current.record.taskId, current.record.id).status, "cleanup_required")
 })
 
 test("TaskPlanExecutor 分别保留 primary 与 cleanup 的四种组合", async () => {
@@ -110,6 +112,7 @@ function fixture(failFirst: boolean, cleanup?: RunnerCleanupReport, primaryError
     input: { items: [{ id: "first", value: "甲" }, { id: "first", value: "甲" }, { id: "second", value: "乙" }] },
     inputDigest: "a".repeat(64), pacing: { nodeDelayMs: 0 }, consumed: empty(), status: "queued", sequence: 0,
     cleanup: { ...UNRECORDED_EXECUTION_CLEANUP }, cleanupResume: null,
+    browserHandoff: { ...UNRECORDED_BROWSER_HANDOFF },
     currentStepId: null, currentRunId: null,
     steps: [{ stepId, chain: chainRef, invocationIds: [], runIds: [], consumed: empty(), status: "pending", output: null, reason: null }],
     output: null, reason: "等待执行", reviews: [], createdAt: now, updatedAt: now }

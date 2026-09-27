@@ -1,18 +1,22 @@
 /* WHY：聊天正文、决策和草稿卡共同组成时间线；完整文档在二级 Dialog 阅读。 */
 .interview-workspace { height: 100%; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .review-panel [role="tabpanel"]:has(.interview-workspace) { overflow: hidden; }
-.interview-bar { height: 54px; flex-shrink: 0; padding: 0 28px; display: flex; justify-content: space-between; align-items: center; color: var(--color-text-muted); font-size: 12px; border-bottom: 1px solid var(--color-border); }
-.interview-bar > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.interview-bar { height: 54px; flex-shrink: 0; padding: 0 28px; display: flex; justify-content: flex-end; align-items: center; border-bottom: 1px solid var(--color-border); }
 .interview-notices { flex-shrink: 0; width: min(100%, 840px); margin: 0 auto; padding: 0 28px; }
 .interview-notices:empty { display: none; }
-.context-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-accent); }
 .interview-thread { min-width: 0; min-height: 0; flex: 1; --chat-content-width: 784px; --chat-composer-width: 728px; }
 .interview-thread--time-incomplete [data-agent-turn-timestamp="true"] { display: none; }
 .thread-column { padding: 30px 28px 20px; }
-.thread-welcome { max-width: 620px; padding: 0 0 10px; }
-.thread-welcome h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.015em; }
-.thread-welcome p { margin: 6px 0 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.55; }
 .turn-status { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--color-text-muted); }
+.interview-search-record { max-width: 680px; min-width: 0; margin: 4px 0 9px; padding: 8px 12px; border-left: 2px solid var(--color-border); color: var(--color-text-muted); font-size: 12px; }
+.interview-search-summary { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.interview-search-summary strong { flex-shrink: 0; color: var(--color-text); font-weight: 500; }
+.interview-search-record details { margin: 6px 0 0 22px; }
+.interview-search-record summary { width: fit-content; cursor: pointer; color: var(--color-accent); }
+.interview-search-record details p { margin: 8px 0; overflow-wrap: anywhere; }
+.interview-search-record ul { margin: 8px 0; padding-left: 16px; overflow-wrap: anywhere; }
+.interview-search-record a { color: var(--color-accent); }
+.interview-search-record pre { max-height: 260px; margin: 8px 0 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.5; }
 .spin { animation: chat-spin 1.2s linear infinite; }
 @keyframes chat-spin { to { transform: rotate(360deg); } }
 .decision-block { margin-top: 18px; white-space: normal; }
@@ -35,15 +39,13 @@
 .thread-bottom [data-chat-composer-width] { width: calc(100% - 56px); transform: translateX(24px); }
 .interview-thread [data-interactive-timeline-composer-textarea="true"] { color: var(--color-text); font-size: 14px; line-height: 1.65; }
 .composer-caption { text-align: center; font-size: 10px; color: var(--color-text-muted); margin: 9px 0 0; }
+.interview-send-reason { flex-shrink: 0; width: min(100%, 840px); margin: 0 auto; padding: 0 28px 12px; color: var(--color-text-muted); font-size: 12px; }
 .thread-error { font-size: 13px; border-left: 2px solid var(--color-accent); padding: 10px 14px; margin-bottom: 16px; }
 .confirmed-next { display: flex; align-items: center; gap: 14px; padding: 18px 0; border-top: 1px solid var(--color-border); font-size: 12px; }
-.confirmed-next > div { flex: 1; }
-.confirmed-next p { margin: 4px 0 0; color: var(--color-text-muted); }
+.confirmed-next strong { flex: 1; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .draft-dialog { color: var(--sand-12); }
 .draft-dialog .section-line { align-items: flex-start; }
-.draft-version-label { display: flex; align-items: center; gap: 12px; margin: 24px 0 18px; font-size: 12px; color: var(--sand-11); }
-.draft-version-label .rt-SelectTrigger { flex: 1; min-width: 0; }
 .draft-document { max-height: 50dvh; overflow-y: auto; border-top: 1px solid var(--sand-6); border-bottom: 1px solid var(--sand-6); padding: 8px 0 22px; }
 .draft-document h3 { font-size: 16px; margin: 20px 0 8px; }
 .draft-document p { font-size: 13px; margin: 5px 0; white-space: pre-wrap; }
@@ -59,11 +61,9 @@
   /* WHY：窄屏 Composer 与时间线共用容器宽度，不能保留桌面定宽后再依赖面板裁切。 */
   .interview-thread .thread-bottom { width: 100%; padding: 8px 15px 12px; }
   .thread-bottom [data-chat-composer-width] { width: 100%; max-width: 100%; min-width: 0; transform: none; }
-  .interview-bar > div:first-child { flex: 1; }
-  .interview-bar > div:first-child > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .interview-bar > .rt-Button { min-width: 0; max-width: 52%; overflow: hidden; white-space: nowrap; }
   .interview-notices { padding: 0 16px; }
   .interview-bar { padding: 0 16px; }
+  .interview-send-reason { padding: 0 16px 12px; }
   .confirmed-next { flex-wrap: wrap; }
   .composer-caption { font-size: 9px; }
 }

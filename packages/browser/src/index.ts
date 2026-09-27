@@ -9,6 +9,7 @@ export { BrowserError, grantSchema, commandSchema, browserInspectionSchema, type
 export { browserGrantLimits } from "./contracts.js"
 export { bskExecutor } from "./transport.js"
 export { BrowserSession } from "./session.js"
+export { BrowserJournal } from "./journal.js"
 export * from "./task-chain-adapter.js"
 export { pageSchema, publicUrl, type BrowserPage } from "./page.js"
 export { readTargetSchema, targetReadResultSchema } from "./structured-read.js"

@@ -27,7 +27,7 @@ const binding = z.object({ id: z.string(), actionRef: z.string(), argumentPath: 
   kind: z.enum(["runtime_input", "prior_output", "authorized_constant", "sample_evidence"]),
   sourceRef: z.string(), transform: z.null(), proofRefs: z.array(reference) }).strict()
 const naturalBinding = binding.extend({ binding: valueBindingSchema.optional(),
-  derivation: z.enum(["anchor_navigation", "prior_verified_read"]).optional() }).strict()
+  derivation: z.enum(["anchor_navigation", "prior_verified_read", "repeat_destination"]).optional() }).strict()
 export const naturalBindingFactValueSchema = z.object({ actionRef: z.string(), argumentPath: z.string(),
   binding: valueBindingSchema, provenance: z.enum(["runtime_input", "native_parameter", "task_literal", "plan_entry_url", "node_output"]),
   taskQuote: z.string().nullable().optional(), sourceReadRef: z.string().nullable().optional() }).strict()
@@ -112,6 +112,7 @@ const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.str
 export const readSpecificationSchema = z.object({ container: z.string().min(1),
   fields: z.record(z.string().min(1), readFieldSchema),
   includeOrdinal: z.boolean().optional(),
+  requireComplete: z.boolean().optional(),
   maxItems: z.number().int().min(1).max(300), maxInputBytes: z.number().int().min(1).optional(),
   outputSchema: valueSchemaSchema }).strict()
 const settlePolicySchema = z.object({ maxMs: z.number().int().min(1).max(30000),
@@ -150,8 +151,14 @@ const readFieldsOperation = z.object({ name: z.literal("browser.read-fields"), v
 const invokeOperation = z.object({ name: z.literal("task-chain.invoke"), version: z.literal(1), chain: versionReferenceSchema,
   input: valueBindingSchema, budget: budgetSchema }).strict()
 const resultDataOperation = z.object({ name: z.literal("data.transform"), version: z.literal(1), dataOperation: z.literal("count") }).strict()
+const humanWaitOperation = z.object({ name: z.literal("browser.wait-for-human"), version: z.literal(1),
+  human: z.object({ reason: z.enum(["login", "captcha", "confirmation", "access_restriction"]),
+    prompt: z.string().trim().min(1).max(500),
+    resumeWhen: z.object({ operator: z.literal("equals"), path: z.tuple([z.literal("url")]),
+      expected: z.object({ source: z.literal("constant"), value: z.string().url() }).strict() }).strict(),
+  }).strict() }).strict()
 const deterministicOperation = z.discriminatedUnion("name", [workflowStepOperation, readFieldsOperation, invokeOperation])
-const naturalOperation = z.discriminatedUnion("name", [workflowStepOperation, readFieldsOperation, invokeOperation, resultDataOperation])
+const naturalOperation = z.discriminatedUnion("name", [workflowStepOperation, readFieldsOperation, invokeOperation, resultDataOperation, humanWaitOperation])
 const deterministicBase = { id: z.string(), kind: z.literal("deterministic"),
   operation: deterministicOperation, target: hybridTargetSchema.nullable(),
   preconditions: z.array(record), expectedEffect: z.object({ kind: z.enum(["none", "read", "ui_state", "navigation", "external_write"]) }).strict(),
@@ -173,6 +180,9 @@ export const naturalSummarySegmentSchema = z.object({ id: z.string(), kind: z.li
   inputBindings: z.array(valueBindingSchema).length(1), outputSchema: valueSchemaSchema,
   validation: z.object({ schema: valueSchemaSchema, candidateIds: z.null() }).strict(),
   budget: z.object({ maxCalls: z.literal(1), timeoutMs: z.number().int().min(1).max(120000) }).strict() }).strict()
+export const compilationGapSchema = z.object({ id: z.string(), code: z.string(), actionRefs: z.array(z.string()),
+  clauseRefs: z.array(z.string()), reason: z.string(),
+  resolution: z.enum(["collect_evidence", "confirm_intent", "add_capability", "reject_trace"]) }).strict()
 const compilationBody = {
   mediaType: z.literal("application/vnd.bat.hybrid-compilation+json;version=1"),
   sourceDigests: z.array(hash).length(6), segments: z.array(z.discriminatedUnion("kind", [deterministic, semantic])).max(500),
@@ -181,15 +191,19 @@ const compilationBody = {
     terminals: z.array(z.object({ id: z.string(), status: z.string() }).strict()) }).strict(),
   coverage: z.array(z.object({ actionRef: z.string(), disposition: z.enum(["compiled", "supporting", "retry_attempt", "agent_internal", "not_compilable"]),
     ownerSegmentId: z.string().nullable(), exclusionRule: z.string().nullable(), evidenceRefs: z.array(reference) }).strict()),
-  gaps: z.array(z.object({ id: z.string(), code: z.string(), actionRefs: z.array(z.string()), clauseRefs: z.array(z.string()),
-    reason: z.string(), resolution: z.enum(["collect_evidence", "confirm_intent", "add_capability", "reject_trace"]) }).strict()),
+  gaps: z.array(compilationGapSchema),
   canonicalDigest: hash }
 const legacyCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/1") }).strict()
+export const hybridRepeatMethodSchema = z.object({ id: keySchema, sourceRef: z.string().min(1),
+  proofRefs: z.array(reference).min(1), readSegmentId: keySchema, continuationSegmentId: keySchema,
+  advanceSegmentId: keySchema, outputPath: valuePathSchema, readPath: valuePathSchema,
+  stableKeyPath: valuePathSchema, sampleActionRefs: z.array(z.string().min(1)).min(5).max(500) }).strict()
 const naturalCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/2"),
   segments: z.array(z.discriminatedUnion("kind", [naturalDeterministic, naturalSummarySegmentSchema, functionSegmentSchema])).max(500),
   outputAssembly: hybridOutputAssemblySchema.nullable().optional(),
   resultBinding: hybridResultBindingSchema.nullable().optional(),
-  resultBranches: z.array(hybridResultBranchSchema).max(20).optional() }).strict()
+  resultBranches: z.array(hybridResultBranchSchema).max(20).optional(),
+  repeatMethods: z.array(hybridRepeatMethodSchema).max(1).optional() }).strict()
 export const hybridCompilationSchema = z.discriminatedUnion("compilerVersion", [legacyCompilationSchema, naturalCompilationSchema])
 export const hybridCompilerResponseSchema = z.object({ compilation: hybridCompilationSchema, canonicalPayload: z.string(),
   sourcePayloads: z.array(z.string()).length(5) }).strict()

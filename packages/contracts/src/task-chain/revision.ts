@@ -1,31 +1,11 @@
 import { z } from "zod"
-import { chainEdgeSchema, chainEdgeV2Schema, taskChainSchema } from "./chain.js"
+import { taskChainSchema } from "./chain.js"
 import {
   contractVersionSchema, digestSchema, identitySchema, keySchema, taskIdentitySchema, versionReferenceSchema,
 } from "./common.js"
-import { capabilityReferenceSchema, chainNodeSchema } from "./node.js"
 import { taskPlanSchema } from "./plan.js"
-import { chainPresentationContentSchema, chainPresentationSchema } from "./presentation.js"
+import { chainPresentationSchema } from "./presentation.js"
 import { requirementReferenceSchema } from "./requirement.js"
-import { jsonValueSchema } from "./value.js"
-
-const revisionEdgeSchema = z.union([chainEdgeSchema, chainEdgeV2Schema])
-export const chainRevisionOperationSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("move_node"), nodeId: keySchema,
-    position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict() }).strict(),
-  z.object({ type: z.literal("add_node"), node: chainNodeSchema,
-    position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict() }).strict(),
-  z.object({ type: z.literal("replace_node"), node: chainNodeSchema }).strict(),
-  z.object({ type: z.literal("remove_node"), nodeId: keySchema }).strict(),
-  z.object({ type: z.literal("set_entry"), nodeId: keySchema }).strict(),
-  z.object({ type: z.literal("upsert_edge"), edge: revisionEdgeSchema }).strict(),
-  z.object({ type: z.literal("remove_edge"), from: keySchema, port: keySchema }).strict(),
-  z.object({ type: z.literal("set_presentation"), presentation: chainPresentationContentSchema }).strict(),
-  z.object({ type: z.literal("replace_capability"), nodeId: keySchema,
-    capability: capabilityReferenceSchema, config: jsonValueSchema }).strict(),
-  z.object({ type: z.literal("set_browser_command_budget"),
-    maxBrowserCommands: z.number().int().nonnegative() }).strict(),
-])
 
 export const taskDraftStepSchema = z.object({
   stepId: keySchema, chain: taskChainSchema, presentation: chainPresentationSchema,
@@ -87,7 +67,6 @@ export const taskExecutionCandidateSchema = z.object({
   content: taskDraftContentSchema, createdAt: z.string().datetime(),
 }).strict()
 
-export type ChainRevisionOperation = z.infer<typeof chainRevisionOperationSchema>
 export type TaskDraftStep = z.infer<typeof taskDraftStepSchema>
 export type TaskDraftContent = z.infer<typeof taskDraftContentSchema>
 export type TaskDraftReference = z.infer<typeof taskDraftReferenceSchema>

@@ -2,14 +2,13 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { CONTRACT_VERSION } from "@browser-capture/contracts"
 import { TaskChainConnection } from "../src/taskChainConnection.js"
-import { setJsonPath } from "../src/NodeConfiguration.js"
 import { requirementRevisionMessage } from "../src/resultReview.js"
 
 const id = (value: number) => `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`
 const taskId = id(1)
 const snapshot = { contractVersion: CONTRACT_VERSION, taskId, taskSequence: 2, stateSequence: 2,
   requirement: null, draft: null, release: null, execution: null, activity: null,
-  draftReadiness: null, adjustment: null }
+  draftReadiness: null }
 
 test("最小工作区快照保留已有事实、拒绝跨任务响应并忽略过期响应", async () => {
   const connection = new TaskChainConnection(taskId, async () => new Response("{}", { status: 500 }))
@@ -120,33 +119,13 @@ test("历史事件按 execution 独立分页读取，不切换当前画布运行
   assert.equal(connection.snapshot().workspace, current.workspace)
 })
 
-test("浏览器目标选择绑定 task、draft、chain 与 node，不要求用户输入 selector", async () => {
-  const selectionId = id(20), draftId = id(21), chainId = id(22)
-  const requests: Array<{ url: string; body: unknown }> = []
-  const opening = { id: selectionId, status: "opening", requestId: id(23), taskId, draftId, chainId, nodeId: "submit",
-    target: null, tag: null, strategy: null, error: null, startedAt: "2026-09-21T00:00:00.000Z", updatedAt: "2026-09-21T00:00:00.000Z" }
-  const selected = { ...opening, status: "selected", target: { strategy: "history", scope: { url: "https://example.test/" },
-    identity: { schemaVersion: "browser-use.dom-interacted-element/v1", nodeName: "button", xPath: "/button[1]",
-      elementHash: "1", stableHash: null, axNameDigest: null, attributes: [] } }, tag: "button", strategy: "history" }
-  const connection = new TaskChainConnection(taskId, async (url, init) => {
-    requests.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : null })
-    return Response.json(init?.method === "POST" ? opening : selected, { status: init?.method === "POST" ? 202 : 200 })
-  })
-  assert.equal(await connection.startTargetSelection({ draftId, chainId, nodeId: "submit", expectedRevision: 1,
-    expectedChecksum: "a".repeat(64) }), true)
-  await connection.reloadTargetSelection()
-  assert.equal(connection.snapshot().targetSelection?.status, "selected")
-  assert.equal((requests[0]!.body as { chainId: string }).chainId, chainId)
-  assert.equal(JSON.stringify(requests).includes("selector"), false)
-})
-
 test("历史与诊断只在显式打开时读取，不混入普通快照", async () => {
   const requests: string[] = []
   const connection = new TaskChainConnection(taskId, async (url) => {
     requests.push(String(url))
     return String(url).includes("/history")
       ? Response.json({ kind: "executions", items: [], nextOffset: null })
-      : Response.json({ capabilityDescriptors: [], legacy: [], preparation: null })
+      : Response.json({ capabilityDescriptors: [], preparation: null })
   })
   connection.accept(snapshot)
   assert.deepEqual(requests, [])
@@ -155,41 +134,30 @@ test("历史与诊断只在显式打开时读取，不混入普通快照", async
   assert.equal(requests.length, 2)
   assert.equal(connection.snapshot().history.executions?.kind, "executions")
   assert.deepEqual(connection.snapshot().diagnostics, {
-    capabilityDescriptors: [], legacy: [], adjustmentRecovery: null, preparation: null })
+    capabilityDescriptors: [], preparation: null })
 })
 
-test("失败调整到达时不会丢掉在途诊断后的恢复刷新", { timeout: 1_000 }, async () => {
-  const recoveryId = id(41)
-  let resolveOld!: (response: Response) => void
-  const old = new Promise<Response>((resolve) => { resolveOld = resolve })
-  let reads = 0
-  const connection = new TaskChainConnection(taskId, async () => {
-    reads += 1
-    return reads === 1 ? old : Response.json({ capabilityDescriptors: [], legacy: [], preparation: null,
-      adjustmentRecovery: { jobId: recoveryId, available: true, reason: "已保存建议可恢复。" } })
-  })
-  const first = connection.reloadDiagnostics()
-  assert.equal(await connection.reloadDiagnostics(), false)
-  const refreshed = new Promise<void>((resolve) => {
-    const unsubscribe = connection.subscribe(() => {
-      if (connection.snapshot().diagnostics?.adjustmentRecovery?.jobId === recoveryId) {
-        unsubscribe(); resolve()
-      }
-    })
-  })
-  resolveOld(Response.json({ capabilityDescriptors: [], legacy: [], preparation: null }))
-  assert.equal(await first, true)
-  await refreshed
-  assert.equal(reads, 2)
-  assert.equal(connection.snapshot().diagnostics?.adjustmentRecovery?.available, true)
-})
-
-test("需求回流与 descriptor 补丁保留业务语义和其余配置", () => {
+test("需求回流保留运行摘要和业务语义", () => {
   const message = requirementRevisionMessage("运行状态：已完成\n实际结果：2 条", "来源范围理解错了")
   assert.match(message, /【运行摘要】/)
   assert.match(message, /重新确认目标、来源、范围与结果预期/)
-  const config = { actionName: "send_keys", args: { keys: "ENTER" }, target: null }
-  const changed = setJsonPath(config, ["actionName"], "click")
-  assert.deepEqual((changed as typeof config).args, config.args)
-  assert.equal((changed as typeof config).actionName, "click")
+})
+
+test("原窗口聚焦失败在成功刷新后仍保留可读反馈", async () => {
+  let reads = 0
+  const refreshed = { ...snapshot, stateSequence: 3 }
+  const failure = { error: "系统未允许自动切换到原窗口；窗口仍保留，请通过任务栏手动切换。",
+    code: "browser_handoff_foreground_denied" }
+  const connection = new TaskChainConnection(taskId, async (_url, init) => {
+    if (init?.method === "POST") return Response.json(failure, { status: 409 })
+    reads++
+    return Response.json(refreshed)
+  })
+  connection.accept(snapshot)
+  assert.equal(await connection.controlHandoff("focus", id(40), 2), false)
+  assert.equal(reads, 1)
+  assert.deepEqual(connection.snapshot().workspace, refreshed)
+  assert.equal(connection.snapshot().error, failure.error)
+  assert.equal(connection.snapshot().errorCode, failure.code)
+  assert.equal(connection.snapshot().busy, false)
 })

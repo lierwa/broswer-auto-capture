@@ -1,5 +1,5 @@
 import { Button } from "@radix-ui/themes";
-import { ArrowRight, FileText, LoaderCircle } from "lucide-react";
+import { FileText, LoaderCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   ComposerModelControl,
@@ -15,6 +15,7 @@ import {
 import type { useInterview } from "./useInterview.js";
 import type { useModelSettings } from "./useModelSettings.js";
 import { interviewAgentUI } from "./interviewAgentUI.js";
+import { currentDraft } from "./interviewContract.js";
 
 type Interview = ReturnType<typeof useInterview>;
 type TimelineModelSettings = Pick<
@@ -33,7 +34,7 @@ type TimelineProps = {
   interview: Interview;
   onPlan(): void;
   onDraft(version: number): void;
-  blocked: boolean;
+  blockedReason: string | undefined;
   readOnly: boolean;
   appearance: "light" | "dark";
   modelSettings: TimelineModelSettings;
@@ -44,7 +45,7 @@ export function ChatTimeline({
   interview,
   onPlan,
   onDraft,
-  blocked,
+  blockedReason,
   readOnly,
   appearance,
   modelSettings,
@@ -53,8 +54,9 @@ export function ChatTimeline({
   const modelReady = modelSettings.ready;
   const [draft, setDraft] = useState("");
   const latest = state.messages.at(-1);
+  const latestDraft = currentDraft(state);
   const controlsBlocked =
-    blocked || interview.busy || Boolean(interview.pending);
+    Boolean(blockedReason) || interview.busy || Boolean(interview.pending);
   const messageTimesIncomplete = interviewMessageTimes(state).incomplete;
   const timeline = useMemo(
     () =>
@@ -80,31 +82,16 @@ export function ChatTimeline({
 
   return (
     <section className="interview-workspace" aria-label="持续需求对话">
-      <header className="interview-bar">
-        <div>
-          <span className="context-dot" />
-          <span>
-            {state.cancellationRequested
-              ? "正在停止本轮"
-              : state.active
-                ? "正在梳理需求"
-                : state.confirmedVersion
-                  ? "需求已确认"
-                  : "明确目标与边界"}
-          </span>
-        </div>
-        {state.drafts.length > 0 && (
+      {latestDraft && <header className="interview-bar">
           <Button
             variant="ghost"
             color="gray"
-            onClick={() => onDraft(state.drafts.at(-1)!.version)}
+            onClick={() => onDraft(latestDraft.version)}
           >
             <FileText size={14} />
-            需求草稿 · v{state.drafts.at(-1)!.version}
-            <ArrowRight size={14} />
+            查看草案
           </Button>
-        )}
-      </header>
+      </header>}
       <div className="interview-notices">
         {!ready && !error && (
           <div role="status" className="turn-status">
@@ -112,7 +99,7 @@ export function ChatTimeline({
             正在读取需求对话
           </div>
         )}
-        {error && (
+        {error && !interview.pending && (
           <div role="alert" className="thread-error">
             {error}
             <Button
@@ -126,7 +113,7 @@ export function ChatTimeline({
         )}
         {interview.pending && !interview.busy && (
           <div className="thread-error">
-            <p>请核对当前对话后重发本次请求。</p>
+            <p role={error ? "alert" : undefined}>{error || "请核对当前对话后重发本次请求。"}</p>
             {interview.pending.type === "message" && (
               <p className="pending-message">{interview.pending.text}</p>
             )}
@@ -139,6 +126,9 @@ export function ChatTimeline({
             >
               重发本次请求
             </Button>
+            {error && <Button size="1" variant="soft" onClick={() => interview.reconnect()}>
+              重新连接
+            </Button>}
             <Button
               size="1"
               variant="ghost"
@@ -167,8 +157,9 @@ export function ChatTimeline({
             await interview.submit(submitted.text, submitted.answer);
           },
         }}
-        sendDisabled={!modelReady}
-        disabled={!ready || controlsBlocked}
+        // WHY：其他任务的发送互斥不应让本任务的受控草稿失去聚焦和输入能力。
+        sendDisabled={!modelReady || Boolean(blockedReason)}
+        disabled={!ready || interview.busy || Boolean(interview.pending) || readOnly}
         readOnly={readOnly}
         composerSubmitMode="enter"
         contentEntrance={{ mode: "queued" }}
@@ -200,16 +191,14 @@ export function ChatTimeline({
                 : {})}
             />
           ),
-          ...(state.messages.length === 0 && ready
-            ? { composerAccessory: <Welcome /> }
-            : {}),
           emptyStateFooter: (
             <p className="composer-caption">
-              先确认需求，再生成链路草稿；系统会按需核验来源。发送消息不会启动浏览器操作。
+              描述你想完成的事
             </p>
           ),
         }}
       />
+      {blockedReason && <p className="interview-send-reason" role="status">{blockedReason}</p>}
     </section>
   );
 }
@@ -227,13 +216,4 @@ export async function sendInterviewMessage(
 ) {
   requireModelInvocation(modelReady);
   await send(text);
-}
-
-function Welcome() {
-  return (
-    <div className="thread-welcome">
-      <h2>描述这次要采集的内容</h2>
-      <p>说明对象、范围和期望字段；需求确认后即可生成链路草稿，系统会按需核验来源。</p>
-    </div>
-  );
 }

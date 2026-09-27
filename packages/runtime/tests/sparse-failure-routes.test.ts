@@ -41,7 +41,12 @@ test("未处理异常保留原节点、原原因与类型，不执行伪终态�
 })
 
 test("无人工边时等待并恢复同一运行，现场核验后不重放已派发动作", async () => {
-  const chain = sparseChain(), request = requestFor(chain, null)
+  const chain = sparseChain()
+  const action = chain.nodes.find((node) => node.id === "capability")!
+  if (action.kind !== "capability") throw new Error("fixture")
+  action.human = { reason: "confirmation", prompt: "请处理当前页面", resumeWhen: { operator: "equals", path: ["ready"],
+    expected: { source: "constant", value: true } } }
+  const request = requestFor(taskChainSchema.parse(chain), null)
   const browser = { sessionId: "owned", tabId: "tab", url: "https://example.com/", observationDigest: "a".repeat(64),
     observedAt: new Date().toISOString() }
   let calls = 0
@@ -49,11 +54,12 @@ test("无人工边时等待并恢复同一运行，现场核验后不重放已�
     calls++
     return node.id === "observe" ? { outcome: "success", output: null }
       : { outcome: "human_required", reason: "请处理当前页面", browser }
-  }, verifyResume: async () => ({ ok: true, browser, observation: { url: browser.url } }) }
+  }, verifyResume: async () => ({ ok: true, browser, observation: { ready: true } }) }
   const waiting = await new TaskChainRuntime().execute({ chain, request, capabilities })
   assert.equal(waiting.status, "waiting_for_human")
   assert.equal(waiting.checkpoint?.cursor, "capability")
-  assert.deepEqual(waiting.checkpoint?.resumeWhen, { operator: "exists", path: ["url"] })
+  assert.equal(waiting.checkpoint?.resumeWhen?.operator, "equals")
+  assert.deepEqual(waiting.checkpoint?.resumeWhen?.path, ["ready"])
   const checkpoint = waiting.checkpoint!
   const resumed = await new TaskChainRuntime().execute({ chain, request, capabilities, control: {
     checkpoint, resumeRequest: { contractVersion: request.contractVersion, requestId: request.requestId,

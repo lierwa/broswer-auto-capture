@@ -3,6 +3,16 @@
 import json
 import os
 
+BEFORE_ACTION_STAGES = frozenset({
+    'live_current_page', 'live_target_before', 'live_document_session', 'live_document_root',
+    'live_target_after', 'live_document_other', 'observation_title', 'observation_url',
+})
+ERROR_KINDS = frozenset({'timeout_error', 'os_error', 'runtime_error', 'value_error', 'other_error'})
+AUTHOR_TRANSPORT_STATUSES = {
+    'serialize_started': 'started', 'serialize_completed': 'completed', 'serialize_failed': 'failed',
+    'write_started': 'started', 'write_completed': 'completed', 'write_failed': 'failed',
+}
+
 
 class DiagnosticChannel:
     def __init__(self):
@@ -17,6 +27,10 @@ class DiagnosticChannel:
     def emit(self, event):
         try:
             keys = set(event)
+            if event.get('phase') in ('before_action_detail', 'author_transport'):
+                if self.channel is not None and self._fixed_event(event, keys):
+                    self.channel.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + '\n')
+                return
             if self.channel is None or keys - {'phase', 'status', 'actionName', 'stepNumber', 'selector',
                                                'queryOutcome', 'matchCount', 'contextOutcome', 'contextCount',
                                                'outputPath', 'container',
@@ -69,6 +83,17 @@ class DiagnosticChannel:
             self.channel.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + '\n')
         except Exception:
             pass
+
+    @staticmethod
+    def _fixed_event(event, keys):
+        if event.get('phase') == 'author_transport':
+            return (keys == {'phase', 'status', 'code'}
+                    and AUTHOR_TRANSPORT_STATUSES.get(event.get('code')) == event.get('status'))
+        if keys != {'phase', 'status', 'actionName', 'stepNumber', 'stage', 'errorKind'}:
+            return False
+        return (event.get('status') == 'failed' and isinstance(event.get('actionName'), str)
+                and type(event.get('stepNumber')) is int and 0 <= event['stepNumber'] <= 9007199254740991
+                and event.get('stage') in BEFORE_ACTION_STAGES and event.get('errorKind') in ERROR_KINDS)
 
     def close(self):
         if self.channel is None:

@@ -15,6 +15,13 @@ class LiveDocumentReadError(ValueError):
             'errorCode': 'document_read_failed', 'errorDigest': digest(str(error))}
 
 
+class ObservationRefreshRequired(RuntimeError):
+    """A proposed indexed action was withheld because its observed URL is stale."""
+
+    def __init__(self):
+        super().__init__('observation_refresh_required: page address changed after observation; no action was sent. Re-read the current page before choosing a target')
+
+
 async def live_document_sample(browser):
     target_id = browser.agent_focus_target_id
     stage = 'current_page'
@@ -84,11 +91,14 @@ class SourceObservationScope:
         self.installed = False
         self.had_instance_method = 'get_browser_state_summary' in vars(browser)
         self.instance_method = vars(browser).get('get_browser_state_summary')
+        self.had_instance_url = 'get_current_page_url' in vars(browser)
+        self.instance_url = vars(browser).get('get_current_page_url')
         collector.observation_scope = self
 
     def start(self):
         # WHY：只适配本次 Browser 实例的公开查询，不能改上游全局类或浏览器所有权。
         object.__setattr__(self.browser, 'get_browser_state_summary', self.capture)
+        object.__setattr__(self.browser, 'get_current_page_url', self.live_page_url)
         self.installed = True
 
     def close(self):
@@ -98,8 +108,26 @@ class SourceObservationScope:
             object.__setattr__(self.browser, 'get_browser_state_summary', self.instance_method)
         else:
             object.__delattr__(self.browser, 'get_browser_state_summary')
+        if self.had_instance_url:
+            object.__setattr__(self.browser, 'get_current_page_url', self.instance_url)
+        else:
+            object.__delattr__(self.browser, 'get_current_page_url')
         self.stamps.clear()
         self.installed = False
+
+    async def live_page_url(self):
+        session_id, tab_id = self.browser.id, self.browser.agent_focus_target_id
+        page = await self.browser.get_current_page()
+        if page is None or not tab_id:
+            raise ValueError('observation_tab_identity_unavailable')
+        # WHY：SDK 的 URL 缓存可在新 tab 保持空串，使原生 watchdog 永久跳过 DOM 构建。
+        # 复用公开 Page.get_url 读取同一 target；不修改缓存、不生成替代 DOM、不放宽前后文档校验。
+        url = await page.get_url()
+        if self.browser.id != session_id or self.browser.agent_focus_target_id != tab_id:
+            raise ValueError('observation_tab_changed')
+        if not isinstance(url, str) or not url:
+            raise ValueError('observation_url_unavailable')
+        return url
 
     async def capture(self, include_screenshot=True, cached=False, include_recent_events=False):
         return await self._capture(include_screenshot, include_recent_events, allow_transition=False)
@@ -114,6 +142,7 @@ class SourceObservationScope:
         phase = 'sample_before'
         pending = self.collector.pending
         step = pending.get('nativeStep') if allow_transition and isinstance(pending, dict) else None
+        session_id = self.browser.id
         try:
             before = await live_document_sample(self.browser)
             phase = 'native_summary'
@@ -121,21 +150,24 @@ class SourceObservationScope:
                                                include_recent_events=include_recent_events))
             phase = 'sample_after'
             after = await live_document_sample(self.browser)
-            if not before['stable'] or not after['stable'] or sample_identity(before) != sample_identity(after):
+            if (self.browser.id != session_id or not before['stable'] or not after['stable']
+                    or sample_identity(before) != sample_identity(after)):
                 outcome = 'changed_during_capture'
                 raise ValueError('observation_changed_during_capture')
             original_url = getattr(summary, 'url', None)
             document = summary_document_digest(summary, after['targetId'])
             url_changed = original_url != after['url']
             has_targets = bool(getattr(getattr(summary, 'dom_state', None), 'selector_map', {}))
-            if (url_changed or has_targets) and (document is None or document != after['documentDigest']):
+            if (document is not None or url_changed or has_targets) and (
+                    document is None or document != after['documentDigest']):
                 outcome = 'snapshot_document_mismatch'
                 raise ValueError('observation_snapshot_document_mismatch')
             outcome = 'cache_url_corrected' if url_changed else 'consistent'
             self.record('state_capture', outcome, original_url, before, after, document, native_step=step)
             if url_changed:
                 summary.url = after['url']
-                summary.tabs = [_updated_tab(tab, after) for tab in summary.tabs]
+            # 当前 tab 的 URL 也来自同一缓存；只更新返回副本中已核验的 target，其余 tab 保持原事实。
+            summary.tabs = [_updated_tab(tab, after) for tab in summary.tabs]
             self.stamps.append((summary, after))
             self.stamps = self.stamps[-8:]
             return summary
@@ -153,6 +185,12 @@ class SourceObservationScope:
         try:
             current = await live_document_sample(self.browser)
         except LiveDocumentReadError as error:
+            stage = {
+                'current_page': 'live_current_page', 'target_before': 'live_target_before',
+                'document_session': 'live_document_session', 'document_root': 'live_document_root',
+                'target_after': 'live_target_after',
+            }.get(error.details.get('errorStage'), 'live_document_other')
+            self.callbacks.record_before_action_detail(stage, error.__context__ or error)
             self.record('before_action', 'capture_unavailable', getattr(summary, 'url', None), baseline, None,
                         native_step=native_step, error=error, error_phase='sample_before_action')
             raise
@@ -165,6 +203,9 @@ class SourceObservationScope:
         if outcome != 'consistent':
             if _can_refresh_read(action_name, selector_index, baseline, current):
                 return await self.refresh_read(summary, native_step, baseline, current)
+            if _same_document_url_changed(baseline, current):
+                # WHY：SPA 可在模型思考期间改 URL；旧索引不可点击，但同一文档可让 Agent 下一轮重观察。
+                raise ObservationRefreshRequired()
             raise ValueError('observation_changed_after_capture')
         mapping = getattr(getattr(summary, 'dom_state', None), 'selector_map', {}) or {}
         if type(selector_index) is int and selector_index not in mapping and str(selector_index) not in mapping:
@@ -238,6 +279,15 @@ def _can_refresh_read(action_name, selector_index, baseline, current):
         and baseline['stable'] and current['stable'] and baseline['url'] != current['url']
         and baseline['targetId'] == current['targetId']
         and baseline['documentDigest'] is not None and baseline['documentDigest'] == current['documentDigest'])
+
+
+def _same_document_url_changed(baseline, current):
+    return (baseline['stable'] and current['stable']
+        and isinstance(baseline['url'], str) and isinstance(current['url'], str)
+        and baseline['url'] != current['url']
+        and baseline['targetId'] is not None and baseline['targetId'] == current['targetId']
+        and baseline['documentDigest'] is not None
+        and baseline['documentDigest'] == current['documentDigest'])
 
 
 def _error_diagnostic(error, phase):

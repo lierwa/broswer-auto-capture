@@ -1,14 +1,14 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Badge,
   Button,
   Dialog,
+  DropdownMenu,
   IconButton,
   Theme,
   Tooltip,
 } from "@radix-ui/themes";
-import { CircleUserRound, Moon, PanelLeft, Plus, Settings, Sun } from "lucide-react";
+import { Bell, CircleUserRound, Moon, PanelLeft, Plus, Settings, Sun } from "lucide-react";
 import { ModelSettingsDialog } from "@agent-platform/ai-connect-react/components/ModelSettingsDialog";
 import "@radix-ui/themes/styles.css";
 import "@xyflow/react/dist/style.css";
@@ -16,9 +16,9 @@ import "@agent-platform/ai-connect-react/styles.css";
 import { useTasks } from "./useTasks.js";
 import { TaskSidebar, TaskMenu } from "./TaskSidebar.js";
 import { TaskWorkspace } from "./TaskWorkspace.js";
-import { taskStatusLabels } from "./taskContract.js";
 import { useModelSettings } from "./useModelSettings.js";
 import { BrowserProfileDialog } from "./BrowserProfileDialog.js";
+import { useTaskAttention } from "./useTaskAttention.js";
 import "./styles.css";
 import "./chat.css";
 import "./workbench.css";
@@ -51,6 +51,7 @@ function App() {
     model.select(id);
     if (compact) setSidebarOpen(false);
   }
+  const attention = useTaskAttention(model.tasks, model.ready);
   const sidebar = (
     <TaskSidebar
       model={model}
@@ -105,11 +106,25 @@ function App() {
                 </IconButton>
               </Tooltip>
               <h1>{task?.title ?? "浏览器工作台"}</h1>
-              {task && <div className="topbar-product-state" data-tone={taskTone(task.status)}>
-                <i aria-hidden="true" /><div><Badge color={taskBadgeColor(task.status)} variant="soft">
-                  {taskStatusLabels[task.status]}</Badge><small>{formatUpdatedAt(task.updatedAt)}</small></div></div>}
             </div>
             <div className="status-group">
+              {attention.visible.length > 0 && <DropdownMenu.Root>
+                <DropdownMenu.Trigger><IconButton className="task-attention-trigger" variant="ghost"
+                  color="gray" aria-label={attention.actionCount
+                    ? `任务提醒，${attention.actionCount} 项待处理` : "任务提醒"}>
+                  <Bell aria-hidden="true" size={17} />
+                  {attention.actionCount > 0 && <span className="task-attention-count" aria-hidden="true">
+                    {attention.actionCount > 9 ? "9+" : attention.actionCount}</span>}
+                </IconButton></DropdownMenu.Trigger>
+                <DropdownMenu.Content className="task-attention-menu" align="end">
+                  <DropdownMenu.Label>任务提醒</DropdownMenu.Label>
+                  {attention.visible.map((item) => <DropdownMenu.Item key={`${item.id}:${item.attention!.id}`}
+                    onSelect={() => { select(item.id); if (item.attention!.kind !== "action_required") attention.dismiss(item) }}>
+                    <span className="task-attention-entry"><strong>{item.title}</strong>
+                      <small>{item.attention!.message}</small></span>
+                  </DropdownMenu.Item>)}
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>}
               {task && <TaskMenu task={task} model={model} />}
               <Tooltip content="专用浏览器账号">
                 <IconButton variant="ghost" color="gray" aria-label="专用浏览器账号"
@@ -185,12 +200,7 @@ function App() {
               <span className="welcome-mark">
                 <Plus aria-hidden="true" size={22} />
               </span>
-              <h2>每个需求，一个独立任务</h2>
-              <p>
-                从对话明确目标，逐步形成草稿、来源依据与浏览器操作链。
-                <br />
-                任务和它的产物始终保存在一起。
-              </p>
+              <h2>描述你想完成的事</h2>
               <Button
                 disabled={!model.ready || model.busy}
                 onClick={() => void model.action({ type: "create" })}
@@ -223,22 +233,3 @@ function App() {
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);
-
-function taskTone(status: string) {
-  if (["running", "planning", "queued", "executing"].includes(status)) return "active"
-  if (status === "failed") return "danger"
-  if (["confirmed", "review"].includes(status)) return "success"
-  return "neutral"
-}
-
-function taskBadgeColor(status: string): "gray" | "amber" | "red" | "green" {
-  if (["running", "planning", "queued", "executing"].includes(status)) return "amber"
-  if (status === "failed") return "red"
-  if (["confirmed", "review"].includes(status)) return "green"
-  return "gray"
-}
-
-function formatUpdatedAt(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-    .format(new Date(value))
-}

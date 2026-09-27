@@ -150,6 +150,46 @@ async function tcpListenerPids(port) {
   return pids
 }
 
+async function listenerSnapshot(ports, lookup) {
+  const groups = await Promise.all([...new Set(Object.values(ports))].map(async (port) =>
+    (await lookup(port)).map((pid) => ({ port, pid }))))
+  return groups.flat().sort((left, right) => left.port - right.port || left.pid - right.pid)
+}
+
+// WHY：显式 clean 已获用户授权清理开发端口；仍只终止二次核对的初始 PID，不放宽自动启动守卫。
+export async function cleanDevPorts(ports, options = {}) {
+  const lookup = options.listenerPids ?? tcpListenerPids
+  const terminate = options.terminate ?? terminateProcess
+  const initial = await listenerSnapshot(ports, lookup)
+  if (!initial.length) return []
+  if (initial.some(({ pid }) => !Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid)) {
+    throw new DevStartError("拒绝停止无效或当前清理进程。")
+  }
+  const known = new Set(initial.map(({ port, pid }) => `${port}:${pid}`))
+  const inspect = async () => {
+    const current = await listenerSnapshot(ports, lookup)
+    if (current.some(({ port, pid }) => !known.has(`${port}:${pid}`))) {
+      throw new DevStartError("开发端口出现新的占用者；没有停止新进程。")
+    }
+    return current
+  }
+  if ((await inspect()).length !== initial.length) {
+    throw new DevStartError("开发端口占用者已变化；没有停止进程。")
+  }
+  options.onStopping?.(initial)
+  for (const pid of new Set(initial.map((owner) => owner.pid))) {
+    if (!(await inspect()).some((owner) => owner.pid === pid)) continue
+    try { await terminate(pid) }
+    catch (error) { if (error?.code !== "ESRCH") throw error }
+  }
+  const deadline = Date.now() + RELEASE_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    if (!(await inspect()).length) return initial
+    await delay(100)
+  }
+  throw new DevStartError("开发端口未在 5 秒内释放。")
+}
+
 async function lsofListenerPids(port) {
   const { stdout } = await execFileAsync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fp"])
   return uniquePids(stdout.split(/\r?\n/).filter((line) => line.startsWith("p")).map((line) => line.slice(1)))
@@ -298,6 +338,23 @@ async function main() {
   catch { if (!interrupted) throw new DevStartError("API 或 Workbench 启动失败；本次启动的其他服务已停止。") }
 }
 
+async function cleanMain() {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+  const ports = selectedPorts()
+  const removed = await cleanDevPorts(ports, {
+    onStopping: (owners) => process.stdout.write(`正在清理开发端口：${owners.map(({ port, pid }) => `${port}/PID ${pid}`).join(", ")}\n`),
+    terminate: async (pid) => {
+      if (!await requestDevelopmentShutdown(ports.api, pid, root)) terminateProcess(pid)
+    },
+  })
+  process.stdout.write(removed.length ? "开发端口已清空。\n" : "开发端口已空闲。\n")
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => { process.stderr.write(`${error instanceof DevStartError ? error.message : "开发服务启动失败。"}\n`); process.exitCode = 1 })
+  const cleaning = process.argv.includes("--clean")
+  const run = cleaning ? cleanMain : main
+  run().catch((error) => {
+    process.stderr.write(`${error instanceof DevStartError ? error.message : cleaning ? "开发端口清理失败。" : "开发服务启动失败。"}\n`)
+    process.exitCode = 1
+  })
 }

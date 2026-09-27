@@ -1,6 +1,6 @@
 # 产品流程与工作台交互基线
 
-更新：2026-09-13。性质：产品理解与交互约束，不表示后端能力已实现。任务链路公共边界见 [自然语言浏览器任务链路架构基准](TASK_CHAIN_ARCHITECTURE.md)，首次探索和轨迹编译见[重构实施说明](TASK_CHAIN_AUTHORING_REDESIGN.md)。目标产品由浏览器扩展主前端、Web 辅助管理与 Node 服务端组成，职责见 [产品运行架构方向](PRODUCT_ARCHITECTURE.md)。统一开发入口见 DEVELOPMENT_BASELINE.md；原型保留为布局基线，完整业务状态按 UI_STATES.md 随功能开发验收。
+更新：2026-09-13。性质：历史产品理解与交互记录，不表示后端能力已实现。本文“确认需求草稿后另生成 TaskPlan”、独立计划页及 Pi BrowserSkill 探索等旧流程已被 [自然语言浏览器任务链路架构基准](TASK_CHAIN_ARCHITECTURE.md) 和 [ADR 0011](../adr/0011-interview-produces-preparation-draft.md) 覆盖，不再作为新开发依据。首次探索和轨迹编译的历史方案见[重构实施说明](TASK_CHAIN_AUTHORING_REDESIGN.md)。
 
 ## 1. 产品起点与参考机制
 

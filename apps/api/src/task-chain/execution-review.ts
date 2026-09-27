@@ -1,4 +1,4 @@
-import { taskExecutionSchema, type TaskExecution, type TaskExecutionReview, type VersionReference } from "@browser-capture/contracts"
+import { taskExecutionSchema, type TaskExecution, type TaskExecutionReview } from "@browser-capture/contracts"
 import { stableUuid } from "@browser-capture/runtime"
 import { DomainError } from "../errors.js"
 
@@ -7,7 +7,6 @@ export function appendExecutionReview(record: TaskExecution, input: {
   expectedSequence: number
   decision: TaskExecutionReview["decision"]
   feedback: string | null
-  chain: VersionReference | null
 }) {
   if (record.sequence !== input.expectedSequence) {
     throw new DomainError("execution_review_stale", "运行结果已经更新，请刷新后重新选择。", 409)
@@ -16,7 +15,6 @@ export function appendExecutionReview(record: TaskExecution, input: {
     throw new DomainError("execution_review_unavailable", "当前运行尚未形成可验收结果。", 409)
   }
   if (record.reviews.some((item) => item.id === stableUuid(input.requestId, "result-review"))) return record
-  const chain = reviewChain(record, input.decision, input.chain)
   if (input.decision === "requirement_revision" && !input.feedback) {
     throw new DomainError("execution_review_feedback_required", "请说明需要重新梳理的目标、来源、范围或结果理解。", 409)
   }
@@ -26,7 +24,7 @@ export function appendExecutionReview(record: TaskExecution, input: {
   const now = new Date().toISOString()
   const review: TaskExecutionReview = {
     id: stableUuid(input.requestId, "result-review"), decision: input.decision,
-    feedback: input.feedback, summary: executionReviewSummary(record), chain, createdAt: now,
+    feedback: input.feedback, summary: executionReviewSummary(record), createdAt: now,
   }
   return taskExecutionSchema.parse({ ...record, sequence: record.sequence + 1,
     reviews: [...record.reviews, review], updatedAt: now })
@@ -43,21 +41,6 @@ export function executionReviewSummary(record: TaskExecution) {
   const output = record.output ? JSON.stringify(record.output) : ""
   if (output) lines.push(`实际结果：${output.length > 3_000 ? `${output.slice(0, 3_000)}…` : output}`)
   return lines.join("\n")
-}
-
-function reviewChain(record: TaskExecution, decision: TaskExecutionReview["decision"], chain: VersionReference | null) {
-  if (decision !== "chain_revision") {
-    if (chain) throw new DomainError("execution_review_chain_unexpected", "该验收选择不应携带链路。", 409)
-    return null
-  }
-  if (!chain || !record.steps.some((step) => sameReference(step.chain, chain))) {
-    throw new DomainError("execution_review_chain_invalid", "请选择本次运行实际使用的链路。", 409)
-  }
-  return chain
-}
-
-function sameReference(left: VersionReference, right: VersionReference) {
-  return left.id === right.id && left.version === right.version && left.digest === right.digest
 }
 
 function statusLabel(status: TaskExecution["status"]) {

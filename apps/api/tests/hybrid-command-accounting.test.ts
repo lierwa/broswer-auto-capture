@@ -95,6 +95,41 @@ test("恢复的初始观察也通过同一计数接口计费", async () => {
   assert.equal(ledger.scopeConsumption("step").browserCommands, 1)
 })
 
+test("人工处理后，同一 session 与授权来源内的页面跳转可从原检查点继续", async () => {
+  const moved = { ...browser, url: "https://example.test/after-human" }
+  const runner = { ...controlledRunner([]), request: async () => moved }
+  await withHybridCapabilities({ root, directory: tmpdir(), ownerId: randomUUID(),
+    signal: new AbortController().signal, allowedOrigins: ["https://example.test"], createRunner: () => runner },
+  async (capabilities) => {
+    const checkpoint = { browser, resumeWhen: { operator: "exists", path: ["url"] }, pendingEffect: null,
+      events: [] } as unknown as TaskCheckpoint
+    const resumed = await capabilities.verifyResume!(checkpoint, new AbortController().signal)
+    assert.equal(resumed.ok, true)
+    assert.equal(resumed.browser?.url, moved.url)
+  })
+})
+
+test("保留原窗口时只交付已确认的 lease，Runner 清理回执仍独立记录", async () => {
+  const ownerId = randomUUID(), report = cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({
+    stage, status: stage === "browser_close" ? "not_required" as const : "confirmed" as const, code: null })), false)
+  const lease = { leaseId: ownerId, ownerId, targetDigest: "a".repeat(64), active: true as const, reason: null }
+  let started: unknown = null, handoffs = 0, directCloses = 0, handed: unknown = null, cleaned: unknown = null
+  const runner = { ...controlledRunner([]), startHybrid: async (config: unknown) => { started = config },
+    handoff: async () => { handoffs++; return { lease, report } },
+    close: async () => { directCloses++; return report } }
+  const result = await withHybridCapabilities({ root, directory: tmpdir(), ownerId,
+    signal: new AbortController().signal, allowedOrigins: ["https://example.test"],
+    managedWindow: { ownerId, resume: false }, handoffPurpose: () => "delivery",
+    onHandoff: (purpose, value) => { handed = { purpose, value } }, onCleanup: (value) => { cleaned = value },
+    createRunner: () => runner }, async () => "complete")
+  assert.equal(result, "complete")
+  assert.deepEqual((started as { managedWindow: unknown }).managedWindow, { ownerId, resume: false })
+  assert.equal(handoffs, 1)
+  assert.equal(directCloses, 0)
+  assert.deepEqual(handed, { purpose: "delivery", value: lease })
+  assert.equal(cleaned, report)
+})
+
 async function execute(options: { limit: number; ledgerLimit?: number; nested?: boolean; failRead?: boolean }) {
   const child = readChain(options.limit), chain = options.nested ? parentChain(child) : child
   const saved = new Map<string, TaskRun>(), requests: string[] = [], errors: string[] = []

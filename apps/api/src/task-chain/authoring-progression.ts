@@ -1,10 +1,14 @@
 import { parseTaskValue, type JsonValue, type TaskPlan } from "@browser-capture/contracts"
 import { digestJson, readPath, resolveBinding, type BindingContext } from "@browser-capture/runtime"
+import type { HybridSourceResult } from "../upstream-browser/hybrid-captured-source.js"
+import { representativeOutputSchema, representativeSourceOutput } from "../upstream-browser/hybrid-method-evidence.js"
 
 export function plannedProgression(plan: TaskPlan, input: JsonValue) {
   const context: BindingContext = { input, nodeOutputs: {}, variables: {} }
   let position = 0
   const resolved = new Map<string, JsonValue>()
+  const sampledPaths = new Map<string, Array<Array<string | number>>>()
+  const countPaths = new Map<string, Array<Array<string | number>>>()
   const resolve = (step: TaskPlan["steps"][number]) => {
     if (plan.steps[position]?.id !== step.id) throw new Error(`preexecution_step_order_invalid:${step.id}`)
     if (step.invocation.mode === "batch") throw new Error("workflow_batch_input_unsupported")
@@ -14,22 +18,43 @@ export function plannedProgression(plan: TaskPlan, input: JsonValue) {
     resolved.set(step.id, value)
     return value
   }
-  const accept = (stepId: string, stepInput: JsonValue, raw: JsonValue | undefined) => {
+  const acceptingStep = (stepId: string, stepInput: JsonValue) => {
     const step = plan.steps[position]
     if (!step || stepId !== step.id) throw new Error(`preexecution_step_order_invalid:${stepId}`)
     const expected = resolved.get(step.id)
     if (expected === undefined || digestJson(expected) !== digestJson(stepInput)) {
       throw new Error(`preexecution_step_input_mismatch:${step.id}`)
     }
-    const output = parseTaskValue(step.outputContract, raw)
+    return step
+  }
+  const record = (step: TaskPlan["steps"][number], output: JsonValue, paths: Array<Array<string | number>>,
+    counts: Array<Array<string | number>> = []) => {
     context.nodeOutputs[step.id] = step.invocation.mode === "each" ? [output] : output
+    sampledPaths.set(step.id, paths.map((path) => step.invocation.mode === "each" ? [0, ...path] : path))
+    countPaths.set(step.id, counts.map((path) => step.invocation.mode === "each" ? [0, ...path] : path))
     position++
+  }
+  const accept = (stepId: string, stepInput: JsonValue, raw: JsonValue | undefined) => {
+    const step = acceptingStep(stepId, stepInput)
+    record(step, parseTaskValue(step.outputContract, raw), [])
+  }
+  const acceptSource = (stepId: string, stepInput: JsonValue,
+    source: Pick<HybridSourceResult, "request" | "canonicalRequest" | "output">) => {
+    const step = acceptingStep(stepId, stepInput)
+    const result = representativeSourceOutput(step.outputContract, source)
+    record(step, result.output, result.samplePaths, result.countPaths)
   }
   const finish = () => {
     if (position !== plan.steps.length) throw new Error("preexecution_step_result_missing")
-    parseTaskValue(plan.outputContract, resolveBinding(plan.output, context))
+    const binding = plan.output
+    const projected = (paths: typeof sampledPaths) => binding.source === "node" ? (paths.get(binding.nodeId) ?? [])
+      .filter((path) => binding.path.length <= path.length && binding.path.every((part, index) => part === path[index]))
+      .map((path) => path.slice(binding.path.length)) : []
+    // WHY：只按同一 node/path 投影已证数组和 count 路径，不按终值相等猜测派生来源。
+    const schema = representativeOutputSchema(plan.outputContract.schema, projected(sampledPaths), projected(countPaths))
+    parseTaskValue({ ...plan.outputContract, schema }, resolveBinding(binding, context))
   }
-  return { resolve, accept, finish }
+  return { resolve, accept, acceptSource, finish }
 }
 
 function eachInputs(step: TaskPlan["steps"][number], context: BindingContext) {

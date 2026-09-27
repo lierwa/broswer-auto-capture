@@ -16,8 +16,18 @@ class ObservationCapture:
         if not tab_id or tab_id not in {tab.target_id for tab in summary.tabs}:
             raise ValueError('observation_tab_identity_unavailable')
         # WHY：summary.title 来自异步 Target 缓存；即时事实用同一 tab 的公开 Page 查询。
-        title = await read_fact('title', None, self.browser)
-        live_url = await read_fact('url', None, self.browser)
+        try:
+            title = await read_fact('title', None, self.browser)
+        except Exception as error:
+            if self.observation_scope is not None:
+                self.observation_scope.callbacks.record_before_action_detail('observation_title', error)
+            raise
+        try:
+            live_url = await read_fact('url', None, self.browser)
+        except Exception as error:
+            if self.observation_scope is not None:
+                self.observation_scope.callbacks.record_before_action_detail('observation_url', error)
+            raise
         if self.observation_scope is not None:
             self.observation_scope.record_live_url(summary, tab_id, live_url)
         if self.browser.agent_focus_target_id != tab_id:

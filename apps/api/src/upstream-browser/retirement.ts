@@ -20,6 +20,7 @@ export function retireWorkflowV1(reference?: { artifactId?: string; chainId?: st
 
 const hybridCapabilities = new Map([
   ["browser.workflow-step", 2], ["browser.read-fields", 2], ["browser.target-readiness", 1],
+  ["browser.wait-for-human", 1],
 ])
 
 export function usesHybridBrowserRuntime(chains: readonly TaskChain[]) {

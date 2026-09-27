@@ -1,5 +1,8 @@
 export function failureLayer(error: unknown, stage: string) {
   const message = error instanceof Error ? error.message : "unknown"
+  if (message === "hybrid_source_protocol_invalid") return "来源结果交接"
+  if (/^hybrid_(annotation_audit_missing|source_model_audit_)/.test(message)) return "准备模型调用审计"
+  if (message.includes("hybrid_action_registry_mismatch")) return "离线编译动作合同"
   if (/workflow_fork_/.test(message)) return "workflow-use 受管源码校验"
   if (/workflow_.*input/.test(message)) return "workflow-use 输入合同"
   if (/workflow_.*action|upstream_author/.test(message)) return "workflow-use 候选准入"
@@ -16,6 +19,9 @@ export function authoringFailureMessage(error: unknown): string {
     if (primary) return authoringFailureMessage(primary)
   }
   const message = error instanceof Error ? error.message : "authoring_failed"
+  if (message === "hybrid_source_protocol_invalid") {
+    return "代表执行的结果交接未通过协议校验；本轮已停止，需要修复该问题后继续。"
+  }
   if (message === "workflow_fork_source_verifier_unavailable") {
     return "受管 workflow-use 源码校验器不可用，系统已在准备模型和启动浏览器前停止；请检查上游运行环境。"
   }
@@ -34,13 +40,19 @@ export function authoringFailureMessage(error: unknown): string {
   if (message === "hybrid_compilation_gaps") {
     return "代表执行记录已保留，但链路编译仍有缺口，尚未发布；请查看技术详情中的具体缺口。"
   }
+  if (message === "hybrid_annotation_audit_missing") {
+    return "已保存的来源包含无法绑定现场验证工具的选择方法或离线摘要，但缺少对应的离线注解调用审计；编译已停止，原代表试做保留。"
+  }
+  if (message === "hybrid_source_model_audit_missing" || message === "hybrid_source_model_audit_incomplete") {
+    return "已保存的代表试做缺少完整的准备模型调用审计；编译已停止，原来源保留，请查看技术详情。"
+  }
   if (message === "hybrid_offline_source_unavailable" || message === "hybrid_source_artifact_digest_mismatch") {
     return "已保存的代表试做来源不完整或与当前需求、方案、输入不一致；离线编译已停止，原记录保留。"
   }
   if (message === "hybrid_offline_compiler_unavailable") {
     return "离线编译器当前不可用；已保存的代表试做来源保留，未重新打开浏览器。"
   }
-  if (message === "hybrid_offline_source_registry_incompatible") {
+  if (message.includes("hybrid_action_registry_mismatch")) {
     return "已保存的浏览器动作与当前编译器不兼容；离线恢复已停止，需先检查动作合同。"
   }
   if (message === "preexecution_entry_unresolved" || message.includes("entryUrls") || message.includes("allowedOrigins")) {

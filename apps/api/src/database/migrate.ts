@@ -39,8 +39,8 @@ PRAGMA user_version = 2;
 
 export function migrate(connection: Database.Database) {
   const version = connection.pragma("user_version", { simple: true })
-  if (version === 18) return
-  if (typeof version !== "number" || version < 0 || version > 18) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
+  if (version === 19) return
+  if (typeof version !== "number" || version < 0 || version > 19) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
   // WHY：结构变更也必须整体提交，不能让部分建表成为成功迁移标记。
   connection.transaction(() => {
     if (version === 0) connection.exec(schema)
@@ -152,6 +152,9 @@ export function migrate(connection: Database.Database) {
       PRAGMA user_version = 16;`)
     if (version < 17) migrateSimplifiedWorkbench(connection)
     if (version < 18) migrateWorkspaceSequence(connection)
+    if (version < 19) connection.exec(`ALTER TABLE operations ADD COLUMN taskId TEXT REFERENCES tasks(id);
+      CREATE INDEX operations_task ON operations(taskId);
+      PRAGMA user_version = 19;`)
   })()
 }
 

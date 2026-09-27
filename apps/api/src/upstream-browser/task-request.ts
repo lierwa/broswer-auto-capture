@@ -1,6 +1,8 @@
 import type {
-  JsonValue, Predicate, ResultSpec, TaskExecutionFailureEvidence, TaskPlan, TaskPlanStep, TaskRequirement, ValueBinding, ValueSchema,
+  JsonValue, ResultSpec, TaskExecutionFailureEvidence, TaskPlan, TaskPlanStep, TaskRequirement, ValueSchema,
 } from "@browser-capture/contracts"
+import { digestJson } from "@browser-capture/runtime"
+import { parsePreparationDraft } from "../interview/preparation-draft.js"
 
 const legacyFence = "```bat-compilation/v1"
 
@@ -27,13 +29,23 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
   const { requirement, plan, step } = input
   const requirementText = naturalRequirementText(requirement)
   const entryUrls = plan.entryUrls ?? []
+  const confirmedEntries = requirement.confirmationFacts?.entries
+  if (confirmedEntries?.length) {
+    // WHY：B-U 的唯一业务指令是同一确认版本；技术计划不得引入未经草案引用的入口或换掉需求正文。
+    if (plan.requirement.id !== requirement.id || plan.requirement.version !== requirement.version
+      || plan.requirement.revision !== requirement.revision || plan.requirement.digest !== digestJson(requirement)
+      || JSON.stringify(entryUrls) !== JSON.stringify(confirmedEntries.map((entry) => entry.url))
+      || plan.browserHandoff !== parsePreparationDraft(requirement.definition.body).browserHandoff) {
+      throw new Error("preparation_draft_handoff_mismatch")
+    }
+  }
   const mode = step.invocation.mode === "each" ? "这是集合中一个独立项目的完整执行。" : "这是本步骤的完整执行。"
   const origin = requirementText.legacyMachineBlockRemoved
     ? "以下内容来自已确认的历史需求正文；历史机器规则块已经排除，不属于本次业务指令。"
     : "以下内容来自用户已确认的需求正文。"
   return [
     "你正在执行 B-A-T 已确认的一次浏览器任务步骤。请按自然语言目标理解页面并完成业务结果。",
-    "【完整需求】",
+    confirmedEntries?.length ? `【已确认准备计划草案 v${requirement.version}】` : "【完整需求】",
     origin,
     requirementText.text,
     "【本次步骤】",
@@ -61,7 +73,7 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
     ...describeResultSpec(requiredResultSpec(step)),
     ...describeSchema(step.outputContract.schema, "结果", true),
     "【完成条件】",
-    ...step.completion.map((condition) => `- ${condition.description}；判定为${describePredicate(condition.predicate)}`),
+    ...step.completion.map((condition) => `- ${condition.description}`),
     "需求正文中的相关完成条件也必须满足；条件不足时不得报告完整成功。",
     "【范围与等待点】",
     `授权范围：${plan.authorizationScope}`,
@@ -134,28 +146,6 @@ function describeSchema(schema: ValueSchema, path: string, required: boolean): s
     return [`- ${path}：${schema.type === "integer" ? "整数" : "数字"}，${presence}${range(schema.minimum, schema.maximum, "")}`]
   }
   return [`- ${path}：${schema.type === "boolean" ? "是或否" : "空值"}，${presence}`]
-}
-
-function describePredicate(predicate: Predicate) {
-  if (predicate.operator === "exists") return `${describeBinding(predicate.value)}存在`
-  if (predicate.operator === "equals") return `${describeBinding(predicate.left)}等于${describeBinding(predicate.right)}`
-  if (predicate.operator === "greater_than") return `${describeBinding(predicate.left)}大于${describeBinding(predicate.right)}`
-  return `${describeBinding(predicate.value)}的项目数不少于${describeBinding(predicate.minimum)}`
-}
-
-function describeBinding(binding: ValueBinding) {
-  if (binding.source === "constant") return inlineValue(binding.value)
-  const base = binding.source === "input" ? "任务输入"
-    : binding.source === "node" ? `步骤“${binding.nodeId}”的输出` : `当前项目“${binding.name}”`
-  return binding.path.reduce<string>((value, item) => typeof item === "number"
-    ? `${value}[${item + 1}]` : joinPath(value, item), base)
-}
-
-function inlineValue(value: JsonValue): string {
-  if (Array.isArray(value)) return `列表（${value.map((item, index) => `第 ${index + 1} 项为${inlineValue(item)}`).join("；")}）`
-  if (value && typeof value === "object") return `对象（${Object.entries(value)
-    .map(([key, item]) => `${key} 为${inlineValue(item)}`).join("；")}）`
-  return scalar(value)
 }
 
 function range(minimum: number | undefined, maximum: number | undefined, unit: string) {

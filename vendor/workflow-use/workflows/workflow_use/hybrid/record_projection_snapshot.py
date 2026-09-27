@@ -16,6 +16,7 @@ from .record_projection_capture import (
     projection_candidates,
 )
 from .record_projection_schema import field_schema
+from .query_record_projection import query_snapshot_projection
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ async def capture_host_snapshots(browser):
     return HostSnapshotPair(first=first, second=second, identity=first_identity)
 
 
-def derive_host_read(snapshots, output_schema, final_output):
+def derive_host_read(snapshots, output_schema, final_output, queries=()):
     """Choose the unique maximal projection proved by both snapshots and final output."""
     candidates = []
     for candidate_schema, candidate_output, mappings in _projection_inputs(output_schema, final_output):
@@ -50,7 +51,11 @@ def derive_host_read(snapshots, output_schema, final_output):
             captured = _stable_snapshot_projection(
                 snapshots, candidate_schema, candidate_output, mappings)
         except HostProjectionFailure:
-            continue
+            try:
+                captured = query_snapshot_projection(
+                    snapshots, queries, candidate_schema, candidate_output, mappings)
+            except HostProjectionFailure:
+                continue
         candidates.append((_leaf_count(candidate_output), captured))
         if len(candidates) >= MAX_SELECTOR_CANDIDATES:
             break
@@ -79,7 +84,9 @@ def _stable_snapshot_projection(snapshots, output_schema, output, mappings):
     return CapturedHostRead(
         specification=first[0][0], output=first[0][1], mappings=mappings,
         urlDigest=digest(page_url), targetId=snapshots.identity['targetId'],
-        containerIdsDigest=digest(first_ids), stable=True)
+        # WHY：原生 find_elements 的稳定集合证据按 backendNodeId 顺序取摘要；
+        # 这里已经单独核验 targetId，同一格式才能在首次现场证明两次读取是同一批元素。
+        containerIdsDigest=digest([backend for _target, backend in first_ids]), stable=True)
 
 
 def _projection_inputs(schema, value, path=None):

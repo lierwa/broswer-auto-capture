@@ -3,28 +3,34 @@ import { z } from "zod"
 import { parseTaskValue, valueBindingSchema, type JsonValue, type ValueBinding, type ValueSchema } from "@browser-capture/contracts"
 import { materializeOutputAssembly, type MaterializedOutput } from "./hybrid-output.js"
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
+import { repeatForBinding, type ValidatedNaturalRepeat } from "./hybrid-natural-repeat.js"
 import { hybridNaturalRequestSchema, hybridOutputAssemblyEvidenceSchema, hybridOutputAssemblySchema, hybridResultBindingSchema,
-  hybridResultBranchSchema, type HybridCompilation, type HybridSegment } from "./hybrid-schema.js"
+  hybridResultBranchSchema, readSpecificationSchema, type HybridCompilation, type HybridSegment } from "./hybrid-schema.js"
 
 type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>
 
 export function materializeNaturalResult(input: { compilation: NaturalCompilation;
   request: z.infer<typeof hybridNaturalRequestSchema>; payload: ReturnType<typeof naturalPayloadContext>;
-  outputSchema: ValueSchema; rewrite: (binding: ValueBinding) => ValueBinding }): MaterializedOutput | null {
+  outputSchema: ValueSchema; repeats?: ValidatedNaturalRepeat[];
+  rewrite: (binding: ValueBinding) => ValueBinding }): MaterializedOutput | null {
   const { compilation, request, payload, outputSchema, rewrite } = input
+  const repeats = input.repeats ?? []
   const assembly = compilation.outputAssembly, resultBinding = compilation.resultBinding
   if (request.plan.resultSpec.mode === "execution") {
     if (assembly || resultBinding || outputSchema.type !== "null") throw new Error("hybrid_execution_result_binding_forbidden")
     return null
   }
   if (!assembly || !resultBinding) throw new Error("hybrid_natural_result_binding_missing")
-  assertOutputAssembly(assembly, compilation, request, payload, outputSchema)
-  assertResultBinding(resultBinding, assembly, request, compilation)
+  assertOutputAssembly(assembly, compilation, request, payload, outputSchema, repeats)
+  assertResultBinding(resultBinding, assembly, request, compilation, repeats)
   const branches = (compilation.resultBranches ?? []).map((raw) => assertResultBranch(
     hybridResultBranchSchema.parse(raw), resultBinding, request, compilation))
   const writeVariable = branches.length ? "result" : undefined
   const primary = materializeOutputAssembly({ fields: resultBinding.assignments.map((item) => ({
-    path: item.to, binding: item.from })), schema: resultBinding.schema }, rewrite, writeVariable ? { writeVariable } : {})
+    path: item.to, binding: item.from })), schema: resultBinding.schema }, (binding) => {
+      const repeated = repeatForBinding(repeats, binding)
+      return repeated ? { source: "variable", name: repeated.variable, path: [] } : rewrite(binding)
+    }, writeVariable ? { writeVariable } : {})
   return { ...primary, alternates: branches.map((branch) => ({ terminalId: branch.falseTerminalId,
     ...materializeOutputAssembly({ fields: branch.falseResult.assignments.map((item) => ({
       path: item.to, binding: item.from })), schema: branch.falseResult.schema }, rewrite, { idPrefix: branch.id,
@@ -97,7 +103,7 @@ function guardedConsumerBinding(consumer: Extract<HybridSegment, { kind: "determ
 }
 
 function assertResultBinding(raw: unknown, assembly: z.infer<typeof hybridOutputAssemblySchema>,
-  request: z.infer<typeof hybridNaturalRequestSchema>, compilation: NaturalCompilation) {
+  request: z.infer<typeof hybridNaturalRequestSchema>, compilation: NaturalCompilation, repeats: ValidatedNaturalRepeat[]) {
   const binding = hybridResultBindingSchema.parse(raw), spec = request.plan.resultSpec
   if (spec.mode !== "data" || !isDeepStrictEqual(binding.schema, spec.schema)
     || binding.sourceRef !== assembly.sourceRef || !isDeepStrictEqual(binding.proofRefs, assembly.proofRefs)) {
@@ -130,11 +136,11 @@ function assertResultBinding(raw: unknown, assembly: z.infer<typeof hybridOutput
       throw new Error("hybrid_natural_result_derivation_mismatch")
     }
   }
-  assertAssignmentSchemas(binding, compilation, request.runtimeInputSchema)
+  assertAssignmentSchemas(binding, compilation, request.runtimeInputSchema, repeats)
 }
 
 function assertAssignmentSchemas(binding: z.infer<typeof hybridResultBindingSchema>, compilation: NaturalCompilation,
-  runtimeInputSchema: ValueSchema) {
+  runtimeInputSchema: ValueSchema, repeats: ValidatedNaturalRepeat[] = []) {
   for (const assignment of binding.assignments) {
     const targetSchema = schemaAtPath(binding.schema, assignment.to)
     if (assignment.from.source === "constant") {
@@ -143,14 +149,15 @@ function assertAssignmentSchemas(binding: z.infer<typeof hybridResultBindingSche
       continue
     }
     const sourceSchema = outputBindingSchema(assignment.from, compilation, runtimeInputSchema)
-    if (!targetSchema || !isDeepStrictEqual(sourceSchema, targetSchema)) {
+    if (!targetSchema || !executableSchemasCompatible(sourceSchema, targetSchema, Boolean(repeatForBinding(repeats, assignment.from)))) {
       throw new Error("hybrid_natural_result_binding_schema_mismatch")
     }
   }
 }
 
 function assertOutputAssembly(raw: unknown, compilation: NaturalCompilation,
-  request: z.infer<typeof hybridNaturalRequestSchema>, payload: ReturnType<typeof naturalPayloadContext>, outputSchema: ValueSchema) {
+  request: z.infer<typeof hybridNaturalRequestSchema>, payload: ReturnType<typeof naturalPayloadContext>,
+  outputSchema: ValueSchema, repeats: ValidatedNaturalRepeat[]) {
   const assembly = hybridOutputAssemblySchema.parse(raw)
   if (!isDeepStrictEqual(assembly.schema, outputSchema)) throw new Error("hybrid_natural_output_schema_mismatch")
   assertDistinctPaths(assembly.fields.map((field) => field.path))
@@ -183,10 +190,73 @@ function assertOutputAssembly(raw: unknown, compilation: NaturalCompilation,
     }
     const sourceSchema = field.binding.source === "constant" ? targetSchema
       : outputBindingSchema(field.binding, compilation, request.runtimeInputSchema)
-    if (!targetSchema || !isDeepStrictEqual(sourceSchema, targetSchema)) {
+    const repeated = repeatForBinding(repeats, field.binding)
+    if (!targetSchema || !executableSchemasCompatible(sourceSchema, targetSchema, Boolean(repeated))) {
       throw new Error("hybrid_natural_output_field_schema_mismatch")
     }
+    if (!repeated) assertObservedReadCardinality(field.binding, sourceSchema, targetSchema, request)
+    assertObservedCountCardinality(field.binding, targetSchema, request, compilation)
   }
+}
+
+/** WHY：准备样本的数量豁免不能成为正式绑定规则；互斥值域没有任何合法运行结果。 */
+function executableSchemasCompatible(source: ValueSchema | null | undefined, target: ValueSchema, repeated = false) {
+  if (source?.type !== "array" || target.type !== "array") return isDeepStrictEqual(source, target)
+  const { minItems: sourceMin = 0, maxItems: sourceMax = Infinity, ...sourceShape } = source
+  const { minItems: targetMin = 0, maxItems: targetMax = Infinity, ...targetShape } = target
+  if (!isDeepStrictEqual(sourceShape, targetShape)) return false
+  // WHY：经过完整重复方法证据校验后，页内数量不代表最终数量；最终 assembly 仍使用原严格合同。
+  if (repeated) return true
+  if (Math.max(sourceMin, targetMin) > Math.min(sourceMax, targetMax)) {
+    throw new Error("hybrid_natural_output_cardinality_disjoint")
+  }
+  return true
+}
+
+function assertObservedReadCardinality(binding: ValueBinding, source: ValueSchema | null | undefined,
+  target: ValueSchema, request: z.infer<typeof hybridNaturalRequestSchema>) {
+  if (source?.type !== "array" || target.type !== "array") return
+  const total = observedReadTotal(binding, source, request)
+  if (total === undefined) return
+  if (total < (target.minItems ?? 0)) throw new Error("hybrid_natural_output_collection_incomplete")
+  // WHY：直接绑定保留完整当前集合；目标要求的选择操作必须真实存在，不能靠小样本遮住超量。
+  if (total > (target.maxItems ?? Infinity)) throw new Error("hybrid_natural_output_selection_required")
+}
+
+function assertObservedCountCardinality(binding: ValueBinding, target: ValueSchema,
+  request: z.infer<typeof hybridNaturalRequestSchema>, compilation: NaturalCompilation) {
+  if (binding.source !== "node" || binding.path.length || target.type !== "integer") return
+  const segment = compilation.segments.find((item) => item.id === binding.nodeId)
+  if (segment?.kind !== "deterministic" || segment.operation.name !== "data.transform"
+    || segment.operation.dataOperation !== "count" || segment.bindings.length !== 1) return
+  const decision = segment.bindings[0]!
+  const selected = valueBindingSchema.safeParse("binding" in decision ? decision.binding : undefined)
+  if (!selected.success) throw new Error("hybrid_natural_output_count_binding_invalid")
+  const total = observedReadTotal(selected.data, outputBindingSchema(selected.data, compilation, request.runtimeInputSchema), request)
+  if (total !== undefined && (total < (target.minimum ?? -Infinity) || total > (target.maximum ?? Infinity))) {
+    throw new Error("hybrid_natural_output_count_cardinality_mismatch")
+  }
+}
+
+function observedReadTotal(binding: ValueBinding, source: ValueSchema | null | undefined,
+  request: z.infer<typeof hybridNaturalRequestSchema>) {
+  if (binding.source !== "node" || source?.type !== "array") return undefined
+  const facts = request.trace.observations.flatMap((observation) => observation.facts)
+    .filter((fact) => fact.kind === "verified_natural_read" && fact.value !== null
+      && typeof fact.value === "object" && !Array.isArray(fact.value)
+      && fact.value.actionRef === binding.nodeId && fact.value.coverage !== null && fact.value.coverage !== undefined)
+  for (const fact of facts) {
+    const value = z.object({ specification: readSpecificationSchema, readPath: z.array(z.string()),
+      coverage: z.object({ scope: z.literal("current_dom_matches"), total: z.number().int().nonnegative(),
+        runtimeTruncated: z.boolean() }).passthrough() }).passthrough().parse(fact.value)
+    if (!isDeepStrictEqual(value.readPath, binding.path)
+      || !value.specification.requireComplete || value.coverage.runtimeTruncated) continue
+    if (!isDeepStrictEqual(schemaAtPath(value.specification.outputSchema, value.readPath), source)) {
+      throw new Error("hybrid_natural_output_read_schema_mismatch")
+    }
+    return value.coverage.total
+  }
+  return undefined
 }
 
 function outputBindingSchema(binding: ValueBinding, compilation: NaturalCompilation, runtimeInputSchema: ValueSchema) {

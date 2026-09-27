@@ -1,11 +1,664 @@
 # 开发进度
 
-当前开发入口为 [浏览器任务链开发方案](BROWSER_REPLAY_DEVELOPMENT_REPAIR_20260917.md)。架构边界以
+### 2026-09-28 当前结论：常用 Chrome 的同发布任务正式复跑完成，准备提交推送并关机
+
+最新授权：用户已完成常用 Chrome 京东登录，要求重跑；完成或再次阻塞后记录、提交全部代码到远程并关机。这覆盖下方历史“不提交/不推送/不关机”说明。
+
+- 从真实工作台设置每节点3000ms并单次点击“开始运行”，同一 Release `e64e7365-340c-42b9-8cbf-b3e9a396fc72` v1/digest `4499f80422e8d1f60c0f2ea72ad1a7e6f4782c12026f3eb443469195f43cbad3` 完成。execution `3da5ada2-ebcd-458b-83ba-27e627213b00`，TaskRun `282e2ce8-a69c-42de-8d73-63bb2983e950`；9个节点、9次浏览器命令、模型0、auditComplete=true。9次节点启动前实际等待3004–3017ms。
+- 当前收藏实际2项，名称均为页面原文“此商品已删除”，链接分别为 `https://item.jd.com/10029362573415.html`、`https://item.jd.com/64574710601.html`；未补造5项或已删除商品的原名。工作台实际显示两条名称和完整链接。
+- 本次B-U使用用户常用Chrome153，空白门实测webdriver=false、仅1个所属任务页、原有3页URL摘要未变。正式执行cleanup=confirmed，结果窗口handoff=active/delivery，owner `3143305f-b53b-4fed-8b55-49e30e0afb8d`。API从PID23788重启至10020后，同execution、release、结果、cleanup和交付租约仍存在，UI刷新显示相同结果；重启未派发新运行。
+- 先前execution `c58dde32-094d-418b-823e-fa38d5671e1d` 的 `function_output_invalid` 失败永久保留。其任务页已关闭但清理未确认；从UI“重试清理”以原owner只读核验，attempt2 confirmed、handoff ended、业务仍failed。外部Chrome收尾补有界目标消失核验；清理恢复要求同owner、控制器已退出、其余阶段确认，禁止重复清理和把待清理业务结论改为取消。
+- 早先常用Chrome现场已观察到 `passport.jd.com/new/login.aspx`，webdriver=false；用户完成登录后本次复跑成功。不能把webdriver单独认定为此前京东风控的唯一原因。
+- 本轮API类型检查最终通过；cleanup所有权/退出证明/活目标/重复请求/取消边界8项定点探针通过；真实UI恢复、正式运行和重启持久化通过。未新增tests文件、未跑根级或全量测试。本次没有验收所有网站、验证码分支或任务删除；不把该样本成功扩成整个迭代全部通过。
+
+证据：`work/human-existing-chrome-formal-retry-proof.json`、`work/existing-chrome-restart-proof.json`、`work/existing-chrome-cleanup-recovery-proof.json`、`work/existing-chrome-cleanup-guards-proof.json`。Cookie/Profile、原始页面及work/data材料不入Git。首次失败单列：原生CDP确认超时3次、诊断脚本UUID严格类型错误、Node诊断脚本CJS顶层await、诊断读取遗漏TS runtimeScopeFrom解析、后续导航URL不符、API类型入口漏扩内部action union；均保留，未覆盖旧正式首败。UI驱动先把上下文区当dialog、重启后过早点击未加载按钮、证据查询误用完成后的空currentRunId也已记录；这些探针未派发额外正式任务。
+
+### 2026-09-28 当前推进：B-U 接入常用 Chrome，同发布链路设 3 秒间隔
+
+用户已开启并确认 Chrome 原生 Allow。保持 browser-use + workflow-use，新增本机外部浏览器连接和本次任务标签所有权适配；既有发布版本不改，使用现有节点 pacing=3000。API 类型检查、四项协议边界探针通过，尚不代表浏览器任务通过。首次空白验证在诊断连接阶段遇原生确认/握手超时，未进入生产 Runner、未访问京东，保留 `work/existing-chrome-smoke-proof.json`；正在完成真实空白隔离/清理门，再从工作台提交同发布任务。原正式首败仍保留，未新增测试文件、未运行根级/全量测试，不关机。
+
+### 2026-09-27 浏览器环境差异已实测，京东风控具体触发条件仍未确认
+
+针对用户要求解释 BrowserSkill 可访问而当前路径受阻，直接调用现有两个生产启动入口，在同一临时 Profile 的空白页各实测一次：准备/验证实际选择 Playwright Chromium 134、webdriver=false、视口2544×1292；正式 ManagedWindow 选择系统 Chrome 153、webdriver=true、视口1249×1277。定位到当前集成的浏览器环境漂移；旧 BrowserSkill 使用扩展控制日常浏览器，与当前独立 Profile 不同。证据 `work/browser-environment-comparison-proof.json`，两次清理 confirmed、模型0、没有请求京东。首次 get_args 配置探针遗漏 user_data_dir 已如实保留。
+
+详见 RESEARCH 的同日实测记录。浏览器版本/启动参数/尺寸变化已证实，京东具体风控规则仍未证实；失败窗口已关闭且缺拦截页证据，不把 webdriver 差异冒充唯一原因。继续沿 browser-use + workflow-use 统一验证和正式运行的浏览器环境，保留迁移方向。本轮没有改生产实现，正式主线仍未验收。
+
+当前开发入口为 [基础设施与主线开发方案](INFRASTRUCTURE_MAINLINE_DEVELOPMENT_PLAN_20260927.md)。架构边界以
 [自然语言浏览器任务链路架构基准](TASK_CHAIN_ARCHITECTURE.md) 为准。
 
 ## 当前状态
 
-### 2026-09-25 新标签恢复接入与新任务验收进行中
+### 2026-09-27 当前正式首败：用户报告反自动化拦截，平台未保留人工现场
+
+真实UI已确认发布release e64e7365-340c-42b9-8cbf-b3e9a396fc72 v1/digest4499f80422e8d1f60c0f2ea72ad1a7e6f4782c12026f3eb443469195f43cbad3，从链路工作台点击开始运行；即时反馈显示“正在提交…”且按钮禁用。正式execution643dabd5-d86f-41d9-8487-6848048ef2b3/run3e691c3f-d865-4865-88c8-8d7b4089cacc首次failed，点击s-a-0009派发前报ordinary_target_missing，模型0；先前入口读取及选择成功。该正式首败永久保留，不能用两次草稿完成改写；work/human-formal-run-proof.json。
+
+用户现场明确指出京东反自动化拦截。当前自动证据仅能证明派发前目标不可用，未保留拦截页面证据；不猜测具体验证方式，不将所有目标缺失等同反爬。当前cleanup=confirmed，原失败窗口已关闭，不能声称可恢复旧run。正式路径使用managedWindow，草稿路径未使用；尚无证据把失败归因为headless差异。已停止站点自动重试/选择器修改，检查通用人工检查与安全续接边界；不绕过反自动化检测。
+
+缺口：普通运行只将明确HTTP 401/403/429映射为外部中断；目标不可用时，错误后观察未形成可继续的人工等待，而且含外部写入的节点没有“尚未派发”的恢复证明。后续必须保留同owner现场、核实未派发后才能允许人工处理完重试当前节点，不能用未知副作用的重复操作补成功。正式输出、原窗口交付、重启持久化和删除仍未验收，不关机。
+
+### 2026-09-27 同草稿样本重试与独立复验通过，继续正式发布/复跑
+
+运行时动作结果scope修复后，通过真实UI“开始试跑”产生sample execution d52195cb-384b-4887-8444-2548d87a0d07/run df1082c2-114a-43f9-8c4f-ebc82df67607，completed；再经“开始独立复跑”产生verification execution5dc18463-d430-45e6-895b-7294b4402164/run91ade02b-3acb-42b1-8a09-4d06f7f2cf2f，completed。两次同链8cc06425-cad2-4cee-8afc-20b9367b65c5 v1/digest6fd0208f1475058a04b9ad61157ea7105e61af3c461f10ea15a15a50175e70f0，均9个transition、9次浏览器命令、模型0，清理confirmed，2条结果逐项等于原真实来源。工作台draftReadiness=ready。
+
+证据work/human-sample-retry-proof.json、work/human-verification-proof.json。重启服务使旧试跑弹窗关闭，root第一次查找开始按钮未派发任何任务，随后重新打开并仅提交一次，该UI驱动错误保留。当前开始手动发布，正式运行、原窗口、重启持久化及删除尚未验收；原来源/样本首次失败继续保留，以下失败段落为历史。
+
+### 2026-09-27 当前阻断：UI重编译通过，首次真实草稿试跑失败
+
+真实UI恢复job0446ec2b-672c-4903-8d3e-51b0669c73e6复用保存来源，编译模型0，生成草稿并自动开始样本。run e220d9c0-2913-41c7-817a-4cb828843094完成导航、入口读取与动态选择，在点击节点s-a-0009的后置读取处失败：ordinary_postcondition_failed_read_fields_target_scope_mismatch。模型0、清理confirmed；work/human-sample-first-failure-proof.json及work/human-ui-recompile-proof.json保存首败。
+
+编译后消费者scope固定了试做URL中的动态query，本次实际选中链接不含query；失败终态URL未持久化，保留未知，不猜测页面。当前修复动作结果页面的通用归属，继续保护固定URL、原/唯一新增tab及文档稳定边界。样本、独立复验、发布、普通复跑、交付和持久化均未验收。以下离线整合通过仍只代表其对应阶段。
+
+修复进入真实重试：Python复用原导航协调和StepVerifier，动作仍只派一次；同tab/唯一新tab、无关已有tab、读取中身份漂移、跨轮稳定性及固定URL不放宽12项通过。Root发现双transition一残缺时TS/Python计数不同，统一为先数全部再校验完整，新增该负例通过；work/action-result-scope-python-proof.json共13项，环境路径首次错误另记。fork d4574c5a2b341f96b972bbf9293dc4906498261c17dfd924d3d5dcbc5f656fa8已核验。TS入口原来源接受，消费者/配方/scope/URL证明篡改拒绝；work/consumer-readiness-source-proof.json。API类型检查先后暴露联合类型未缩窄、原始resultRef未边界解析两处问题，修正后通过；原失败不删。未新增公开marker、未改持久IR，下一步同草稿实际UI试跑。
+
+### 2026-09-27 当前断点：真实结果已取得，编译整合与正式主线仍未验收
+
+同一任务215b5b90-f588-447c-afa8-6e66e143a2f2的第三轮job4071fd86-3994-406c-8a61-9df04bbe4aa0完成真实代表试做：当前收藏仅2项，名称均为页面原文“此商品已删除”，商品链接存在；不推断原名。16次准备模型调用、14个浏览器动作。来源67b9f84c-666b-426e-89f6-245020300f4e及原sourceGaps保留。该轮首次编译失败，不能算主线通过，见work/human-favorites-compile-first-failure-proof.json。
+
+已定位并限定修复：无消费者的完整原生探查被错误当成业务读取；现场bat_validate_selection被错误要求离线注解审计。Python离线分类22项、现场选择审计12项、跨语言原始数字词法摘要4项检查通过。来源分类只接受真实只读回执、同文档证明和无执行消费者；不扩大业务读取上限，不补造缺失事实。TS独立守卫与实际createHybridArtifact整合尚待完成。
+
+独立审查确认当前输出、派生count、空列表分支、摘要和循环继续条件均不能把无verified read的裸探查偷偷变成执行依赖。此前真实通过的按钮55条与滚动62条来源各离线重编译一次，节点、控制流、结果绑定、循环及覆盖记录均与原产物一致，模型0、浏览器0；证据work/discovery-existing-source-crosscheck.json。这仅覆盖两份既有来源，不能作为其他任务或主线验收。
+
+下一门依次为原来源通过TS整合→实际UI重新编译保存来源→样本与独立复验→手动发布→普通复跑真实输出及模型审计→持久化。当前仍未发布、未正式复跑。原人工恢复后的首次失败、第二轮未知焦点切换失败及第三轮首次编译失败分别保留；以下首败段落为历史过程，不代表当前最新断点。
+
+本阶段随后完成：TS独立守卫18项通过，包括有执行消费者、回执/身份缺失、覆盖证据不符和同URL换文档拒绝；work/query-discovery-ts-proof.json保留探针首次默认值补入导致来源不匹配、负例错误码断言过窄两项探针问题。实际createHybridArtifact使用原job候选计划、原来源与原模型审计通过，9节点、原sourceGaps仍为1、新编译gaps为0；work/human-artifact-integration-proof.json。API check首次因内部查找返回值泄漏到公共assertFact类型而失败，修正为原void合同后重查通过；限定diff检查通过。当前已通过离线整合门，下一步真实UI恢复编译及后续验收。
+
+### 2026-09-27 通用人工介入：真实UI人工恢复通过，后续准备首败修复中
+
+用户指出旧京东样本仅证明手工组装链的暂停/恢复，未证明登录后任务完成。该结论采纳：第4项不能视为通用人工主线已验收。用户已明确授权新真实样本读取京东收藏商品前5项名称和链接；空列表/不足5项按实际结果返回，只读。
+
+本次代码补齐：Browser-Use固定工具bat_request_human通过原Agent的on_step_end暂停；Node/Python既有fd3请求协议增加受限人工通知和继续请求；job.waitpoint持久化，工作台显示说明与“我已处理，继续”；同job/等待ID/sequence核验后才提交恢复。Python核对原session/tab/允许站点及目标URL；条件不满足仍等待。人工输入前卸载事件监听器，不记录密码、验证码或把人工动作编成自动动作。成功恢复的宿主事实经原来源与摘要校验，编译成既有browser.wait-for-human与原TaskRun恢复合同，没有网站源码分支。
+
+最小验证：Python18项受控SDK/编译/隐私边界；产品状态11项及组件/连接4项；真实RunnerProcess/fd3及Python编译到TS守卫11项通过，均模型0、无真实浏览器，不能计业务验收。API/Workbench package类型检查通过。首次API两次接线失败、跨语言探针的清理回执形状错误与request取值错误已保留于work/human-integration-first-failures.json及对应proof。
+
+真实UI推进：前台工具会话启动当前源码服务及持续存活的UI客户端后，经工作台需求对话、Question Panel、草案确认和“生成草稿”创建任务215b5b90-f588-447c-afa8-6e66e143a2f2。准备job d2259771-bc7a-4879-8b2d-9768bb640ec0自主调用bat_request_human，持久化等待点a386e266-1efb-4f94-9035-f0df35c88540（最初sequence 22）。实机发现人工等待入口误显示输入请求且未展开说明，修正前端后通过原UI确认“处理人工请求”和“我已处理，继续”可见且启用；该入口首败及UI驱动曾错误期待确认后直接出现准备按钮的超时记录保留。
+
+本次真实人工恢复：用户明确已登录，并亲自在真实工作台点击“我已处理，继续”。随后API只读核对同一job，等待点status=completed、resolvedAt=2026-09-27T13:50:12.517Z；该时点job仍为原ID，status=running、phase=preexecuting、sequence=40，reason为“人工处理已确认，正在继续原代表试做。”；UI无alert。当时原Agent和浏览器保持存活，未重开任务、未发送重复resume。根agent稍后查找继续按钮失败是因为用户已先完成操作，不计第二次产品失败。
+
+后续准备首败：原job最终status=failed、phase=preexecuting。a-0006的SDK click成功并切换新tab，但after_step在30秒后失败；未取得收藏输出、未编译。已保存SOURCE artifact de0b6a24-baa7-403c-8513-af669fc4f616，digest fc0b455acfba9cf8f0e116fc31957df672f08f3d2a1991c013086696586251b5；安全证据见work/human-favorites-first-failure-proof.json。真实UI保留“重新试做当前需求”和“查看技术详情”，没有发布按钮；留在原task处理，不将人工恢复成功改写为整条准备成功。
+
+已定位SDK新tab缓存URL为空，get_current_page_url返回空导致DOMWatchdog空快照；88次cached=False请求无效，而真实CDP核对同tab、同document稳定。正在现有SourceObservationScope中适配SDK公开Page.get_url，不加网站分支、不降低文档一致性守卫。修复尚未完成真实重试验收；原来源、摘要与首败永久保留。
+
+此证据仅通过“自然准备主动请求人工→用户真实登录并点击继续→原准备job恢复”这一段。收藏前5项名称及链接的实际业务结果、来源编译、样本与独立复验、手动发布、正式普通复跑、重启持久化及删除门仍未验收；修复所属断点后继续同一任务，不把waitpoint完成等同于业务完成。
+
+限制：准备等待只能继续仍存活的原Agent；进程重启后保留中断事实，拒绝伪造恢复。已发布链路仍用既有持久检查点路径。先前独立UI Chrome退出原因未知，缺退出码/日志；blocked by policy仅解释重启命令被拒绝，不能解释浏览器退出或宣称所有浏览器能力不可用。
+
+证据：work/human-preparation-product-proof.json、work/human-author-python-proof.json、work/human-cross-language-proof.json、work/human-ui-lifecycle-proof.json、work/human-favorites-task-state.json。继续真实任务验证，以上不作为主流程完成结论。后台启动命令的blocked by policy首败继续保留；其具体规则仍未知。
+
+### 2026-09-27 历史阻塞：第5项正式UI验收未创建需求（后续推进见上）
+
+第1–4项的限定修复/验证及原失败见下方；按钮55条、滚动62条完整集合与独立预检一致，普通复跑模型0。第5项已启动当前checkout源码服务：Workbench http://127.0.0.1:4173/，API 4175，PID 19048；最后health=200且root正确，真实UI空态加载无前端错误。随后独立UI客户端进程5420退出，第二次连接报cdp_connection_failed，原端口ECONNREFUSED、进程不存在已只读确认。
+
+自动审批拒绝了重新启动验收Chrome并连接CDP的命令，工具仅返回`blocked by policy`，未提供具体规则；命令未执行，也未换包装方式重试同一启动动作。另一条收尾源码大小/AST、SQLite复核及摘要写入命令也在执行前被自动审批拒绝，这组额外检查标未测。通过文件补丁工具记录安全摘要于work/g6-current-policy-block.json。正式需求尚未创建；本轮确认、准备、样本、复验、发布、复跑、原窗口、重启及删除门均不能记通过。旧G6首败及同任务重试事实保持原样。
+
+已完成的API package check、生产守卫、同源追加校验及真实普通复跑证据不被这一工具阻塞改写。最后checkout核验master/43ed385、294条dirty保留；未提交/推送、未新增tests文件、未改相邻项目、未执行根级或全量测试，未关闭京东delivery窗口、未关机。工作台服务保留运行；后续所需外部条件是允许操作正式UI的浏览器工具/验收客户端，不能以直接API注入替代任务书UI门。
+
+### 2026-09-27 第3项重试闭合，进入第5项正式工作台验收
+
+按钮HP4lhT：55唯一URL/标题，完整集合与独立预检一致，普通复跑模型0。滚动RdccOz原来源在index:null处首次拒绝，随后复用原来源的一次离线语义注解；首次离线编译还暴露同一null在参数绑定处被误判，修正后不再调用模型或探索。replay-retry-CUaOhu编译无缺口，run 2f2c6d0f-b21a-42cc-9ae4-4cd4bc81e175 completed、24 transitions、17 browserCommands、23.51秒、模型0、2次有效固定滚动，62唯一URL/标题逐项等于独立预检（按既有空白归一合同）。停止条件在selector中显式过滤非终态，最后批次保留。链78ce111a-91df-4a1a-943d-4bb1040ec37e v1 / digest 9b9ed56ae2f69bb02f276eb8418f7cbde4fe7ca48ce129f8db0f812badf712fb。原source SHA ca3a5bb6d7c08bf0907761855c1b99413eaaa48e793addd0c99acb3968f6e359未变；原缺口及全部首次失败永久保留，不能称无上下文首验。证据work/repeat-scroll-live-proof.json。
+
+null/missing的Python/TS守卫各10项通过；新的离线repeat接线复用现有注解器，仅追加派生事实，旧需求/计划/动作/观察不得修改。真实同源追加通过，缺恢复依据/错误读取依据两类拒绝；API所属check通过。原始页面汇总65与实际终点62差异保留，未按元数据补造数量。
+
+按用户后续“挨个解决”继续第5项，旧G6首败不改。**本轮正式需求原文：**“打开Node.js官网，找到当前官网推荐的LTS版本，返回版本号、发布日期及该版本的官方发布说明链接，并把该发布说明页面保留在原浏览器窗口中。只读，不下载、不安装、不登录。”预期用户结果是三个当前官方字段与可见原发布说明页；选择理由是普通软件版本查询，结果可独立核对，可覆盖需求确认→代表执行→离线编译→样本/独立复验→手动发布→正式复跑→原窗口→重启持久化→UI删除。它不代替按钮/滚动、人工登录或多步骤能力证据。创建前只读核查data数据库tasks=0/executions=0，4173/4175无监听；不再次清库。当前正式任务尚未创建，下一步启动当前源码服务并从真实UI发起。
+
+### 2026-09-27 第3项继续：修复同页推进后文档身份遗漏
+
+第五次rnvXxu来源及编译通过（10次准备模型、7个浏览器动作），但第一次普通复跑failed：5次有效scroll后已取得62唯一URL；裸#noMoreResults在结束后仍返回1项，执行器按数量继续第6次scroll，发生hybrid_runner_failed:TimeoutError。最后查询真实style已是text-align: center;，不能把属性语义凭空塞进只按数量判断的IR。run d5aca0d0-ca39-46ba-b287-0ccd13f60b04模型0、40 transitions、38 commands。完整62项URL/标题按已声明normalizeWhitespace合同与独立预检逐项一致；预检原文有两处双空格，原始直接比较false也保留。整体仍failed，证据work/repeat-scroll-first-replay-failure-proof.json。进一步把“运行只看匹配数、状态必须编码在selector”明确写进准备/工具反馈/注解指导；旧source/chain/run不改。第六次RdccOz以该失败现场为线索重新准备并复验停止，18步/300秒，不视作全新首验。
+
+查询属性投递修复完成：实际SDK默认include_extracted_content_only_once=false，MessageManager只取long_term_memory，原详细extracted_content不进入本轮或后续模型消息。现有enrich摘要在原7属性槽内优先保留请求属性，超额显式计数，value!==null保留hidden/disabled空串；20上下文/6层/5长期目标/每值240字上限不增。真实SDK Tools registry→生产enrich→真实MessageManager协议验证7项通过；只替代DOM/CDP传输执行同一段JS，不冒充实站。Python、fork和限定diff通过，原nN1ZnK SHA未变；work/query-attribute-memory-proof.json。随后rnvXxu开始同站限定实机重试，复用失败来源中的方法和结束标记观察，但在当前浏览器重新证明；22步/360秒。
+
+第四次nN1ZnK sourceSuccess=true但repeat_annotation_insufficient_evidence，20次准备模型调用，未编译/复跑。实际a-0005至a-0010反复查同一个结束标记，a-0011误用display: none而页面实际为display:none，查询0后仍scroll；读取12→24后又改成:not(display: block)，不符合前后同一继续方法。来源SHA和每次原参数/结果保留work/repeat-scroll-fourth-failure-proof.json。检查现有长期摘要发现请求的style/id/class不在固定保留属性内；先核实SDK对下一轮消息的实际投递并修薄适配，再决定实机复验，停止只改提示后原样重跑。
+
+滚动第三次9ZWvfC保留失败：19次准备模型调用，原生scroll确实令12条变24条，读取方法在当前会话验证成功；a-0008也真实读到No more results标记及其display:none状态，但done(false)明确拒绝“无法找到唯一可用的继续控件”。准备反馈把click可见目标约束套到了scroll条件，是已确认的指导边界错误（对本次模型决策的因果解释仍属推断）。现区分两类角色：click要求可见且启用，scroll可查询明确结束标记的非终止状态；不降低新键、同文档、完整查询、原生回执证据门。work/repeat-scroll-third-failure-proof.json保留原SHA、12→24及拒绝原因。第四次nN1ZnK带该不可变失败来源的读取方法和完整7项控件查询结果，在同一真实站点重新核验；不注入源码/链路/编译结果，没有正式任务，不能称无上下文首验。准备预算22步/420秒。
+
+取消原因修复已验证：RunnerProcess在abort时先把原signal.reason交给pending请求，再继续原精确进程树清理；补异步launch注册监听前取消窗口。真实RunnerProcess+临时Python覆盖原生TimeoutError/两个pending、自定义Error、字符串reason、普通exit7、启动窗口取消和预取消6项通过；各自child退出、owner临时目录删除、无关sentinel保留及重复close同报告均成立。API所属check、定点diff通过。首次反例和未测的真实浏览器超时单列work/runner-abort-reason-proof.json；本次没有新增tests、浏览器或模型调用。
+
+滚动第二次ZKK3WO仍失败：23次完成的准备模型调用、1次取消，已经派发两次原生scroll，但原360秒时限触发时尚未返回source。外层只报告upstream_runner_closed:1，未获得可编译来源，不能把动作进展记作通过；诊断摘要见work/repeat-scroll-second-failure-proof.json。真实RunnerProcess最小复现确认AbortSignal原TimeoutError被子进程close覆盖，正在修正取消错误归属。随后第三次隔离准备9ZWvfC复用MRHi2k不可变来源a-0015已经成功的读取参数，要求当前浏览器重新验证；不再重复猜同一读取方法，不注入预检的继续条件。该样本属于带既有失败证据的准备重试，非全新无上下文首验；26步不变、外部时限420秒，完整采集仍由普通复跑执行。
+
+**按钮分支真实重试通过：** HP4lhT自然来源sourceSuccess=true、gaps=[]，14次准备模型调用；首尾继续查询selector/attributes/max_results完全一致且末次为0。离线编译及普通TaskChainRuntime实际复跑completed，18 transitions、11 browserCommands、模型0，按钮推进1次。输出55个唯一版本URL/标题，与独立浏览器预检的完整集合逐项一致，包含末批。链b7ba1984-ba49-47c5-848a-8c825775032c v1，digest eac968e6c14e7497029a773780d4c2d43e32583b977f9792136c402c6ac5bbfa。证据work/repeat-button-live-proof.json；前两次失败原文保留。这是G5隔离能力证据，没有创建正式任务；现存harness首跑使用fixture固定runId，后续独立样本显式传随机run/invocationId，不能当作正式数据库验收。结果核对脚本误读run.id及完成态null checkpoint的两次错误单列保留，未改生产运行事实。继续滚动分支。
+
+滚动首轮MRHi2k sourceSuccess=false，16次模型调用，15个浏览器动作后主动done(false)。真实记录表明两次click未派发成功、若干猜测selector为空或截断、首次字段投影匹配两条链接而失败；a0015才验证出12条的可用读取方法，预算不足以继续代表scroll。无原生scroll事实，无编译/复跑；源SHA与原reason保留work/repeat-scroll-first-failure-proof.json。对此只扩大同一隔离样本的准备预算18→26步、240→360秒（最多8次额外决策约2分钟），自然任务不变、不给模型注入外部selectors、不改生产预算或全量测试；已向用户说明后重验一次。
+
+第二次NuGet来源HzfopD仍未过：sourceSuccess=true、16次准备模型调用，repeat_annotation_insufficient_evidence。实际a0006→a0010改变attributes/max_results；之后a0012才增加aria-disabled排除，不能倒写为初始同一继续方法，原来源保留。暂停原样模型重试，转为bat_read_fields当前工具结果提供已捕获完整查询参数候选，复用long_term_memory以保留extracted_content事实摘要；不自动选择或改写方法。
+
+查询反馈已接通并完成两份实际来源前缀验证：逐字保留原find_elements参数，无引用/无效/未产生引用无历史候选；生产bat_read_fields结果与verified_method_read精确payload校验通过。反馈走原生long_term_memory，extracted_content不变；新工具/schema/registry均未增加，原registry摘要与两份来源相同，原失败和SHA保持不变。work/repeat-query-feedback-proof.json保存证据；fork/diff检查通过。然后启动第三次NuGet来源HP4lhT验证RootModel与反馈适配后的实际行为，结果待补。
+
+定点排查另确认旧规范化未生效：当前Browser-Use注册器产生RootModel动作，而normalize_author_action直接查顶层find_elements/scroll，真实attributes=null一直原样派发。现通过Pydantic公开root解包执行已有规范化。实际原生ActionModel验证默认attributes填充、显式attributes保留、viewport index=0归一为null共3项通过，模型0/浏览器0；首次直接取原生对象属性的AttributeError保留，证据work/native-action-root-normalization-proof.json。这只修准备适配，不改变旧source或运行能力。
+
+NuGet首次自然来源qn3bc2完成真实8→55条加载，sourceSuccess=true，但repeat_method_evidence_invalid，未进入编译/复跑。原来源离线定位：两次继续查询都用#load-more-versions，完整返回1项；attributes从[id,disabled]变为null，违反同一方法；末次Loading...按钮仍在DOM、其隐藏父容器未进入查询条件。另两次原生wait在repeat采样中被拒绝归属。见work/repeat-nuget-first-failure-proof.json，原SHA保持不变，准备模型16次。首次诊断脚本误将canonicalRequest字符串当对象的TypeError单独保留。当前补通用准备指导与纯等待证据适配；不放宽原缺证，也不再盲跑相同来源。
+
+纯等待适配已完成：复用既有wait分类/native回执/same-document与repeat_method_sample/v1 supporting，将中间及连续尾部成功无事件等待折叠，正式链不增加wait节点。Python合法编译+四类拒绝、TS canonical来源/完整repeat+四类拒绝共10项通过；API package check、fork摘要及限定diff通过，最大TS文件493行。原qn3bc2仍按规格不一致拒绝、SHA不变。控制样本构造的两次观察ID格式/连续性错误先于编译被拒绝，修正验证脚本后才通过；详见work/repeat-passive-wait-proof.json。新版通用指导要求继续查询纳入实际隐藏/禁用状态，并精确复用全部查询参数。随后启动NuGet新来源HzfopD，结果待补；不覆盖首轮失败。
+
+滚动候选进一步限定到Maplesoft公开应用中心cryptography标签页（https://www.maplesoft.com/Applications/ViewTag.aspx?id=1426）。官方infiniteScrollApplications.js在真实批次图像呈现后移除new类并显示noMoreResults；实机预检12→24→36→48→60→62个唯一链接后观察到结束，模型0，浏览器finally关闭。页面计数栏显示65而实际列表结束为62，差异保留，不把元数据数字当已交付数量；预检还观察到内容增加早于终止标记，后续来源需证明读取与继续查询的就绪顺序。证据work/repeat-maplesoft-preflight.json；这尚非自然来源、编译或普通复跑通过。
+
+修前真实生产scope入口反例：docA查询→同页advance发出→成功回执变为同URL的docB→后续read仍被接受。现于派发时记住原文档，成功落入scope前核验session/tab/document；异常清空状态。7项内联生产入口检查覆盖click/scroll换文档拒绝、同文档内容变化通过、普通跨页导航通过和人工恢复清理；API package check、限定diff检查通过。证据work/repeat-same-document-after-proof.json。没有新增tests或浏览器控制/调度实现。
+
+同页按钮真实预检采用NuGet Newtonsoft.Json版本页：https://www.nuget.org/packages/Newtonsoft.Json#versions-body-tab 。在默认筛选下实际Load more令8条变55条、47个新URL，URL未变，完成后按钮父容器hide；该证据仅是页面预检，尚非自然来源/编译/复跑通过，见work/repeat-nuget-preflight.json。此前NASA在document.complete后仍未观察到Next改变列表，停止重复该站；NASA搜索为链接翻页不适配本次目标，NuGet ZodNet不存在返回404，均不计通过。本轮网页预检模型0。
+
+### 2026-09-27 第4项京东真实人工恢复：原登录已恢复，首轮末步失败与复验分别保留
+
+最终定点补证：hybrid-runtime提取等价恢复helper后，API package类型检查通过；生产协议复验覆盖未满足条件/换session仍暂停、原session恢复完成、导航仅一次，见work/jd-human-adapter-final-check.json。第3项补参数化同页读取scope跟随当前URL，跨页消费者scope保持独立，click/scroll两例通过work/repeat-parameterized-scope-proof.json。TS修改文件均≤500行、函数≤100行，限定diff --check通过。当前master/43ed385，292条dirty保留；未提交/推送、未新增tests文件、未启动正式API/Workbench服务。京东自有窗口delivery保留，未关机。
+
+发现并修复：stable IR已支持capability.human等待/恢复，但hybrid缺主动交还现场的能力。新增薄适配browser.wait-for-human v1（只接受显式human合同/read/空参数）；窗口交接、检查点、恢复仍由原组件承担。equals-url条件现在和exists-url一样允许同owner的授权站点内人工导航，恢复时原等式仍须成立。无京东源码分支、无新调度器、无新依赖。
+
+先用生产TaskChainRuntime/withHybridCapabilities受控检查：等待；URL未满足仍paused；满足后同run完成；导航只发生一次；模型0。证据work/jd-human-protocol-proof.json。随后实际打开京东独立受管窗口，run 61dfd8b3-5e0a-4ff7-875e-d507c30e8042进入waiting_for_human，用户回复“已登录”。重新接管同owner/session/tab，原login节点成功，原导航未重复。后续只读登录标记因验证任务使用旧#ttbar-login选择器得到read_output_schema_mismatch，该首轮最终failed，永久保留。
+
+定点读取真实页面的class（不读昵称/订单/Cookie）确认当前标记为.nickname；不改旧chain/run。修订验证任务v2在同一已登录窗口重新验证等待→恢复→实际标记读取，run 8b7409ce-e687-4857-bb62-1c01b74ce810完成，同run/owner/session/tab，普通模型0，两次Runner交接清理confirmed，窗口以delivery保留。v2没有要求用户再次登录，故它是已有登录状态下的恢复复验，不能冒充又一次真实登录首验。work/jd-human-live-proof.json保存区别；原首轮记录位于work/jd-human-live-state.json所指私有临时目录。无正式业务数据库注入，没有第二条G6任务。
+
+第5项门槛复核：旧G6首次失败永久保留；第3项真实按钮/滚动全程证据未闭，不能继续宣称全系统已验收。旧任务已按此前UI删除，不能复用为新的正式验收；遵守任务书不自动创建第二条任务。当前可交付的是所属代码与上述边界证据，完整正式验收仍未通过。
+
+### 2026-09-27 第3项代码接入、真实验收未关闭；继续独立的人工恢复项
+
+同页click/scroll已接入自然repeat证据、折叠和现有LangGraph物化。完整继续查询只接受0/1项，click绑定当轮唯一控件，scroll保持无索引原生参数；同文档、真实派发回执和下一批新稳定键均须成立。scroll补接已有read_fields transition，正式复跑仍模型0。准备记录改首1末2有界采样，DOM ordinal/coverage/正式完整读取不变。额外修复无target的scroll作用域衔接：复用消费者读取scope，并核验原run前驱document；不得凭同URL接管刷新后的页面。
+
+证据：read-sampling-tail-proof.json 9项；repeat-native-adapter-proof.json 18项及canonical envelope导出；repeat-native-ts-validation.json 两模式原文来源摘要/事实验证；repeat-native-runtime-scope-proof.json两模式物化及同文档/换文档拒绝。均为生产入口受控检查，未冒充真实网站完整复跑。API check首轮类型收窄失败，修复后两次按各次改动通过。未新增或改tests文件。
+
+旧真实href来源kneXYw的已保存compilation经当前TS物化+compileTaskChain通过13节点。重新编译首次在本轮fork摘要尚未同步时拒绝，同步后暴露更早registry摘要不兼容；旧来源缺完整历史schema，停止猜测并保持拒绝，原bytes不改。证据repeat-href-registry-block.json，不能把物化通过称为重编译通过。
+
+真实网页预检：Steam公开搜索可加载，但loading标记同时用于暂时隐藏和终止，不能直接作为已结束证明；NASA图库实际返回搜索错误；NASA新闻Next试点未观察到内容变化；Commons返回403、GitHub topic返回429，均不绕过或记通过。首次侦察脚本在DOM尚未建立时读body失败，改只读轮询后才取得图库错误页面；一次Browser-Use退出有closed-pipe析构告警，其余受管会话finally关闭。尚无按钮/滚动从自然来源到终止的真实复跑证明，本项仍未验收，不无限换站或反复调用模型。基础库和正式G6数据均未改。
+
+第4项用户已选择京东。下一步用独立受管窗口验证实际人工登录后同run恢复；第5项仍遵守G6首次失败永久保留、不自动创建第二条正式任务。
+
+### 2026-09-27 第2项关闭：技术失败保留原需求，恢复入口不再被离线可用性遮住
+
+selection_annotation.py 已将“实际选择与明确需求冲突”归 missing_binding/collect_evidence；生产注解拒绝检查保留原来源与动作引用，未触发模型或浏览器。实际 WorkbenchContext 修前在编译失败且来源可用时只显示重编译，修后保留重编译并允许沿当前需求重新准备；没有新增命令或改需求版本。
+
+最小验证：实际组件SSR覆盖来源可用/不可用的失败态及运行态3个分支，证据 `work/preparation-restart-ui-proof.json`；既有后端消费者命名用例“未完成来源仅有业务歧义时返回需求对话，缺证和拒绝来源仍按来源失败处理”1/1；Workbench check通过。SSR首验脚本缺React JSX运行上下文而失败，补齐脚本上下文后才得到修前缺入口反例；未为此改生产React配置。此次没有浏览器点击验收，命令与既有后端准备入口保持原实现，不把SSR说成UI全流程通过。下一项为自然重复的按钮/滚动适配。
+
+### 2026-09-27 逐项修复进行中：选择前验证已接线，真实门待关闭
+
+**第1项实际关闭（限定本次已复现缺陷）：** 第四次自然来源 `bat-g5-real-selection-GJil1r` 顺序为 navigate→find_elements→bat_validate_selection→click→done，全成功、来源无缺口；6次准备模型调用、事后 semantic_annotation 0次。编译链 `9d0cfcab-509b-428c-8b8f-37302ca53c7a` v1 / digest `dd2f4952a55f4f70d27cef9ef20676ac58beacf6415087c6e8754bb284cedb5d` 在两个列表页分别选择 v0.17.2、v0.13.5 并打开对应真实详情 URL，两个独立run均 completed、5 transitions、普通复跑模型0。用checkpoint候选独立按三段整数和第三段>0计算结果，逐项核对函数输出与浏览器URL，通过。证据 `work/selection-method-live-proof.json`。最新API check通过；前三次失败保留。这证明本次复杂选择闭环，不声称任意规则永不失败。继续第2项原准备阶段恢复核验。
+
+第1项改用 Browser-Use 原生 `bat_validate_selection` 工具调用既有 QuickJS：宿主提供真实候选，程序/原选择/变化样例及反转数组一致后才允许对应集合点击；实际点击保存同一 selection_function，编译不重新生成。校验失败由现有 Agent 循环处理，无自写重试循环、无新库、无新 tests 文件。共享 HTTP/QuickJS 边界12项及工具 coverage/runtime scope 定点检查通过；普通复跑不会执行准备工具。第2项相关分支已将 observed_choice_conflicts_requirement 改为 missing_binding/collect_evidence，留在准备记录；生产拒绝入口检查通过。
+
+首次实机 `bat-g5-real-selection-l1mGth` 失败，4次模型调用、4个来源动作：`bat_validate_selection` 在捕获前报 author_before_action_capture_failed。用保存的原参数调用生产 ActionDispatchAudit.propose 精确复现 `unclassified_native_action_capture`，原因是新工具漏登记 ACTION_CAPTURE_POLICIES；已补 read/无事件分类。定点核验脚本首次误把 ResultSpec 联合类型当 BaseModel，改用 TypeAdapter 后原参数及全部暴露动作的捕获分类检查通过，模型0/浏览器0。必要实机重验目录 `bat-g5-real-selection-9IlepN`，结果待补，不算已通过。
+
+旧真实错误来源 SfWUgg 经完整生产离线编译仍拒绝 function_draft_example_mismatch/a-0003，原SHA256不变，模型0/浏览器0；旧registry兼容核对通过，证据 `work/selection-tool-old-source-proof.json`。新实机未过前不关闭第1项，不推进正式验收；首次失败均保留。
+
+第二次实机 9IlepN 来源失败（8次模型调用）：5次工具失败均是变化候选漏 ordinal。已用原输入离线复现，工具补回当前候选 schema 与精确字段位置；同时登记新工具进度事件，避免前端只看到模型调用而漏掉工具过程。第三次 9fYYkp 仍失败（9次模型调用）：候选字段已正确，但模型始终将当前期望 ordinal 填1、程序实际算2，变化样例也有1/2冲突，最终主动 done(false)，没有派发错误点击。
+
+进一步修正职责：选择前工具不再要求模型口算当前 ordinal，改由现有 QuickJS 计算并返回选中候选，实际点击必须匹配计算值；变化样例仍严格验证，失败反馈包含样例编号及安全的实际/期望整数。旧来源不改；这不是把错误样例自动改成通过。9fYYkp 原程序的离线首验仍如实报 exampleIndex=1、actual=2、expected=1，尚未作为成功来源。
+
+### 2026-09-27 不新增tests文件：准备编译失败关联已修
+
+按用户最新要求，后续开发不新增tests文件；用现存来源、已有生产入口、真实运行和持久化结果验证必要改动。引用库须对应当前缺失的通用能力或可复现阻塞，不做已工作模块的全面替换。
+
+本次定位并修复 `withSelectionValidation` 保存失败时固定写actionRefs=[]的问题。复用现有QuickJS校验，仅通过Error cause带回当前segment对应的真实动作，不改程序、样例或不可变来源。原真实失败 `bat-g5-real-selection-SfWUgg` 经生产 `recompileHybridSource` 离线重放，仍准确拒绝 `function_draft_example_mismatch`，现明确关联a-0003；模型0、浏览器0，source-result.json SHA256前后相同（9cbd70faefdb1101386fa71939f2761db4e652a82fc08e0dc3145f3aaf08ef33）。证据 `work/selection-failure-action-proof.json`。本次没有新建或修改tests文件，没有把定位修复记成错误程序已能运行。
+
+本次受影响 API 包类型检查 `npm run check --workspace @browser-capture/api` 通过（exit 0）；未运行根级或全量测试。
+
+### 2026-09-27 复用范围纠偏：保留已验改动，只处理新回归
+
+全项目组件职责核对见[PROJECT_REUSE_REVIEW](PROJECT_REUSE_REVIEW_20260927.md)。用户明确指出：优先复用不等于把已写好的无关模块全部替换，也不应为纠偏再无差别撤回。尚未执行任何撤回；停止额外换库和扩展调研。
+
+本轮Ajv替代动态schema逐类型转换后，真实Python/TS同一16个样例已一致，原动态schema命名用例、Contracts check与Workbench build通过；保留这项已验改动。Unicode长度首验失败保留，并非所有JSON传输都损坏。
+
+点击复用组的离线3/3不能证明实机接入完成：同一旧来源新retry `bat-g5-real-selection-fbdqn3/retry-xRoEmZ` 第一次普通复跑报 `hybrid_runner_failed:AttributeError`（模型0、activeMs15423），第二页未运行；原错误保留，当前仅修本轮引入的公开API适配问题。后续必要复验限定现有链的第一页，使用 `BAT_SELECTION_FIRST_PAGE_ONLY=1`，不再采集新来源或调用准备模型。
+
+后续已修并验证：Browser-Use 0.13.8的Page.mouse为异步属性，适配漏await，原mock错误地提供同步属性掩盖问题。改为真实Page构造并绑定已有session，再await mouse；所属3/3通过。仅同一来源第一页实机复验 `retry-z2EqpM` completed、9 browserCommands、9 transitions、模型0、activeMs19225；独立核对checkpoint中当前候选选择与实际详情URL一致，摘要 `work/reuse-click-acceptance-20260927.json`。来源记录里13次模型调用是复用来源的历史值，本次未调用模型。API check及本次定点diff检查通过，原首次失败保留。
+
+本轮没有执行此前口头提出的撤回；保留已验改动，停止额外库替换。后续修改须直接对应当前主线的可复现错误或确实缺失的必要能力，不以“统一技术栈/增加开源依赖”作为单独开发任务。
+
+### 2026-09-27 本次补齐结果：基础动态选择、人工等待、搜索与只读UI已验证
+
+用户要求继续完成已知缺口。本次不执行关机；以下旧收尾与关机记录仅为历史事实，不作为当前授权。现有 master/43ed385、255 条 dirty 开始核验，保留全部已有改动。G6 首次失败和同任务重试成功分别保留，已删除的任务不重建、不回填。
+
+本次已补动态选择的真实来源/编译/变化输入复跑、同现场有界续查的连续trace、人工等待同次恢复、搜索与题板同轮运行态证据和局部UI非退化。D6仍待决；复杂版本排序样本失败，按钮/滚动分页、多套方法、真实用户登录/验证码解除仍未测。G6首次失败保留，不以这些隔离前置能力验证改写它。
+
+**最终新增实机证据：** 同一来源、同一链 `816f75c9-33f2-4de6-9905-5d5f78e102fa` v1 / digest `201e5c7560472484d565e1fac661c4d94b0a4a3c91fb48f44db531fac7d4f726`，在第一页和第二页各读10项，按当前候选选出ordinal 3的v0.17.1与ordinal 6的v0.13.1，真实浏览器URL分别到达对应详情。两个独立run均completed、9 browserCommands、9 transitions、模型0（17.275s/13.485s）。证据 `bat-g5-real-selection-fbdqn3/retry-2I4n1L/selection-proof.json`，安全汇总 `work/g5-remaining-gates-proof.json`；本次只离线重编译与普通复跑，没有再调用模型试做。首次失败保存在原目录。
+
+独立证据核对首验脚本误从最终业务 `run.outputs` 找内部节点值而失败；改读已保存checkpoint的 `nodeOutputs` 后通过，未重跑浏览器。候选摘要不同、原ordinal从3变6、实际URL与独立规则计算一致、两个run绑定同一链的摘要相同。连续续查样本也核验同owner/同target、两次done和initial/continuation审查均在原14步预算中，原source失败/gap保持。
+
+搜索与UI的专属服务/客户端已停止，真实401和选择的受管Runner/窗口完成finally清理；未递归删除临时profile。正式数据库tasks仍0，未重建已删除G6。当前未执行关机、提交、推送、worktree、reset/clean或根级/全量测试。
+
+最后受影响API包类型检查 `npm run check --workspace @browser-capture/api` 通过（exit 0）；Workbench所属check及本次最终build此前已通过，不重复运行旧验证组。本次所属代码和文档的定点 `git diff --check` 通过；末次checkout核对为master/43ed385、273条dirty（包含原有改动），未提交。各次首次失败及修正后的窄复验记录在下文和对应专题文档。
+
+本组验证目的：在真实公开 GitHub 发布列表当前页，按版本规则选择发布详情；同一自然来源编译的链以不同列表页 URL 输入复跑，检查动态集合绑定和 0 模型。使用独立临时持久化与现有生产 withHybridAuthoring/recompileHybridSource/TaskChainRuntime，不写正式任务库、不注入 source、不修改网页。命令限定 `BAT_RUN_REAL_SELECTION=1 node --import tsx apps/api/tests/g5-natural-selection.acceptance.ts`；不能证明 G6 首次验收、跨页全局排序或任意网站选择。首次结果随后补记。人工等待与 UI 修复各由所属最小用例验证。
+
+动态选择首次脚本失败：`bat-g5-real-selection-38hGLm` 的 Agent 只调用 done(false)，明确报告未给运行时输入 URL，浏览器命令0、模型1。脚本只给原始业务句子，漏掉生产 `browserUseTask` 会提供的入口/真实输入文本；并非导航或动态选择成功。现复用生产 `describeValue` 将本次已授权入口和输入投影到任务文本，保留原失败来源再验证，不改生产浏览器逻辑。
+
+第二次真实来源 `bat-g5-real-selection-HXxKUk` 失败：12 浏览器命令、16 模型调用，`completion_review_after_continuation_unresolved`。同 Agent/Browser 的首次 done 后确实回到原列表有界续查，连续 trace 保留两次 done 和 initial/continuation review；没有另开会话或重置步数。续查观察到正文分组后，复核仍错误索要 execution 模式不存在的记录列表输出证明。现只将已确认 resultMode/outputSchema 传给准备复核，并补动态选链接使用原生 click 的方法指引；不改旧事实、不跳过范围核验。新增单条生产复核上下文验证首次1/1通过（仅该命名用例），fork 两个文件摘要同步；真实选择仍待验证。
+
+搜索/题板本组目的：独立临时数据目录启动现有产品服务，通过真实工作台提出需要搜索的来源需求；仅核对搜索事件、原始候选、用户选择、API/SQLite/重启同版事实，不启动 B-U 或发布第二条 G6。复用现有持久化模型设置和凭据，不修改正式数据目录；UI 使用已有 CDP 客户端。历史已过搜索单元组不重复跑。
+
+搜索运行态门已通过：独立 `bat-g5-search-ui-f0XDtH`，真实UI创建来源访谈 `b4e7c5aa-ffb7-4f7e-b6ae-29f29cbc328f`，Pi web_search 显示搜索中→搜索完成，展开依据与来源题板都显示本轮 Node.js 下载候选；选择 `source:37391f203b47c8cec371` 后唯一草案v1经UI确认。API与SQLite逐项核对搜索callId、原始messages、question/answerMessageId、selectedCandidateId、来源URL及requirement.entries一致。服务13992→22416、UI刷新后整个Interview摘要及SQLite消息摘要不变，仍confirmedVersion=1/revision=2。证据 `work/g5-search-restart-proof.json`、`g5-search-before-restart.json`、`g5-search-after-restart.json`、UI候选/确认/重启证据。没有启动B-U、发布或正式运行；此门不计第二条G6。
+
+搜索验证脚本首次操作/断言失败另记：把“查看搜索依据”的summary误当button、来源选项误当label，均未发业务变更；改为实际元素后成功。选择选项即自动提交，额外submit因disabled拒绝，没有重复答案；确认按钮旧名称定位失败后按实际“确认草案”点击。SQLite题目在确认后是resolved，首断言误写answered，修为核对API同一状态与非open后通过。这些脚本失败不改产品事实。第一次audit失败同时出现Node Windows退出断言，后续窄复验正常；未扩大整组测试。
+
+动态选择第三次 `bat-g5-real-selection-YCxUX8`：sourceSuccess=true/gaps=[]，2浏览器命令、4模型调用；离线编译却仅产出固定history XPath，没有动态Function，验收脚本在复跑前明确失败。真实来源显示目标嵌套在重复section中，既有集合防线仅检查直接同父元素，漏过祖先重复容器。正在所属结构证据边界修复；来源与错误保留，不把“零gap”当动态选择成功。
+
+人工等待代码与所属最小验证见 [HUMAN_WAIT_CLOSURE](HUMAN_WAIT_CLOSURE_20260927.md)：URL存在不再替代动作完成；同现场可重复动作重新取得真实结果，未知外部写保留等待且不重派。生产Executor/Host/Hybrid/Runtime与真实SQLite路径4/4，受影响类型通过，历史首次测试代码失败保留。另已HEAD核验公开 `https://httpbin.org/status/401` 返回401，开始无模型真实Runner协议验证；不把HTTP状态演示站算业务验收，也不伪造登录已解除。
+
+真实401首验 `bat-human-wait-real-DhAvTN` 失败：原生导航先报 `ordinary_action_failed`，未进入成功分支末尾的HTTP状态归类；窗口清理confirmed。修正Runner只在本次导航已记录同URL主文档拒绝时保留capture_*类型，导航前清掉同URL旧状态，不据外部HEAD或异常文本猜认证。新增4种边界的一个用例首验因夹具遗漏必需postcondition而失败，修正后1/1通过；无响应/异URL/旧401均保留普通动作失败，派发仅一次。其后换用已HEAD核验401且无Basic Auth挑战的 `https://api.github.com/user`；第二次启动在fork并行修改期被源码digest门拒绝（`bat-human-wait-real-LtGjV1`，cleanup confirmed），未到真实导航。等所属源码稳定统一更新manifest后再验，不放宽源码门。
+
+真实401后续通过：`bat-human-wait-real-mYn8Oj`，真实Chrome访问公开GitHub API认证端点返回401→waiting_for_human；持久化后换Runner，同owner/session/tab及同run继续，未解除401仍waiting，没有把观察URL当成功，模型0；两次handoff及最终owned窗口/Runner清理confirmed。receipt/first-run/second-run均在该目录。该证据证明真实拦截与未处理时安全恢复；成功处理后的推进由生产适配+SQLite测试证明，实际用户登录/验证码解除仍未测，不冒充登录成功。
+
+嵌套动态选择已补结构防线：沿既有DOM祖先识别重复条目；完整查询须全部落在同一局部集合对应位置，未读时native点击及离线编译均拒绝固定XPath。所属15项累计通过，首次夹具失败和窄修复见[NESTED_SELECTION_CLOSURE](NESTED_SELECTION_CLOSURE_20260927.md)。第三次旧真实source离线只报 `collection_selection_read_required`，SHA256不变，0浏览器/0模型。5项fork文件摘要更新，源码门通过；第四次自然来源开始验证，不修改前三次来源。
+
+第四次复杂排序来源 `bat-g5-real-selection-SfWUgg`：6浏览器命令、12模型调用，sourceSuccess=true；首个错误点击后同现场续查纠正。两份选择程序的期望样例与程序/真实选择不一致，QuickJS验证报 `function_draft_example_mismatch`，未物化/复跑，不修改样例或覆盖来源。本次泛化修复不放宽严格门。任务书未要求全面复杂排序；该额外样本标失败/未支持，继续保留能力范围内的基础动态筛选：当前页按正文顺序打开首个标题以“.1”结尾的发布；同一生产脚本用 `BAT_SELECTION_CASE=first_patch`，仍要求真实候选→Function→动态目标→不同页输入，保留浏览器receipt。其结果不替代上述复杂排序失败。
+
+第五次基础筛选 `bat-g5-real-selection-p8kwhq`：6浏览器命令、9模型调用，真实点击正确；编译的唯一选择函数按数组`.find()`取首项，被既有“保留ordinal、重排数组”校验拒绝。原模型指引只要求返回原ordinal，没明确数组顺序可变、正文顺序由ordinal定义；现补这项既有输入合同说明，不改源码程序/样例，不放宽沙箱门，不新增镜像测试。新来源再验证；原失败持久保存。
+
+第六次基础筛选 `bat-g5-real-selection-fbdqn3`：10浏览器命令、13模型调用，sourceSuccess=true/gaps=[]，离线首编译和动态Function沙箱验证通过，已形成链。首次普通复跑在scroll pages=4报 `action_arguments_changed_by_validation`：Pydantic转4.0，旧digest比较把JSON数值等价当改参。现复用已依赖jsonschema公开const/is_valid，不自写比较器；真正Browser-Use scroll参数与非法改值两项首验2/2通过。此后只用同一不可变来源离线重编译/普通运行，新增retry子目录保留首次compilation/chain/run，模型试做不重跑。
+
+UI余项实机已完成：动作详情新增原生键盘入口，关闭只读画布Delete并复用React Flow无障碍配置。一次所属build通过。`bat-canvas-ui-wJHB78` 中Tab/Enter/Space、展开、缩放0.5→0.6及亮暗实际样式通过；完整API草稿=SQLite body，revision/checksum/两条验证/readiness全部不变，写请求[]。该场景后续仅因提醒可选值undefined误断言null而整体失败，原结果保留；只复验提醒段到 `bat-canvas-ui-Y1IudF`，跨任务铃铛/返回/刷新保留及同execution状态恢复后提示消失通过。汇总 `combined-proof.json` 不覆盖前次失败。模型/产品Browser调用0，两个UI Chrome exit0且服务已关闭；提醒状态为隔离夹具，不冒充真实认证解除。完整首次失败见 [UI_REMAINING_CHECK](UI_REMAINING_CHECK_20260927.md)。
+
+### 2026-09-27 历史收尾：同任务重试闭环完成，G6 首次验收仍失败
+
+收尾补充：本次UI客户端已通过所属CDP关闭；临时UI浏览器Profile目录的安全路径核验与递归移除组合命令被自动审批拦截（仅返回 `blocked by policy`），整条命令未执行，故该临时目录保留，不改用其他工具绕过。它与已完成删除核对的产品Pi会话/来源诊断/业务数据库分别记录。完整来源、离线编译、临时链路和完整结果核对副本已按精确文件名移除；安全摘要和截图保留。最终定点diff-check通过，master/43ed385未变。
+
+**最终事实：真实 GitHub Releases 单链已在正式工作台完成同任务重试闭环。** UI需求与题板→确认v2→第二次来源→同源离线恢复→样本→独立复验→UI手动发布V1→正式复跑→原窗口→重启持久化→UI永久删除均取得记录。三次普通执行各读取8页、翻页7次、77条唯一URL，模型调用0。首次草案、首次B-U、首次TS物化与原窗口初次聚焦失败不撤销；按任务书，“全链一次通过”的G6结论永久为失败，本轮没有另建第二条正式任务，不宣称全部迭代首次通过。
+
+原窗口收尾复验：修复WinAPI句柄/主窗口筛选与实际前台核验、分离handoff/focus后，最新真实UI“打开原窗口”请求HTTP200；原Chrome PID1968、原target及owner均不变，WinAPI验证visible=true、foreground=true，实际原窗口截图显示 `https://github.com/openai/openai-agents-js/releases?page=8`、Next不可用。证据 `work/g6-window-proof.json` / `work/g6-original-window.png`。此前G5的focus仅凭RPC active=true，不足以证明OS前台，不能继续用作严格前台证据；本次正式原窗口补齐该证据。Windows仍可拒绝后台置前，不保证任意时刻必成；新拒绝码映射409和错误保留有2条定点证据，新版UI本次实际成功，修复后的409视觉路径未再自然触发。
+
+重启核对：PID20284→7552后，同Release、三个execution/run、输出摘要、owner及原页均保持；SQLite安全审计逐项相等，API引用一致，UI顺序核对77条均存在。证据 `work/g6-restart-proof.json`。随后为加载错误反馈最后一次检查/构建均通过（API check、Workbench build；既有大chunk提示），服务加载PID14884，未重跑B-U或采集链。
+
+删除核对：先UI“结束原窗口”并确认，handoff=ended且PID1968退出；再UI“永久删除→确认永久删除”。API tasks=[]、旧任务404；SQLite只有aiSettings=1/imports=1，其余业务表记录均0；本任务Pi binding/session文件、两份来源诊断、窗口lease均无残留。模型配置和imports摘要未变，共享Profile目录保留；没有维护脚本补删产品残留。证据 `work/g6-deletion-proof.json`、`work/g6-after-delete-audit.json`、`work/g6-deleted-empty.png`。该任务/Release/来源ID现均为已删除历史引用，仅保留安全验收摘要；本轮临时复制的完整来源、编译产物、链路及完整结果核对文件另行移除。
+
+已删除职责为D1智能修复、D2手工写图、D3人工拾取、D4旧格式读取及U清单冗余接线；具体变更、保留项及所属最小验证见下方逐组记录和UI清单。已补读取引用、重复方法、动态Next绑定、既有loop累积/去重、检查点与Profile所有权恢复；未新增网站专用公共逻辑、第二调度器或隐式复跑模型。未覆盖按钮/滚动分页、多套方法、多业务步骤/each自动创作、复杂选择、真实登录/验证码及自然业务人工等待；D6仍待决，不凭本次单链宣称通用全覆盖。
+
+现场：现有master/HEAD `43ed385`，已有dirty全部保留；无worktree/reset/clean/提交/推送/相邻项目改动，无根级或全量测试。当前验收任务和所属产品窗口已删除；关闭本次UI客户端及服务后，执行用户本轮明确授权的关机。关机是本轮用户指令，旧“不关机”历史备注不适用。
+
+### 2026-09-27 G6：原窗口系统拒绝的反馈收口
+
+真实 UI focus 在 Python 明确返回 `hybrid_managed_window_foreground_denied` 后，API 将其投影为通用 500，连接层又在写入错误后调用成功的 reload，导致错误被清空。现只在 `TaskChainService.controlBrowserHandoff` 的 focus 边界精确匹配 `UpstreamProtocolError(hybrid_runner_failed, ValueError:hybrid_managed_window_foreground_denied)`，返回 `browser_handoff_foreground_denied` / 409 和“窗口仍保留，请通过任务栏手动切换”；未知错误仍沿原边界处理。连接刷新当前快照后再保留这次操作失败，不变更 completed、active 租约或业务输出，不增加重试。
+
+最小验证：新增连接用例首次 1/1，证明成功刷新后仍显示相同错误和 code、busy 结束；新增所属 API 用例首次 0/1（测试夹具把业务数组误写到 result 投影结构，被 Zod 拒绝，未到 focus），按现有 TaskExecutionResult 合同修正夹具后 1/1，证明 HTTP 固定错误和整个持久化 execution（含输出/租约）不变。只运行这两条命名用例，无模型、浏览器、构建或重复旧组。主流程负责一次受影响类型/构建及同一窗口 UI 反馈复验；此处不据定点测试宣称 OS 前台成功。
+
+### 2026-09-27 G6：原窗口 focus 的假成功修正
+
+正式 TaskRun 已完成 77 条结果、普通复跑模型调用 0 后，UI“打开原窗口”返回 active，但两次原窗口截图门均失败 `owned_window_not_foreground`。只读 WinAPI 核验：租约 Chrome PID 1968 / 主 HWND 2622766 仍存在，前台为 PID 19260；另一个 visible owned HWND 1574350 是主窗口的辅助窗口。首次失败保留，窗口存在与前台成功不能混用。
+
+实现缺陷是 `_visible_window` 只要找到可见 owned 窗口就返回 true，未检查 Windows 激活结果。现只操作已核验 PID 的可见主窗口，显式声明 WinAPI 的 HWND/BOOL/LPARAM，恢复后请求一次前台激活并核对真实 GetForegroundWindow；系统拒绝时抛 `hybrid_managed_window_foreground_denied`，不附着其他输入队列、模拟按键或重开窗口。Microsoft 文档确认后台激活可被拒绝；现场具体拒绝条件未从只读检查中确定。
+
+交付 `handoff` 在同 owner/target 已验证并保存租约后返回 active，显式 `focus` 独立证明前台。调用者核对：独立 focus 错误在 TaskChainService 回写之前抛出，现有 completed、77 条结果和 active 租约不变；不让操作系统焦点限制把已完成链路改判失败。
+
+所属新增 `apps/api/tests/test_managed_window_focus.py` 首次 4/4：拒绝时租约字节不变且不操作其他/辅助窗口、请求成功但前台不符仍拒绝、无主窗口明确 not_visible、handoff 不依赖 OS focus。只运行该单文件；未重复旧组、构建、类型门、浏览器或模型。真实同任务 UI 焦点复验由主流程继续，尚不据单元测试宣称 Windows 前台成功。
+
+### 2026-09-27 G6 同任务重试：发布与正式翻页运行完成，原窗口聚焦未过
+
+唯一任务 `1db0fc42-5eb7-4e30-8055-43da5d57747a` 的首次草案与首次 B-U 失败永久保留。第二次来源成功（11 次模型、8 个浏览器命令、两页代表），首编译在 TS 物化被合法 `new_tab=false` 误拒；最小修复后使用同一不可变来源离线恢复，无新增 B-U、无模型调用。恢复 job `1762e289-41fb-46a0-8bbc-06afc9934ad3` 经 UI“只重新编译已保存试做”启动。
+
+样本 execution `4a079196-8a88-49ec-8ed0-dfe2d6b82fe6`、独立复验 `28eb9f9f-c93e-4c47-8dde-e9e426268acf` 均 completed；同草稿 revision=0、同链 digest `d575e2270de1ca4a1ab98fce3a3175637a88fdabc330c92e0ae17ac2dd33d237`。UI 手动发布 Release `eb4c27b6-a3eb-4fa6-835f-163af47821fa` V1（digest `6e125dff6713140621f7e7cc265537e660700b405ae2b2bfd69e509c1180083c`），再从链路工作台“运行→开始运行”创建正式 execution `8099a496-11ca-4500-8e96-db169312e2dc` / run `18971a18-13b3-44a5-8d59-d5b99d8ab0d6`。
+
+三次执行均实际读取8页、翻页7次、77条/77唯一详情URL、54 transitions、40 browserCommands、模型0，业务输出摘要一致；正式 activeMs=44499，TaskRun/execution completed、runner cleanup confirmed。UI展开同一图技术动作，显示排队/完成与当前执行；结果面板实际显示77条标题与链接。安全审计在 `work/g6-before-restart-audit.json`，UI截图 `work/g6-formal-result.png`。
+
+正式交付保留同 owner `44cefc2b-ea41-4da8-8cda-10c962781fe6`、Chrome PID1968、原 target `B1B50FC799EE431132A83C49D73C265B`，页面为真实 releases?page=8，状态handoff；运行前后身份一致。**原窗口“聚焦到前台”未通过**：UI打开原窗口后两次检查仍为ChatGPT前台；现有Windows适配器忽略SetForegroundWindow结果并误报成功。原窗口存在/可见与OS前台状态分开记录；不模拟用户输入抢焦点、不重开页面补证。修复严格反馈后复验，随后继续独立的重启/删除核对。
+
+本轮受影响API类型检查通过；Workbench错误空态文案修正后所属build通过（既有大chunk提示保留），实际试跑面板已显示真实阶段，无“尚未开始”矛盾。服务本次加载PID20284/4175。重启后持久化与删除当前待核验，不把上述同任务重试改称G6首次通过。
+
+### 2026-09-27 G6：推进的显式同 tab 参数
+
+真实成功来源 `work/g6-valid-source.json` 首次 Python 编译 gaps=[]，TS 物化拒绝 `hybrid_repeat_advance_binding_invalid`。原因是推进同时具备动态 URL 与有原生参数事实证明的 `new_tab=false`，而 TS 错把绑定总数限制为 1。新增生产桥首次 0/1 复现；窄修后 1/1，通过合法同 tab 参数，并拒绝 true、未知/重复参数、伪 sourceRef 和 proofRefs，普通绑定证据门仍执行。
+
+原始来源保持不变。`node --import tsx work/g6-offline-diagnose.mts` 离线验证 exit 0：compiler gaps=[]，materializer/TaskChain 编译成功，13 个节点，产物 `work/g6-offline-chain.json`。仅运行这一新增例和这次真实来源离线验证；未调用模型或浏览器、未写 API、未改当前服务、未跑包检查或旧测试组。正式 UI 重新编译和运行仍由后续验收记录证明。
+
+### 2026-09-27 G6 草稿生成上下文空态修正
+
+实际生成 job 已 running/preexecuting 时，上下文标题显示当前处理阶段，详情却回落为“尚未开始生成草稿。”。现将该空态限制为无 activity、无草稿且无发布版本；已有作业保留阶段标题及服务端 reason。仅改一处展示条件，定点 diff 检查通过；未新增镜像测试、未重建工作台、未重启服务，当前运行中的正式作业未受扰动。浏览器显示复验待下一次已授权构建后进行。
+
+### 2026-09-27 G1–G5 本次需求前置退出与 G6 首次需求登记
+
+**G6首版草案审阅失败，不能宣称全链首次通过。** UI中的首版“代表试做”要求逐页收集并沿分页前进至末页，混淆准备方法与正式全集执行；尚未确认，未启动正式B-U。已补访谈Skill的通用阶段规则（不加网站逻辑/关键词门/新字段），通过同一任务的真实聊天发送阶段纠正，要求业务范围与已确认规则保持原意后重新成稿；不脚本改写持久化草案，不另建任务。标题缺失取页面版本标签的题板已实际确认。
+
+同一任务UI生成并审阅v2后确认，API confirmedVersion=2/revision=5；v1与v2均保留，Markdown摘要在work/g6-interview-confirmed.json。经UI“生成草稿”启动首个job `b779c791-7719-44ea-88b0-016f83ed7d92`，该次B-U仍失败并自行结束（未发取消、未发布链路）：业务结果为根记录数组，模型误把响应包装value当业务路径，连续输出["value"]及["value",0]，readError=natural_read_output_path_invalid。source/v3 artifact `ba664688-cab0-4d9f-8182-8e384ce2b069` digest `e96239e76012fae7a7345e048892fad0cab4cab91d9a7781276763e263da143e` 已保存，owner closed=true；编译/样本/独立复验/发布/正式运行均未到。UI真实失败截图work/g6-first-source-failure.png，不把G5的77条结果算这条正式任务结果。正在修正方法工具的真实根路径描述与安全反馈，再由同任务UI显式重新试做，首次失败不撤销。
+
+前置复核：D1–D4/U01–U35职责与接线收敛、G1调用身份/发布事务、G2合法缺证/形状、G3引用与模型字段门保留所属定点证据，旧API类型基线已消除，最新API/Workbench类型及Workbench build通过。G4/G5当前选定的公开href分页单链范围已取得真实source→编译→IR→运行：两页代表、8页普通遍历、77条URL唯一记录、0模型复跑；原动作一次派发/后态/读取有已有真实Runner样本，发布/删除/业务歧义边界有所属生产服务与SQLite样本。
+
+新真实恢复 `bat-g5-repeat-resume-v81mKN`：同链纯节点边界paused/interrupted→持久化→同owner原窗口handoff/focus→新Runner恢复同run→completed，首次读取不重派，模型0、finally清理confirmed。首次恢复脚本 `bat-g5-repeat-resume-U3eKB1` 实际正确暂停，但脚本误断言最后浏览器前驱必须是record read（实际为后续Next query），因此首次失败；修为核对最后实际browser receipt后重试通过，原失败保存不变。Profile重建服务后的精确所有权恢复、共享Profile保留也已真实验证。
+
+据此通过的是本次普通href分页单链所需前置门，不声称通用任意网站支持：按钮/滚动分页、多套读取方法、多业务步骤/each自动创作、复杂排序选择未获得本轮真实证据；D6仍待决。原生业务人工等待、访问限制与真实登录未自然发生，已有窗口/暂停能力证据不冒充这些业务场景通过。
+
+G6唯一新需求（创建前登记）：**打开 https://github.com/openai/openai-agents-js/releases，收集全部公开发布的版本标题和对应详情链接，沿下一页到结束，按详情链接去重；保持网页发布顺序，不登录、不下载、不修改。完成后显示结果并保留本次浏览器的最终发布列表页窗口供我查看。**
+
+预期用户结果：完整发布列表与对应详情URL、可见且可聚焦的本次原窗口。选它是因为公开来源/字段/继续与停止条件明确，真实所需能力已有前置证据；不是数量样例或本地自制页面。覆盖需求→唯一草案→新B-U来源→首编译→样本→独立复验→手动发布→正式复跑→原窗口→UI/API/SQLite/重启→UI删除。未覆盖会员/验证码、写操作、多步骤和复杂选择。此前G5隔离任务/来源不注入工作台；所有正式变更操作从UI，API/SQLite只读核对。任一首门失败永久记录，不自动新建第二条。
+
+正式任务已从UI创建：`1db0fc42-5eb7-4e30-8055-43da5d57747a`；题板确认原文指定来源及“包含所有公开条目”（含公开预发布、无私有草稿），与已登记需求一致。最终后端服务PID21172/4175已加载，Workbench build为本次收敛版本。用户授权的结束/真正无法解决后关机仍有效。
+
+正式任务创建前的操作失败也保留：PowerShell对空数组再包@()误判tasks不空，node只读核验实际0后修正空态门；本次owned闲置API停止后首次重启遇10秒数据lease未到期，等待既有期限后启动成功，未删锁。UI控制脚本首版unref使命令退出后的子Chrome被宿主回收，改保留父进程后重开无任务空态；首次发送定位误选默认submit类型的折叠按钮，未发请求，随后精确点击aria-label=发送，才出现需求气泡及思考态。均未创建第二条任务或注入API。
+
+### 2026-09-27 G5 真实 GitHub 分页来源、编译与普通复跑通过
+
+第六次隔离样本 `bat-g5-real-repeat-kneXYw`（fork `8ed51f1bd90a5f6e546c3d7e6ef6b5ddcbc5f1b8f3711568d3982c7ea4ae335f`）：来源10个浏览器命令、13次已完成模型调用，sourceSuccess=true、sourceGaps=[]。只做两页代表方法，不预抓全集；不可变来源首次离线编译gaps=[]，生成13节点/1个既有loop。普通执行器实际翻页7次、读取8页并completed，40浏览器命令、54次transition、activeMs=44396、模型调用0。来源、compilation、chain、run和latest-run分别保存在该隔离目录；前五次失败不撤销，此次不计G6。
+
+在最后统一API类型门，新增预算反例夹具 action.args 的unknown类型首次失败；改为真实jsonValueSchema.parse并回绑到待篡改action后APIcheck通过，受影响精确预算用例1/1。读取引用参数的完整生产捕获/编译与TS准入通过；所属vendor manifest首验CRLF摘要错误已由owner修复，最终verifyForkSource通过。
+
+当前继续同一真实链的原窗口暂停/持久化/恢复验证；G4/G5是否完整退出待该行为结果复核，G6尚未创建。
+
+### 2026-09-27 G5：完整 Next 样本预算差异
+
+理论边界：`max_results` 是执行上限，不改变 selector、属性和文本投影的查询语义。每份原始 query 必须先按自己的实际 args、ReadSpec 与完整性证据独立验正，再仅忽略 `maxItems`、派生 `outputSchema.maxItems` 和 `ordinal.maximum` 比较方法。运行仍使用首份 ReadSpec/预算；来源和事实 digest 不改写。后续代表结果超过首次预算则拒绝，不能静默扩大预算或编译一个已知无法覆盖代表页的方法。截断、selector、attributes、include_text 或字段投影变化仍拒绝。
+
+最小验证：新增 Python 例首次 0/1，旧规则报 `repeat_method_evidence_invalid`；修后 1/1。新增生产 Python→TS 桥首次 1/1：两页全正查询预算分别为 4/100、实际各 4 条，编译保持首预算 4，原来源对象不变；参数/投影/完整性/派生 ordinal 上限篡改及结果超过首预算均拒绝。仅运行这两项新增例，未跑包检查、浏览器或模型，未修改任何失败来源。
+
+### 2026-09-27 G5 真实翻页第三次结果与第四次验证
+
+第五次 `bat-g5-real-repeat-li0L9L`：7个浏览器命令、9次已完成模型调用，sourceSuccess=true，原生准备确实只读两页并done；但有一个 `missing_control_intent/repeat_annotation_read_method_mismatch`，未编译/复跑。a3 title.normalizeWhitespace=true，a6漏参数而实际缺省false，这是不同方法，不能当等价通过。原source/receipt保留不变。修复方向是让 `bat_read_fields({readRef:"r1"})` 在同一成功记录集中直接复用完整方法，返回新样本引用；不要求模型再次抄字段配置，不重写读取器。
+
+TS方法引用准入最小新例首次1/1；追加首次字段规范化篡改反例后该例1/1。引用即便未被done选中也必须核验同trace前序成功事实、原参数、完整spec/outputPath/readPath及每次观察/结果归属；混参、缺引用、前向引用、失败前驱、改规格和结果摘要均拒绝。旧未选空观察仍不参与结果。Python真实工具/捕获/自然编译验证待收口，尚无新增浏览器或模型重试。
+
+代表方法边界修正最小验证：Python 两页全正新例首次0/1重现旧限制，修后1/1；生产Python→TS新桥首次1/1，末query四份同址链接，显式terminalObserved=false。非法href/不同目的地/无实际advance拒绝；运行判空、累积、预算代码未改。API最新check通过，fork digest `cb37aad87745937641479ad97a818a2858e45a4a29c169b2d443d134cc52f627`。第五次来源仅因该准备/正式遍历边界修正而启动，18步/240秒；不是原样增加预算重跑。
+
+Workbench所属包build通过（现有大chunk提示保留）；API已从本checkout启动4175，实际health成功、tasks=0；实际UI空态读取成功，未创建G6任务。服务需在最终源码收口后重新加载才进入正式验收。
+
+第四次 `bat-g5-real-repeat-fkD3t3` 最终也失败：17次已完成模型调用、16个浏览器命令，sourceSuccess=false、sourceGaps=[]、output=null。实际读取1/2/3页并沿Next到第5页，因未到终页而done=false；a7 click 为 native_action_dispatch entered=false，随后改用实际href导航。未编译、未复跑，失败原文不变。
+
+设计复核：本轮自行增加的“代表执行必须实际抵达终页并观察空Next”将方法准备逼成逐页遍历，不符合任务书“代表方法、不预抓全集”。修正为两页相同读取方法、相同完整Next查询和至少一次实际导航证明可重复方法；末代表页Next允许仍有唯一目的地。只有普通执行器实际查询为空才正常结束，歧义、截断、站点阻断或预算耗尽仍失败/阻塞，不声称准备已获全集或已到终页。author/review同改提示，禁止把find_elements结果序号当点击index；宿主复用既有查询、分支、loop和预算，不新增浏览器循环。准备仍须新采有效来源，四次失败不可离线改判。
+
+第三次 `bat-g5-real-repeat-9vvHRj` 已结束：sourceSuccess=false、sourceGaps=[]，11次已完成模型调用、10个浏览器命令。真实第一页读取成功、完整 Next 查询返回4份同址链接、导航第二页成功；done 明确剩余步数不足以调查终页，未编译/复跑。这是本次脚本12步预算未覆盖必要调查，不能说已证明完整任务成功，也不归因于读取器。
+
+中间只读探查补齐：Python 与 TS 分别验证额外 find_elements 的实际参数、完整 verified read、规格、文档与事实摘要；普通查询正常编译并通过 readiness 后才折叠为 supporting，副作用不放行。所属新 Python 用例1/1、生产 Python→TS 桥1/1；初次导入路径错误以及 repeat_method_evidence_invalid、consumer_readiness_live_read_required 均保留为首次失败，修复后通过。复跑仍使用原两个读取节点和原 loop，不重复探索动作。
+
+第四次隔离来源已启动于 `bat-g5-real-repeat-fkD3t3`，vendor digest `7fd4d9835df4a969b4408851b39e3895deea6ed51aa1784243317ad78923b509`。恢复18步/240秒准备上限，增加通用编号分页终页调查提示；只有来源接受且零缺口后才进入330秒/零模型普通复跑。前三次原始来源和失败不改写，此次仍不是G6正式任务。
+
+### 2026-09-27 G5 浏览器前驱检查点关联：实现前记录
+
+Product Alignment:
+- natural-language task: 多页读取或表单链在纯计算节点后中断，恢复同一运行并继续正确浏览器前驱。
+- reusable chain boundary: 既有 TaskCheckpoint 与节点执行事件的浏览器来源关联。
+- runtime inputs: 当前检查点、固定链版本、现场浏览器身份与节点回执。
+- dynamic task outputs: 可核验的恢复或保持暂停，不猜测前驱节点。
+- generic platform capability used: TaskChainRuntime、原检查点/事件持久化、HybridRuntimeScopeState。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 纯计算/循环节点之后保留最后实际浏览器结果的精确来源。
+- existing implementation in repository: TaskCheckpoint.browser、节点 finished event、digestJson、LangGraph 驱动与既有 verifyResume；events 当前没有浏览器回执关联，末事件不等于末浏览器节点。
+- mature candidates and pinned versions: 沿用既有 LangGraph 1.4.14 与 Zod 4.6.2；无新增库或调度器。
+- selected implementation / reused public surface: 扩展原 checkpoint 的可选 browserNodeId 与原 finished event 的可选 browserStateDigest；结果、节点和摘要一起持久化。
+- B-A-T-owned adapter and remaining gap: 核验最新浏览器回执的 node/invocation/digest 与现场身份；纯节点不覆盖，旧缺字段不猜，pendingEffect 不恢复。
+- license/runtime/platform fit: 既有 TypeScript/Node/Windows 依赖，无许可证变化。
+- browser/runtime/state ownership conflicts: 无第二检查点存储；不启动浏览器、不改变循环调度。
+- replay model calls: 0。
+- rejected candidates and evidence: 不用 events.at(-1)，它会指向 deduplicate/loop/branch；单独 nodeId 不能把该节点与具体 browser 摘要关联。
+- focused validation: 生产 runtime 的 browser→纯节点→取消/恢复；新 observedAt、pending effect、篡改 node/receipt/身份及旧检查点拒绝。
+
+实现结果：新关联只由实际浏览器结果生成，与 finished event 后的既有 syncCheckpoint 一起持久化；每份 persist 快照均核验关联。纯节点不覆盖；最新带 browserStateDigest 的事件必须与 browserNodeId、invocationId、原 checkpoint.browser 摘要一致。恢复的新 observedAt 不改写历史回执，运行内 resumeBrowser 供实际恢复节点形成下一份结果。Hybrid verifyResume 对新关联恢复失败返回 ok:false，保留人工恢复与旧无字段的保守边界。
+
+- 新所属 `hybrid-checkpoint-browser.test.ts` 首次 3/6：三个断言直接对未经过 Zod 规范化字段顺序的夹具算摘要，修为原持久化 checkpoint.browser 后 6/6；追加每份 persist 快照的关联检查后仍 6/6。真实 TaskChainRuntime 的浏览器 capability→纯 branch→节点边界中断得到 paused/interrupted，同 run 恢复读取成功；再次中断、旧 browser 节点、篡改回执、pending effect、现场漂移与旧检查点均已覆盖，零浏览器/模型调用。
+- 定点选择现有 human waitpoint、协议认证等待、未决浏览器副作用、capability 取消四项，4/4；Runtime 包 check 通过。第一次 API check 被并行 `hybrid-natural-repeat.ts:223` 类型错误阻挡，本项文件无报错；新增实际脚本的首次 check 暴露 config JsonValue 未收窄的两条类型错误，补对象/非数组守卫后最终 API check 与 diff 检查通过。
+- 新实际验收入口 `apps/api/tests/g5-repeat-resume.acceptance.ts` 读取 BAT_REAL_REPEAT_DIRECTORY 中已成功完整复跑的 chain/plan/compilation/run，使用单一可见受管 owner；首 read 后纯节点完成再中断、落盘、handoff/focus、新 Runner 同 owner 恢复，校验同 run/首 read 不重派/模型 0/finally 精确关闭。脚本必须 BAT_RUN_REAL_REPEAT_RESUME=1 才能运行，当前仅编写未执行，不算真实恢复通过。
+
+### 2026-09-27 G5 Profile 所有权恢复：实现与局部验证
+
+Product Alignment:
+- natural-language task: 用户维护专用浏览器账号状态；关闭或重启后只能在本次资源释放有证据时恢复任务使用。
+- reusable chain boundary: Profile 所有权门，适用于登录后查阅、表单等任务；不改任务链调度。
+- runtime inputs: 专用 Profile 路径、owner/lease 身份和私有 runner 归属回执。
+- dynamic task outputs: 本次窗口、runner 和临时目录的独立核验结论。
+- generic platform capability used: 既有 ManagedWindow 租约、RunnerProcess、psutil 进程身份核验与受管目录清理。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: Profile 账号窗口关闭未确认后的独立恢复。
+- existing implementation in repository: `ManagedWindow` 已持久化 owner/lease、浏览器 PID/启动时刻/exe、CDP 与 target；`RunnerProcess` 已有 handoff、独立窗口操作、分阶段 close 回执及精确临时目录清理。
+- mature candidates and pinned versions: 复用现有 browser-use 0.13.8、CDP-use 1.4.5 与已安装 psutil；不引入进程控制库。
+- selected implementation / reused public surface: 现有 ManagedWindow.start/handoff/end/inspect、RunnerProcess.close、removeRunnerTemporaryDirectory；psutil 仅核验旧 runner 的 PID/创建时间/exe，仍存活时拒绝恢复，不杀 PID。
+- B-A-T-owned adapter and remaining gap: `profile_start` 接入既有租约，启动浏览器前保存版本化私有 owner 回执；独立恢复先验证旧控制进程已退出，才允许关闭该租约窗口。临时目录删除必须匹配受管临时根、精确目录及目录内 owner token。
+- license/runtime/platform fit: 沿用仓库已集成的 Python 3.12 / Windows 组件，无新依赖或许可证变更。
+- browser/runtime/state ownership conflicts: 只作用于本 owner；共享 Profile、登录态和其他 owner 资源不删除。旧空 `owner.pending` 缺身份，保留明确 legacy blocked。
+- replay model calls: 0。
+- rejected candidates and evidence: 不采用随机 ownerId + 扫描无 Chrome 后清标记；该方式不能证明旧 Python 已退出，也不能追溯其临时目录。
+- focused validation: 新会话 owner 持久化、关闭失败后重启恢复、旧 runner 存活/身份不符/其他 owner/非法临时目录拒绝；先无真实浏览器的所属测试，真实窗口样本等待根 agent 释放单会话。
+
+实现与当前验证：已删去新会话写空 `owner.pending` 的路径，改为浏览器启动前保存版本化 owner；账号窗口复用 ManagedWindow handoff，原 runner 关闭确认后才显示 open。重启后的 `recover` 使用新 runner，先核验原 controller 与 Windows venv launcher 的 PID/创建时间/exe 均不再存活，再核验 lease.creatorPid 并调用既有 end/inspect；无 PID 猜测或额外进程控制。临时目录必须为受管系统临时根下的精确目录且 `runner-owner.json` 身份一致，删除前复核 owner 标记未变。旧空标记明确返回 `browser_profile_legacy_owner_unknown` 并保留。
+
+- 所属测试首次 TS 6/6、Python 7/7；补充 Windows launcher 存活/冒认拒绝后 TS 6/6、Python 9/9；补充无自动化 capability 的 Profile handoff 后 Python 10/10。测试无浏览器/模型调用；API 包 `check`（含最终 launcher 协议）通过。
+- 真实临时 Profile 首次 open 失败：外层 `browser_profile_open_failed`，离线定位为 `hybrid_profile_runner_owner_mismatch`；Windows venv 启动器 PID 与实际控制 Python PID 不同，浏览器尚未启动。finally 清理确认，原始结果保留在 `work/profile-owner-smoke-first-pass.json`。
+- 修复后实际 fd3 ownership 握手已通过；故意在持久化回调中止，未调用 profile_start，runner 清理 confirmed / activeResources=false。
+- 第二次真实样本仍失败：Profile 不创建 OrdinaryCapability，既有 handoff 却无条件调用其 close，导致交付失败；独立恢复 finally 成功，清理确认。已增加 None 保护，失败结果保留 `work/profile-owner-smoke-second-pass.json`。
+- 第三次独立临时 Profile 真实样本通过（零模型调用）：open→持久同 owner/lease 的 handoff→原 runner cleanup confirmed→重建 service 看到 cleanup_required→recover closed；共享 Profile 哨兵仍在，本次 owner/lease 消失、finally 清理确认，临时样本目录最后删除。成功结果 `work/profile-owner-smoke-result.json`，可复查脚本 `work/profile-owner-smoke.mts`。两次失败不被本次成功覆盖。
+- 本项闭合的是 Profile 窗口所有权恢复局部链路；工作台按钮真实点击、用户真实登录态及 G6 正式新任务验收未测。旧空或身份损坏的标记仍安全拒绝恢复。
+- 本项 Python 位于 `apps/api/python`，不在 vendor 源 manifest 范围，未改他人条目；Runner import 与 vendor 核验通过，核验时 digest `6556dee21603e10aa45e09efcff1b4d1498ca4eb9edab051f55425ebfbe643d7`。
+
+### 2026-09-27 G5 真实发布列表首次失败与定点修复
+
+GitHub openai/openai-agents-js/releases 首次隔离来源 \bat-g5-real-repeat-9SuYDi：17次已完成模型调用、16个浏览器命令；sourceSuccess=false、trace.completed=false、output=null，编译/复跑未启动。读取第一页和第二页成功；Next 查询实际匹配4份同址链接，但 max_results=1 导致截断，没有完整 verified read。done 返回失败，未找到真正终页（曾探查 page=999 空页，最终在page=3）。另一个 include_text=false 属性探查被错误当作业务读取，产生 find_elements_read_query_incomplete。首次失败不撤销，原始 source/receipt 不改写。此前 max_results=1 的方法约束不适合这一真实页面，现改为完整查询后唯一目的地。
+
+独立生产 Runner 对同一真实页面完整读取 Next，4个href均指向page=2；2个浏览器命令、0模型调用、finally清理confirmed且activeResources=false，证据在临时目录 bat-g5-next-inspection-8H6xNj/inspection.json。这个查询仅用于定位问题，不计正式来源或产品通过。
+
+修复：完整查询可有多份同址链接，source验正后以显式 repeat_destination 绑定，复跑复用既有 data.transform/deduplicate、maxItems=1 合同和 loop；两个不同目的地必须在导航前失败。未放宽通用 prior_verified_read 唯一路径规则。新增Python生产编译正反例1/1首次通过；TS动态去重/歧义例1/1首次通过；4份同href Python→TS桥1/1首次通过。属性探查修复由dom_query严验身份/参数/摘要，但不伪造业务读证明；首次新测试5个断言失败重现缺口，修复后新5+旧5=10/10，补充绑定拒绝后新6/6。当前仍不能声明G4/G5通过，G6未开始。
+
+修后隔离重试 bat-g5-real-repeat-iGdi1Q 仍失败：17次已完成模型调用（另17条intended审计，不计为34次实际调用）、16个浏览器命令，全程停在首页。两次声明成功的读取实际coverage为0，后续6次字段投影失败；sourceSuccess=false，sourceGaps为a-0003/a-0008的natural_read_empty_sample_unproven；模型done明确未证明分页转场/终页。该次未进入编译和复跑，原始回执保留；正在针对真实读取失败做零模型定位，停止同配置付费重跑。版本fork摘要d7accbd918db4084c78915296a63f74c003b6afc6c3342c7bacc361279b4b1b3。
+
+读取失败诊断补齐：原私有日志主动丢弃整个 readError，重启后只知failed。现在只保存固定allowlist错误码，仍剥除字段名/selector/页面正文，未知错误统一bat_read_fields_failed；精确新测试首次1/1，验证已知码保留及敏感内容不落盘。旧日志不会补造原因。
+
+读取故障零模型对照已完成：同一个生产Runner检查5种方法，:scope可见文本与原成功方法均total=10/sample=3；title属性失败是selected_value_not_text，'.'失败是invalid_selector，空容器为0/0。安全结果在work/read-method-probe-20260927.result.json；finally浏览器/capability均confirmed且closed=true。底层读取器没有错误，不重写。方法工具现在空sample登记前拒绝；字段错误仅反馈合同字段名、非负计数与固定原因，并说明:scope/默认可见文本；两项新增必要用例各首次1/1。旧失败source不修改。
+
+G2既有测试夹具基线已修：JsonValue由真实schema.parse校验，transport payload改复用生产naturalPayloadContext，物化受影响例首次5/5；旧handoff夹具补齐与completed相符的done/finalResultRef，精确用例首次1/1，真实到达预期compiler_fixture_failure。没有改生产合同或跳过验证；最后API类型门待统一执行。
+
+API/Workbench 当前类型门均通过。首次合并类型门发现本轮新 acceptance 脚本未先收窄 compilerVersion 就访问 repeatMethods，显式核验 v2 后只重跑 API 并通过；G2 原四处类型基线错误已由夹具修复消除。TS scope 新例首次 0/1 重现失败字段探查被一律阻断，修后 1/1；仅接受精确 action/resultRef、同 tab/URL/document 的只读失败探查，失败点击/导航与身份漂移均拒绝。
+
+第三次真实来源隔离运行启动于 bat-g5-real-repeat-9vvHRj，fork 摘要80d9ed49c9ec865a34e2b491eafa13f8a5f549b04ec6dd629df4aa55c927c9c1。本次因读取反馈和空样本边界已有真实定位/修复才重试；Agent预算降为12步，准备180秒；只有来源和编译通过后才启动独立零模型复跑，其330秒总超时覆盖既定300秒运行预算。与前两次失败分开，不计G6。
+
+### 2026-09-27 G5 继续实施：完成边界已验，重复方法适配进行中
+
+本轮继续处理工程缺口；随后实际采集和首次失败记录如下。`done` 保留五类固定安全错误码，未知异常不泄漏正文；同路径读取冲突提示只选择一个代表引用。完成复核的 initial/continuation、模型原判及宿主改判写入私有 `native_completion_review` 事实，保留拒绝语义；后续复核不回喂这些判断。
+
+所属 `test_method_completion` + `test_author_completion` 最终 18/18（0.357 秒）。首次 17 用例有 7 个断言失败命中缺口；首次修后复测另有一个新增测试访问未创建属性的夹具错误，修正后通过。准备 repeat 注解边界 `test_repeat_annotation` 8/8（0.157 秒）；首次夹具未补模型默认字段导致摘要校验错误，修正夹具后通过；其证据验证器在该测试中隔离，不计真实循环证据。循环 scope 前驱边界定点 `node --import tsx --test --test-name-pattern='循环读取只接受' apps/api/tests/hybrid-read-scope.test.ts` 1/1，证明只接受已授权 entry/advance 且拒绝外部页面/owner 变化。
+
+已接通 source fact → Python 折叠编译 → TS 独立校验 → 既有 loop/branch/accumulator。当前只支持一个尾部地址推进方法，严格要求动态唯一继续查询、终止样本、同构读取、稳定键和同版来源；不放行旧失败来源。Python `test_natural_repeat` 6/6（生产 normalizer/compiler，无浏览器），首次 4/6 为新夹具 max_results=5 不满足明确的唯一性预算1；改夹具后通过。旧 `test_method_source_compile` 2/2。TS repeat 4项、旧 cardinality 4项通过；Python→TS 编译桥1项通过。同一个不可变 chain 在三页和变化后的一页数据中运行，验证末页先累积、稳定键去重、无 Next 不推进、限额在下一次导航之前执行。非 completed 终点原会丢弃部分结果检查点，现复用既有 `syncCheckpoint` 保留；完整输出仍只由 completed 产生。API check 仍仅4个既有测试类型错误，无新增。
+
+TS/桥首次失败分别为夹具漏通用失败终点、共享图误添既有 loop 不支持的 cancelled outcome、测试漏 TaskOutput.contract、桥的 entry binding 放错 pre/post；失败终点清掉 checkpoint 是实缺口，已修。query 完整性第一次仅按 requireComplete 检查而拒绝；核实成熟 read_fields 已用 includeOrdinal 同样拒绝截断后，验收接受 requireComplete 或 includeOrdinal，不改旧 ReadSpec 摘要。源码自检全部新增模块在500行内，未增第二个浏览器循环或调度器。
+
+G4/G5 真实行为门与 G6 仍未通过。当前开始一次 GitHub `openai/openai-agents-js/releases` 公开发布列表的 G5 隔离真实采集→离线编译→普通复跑，独立目录 `bat-g5-real-repeat-9SuYDi`，最大18个Agent步骤、总超时360秒，复用现有产品模型选择。此样本不创建正式工作台任务，不计G6。运行前主服务4173连接被拒，SQLite实际 tasks/taskAuthoringJobs/taskExecutions 均0；第一次只读查询误用别名 authoringJobs，查实际表名后修正，无数据库写入。下面的“本次停止点”为此前历史结果，当前已继续实施。
+
+### 2026-09-27 复核更正：G5 是未完成的工程缺口，不能认定无法解决
+
+此前以三页静态受控样本的失败作为停止依据，未证明问题不可解决。该样本只覆盖基础读取与翻页，不能代表真实网站适应性或正式任务验收。此前“无法安全完成 G5”的表述只能说明当时没有满足准入条件，不能作为无法继续开发的结论。
+
+本次只读复核现存原始 `bat-g5-loop-source-jpbObZ/source-result.json`：`a-0007/a-0008` 两次 done 都提交 `[r1,r2,r3]`，工具均返回 `completion_read_reference_invalid`；三个成功读取引用均写入 `headings`。生产 `complete_from_read_refs` 禁止同一结果路径的多个引用，抛出 `completion_read_path_conflict`，而 `AuthorTools.done` 将所有异常统一改写为引用无效。随后 `a-0009` 选择 r3，原生结果为 Cedar；续查后的 `a-0011` 改选 r1，原生结果为 Amber。因此“最终只剩第一页”有具体的引用选择与合同边界，不能笼统归因为浏览器未读到后页。最终完成复核的详细 reason/followUp 未进入持久化来源，现存通用拒绝码不能证明其具体语义原因。循环生产者与 IR 映射仍未接通；本次没有追加模型或浏览器试跑，也没有改写旧来源为成功。
+
+### 2026-09-27 本次停止点：G5 来源重复方法阻塞，G6 未开始
+
+第三次隔离受控采集 `bat-g5-loop-source-jpbObZ` 用具名 `headings` 输出合同与真实生产 Runner/模型，7 个浏览器命令、13 次已完成模型调用。现场确实访问三页，连续两次点击 Next，三次 `bat_read_fields` 成功，终页查询 `main > h1, main > a` 只见标题；但来源 `trace.completed=false`、`sourceSuccess=false`，输出只有第一页标题，最终 gap 为 `completion_review_after_continuation_unresolved`。首次 `done` 被复核续查，两次后续 `done` 虽记录 success，最终来源复核仍未接受。原始 receipt/result 在该隔离目录，未转写为手造 source 或发布链路。
+
+两次 Next 的动作目标仅见相同 XPath；各自 `dom_structure` 明确带 `query_candidate_unavailable`、`upstream_dom_coverage_not_proven`，终止查询只在末页发生。当前 source/v3 没有可证明的循环范围、每轮继续/停止条件、动态 Next 定位、每轮累积和稳定键；编译器对重复签名仍给 `repeated_operation_reuse_unproven`，TS 控制图不生成 loop。把这两次点击直接折叠成循环会猜测用户意图与目标，违反任务书的 G5 门。现有生产者还未给出可准入的重复来源，无法安全完成 G5；停止继续模型采集和循环编码。Profile 未确认清理的独立恢复核验入口也未完成。G4/G5 行为退出门未过，G6 的正式全新任务、发布/复跑/原窗口交付及产品删除均**未测**；当前服务 PID 15616 尚未加载本轮新代码。
+
+### 2026-09-27 G5 局部：歧义回访与任务私有诊断删除
+
+准备来源仅含 `confirm_intent` gap 时，`authoring.ts` 现在返回 `RequirementClarificationRequired`；缺证、拒绝来源及服务错误维持原分类。定点接纳测试最终 1/1（用例内覆盖五种分支）。首次运行在旧 `hybrid_completed_source_required` 失败，改动后的首次运行又因测试夹具预期写错失败，修正夹具后通过。未重跑整个旧夹具文件，其最终编译项在 G2 已有独立基线失败；真实浏览器回访未测。
+
+任务删除现在从该任务持久化 authoring job 的 `id/browserRunId` 精确清理来源诊断 JSONL，其他任务的同类文件和共享 Profile 保留；路径归属或删除未确认时保留任务供重试。隔离 SQLite/文件的 `task-deletion.test.ts` 最终 5/5，覆盖双任务隔离、删除失败保留与修复后重试。首次 4/5 是测试给其他任务直接插入不合法 job body，API 投影 400；改用生产仓储写有效 job 后，第一次重跑 4/5 又因测试误把 Fastify `app` 当 TaskChainService；修正该夹具引用后 5/5。两次失败都未到待验证删除不变量。尚未验证运行服务重启、真实产品任务删除，G5 整体未过，G6 不开始。
+
+Profile 清理未确认现在投影 `cleanup_required`，保持浏览器 busy，并在启动前创建私有 `owner.pending` 标记；仅确认关闭后删除。服务重建见到标记仍阻止打开，工作台显示清理待确认且允许返回工作台，不把它显示为“可供任务使用”。隔离 Profile service 测试 3/3（含未确认关闭和重建）、Contracts/Workbench `check` 通过；API `check` 仍仅有前述四处旧 hybrid 测试类型错误。`RunnerProcess.close()` 会缓存未确认结果且丢弃部分资源句柄，重复点关闭不能核验清理；当前不提供虚假的自动重试，需独立 owner/进程/临时目录核验后才能安全清标记。真实 Profile 浏览器和实际服务重启未测；此恢复入口仍是 G5 缺口。
+
+G5 循环来源首次受控采集失败：独立临时目录 `bat-g5-loop-source-iI4FkW`、本地三页 Next/终止站点、真实 Runner/模型，12 步与 240 秒上界。首次启动因脚本误用 workspace 当前目录，未读到 SQLite，模型/浏览器均未启动；修路径后来源 `sourceSuccess=false`、5 次 `wait`、最终 `done(success=false)`，实际只有 `about:blank`，6 次已完成模型调用。脚本只给 `entryUrls`，未按生产 `browserUseTask` 将入口写入模型可见任务，故无页面动作或循环证据。原始 receipt/result 保留在该隔离目录，不计产品失败；修正模型可见入口后最多再做一次定点采集，不改变现有服务和归属不明的 Chrome。
+
+第二次受控采集在 `bat-g5-loop-source-WE3qKa` 成功导航第一页并 `find_elements`，但模型五次用 `outputPath=["value"]` 调 `bat_read_fields`；该路径不在当时根数组输出合同内，均返回 `natural_read_output_path_invalid`，最后 `done(success=false)`。7 个浏览器命令、8 次已完成模型调用，未访问第二页；不是循环通过。该结果保留作精确反例。受控输出合同现收敛为具名 `headings` 字段，以核对模型是否能注册实际路径；若仍失败，不反复原样采集。
+
+### 2026-09-27 G4：能力路径矩阵已成，行为退出门未过
+
+逐项“生产者→持久化→编译→运行”的现行源码证据和缺口见 [RESEARCH G4 矩阵](RESEARCH.md#2026-09-27-g4正式能力路径与缺口矩阵)。本轮没有新产品任务、假 source 或脚本改稿。生产 Runner 的独立临时 Profile 真实浏览器定点：`npm exec --workspace @browser-capture/api -- tsx --test tests/managed-window-runner.acceptance.ts` 1/1，原窗口同 owner/target 在 Runner 退出后恢复与结束；`npm exec --workspace @browser-capture/api -- tsx --test tests/hybrid-interaction-read.acceptance.ts` 1/1，同会话点击、后态等待、读取及遮挡处理，普通动作模型调用 0。两项首次均通过、现场由测试关闭；既有 Chrome PID 13468 和服务 PID 15616 未触碰。
+
+确定缺口：自然来源的重复签名目前返回 `repeated_operation_reuse_unproven`，只生成线性图，TS control loops 为空；Python 返回的 `confirm_intent` gap 可能被 `authoring.ts` 先抛 `hybrid_completed_source_required` 遮蔽；Profile 关闭未确认仍复位 closed；任务删除未删本任务来源诊断 JSONL。真实多组/跨页范围续查、动态选择、首次 source→裁剪→编译→复跑、取消后派发计数/原现场恢复、人工等待、正式原页交付和彻底删除仍未测，不以已有 runtime loop 或两项受控浏览器样本代替。G4 矩阵可供 G5 逐缺口实施，但全能力行为退出门尚未通过；G6 仍禁止。下一项 G5 先修这些确定边界并取得缺失的最小真实样本，再回判 G4/G5。
+
+### 2026-09-27 G3：F5 模型字段减法与精确证据引用
+
+来源提案模型输入从 `searchTool/subject/query/outcome/candidateUrls` 收敛为 `subject/query/searchId/candidateIds`。后备搜索的 `searchId/results[].id` 已在模型可见工具正文中；原生 Pi `web_search` 的旁听结果现在先经公开 `source_search_references` 工具展示调用及结果 ID，未展示不得提案。宿主按指定调用验证原样 query 和候选 ID，再推导 provider、URL、`none/unique/multiple`；同词多次查询不取最近一次。新 `SourceResolution.searchId` 随现有来源事实持久化，旧记录仍可读。模型仍判断原始结果是否与业务需求相关，Question 仍由已校验来源投影。
+
+准备期 `bat_read_fields` 只向模型返回 `readRef/outputPath`、至多三条代表值和当前 DOM 覆盖摘要；完整 ReadSample 的值、digest、页面/document 身份、container digest 和覆盖留在 `MethodReadRecords`，现有证据验证与编译继续消费宿主记录。没有把完整证明挪入字符串。vendor 源码清单五项哈希已更新，`verifyForkSource` 通过，来源摘要 `44a8a3ba0f22382d4ce4441311a053eecba9d1420f64dca470298cec4362e30b`。
+
+验证目的：同词双查不串来源、原生搜索 ID 必须先展示、结果 ID/数量/原样 query 准入、题板和 SQLite 重启读取保持来源身份；读取模型视图缩小后编译仍持有完整证明。搜索两文件定点测试最终 17/17，补 `searchId` 重启读取断言后只重跑受影响文件 15/15；workflow-use 读取工具、证据及标量样本三文件 `unittest` 最终 21/21；Contracts `check` 通过，`git diff --check` 通过。首次搜索组合 16/17：旧断言改为检查内部 `details`，没检查模型可见 `content`，修正断言后通过。首次 Python 21 项中 1 失败、1 错误：旧夹具未计现有 `read_path=[]` 参数，且命令未加 API Python 模块路径；修正夹具和 `PYTHONPATH` 后通过。API package `check` 再次仍仅报 `hybrid-count-sample.test.ts:83,108`、`hybrid-result-cardinality.test.ts:34,70` 四处既有类型错误，未写为通过。
+
+G3 所属字段与证据边界的定点门通过。未测真实 Pi provider 对新版工具协议的响应、真实浏览器读取、运行服务加载和正式 UI 全阶段；这些不能由假事件及离线样本推断。下一门 G4：逐项核对正式入口、来源、编译、运行及真实浏览器行为；G6 仍禁止提前开始。
+
+### 2026-09-27 G2：F2 结果形状与 F3 选择注解合法拒绝
+
+F2：准备草案的数据结果现在必须显式给出“结果形状”，缺失时以 `preparation_draft_result_shape_required` 拒绝；不能再由宿主暗中补成单条记录，原草案保留。F3：现有 workflow-use `selection_annotation` 的模型结果区分合法 `SelectionProgram` 与受控的 `insufficient_evidence` 原因；合法拒绝只产出原有编译 gap，不伪造选择方法。模型响应不合合同为 `selection_annotation_invalid_response`，服务故障仍为 `selection_annotation_unavailable`，不混作证据不足。vendor 来源清单的源码哈希已同步，`verifyForkSource` 通过。
+
+验证目的：缺形状不推进草案；合法选择方法、缺证、观察选择冲突、无效响应及服务失败走各自消费者。F2 所属窄范围测试最终 2/2；两文件联合定点测试 23/24，唯一失败是现有 `preparation-draft-handoff` 的最终编译夹具在 `hybrid-method-evidence.ts:40` 读取缺失代表输出，尚未到预期 `compiler_fixture_failure`，不写成通过或归因于 F2。F2 首次 npm exec 路径错误，目标测试未启动，修正 workspace 相对路径后才得到上述结果。F3 `unittest` 选择注解 10/10、source 边界 4/4；首次尝试 `python -m pytest` 因该环境未安装 pytest，目标测试未启动，改用现有 unittest。所属差异 `git diff --check` 通过。API package `check` 仍有 G1 记录的四处既有 hybrid 测试类型错误，未重复运行，也不宣称通过。
+
+G2 所属 F2/F3 生产者与消费者边界的定点门通过；联合测试的旧夹具失败保留为独立未解基线。未测真实模型响应分布、浏览器来源、运行服务加载及正式 UI/SQLite；G6 仍不得开始。下一门 G3 F5：实际字段减法和精确搜索引用。
+
+### 2026-09-27 G1：F1 调用身份与 F4 发布事务
+
+F1：`TaskChainRuntime.executeInvoke` 现在先解析本次子输入，再用父节点幂等键（含父 run/invocation/节点及活动外层 loop）、子稳定键、子链 id/version/digest 和输入摘要生成调用 ID；只按此 ID 复用已完成进度，核验原进度 tuple，子调用幂等键绑定同一身份。旧格式检查点的弱调用 ID 不足以证明已发生副作用归属，恢复明确失败，不猜测并重派。F4：`TaskProductService.publishDraft` 在现有 SQLite 事务内同时保存 Release、删除活动草稿并写同请求操作回执；service 仍在变更前核对 requestId 与请求正文冲突。
+
+验证目的：同子链不同 invoke 节点/输入/版本/外层循环各自派发、同次恢复不重派已完成调用；发布回执失败不能留下半份 Release，成功重试只得同一版本、异内容同 ID 拒绝。`npm exec --workspace @browser-capture/runtime -- tsx --test tests/invoke-identity.test.ts` 新用例 4/4；`npm exec --workspace @browser-capture/runtime -- tsx --test --test-name-pattern=invoke tests/task-chain.test.ts` 既有 invoke 3/3；`npm run check --workspace @browser-capture/runtime` 通过。`npm exec --workspace @browser-capture/api -- tsx --test tests/task-draft-lifecycle.test.ts` 最终 2/2，使用 TaskChainService、隔离真实 SQLite 和 `operations` INSERT 触发器注入故障；失败后草稿在、Release/回执都无，撤故障后同请求发布成功且幂等。F1 定点首次均通过；F4 测试首次 1/2，失败为新夹具未采用持久化后规范化的 requirement digest，未到故障触发器，修夹具后只重跑该文件。两项 `git diff --check` 通过。
+
+API package `check` 仍仅报 `hybrid-count-sample.test.ts:83,108` 与 `hybrid-result-cardinality.test.ts:34,70` 四处既有类型错误，不写为通过。运行器验证使用生产 TaskChainRuntime 及受控 invoke 能力，发布使用隔离 SQLite 生产 service；没有真实浏览器、运行服务加载、恢复外部页面或正式工作台证据。G1 的所属程序不变量已通过，下一门 G2 F2/F3；不提前进入 G6。
+
+### 2026-09-27 U01–U35 界面收敛：源码处置与定点验证
+
+U01–U35 的逐项处置见 [UI 清单](UI_MAINLINE_REDUCTION_CHECKLIST_20260927.md#本次执行记录u01u35)。默认界面删去重复状态/入口、流程教材、画布 idle 计数与预览、常驻评价和诊断计数；共享题板 U11 经 SSR 确认无重复，无需改协议。U28/U33/U35 只核验保留，不计删除。Profile、人工等待、原窗口交付、样本/独立复验、手动发布、永久删除确认及原始审计入口仍在。历史节点标题由精确执行的冻结 Release/试跑候选投影，来源/链/run 身份不符时不借当前版本标题；现有图与历史事件的浏览器动作名称共用一份合同映射。
+
+验证目的：检查删减后的跨组件接线、题板实际共享渲染、画布事件只属所选 execution、历史事件不被当前 Release 误标。`npm exec --workspace @browser-capture/workbench -- tsx --test tests/chat-timeline.test.ts tests/interview-search-projection.test.ts tests/interview-shared-rendering.test.ts` 16/16；`npm exec --workspace @browser-capture/workbench -- tsx --test tests/chain-workbench-projection.test.ts` 6/6；`npm exec --workspace @browser-capture/api -- tsx --test tests/execution-event-titles.test.ts` 最终 2/2；`npm run check --workspace @browser-capture/contracts`、`npm run check --workspace @browser-capture/workbench` 最终通过；所属源码 `git diff --check` 通过。测试/类型检查只证明这些边界，不证明真实浏览器 UI/SQLite/重启。
+
+首次失败单列：访谈测试第一次命令误用根相对路径，未启动目标测试，修正为 workspace 相对路径才 16/16；Workbench `check` 首次报 U04 `blockedReason` optional 类型和 U10 搜索条缺 `description`，最小接线修正后通过；历史标题测试首次被双步骤夹具的单步骤预算拒绝，补后备动作名时另有一次 TS 转换语法错误，均只修所属文件后最终 2/2。第一次差异检查发现 `ChatTimeline` 尾部空行，已删除。API package `check` 仍是 `hybrid-count-sample.test.ts:83,108`、`hybrid-result-cardinality.test.ts:34,70` 四处既有类型错误，U 组 API/合同新文件未报错，不把它写成通过。
+
+未测与已知缺口：真实工作台逐页、键盘/窄屏/亮暗、原窗口交付、Profile 实际关闭、查看/缩放不写 revision、历史持久化及重启读取均未测；当前服务尚未加载这些源码。`BrowserProfileService.close()` 遇到 cleanup 未确认仍在 `finally` 复位为 `closed`，服务端可能误报可用，留给 G5 浏览器所有权/清理边界定点修复和验证。当前不创建产品任务或使用归属不明的 Chrome；下一门是 G1 F1/F4。
+
+### 2026-09-27 D4 旧格式读取退出
+
+删除旧 `/api/task-chain/legacy` GET/查询合同、service/repository/store 原文读取及诊断 `legacy` 摘要；工作台不再展示旧兼容记录。没有删除 SQLite 旧表、迁移或导入标记，当前 source/v3、草稿、Release、execution 和事件的读取职责保留。D2 后发现的旧 `accept:workbench-simplification` 脚本仍驱动已删除的手工编辑并引用旧诊断，已连同其 preaccept 命令退役；现行需求对话验收脚本和命令保留。
+
+验证目的：旧产品读取入口不再注册，现行诊断/历史仍可解析，旧库迁移不会改写必要原始字节；这些定点检查不证明运行服务已加载新代码或 G6 重启读取。Contracts/Workbench `check` 通过，Workbench 连接/历史/诊断定点测试 7/7 通过；API storage 定点测试首次 2/3，失败在原测试把当前 v19 库只局部删表后伪造成 v9 的无效迁移夹具，调整为真实 v18→v19 迁移后该文件 3/3 通过，SQLite 直接读取 `plans.body` 保留原字节。源码定点核对无旧路由、`legacyOriginal`、旧仓储读取及诊断字段消费者。API package `check` 仍仅报前述四处 hybrid 测试类型错误，不把它算通过。
+
+当前 PID 15616 的运行服务尚未重启加载本轮删除，API 动态 404 与真实工作台历史操作尚未验；不拿运行中旧进程的行为评价当前源码。下一组为 U01–U35 剩余界面收敛。
+
+### 2026-09-27 D2/D3 与 U19：写图、人工拾取和布局写入退出
+
+从工作台删除节点增删/改路由/源码与 selector 表单、`save_task_draft`、人工元素拾取入口及轮询、拖拽保存布局；草稿和 Release 共用只读动作说明，React Flow 保留平移、缩放、适应视图和阶段返回，并用已有自动布局。API/合同及 runner 同步删除拾取专属路由、状态、请求和 Python handler。保留 `createTaskDraft`、仓储 `saveDraft`、IR/绑定验证、草稿试跑/发布、账号 Profile 登录/open/close、B-U 原生定位、TargetResolver、ReadSpec 和 descriptor registry 版本。没有添加第二套编辑器或浏览器框架。
+
+验证目的：退役命令与拾取请求在边界被拒绝，普通草稿/发布和账号登录不因共享文件删减而失效；静态检查不能证明真实浏览器或画布运行态。Contracts 与 Workbench package `check` 通过；API `browser-profile`、`chain-presentation`、`task-draft-lifecycle` 定点用例 6/6 通过，编辑后 `chain-presentation` 受影响文件 3/3 通过；修改的 Python 命令/入口 AST 解析通过；Zod 定点检查确认旧 TS 写图命令和拾取 `startUrl` 被拒绝。旧 picker/写图引用的源码字面核对无剩余消费者，`git diff --check` 通过。
+
+Workbench 定点图投影和连接测试的**首次组合运行 12/13**：图投影 6/6，通过；连接末项因已退役 `setJsonPath` 断言未同步删除而失败。移除该断言后只重跑连接文件，7/7 通过。Agent 的首次 Zod 单次验证因缺 `--input-type=module` 未启动正确模块，修正调用后通过；两次均保留为验证脚本失误，不写成产品首次失败。API package `check` 在代码变更后再运行，仍仅有 D1 已记录的四处既有 hybrid 测试类型错误，没有 D2/D3 诊断；未把失败重命名为通过。
+
+未测：真实画布点击/缩放对 revision/checksum 和试跑资格的运行态影响、真实账号浏览器登录、真实 B-U 定位/读取及产品任务。当前归属未证实的 Chrome PID 13468 仍不动；在所有权明确前不借用其会话。后续 D4 可独立进行，G6 不提前进入。
+
+### 2026-09-27 D1 智能修复退役：定点验证与基线失败
+
+D1 已从工作台移除调整入口、候选审阅/接受拒绝/恢复侧栏和专属轮询状态；从 API/合同移除五个调整命令、专属作业/快照/诊断/提醒投影及模型调整服务与 prompt。`review_execution` 只保留接受和业务含义回需求对话，旧调整命令在 Zod/API 边界被拒绝，不落入通用取消。普通准备、来源重编译、首次草稿创建、试跑、手动发布、执行等待与清理仍保留。D1 相关节点说明里只删调整按钮；D2 的草稿写图和 D3 的人工拾取尚未处理。
+
+本组验证目的：证明退役命令不可进入主线，同时保住草稿、发布与结果处理；类型检查只证明静态接线，不能证明真实浏览器或正式 UI 主线。`npm run check --workspace @browser-capture/contracts` 通过；`npm run check --workspace @browser-capture/workbench` 通过；`npm exec --workspace @browser-capture/api -- tsx --test tests/execution-review.test.ts tests/task-chain-profile-gate.test.ts tests/task-draft-lifecycle.test.ts` 为 5/5 通过；`npm exec --workspace @browser-capture/workbench -- tsx --test tests/task-chain-connection.test.ts` 为 8/8 通过。未创建业务任务，动态失败/等待/清理及画布使用仍待 G6。
+
+`npm run check --workspace @browser-capture/api` **首次失败**：既有 dirty 的 `hybrid-count-sample.test.ts:83,108` 与 `hybrid-result-cardinality.test.ts:34,70` 出现 `JsonValue`/`transportRequest` 类型不匹配；D1 源码没有该次诊断。该组不原样重跑，不改写为通过；错误不属于 D1 删除职责，按任务书继续独立 D2/D3。G1 前仍需核对这一类型基线及本组依赖，不用它掩盖 D1 定点通过。
+
+### 2026-09-27 执行任务书：G0 现场复核
+
+按本次执行指令，在现有 `master@43ed3851636e748aed973df67fd1c61bc76e96eb` 继续；大量既有修改、删除及未跟踪文件均保留，未建 worktree、reset/clean、提交或推送。`GET /api/health` 报服务 root `D:\work\browser-auto-tool`、PID 15616；4173/4175 的监听者均为该 PID，进程 cwd 同 root。进程没有 `BROWSER_CAPTURE_*` 数据目录覆盖，按 `scripts/dev.mjs` 当前配置，实际数据库为 `data/workbench.sqlite`。
+
+G0 只读复核：`GET /api/tasks` 为 `[]`；SQLite 只读 `quick_check=ok`、`foreign_key_check=0`，26 个业务表中仅 `aiSettings=1`、`imports=1` 非空，`tasks=0`，其余为 0。未重复清库或启动产品任务。另有 Chrome PID 13468 监听 9223，profile 路径在本项目 `work/formal-acceptance/ui-profile`，其原父进程已不在；目前不能证明它归属本次服务或当前 execution，保持原样，不据此声称无活动浏览器资源。`/api/browser-profile` 的无 Workbench Origin 只读探测被 `forbidden_ai_origin` 拒绝，未继续试探。旧快照的 UI/私有文件空态未在本次重新验证。
+
+本次直接指令要求完成或无法解决卡点时关机，覆盖任务书旧会话的“不关机”交付备注。当前下一组为 D1 智能修复退役；G1–G6 均未开始，正式产品验收不得提前进行。
+
+### 2026-09-27 新 session 先删后写迭代任务书
+
+按用户要求交付[开发迭代任务书](DEVELOPMENT_ITERATION_TASK_20260927.md)，包含当前现场、阅读顺序、D1–D4/UI 到 G1–G6 的依赖、每组产物/退出条件、最小验证、阻塞处理、交付格式及可复制启动词。它引用现有设计和删除清单，没有新建另一套产品合同或状态。
+
+本次只读复核仍为 `master@43ed3851636e748aed973df67fd1c61bc76e96eb`、既有 dirty 保留；健康接口 root 指向当前 checkout，PID 15616 监听 4173/4175；任务 API 为空。只读 `data/workbench.sqlite` 的 26 个业务表仅 aiSettings=1、imports=1 非空，tasks=0，quick_check=ok、外键问题=0。本次未重新浏览 UI 或扫描私有目录，不把此前空态验收当作本次新结果。
+
+当前仍只编辑文档，没有修改生产代码、运行产品测试、启动产品任务或改变服务状态。六份相关文档的 115 处本地文件链接检查通过，新任务书/临时交接无格式问题，已跟踪文档的定点 diff 检查通过；独立文档复核补明首次失败、夜间等待和 D6 待决的处理分支。新 session 收到执行指令后才开始 D1；G0 只复核，不重复清库。睡前执行不包含关机、提交、推送、全量测试或绕过人工等待的授权。
+
+### 2026-09-27 逐环节 UI 完整删除清单
+
+用户确认“本轮写完整删除清单”。已完成[主线 UI 删除与收敛清单](UI_MAINLINE_REDUCTION_CHECKLIST_20260927.md)：15 个界面环节、U01–U35 共 35 项处置，每项有当前源码定位、删除/合并/按需展示或保留范围、验收条件。不是 35 个功能全部删除。D2–D4 已随 D1 纳入删除计划，替代下方较早“待决”登记；D5/D6 仍是待决建议。
+
+- **已完成：源码审查与文档登记。** 覆盖新建导航、访谈搜索/题板、草案、准备画布、验证发布、正式运行、结果原窗口、历史诊断、提醒及设置；列明重复文案/状态/入口、技术教材、默认评价表单、写图/拾取和旧兼容展示的收敛范围。开发方案、ROADMAP 和旧工作台设计入口已同步。
+- **通过：文档定点检查。** 五份相关文档的 95 处本地文件链接均存在，U01–U35 编号连续且唯一；已跟踪文档的 `git diff --check` 通过。只检查文档，不代表产品测试或 UI 验收。
+- **保留边界：** 业务结果、搜索证据、必要问题、当前原始错误、即时反馈、样本/独立复验、手动发布、人工等待、资源清理、原窗口操作及永久删除确认。UI 去重不删除后台事实，不新增一套主操作状态机。
+- **未实施、未测：** 未修改生产代码，未运行测试、新 B-U 或业务任务，未逐页核验真实渲染。共享题板/同轮错误重复展示的条件性风险已单列，不能当成已复现。已有紧凑提醒、折叠搜索依据和 headless 设置不重复算作新成果。
+- **后续顺序：** 按当前方案完成 D1–D4 与 UI 最小删减验证，再进入 G1；完整运行态 UI 验收随 G6，不能为凑截图提前造任务。清单完成不代表删除功能或产品主线已经完成。
+
+### 2026-09-27 智能修复删除任务登记及同类功能评估
+
+本轮按用户要求只更新文档、核对当前调用面，没有删除或修改生产代码，没有运行测试/业务任务。智能修复的模型建议、候选差异、接受拒绝、恢复及专属 UI/API/状态已登记为 D1；保留唯一草稿、试跑、手动发布、真实错误、人工等待与资源清理，三个任务情境继续如实展示。后续先落实 D1，再处理 G1。
+
+同类项已在[当前方案 §2.3](INFRASTRUCTURE_MAINLINE_DEVELOPMENT_PLAN_20260927.md#23-功能减法登记与同类功能评估)列出证据与建议：D2 手工链路编辑、D3 人工元素拾取、D4 旧格式读取/投影残留建议删减；D5 观察调速建议冻结扩展，D6 多业务步骤/each 自动创作建议另列后续能力阶段。D2–D6 尚未定案或执行，不代表已移除现有能力或取消既定门。单链循环/分页、参数化、普通准备选择注解、原窗口交付及 headless 不纳入上述删除。
+
+旧工作台/能力审计文档中把智能修复列为当前交付门的条款已标明后置；共享草稿、发布、幂等、运行归属和清理不变量继续有效。索引中出现的旧 `TaskRunDialog.tsx`、`useTaskRunner.ts`、`repair.ts` 经实际文件列表核对已不存在，没有将这些历史文件重复登记为当前删除收益。
+
+### 2026-09-27 本地任务清空与开发方案交付
+
+按用户明确要求清空全部本地产品任务，本轮只做清理和文档，没有修改生产代码、运行测试或新建产品任务。当前仍为 `master@43ed3851636e748aed973df67fd1c61bc76e96eb`，全部已有 dirty work 保留；无 worktree/reset/clean/commit/push。
+
+- **通过：本地清空。** 清理前 23 个任务、94 条 execution、18 个 Release。先经既有命令处理等待调整及已无活动资源的 cleanup，再由真实工作台同源调用产品删除 API，23/23 成功。停服后核验并清除 API 遗留的 31 条任务操作回执、10 个 Pi 会话 JSONL、含 9 个孤儿绑定的索引及 47 个来源诊断 JSONL。
+- **通过：重启一致性。** API `/api/tasks` 为 `[]`；SQLite 所有任务领域表均为 0，完整性 `ok`、外键问题 0；Pi 私有会话与来源诊断目录文件均为 0。UI 已刷新并目视核验“每个需求，一个独立任务 / 新建需求”空状态。服务 root 为当前 checkout，PID 15616，4173/4175 可用。
+- **保留：** 模型配置逐行一致、`aiSettings=1`、防重复导入标记 `imports=1`；用户共享 Profile 和登录态未动。SQLite 已 checkpoint/VACUUM，未创建旧任务备份。旧任务 ID 和产物从此不再是可查询的本地证据，下方记录只保留历史结论。
+- **失败/待修：产品删除覆盖。** 产品 API 删除仍遗漏上述孤儿回执和私有文件；本次维护补清只证明最终清空，不能宣称删除功能所有场景通过。后续按开发方案 G4/G5 定位覆盖，G6 在同一任务原窗口交付后验证正式 UI 彻底删除。
+- **完成：开发文档。** [当前方案](INFRASTRUCTURE_MAINLINE_DEVELOPMENT_PLAN_20260927.md) 记录主线输入输出、action 配套职责、F1–F5、模型字段删改规则、G0–G6、最小验证和遇错处理；§2.1 逐项映射历次讨论及关闭条件，补明搜索 Timeline/题板、同现场续查、来源依赖保留、人工等待和原窗口交付；§2.2 单列尚待证据决定的设计。结构参照 arc42/Google 技术写作指南，未宣称标准认证；本轮只做文档链接与一致性检查。
+- **未测/未完成：** F1–F5 尚未实施；基建充分性、方法编译接通及新正式任务全链验收未通过。该时点下一项原为 G1，后被上方 D1 功能删减登记更新；完整顺序只在当前方案维护。
+
+以下各节为当时的阶段记录；其中“任务保留”“当前服务”“下一步”不覆盖上面的最新清理事实及当前方案。
+
+### 2026-09-27 基建审查重新排定优先级：先确定性边界，再减模型字段，再连接能力
+
+按用户最新要求，本轮只读审查真实主线及配套能力，没有修改生产代码、运行测试或启动浏览器。结论与输入输出表见[基础设施审查](MAINLINE_METHOD_COMPILATION_GAPS.md#8-基础设施正确性充分性与-llm-字段所有权审查)。当前不能认定基建正确且充分。
+
+确定问题：子链缓存按 chain.id+stableKey 跨调用复用输出，未核对本次输入/版本/外层循环身份；数据草案漏写结果形状时默认单条记录；选择注解要求拒绝却只有成功 schema；发布事务未包含请求幂等记录，存在已发布却无请求回执的故障窗口。来源提案的 outcome 可由候选数派生；后备搜索模型可见 ID，原生搜索没有同一可见标识，不能直接统一为 ID 引用。
+
+原有 TargetResolver、OrdinaryCapability、StepVerifier、read_fields、LangGraph、检查点和 cleanup_required 的必要职责及实际调用已核对，应保留。正式草案入口固定 main/once、derivations/edgeCases 为空；此前对构造 count 合同的局部验证不等于正式入口有此能力。读取期间 DOM 一致性和点击派发前焦点变化仍列未证风险，不当作已复现故障。
+
+下一道门是调用身份与发布事务的所属修复，随后是缺字段/拒绝结果的准入和模型可见字段精简；不直接补循环、不继续数量夹具、不开展新产品验收。checkout、HEAD、API PID 与 SQLite 作业计数本轮只读复核未变，所有原有改动及任务事实保留。
+
+### 2026-09-27 确定断点已作局部修复；主线能力仍未补齐
+
+已修复真实空查询生产者到采集的断点、字符串数组采样范围与 coverage 错报、准备数量豁免误用到正式 ResultBinding，以及同版 count 的样本/正式阶段混用。缺少选择或累积时，编译现在拒绝已知不满足数量合同的直接绑定；这只是防止误编译，没有补出选择或循环能力。详见[本轮修复及剩余能力门](MAINLINE_METHOD_COMPILATION_GAPS.md#7-确定断点的定点修复与剩余能力门)。
+
+本轮新增所属 Python 验证 19 项、TS 验证 9 项最终通过；scalar 首轮有 4 项因 Node 夹具 this 错误失败，修正后仅重跑这 4 项；TS count 有 1 项因夹具缺 postconditions 失败，补齐后仅重跑该项。不能称全部首次通过。两个只读复核未发现本轮新增确定缺陷，但只检查了采样/数量/count 边界。最终 API 类型检查尚未执行；没有根级或全量验证。
+
+**这些是模拟 DOM/CDP 与源码级验证；没有真实测试页面、真实浏览器或新的产品任务。** 用户指出 100 条仅是方法提炼的例子，本轮围绕数量夹具推进偏离了能力补齐重点。停止继续追加此类测试；自然来源如何表达和证明重复方法、如何复用现有 loop/predicate/accumulator 编译仍未实现，多步/each 也未闭合。不得用局部通过数量代替这些能力或正式验收。
+
+核验仍为 `master@43ed3851636e748aed973df67fd1c61bc76e96eb`，全部 dirty work 保留。API `/api/health` 为 PID 24680、root 正确；未重启服务。SQLite 只读核验：authoring completed17/failed47/interrupted7/waiting_for_human1；execution completed80/failed12/blocked1/cleanup_required1，queued/running 均为 0，未新增运行。当前服务健康不能证明已加载本轮改动。
+
+本轮改动的 17 个受管 Python 源码/测试清单项已定点同步；setup 来源核验通过，digest 为 `1650e716434eb6ce4550cd3171ccb44b269aefb0e609fdb51f8f3f431eb908da`。只完成源码一致性收尾，未重启服务或继续测试。
+
+### 2026-09-27 配套能力正确性复审：方法门未闭合
+
+本次只读审查纠正了上一轮“局部通过即可补循环接线”的判断。原生动作配套层的稳定定位、单次派发、后态轮询等职责应保留；未注册的目标滚动/可见等待与自动动作准备存在重叠，不能直接全部启用。
+
+已证：采样兼容性被复用到正式 ResultBinding，可放行 max300→min1000 的不可能直绑；前 N 选择与读取预算仍混用；标量数组可能整批读却报告 sampled=1；派生 count 的代表值仍被完整业务约束拒绝；空查询真实生产者仍将零命中标为不完整，新消费者测试未覆盖此断点。详见[配套方法正确性复审](MAINLINE_METHOD_COMPILATION_GAPS.md#6-配套方法的架构职责与正确性复审)。这些是当前源码可证问题，未用旧运行或局部测试推定产品通过。
+
+本次未修改生产代码、未运行测试或新产品任务。服务 PID 24680/root 正确且健康，SQLite 没有 queued/running 作业；现有任务计数未变。下一步先修阶段语义与生产者/消费者不一致，再决定重复控制适配；下方的局部测试执行记录保留，不能视为 A 门通过。
+
+### 2026-09-27 方法引用局部接通；先核对既有 action 配套能力
+
+当前工作树已接通 `bat_read_fields → 宿主少量采样 → done.readRefs → 来源 → 自然编译`；沿用既有 `ReadSpec/read_fields`，没有新建浏览器执行器。最终业务合同未改，准备推进只在真实方法证明的数组路径接受代表样本。采样 13、工具 7、证据 8、引用完成 4、done 边界 6、完整编译 2 项，以及 TS 来源 11 项通过；API 类型检查通过。首次运行存在夹具错误，修正后仅重跑受影响项，不能称全部一次通过。
+
+用户追问的原生 action 配套层已按真实调用路径核对：动作注册/参数校验、稳定目标、普通动作执行、后态与等待、DOM 查询转读取、动态选择函数均有当前调用；目标滚动/可见等待等补充工具当前 author 未注册；循环/累积执行能力已有，但自然编译的 loops 仍为空。详见[配套能力使用现状](MAINLINE_METHOD_COMPILATION_GAPS.md#5-原生-action-配套层的使用现状)。优先补既有能力接线，不能把“入口未接通”泛称为“底层能力不存在”。
+
+补充准备边界 5 项通过：完整空查询可形成动态读取、合法无副作用的 done 引用纠错可继续、真实浏览器失败仍保留 gap。受管源码清单已同步，source digest 为 `0e52ee0831bcc7f3ec9f8918c195ccce7b7da0f27c450cd0dd5bb2cd87dcd414`；服务未重启，此摘要不代表现有进程已重新载入全部改动。
+
+自然重复控制尚未补齐；没有新增 B-U 或产品验收任务。下方为此前阶段快照，不覆盖本节方法引用的局部完成状态。
+
+### 2026-09-27 先核查系统差距，暂停新增产品测试任务
+
+当前 checkout `master` / `43ed3851636e748aed973df67fd1c61bc76e96eb`，原有 dirty work 保留。新核查和实施门见[主线方法编译差距](MAINLINE_METHOD_COMPILATION_GAPS.md)。三个已证实断点：最终业务值反推 DOM；代表样本、单次读取预算和最终数量耦合；自然编译只生成顺序链，未接通已有循环运行能力。读取与循环执行器已经存在，不另造控制会话或调度器。当前还未补齐“方法 → 引用式结果 → 自然循环编译”，因此不能开始新正式任务验收。
+
+本轮完成一项独立最小修复：scroll 优先保留已有物理后态；裁剪读取后若某动作失去唯一后态，则保留 `missing_effect_proof` gap 与不可编译 coverage，移除不合法候选段，不再输出 `postconditions=[]` 引发跨语言协议拒绝。原始来源与证据引用保留，不放宽 TS 合同。
+
+- **通过**：`test_natural_scroll_effect`、`test_natural_read_liveness` 所属 Python 验证一次，9/9；包括滚动后所有读取被裁剪时仍保留物理证据、没有直接证据时返回 gap、不产生空后态候选段。
+- **未实现**：读取方法与采样边界、引用式完成交接、当前自然入口的循环提炼与物化。
+- **未测**：修后真实 B-U、首编译、样本/独立复验、发布、正式复跑与原窗口交付；本轮没有新增产品任务，也没有重试旧任务。9 项检查不代表这些产品门通过。
+- **验证范围**：没有运行根级/全量测试，没有为文档修改扩大测试范围；没有切换 checkout、创建 worktree、提交或推送。
+
+下一步固定先闭合单次读取方法及引用，再接重复控制；这两个能力门通过所属最小验证后，才执行全新正式任务。下方较早的“下一步直接验收”记录以本节为准。
+
+主线阶段边界已记录于 [ADR 0012](../adr/0012-mainline-single-source-and-phase-boundaries.md)：第 0 步为单一来源决策，第 1 步采集/离线编译分离及第 3 步旧模型计划入口删除已在代码中实施，尚无该新合同的正式产品验收记录。TS 在接收 JSON 后只保存一次状态为 `received` 的 `source/v3` 原文，再校验合同与同版身份；校验拒绝时保留这份原文，但不授予编译资格。Browser owner 关闭结果单独写 job 来源引用，恢复时严格重读新三字段并核对身份。旧 `source/v2`、`received-source` 和旧模型计划仅留历史查看，不提供执行兼容，也不删除历史 SQLite。Python 所属定点 4/4、TS 独立定点合计 26/26；来源拒绝后留原文、关闭失败及首编译失败等 5 项重跑通过，属于原 26 项子集。最近来源回调类型修改后的 API 检查与 Workbench 包类型检查通过。受管 fork 摘要已同步为 `36e1d5f2bec037b48f0bd3d4635d4eaf24ae76b199d6bcb5ec9c4c3b62aeb44f`。本阶段未新增 B-U 试做；第 2 步结果引用真实读取仍未完成。
+
+服务最终在本项目 checkout `D:\work\browser-auto-tool` 以 PID `24680` 运行，API/Workbench 端口为 `4173`/`4175`，exec session `12000`；重启前 SQLite 中 authoring/execution 的 running 和 queued 均为 0。重启后的服务与工作台只读核验不触发 B-U；它只证明当前服务可读，不替代首次采集、编译或正式交付验收。
+
+截至 2026-09-26，最新正式工作台新任务为 `9644a3a9-351a-45d4-93ca-9a6bc26c5087`：自主搜索、来源题板与唯一同版草案 v1/revision 3 已由 UI 确认；首次准备 job `fcd7d36e-9528-4fbb-864e-302eeb3a9f7d` 的 Python author、序列化和传输完成，但 API 结果 schema 准入失败，来源 artifact 0、compilationCalls=0，服务未崩溃。后续同版第二次 job 只作协议诊断，不可替代首次通过。第六条任务未进入首编译、样本、独立复验、发布或正式复跑；本轮尚无一条新普通任务完成全链一次通过。各门状态见 [ROADMAP 当前门表](ROADMAP.md#当前阶段全新任务首次门槛仍未通过正式交付验收待完成)。
+
+完整查询到宿主双快照投影、原窗口 Runner、提醒菜单和静止访谈任务删除已有对应局部验证；真实人工等待、含 Release 删除及发布链的原窗口交付仍无产品验收。旧首次 API 中断和旧可见 `read-fields` 的精确历史子因依然无法从现存证据追认。下面保存的是较早任务与当时实现状态，不作为当前服务或完整验收结论。
+
+### 2026-09-26 较早业务目标失败与当时未修状态
+
+在这次较早核查时：checkout 为 `master@43ed385`，原有 dirty work 保留。**当时最新的正式新任务**为 `449e20e7-91aa-46ed-bac1-2cdc93b0ad8c`，只从工作台输入一句普通需求“帮我在哔哩哔哩播放《凡人修仙传》最新一集。”开始；它没有借用旧任务、Release 或开发脚本改草稿。访谈自行做了来源搜索和会员条件搜索，并自行提出无推荐项的资格 Question。操作者只以普通用户角度回答“不确定有没有会员；看不了就报告，不改播旧集”。该轮模型产生了符合目标的草案，但服务端先检查未取代的旧 Question，revision 3 失败；定点修复后由工作台重试，revision 4 的唯一草案 v1 才确认。**因此整条链不是一次通过**，不能用后续成功覆盖这次失败。
+
+同一任务随后从正式工作台完成 B-U 代表试做、首编译、自动样本与独立复验、手动发布 Release V1、一次 `headless=false` 的正式复跑。B-U job `f671368b-091c-4608-8814-f0e1264c8e3b` 首次完成：从官方番剧详情页读取 177–184 正片候选，点第 184 集后页面标题匹配，媒体后态由 `not_playing` 到 `playing`；编译链 `bb587f96-d68d-401f-824a-58534f50c223` 是运行时读候选并选最大非预告正片，没有把 184 或站点写入平台源码。样本 `43065ad7-1924-4ed8-87d1-f9bc7db264ce`、独立复验 `cf07ceb1-3832-4b15-8a5a-b151ae4c4da7` 和正式复跑 `a67b6ccd-5607-4827-8904-210d40762b84` 均技术 `completed`、cleanup `confirmed`，每次 6 个浏览器命令、0 个 TaskRun LLM 调用。手动发布为 `8c1fb9f5-1350-4d1b-8b61-cc170ae11ac3@1`，digest `0dab1dd553f8941325c4bd436ac64b9fb4e6b0737279fe0433dc29f21fab8ff3`。Workbench 展示 V1、5/5 动作完成；API 与 SQLite 的同版引用和三次独立 execution 对齐。重启 API 后此摘要的 SHA256 前后同为 `05292b6d4f7b222543331e566d30cc6fd49e6715eddfb8588cd386768dbfff75`，再次打开 UI 仍显示相同 V1 与完成状态。UI 截图在忽略目录 `work/fresh-ui-acceptance-20260926/`。
+
+**证据限制与新修复：** 本任务的首次来源题板保存了动作链接标题“点击观看/追番”和“来源身份尚待确认”，虽然同次原始 `web_search` 的来源列表有作品原标题；这不满足需求阶段“依据可审阅”的完整门。通用 Pi 搜索候选解析已修复同 URL 原标题覆盖，所属访谈/来源定点测试 29/29、API 和 Workbench 类型检查通过，但这条既有任务的来源事实没有改写，也没有新任务验证修后首次来源题板。三次执行的结构化结果均为 `null`、`evidence=[]`；B-U 有第 184 集标题和 `playing` 后态，正式复跑只有媒体后置条件成功，未单独保存当次所选集数、画面或时间推进。正式可见模式的设置和运行命令已核验，实际可见画面**未测**，不能宣称用户可观看的播放已完成验收。此前污染任务 `7dc29061-f591-4559-ab72-8a3fcca21464` 的失败事实仍保留，见文末历史记录。
+
+**2026-09-26 业务结果纠错：本任务失败。** B-U 的 `li[title]` 读取只拿到当前选中的 177–184 分组，其中 2 项是模式项、8 项是正片；`dom_query.complete=true` 只表示这次 CSS 查询的 10 项未截断。B-U 对局部 8 项取最大值得 184，编译产物和三次运行复用了同一缺陷。官方播放页近期可查到第 192 集会员正片、第 193 集预告；184 不是最新正片。用户确认的同版需求明确要求执行时的最新已发布正片、受阻时停下而不改播旧集，故 B-U、样本、独立复验、正式复跑的技术 `completed` **均不能算业务通过**，Release V1 不可作为成功验收或再次运行的正确版本。调整反馈 job `9e0000d1-86c4-4c42-88ee-99d61f47b693` 错误地返回 `requirement_revision`，重复追问是否要核实全部分组；该行为也未通过。隔离的只读页面核验再次确认页面有多个范围分组，不改变任何产品草稿、版本或执行。
+
+根因首先在 B-U 现场调查：它把当前视图的一次 `find_elements` 未截断，误当成“最新”候选范围已调查完毕，随后选了 184。`author.py` 当前提示还把调大 `max_results` 写成覆盖“complete candidate list”的办法，强化了这个误解。编译器只核对已记录的读取、选择、点击是否一致；它不能重建 B-U 未访问的页面状态，也不应新增分页/候选域业务判断门。修复重点是 B-U 在原浏览器仍打开时，按已确认目标主动调查可能改变选择的页面入口；临时完成前若现场依据不足，用同一 Agent、同一 job 继续，而不是重跑整个任务碰运气。现有 browser-use 完成后 judge 仅附判断，不会自动续做；同 Agent 续做和 trace 衔接仍需定点核验。**该修复尚未实施，未完成修后产品复验，稳定一次通过未达成**。本任务已确认草案也没有表达“完成后留窗供用户观看”；正式运行会关闭窗口，画面持续观看未测。受管 fork、本地脏工作区和历史 Release 均保留。
+
+交互交付的跨层设计已整理为[修复交接第六节](NEXT_SESSION_REPAIR_HANDOFF_20260926.md#六组合结果与交互交付同一草案贯穿整条链)：当前草案解析与运行结果只有 execution/data，单步 `main` 计划未携带活浏览器交付合同，正式 Runner 总会关闭浏览器。计划中的同版交付投影、B-U 目标页/结果采集、编译动态绑定、正式窗口交接和 UI/SQLite 租约均**未实施、未验证**；不能把本文档方案写成产品已修复。
+
+### 历史快照：2026-09-25 新标签恢复接入与新任务验收进行中
 
 - 沿用 `master@7d590363` 当前 checkout，保留既有 dirty work；未创建 worktree、reset、clean、提交或推送。正式 Workbench/API 仍在本机运行。旧《凡人》任务的脚本修订成功记录仍不是首次正确编译的产品验收。
 - 将实验项目已验证的 `PopupResumeAdapter` 行为接入本项目单个受管 Browser owner：`Browser.start()` 后、业务动作前安装，对新 page session 在原 B-U attach 回调前有界恢复；owner 清理时恢复原回调。没有注册第二个 CDP attach handler，也没有改实验项目或 site-packages。
@@ -1296,8 +1949,8 @@ Product Alignment:
 
 ## 2026-09-25 11:40 用户可见播放手测反证
 
-- 用户从正式画布点击“运行”产生新 execution `ccf34266-54dd-4fef-8f1b-992070ae95c6`，11:39:09 创建、11:40:11 标为 completed；16 次浏览器命令、0 次模型调用。该 API 进程实际继承 `BAT_UPSTREAM_BROWSER_HEADLESS=1`，所以运行中没有可见浏览器窗口。“即时”只设置节点间等待为 0 毫秒。末节点的 `media_playback=playing` 是当时的页面状态，未验证系统扬声器输出。
-- 执行结束后 `withHybridCapabilities` 总会关闭 runner，Python runner 对其拥有的浏览器调用 `kill()`；这次第一次清理曾报 `cleanup_close_protocol_timeout` / `cleanup_child_exit_timeout`，但进程树与临时目录已确认回收、无活动资源，第二次 owner verification 于 11:40:11 确认清理。此前“播放成功”的表述只能表示瞬时技术后置条件成立，不能表示用户可持续观看或听到声音。
+- 用户从正式画布点击“运行”产生新 execution `ccf34266-54dd-4fef-8f1b-992070ae95c6`，11:39:09 创建、11:40:11 标为 completed；16 次浏览器命令、0 次模型调用。该 API 进程实际继承 `BAT_UPSTREAM_BROWSER_HEADLESS=1`，所以运行中没有可见浏览器窗口。“即时”只设置节点间等待为 0 毫秒。末节点的 `media_playback=playing` 是当时的页面状态。
+- 执行结束后 `withHybridCapabilities` 总会关闭 runner，Python runner 对其拥有的浏览器调用 `kill()`；这次第一次清理曾报 `cleanup_close_protocol_timeout` / `cleanup_child_exit_timeout`，但进程树与临时目录已确认回收、无活动资源，第二次 owner verification 于 11:40:11 确认清理。此前“播放成功”的表述只能表示瞬时技术后置条件成立，不能表示用户可持续观看。
 - 已把当前 API 重启为默认有界面的配置，并从正式工作台 UI 只做一轮新验证：execution `7e6680f2-18a1-4aac-838f-962d9ed091f0` 确实产生无 `--headless` 参数的可见 Chrome 窗口，页面标题到达哔哩哔哩；但本轮在 `s-a-0004` 点击后的 `ordinary_postcondition_failed` 终止，仅 8 次浏览器命令，清理 confirmed。没有盲目重试或据旧 headless 成绩宣称 headed 验收。当前链路尚未通过用户可见播放验收；持续观看还需要明确的用户交接与会话生命周期设计，不能仅取消 headless 或跳过清理。
 - 增加不含页面内容的有限失败诊断后，正式有界面 execution `9c49f1f7-584b-4936-85ee-19b15b508ee7` 精确报 `ordinary_postcondition_failed_read_fields_read_collection_limit`，清理 confirmed。唯一新来源的全页 `a` 读取当时恰好 200 条且无人消费，编译器却保留该段并让前一步等待它；页面链接集合后来超过 200 才暴露失败。正在修通用编译依赖/覆盖与就绪条件边界；旧 Release、旧来源重编译和旧运行都不作为修后验收。
 - 通用编译修复已落地：只有完整证据支持、无动作或结果消费的纯 `find_elements` 才从复跑主链裁剪，来源覆盖仍可复算；ConsumerReadiness 只重绑到保留的真实读取，且仅跨已有“未派发”证明的失败动作，否则留 `missing_effect_proof` 缺口。定点 Python 36/36、相关 Ruff、受管 fork 来源校验通过。旧来源的只读离线诊断显示宽读取不再入链、原动作改等窄读取；这不算修后新任务验收。依用户最新指令，旧任务 V1 直接弃用，不做兼容修订或额外特例。
@@ -1307,10 +1960,196 @@ Product Alignment:
 - 正式 Workbench 新建任务 `60d9b658-ba77-4da2-82d8-771d2d0bc9c7`，需求对话选择 Bilibili 官方番剧或版权方页面并确认 Requirement V1；明确执行时动态选最新可播放常规正片、排除预告/花絮/特别内容，只核验播放器正在播放。唯一准备作业 `97f8f1e8-89f4-47c1-8fce-c49e003cbb45` 的新 B-U 运行 `41f5ae97-1ced-4928-8b92-5de30cc78c2b` 有 11 次来源动作、`sourceSuccess=true`，没有 `recoveredFromJobId` 或 `resumedFromJobId`。其中 `a-0005`、`a-0006` 的前后 tab ID 分别变化，两个新页切换后来源继续完成；本次产品 Chrome 进程无 `--headless` 且有窗口句柄。
 - 同次首次编译的 source artifact `d06a2e7b-5183-48b8-8940-82fc8c3eac7d`、编译 artifact `3f7cee11-ccc9-42ee-8c4e-3b25c48501ae` 生成 11 段、`gaps=[]`。两个 Function 均从本次运行的候选读取取得输入，目标点击有运行时 `ordinalBinding`；已验证但无人消费的 `a-0007` 只留 `agent_internal/native_dom_lookup_observation/v1` 覆盖，不进入主链或就绪条件。来源候选读取分别为 64/100 和 38/50，均报告完整；将来若页面集合超过上限，运行会严格失败，不能宣称对所有未来页面变化永久保证成功。
 - 自动样本 execution `76dce874-dd04-43ee-8e63-5c5498644773` 与独立复验 `430faaf3-a6fd-46b7-811e-0991a99c2d08` 均 completed；随后从正式画布手动发布 Release V1 `3ad2967b-b6b2-4809-893c-e898ee1fa9b9`。两条独立正式 execution `6d27d125-f308-40c1-83c8-c39edaf74021`、`0cfa0b65-c18b-4a5d-8866-2766d2ead177` 均 completed、各 15 次浏览器命令、`llmCalls=0`、cleanup confirmed。四次运行各自拥有不同 TaskRun、各 36 条同次节点事件；最后 `s-a-0010` 的 `media_playback=playing` 后置节点四次均 success。旧任务 `3286024e-09c8-45b0-a342-488597ebfe99` 按用户指令归档弃用，没有改写它的 Release 或失败运行。
-- API 进程重启后，全新 Workbench Chrome 重开并选中该任务，正式画布仍显示 Release V1、11/11 完成及最新运行完成，SQLite 只读重开也可读取四次 execution 与其 TaskRun。证据截图位于忽略目录 `work/recovery-20260925/formal-new-fanren-20260925-*.png`；未运行根级全量测试。浏览器的 `playing` 仅证明当时 DOM 播放状态；现有 runner 随 execution 结束自动关闭 Chrome，尚未证明持续可见播放或扬声器有声，不能把这项用户可感知结果写成已验。
+- API 进程重启后，全新 Workbench Chrome 重开并选中该任务，正式画布仍显示 Release V1、11/11 完成及最新运行完成，SQLite 只读重开也可读取四次 execution 与其 TaskRun。证据截图位于忽略目录 `work/recovery-20260925/formal-new-fanren-20260925-*.png`；未运行根级全量测试。浏览器的 `playing` 仅证明当时 DOM 播放状态；现有 runner 随 execution 结束自动关闭 Chrome，尚未证明持续可见播放，不能把这项用户可感知结果写成已验。
 
 ## 2026-09-25 单次运行浏览器显示模式与路径复核
 
 - 正式运行弹窗的“运行设置”新增本次 execution 的“无界面运行（Headless）”选项，默认关闭；UI 选择经 `run_task` 合同持久化到 TaskExecution，再传至现有 hybrid BrowserProfile。正式复跑中的显式 `false` 覆盖全局环境变量，恢复同一 execution 使用保存值；旧 BrowserSkill 链路若选择 headless，会在入队前以 `headless_runtime_unsupported` 拒绝。相关合同与 API 定点测试 12/12、contracts/API/workbench 类型检查通过，未运行根级全量测试。
 - 正式工作台勾选后发起 execution `442f8563-8e78-4be5-844a-4835983ea137`：持久化 `browser.headless=true`，产品 Chrome 根进程实际包含 `--headless`，运行 completed、15 次浏览器命令、0 次复跑模型调用、cleanup confirmed。重开弹窗默认选项复位为关闭，工作台发起的可见模式 execution `6771d738-8191-429d-8c0f-27803639d6c9` 保存 `browser.headless=false`，前三个节点成功，第四个节点 `s-a-0004` 的 `browser.read-fields` 在 7 次浏览器命令后报 `hybrid_runner_failed:RuntimeError`，cleanup confirmed；本次没有到达播放器，不计为可见模式的业务通过。
 - Release V1 持久化路径的第一节点 `s-a-0001` 固定导航到 `https://www.bilibili.com/bangumi/play/ss34430`，来源观察标题是《咒术回战》；第二节点才导航到 `https://www.bilibili.com/bangumi/`，搜索《凡人修仙传》后进入官方作品页、读取剧集、函数选择最新常规正片、点击并等待 `media_playback=playing`。错误深链由候选 TaskPlan 的第三个 `entryUrls` 带入 B-U，再被编译进 Release V1；已确认需求没有授权该具体内容 URL。此发布版本不可原地改写，不能用之前成功的 headless 运行掩盖路径错误或本次可见失败。
+
+## 2026-09-25 准备计划草案架构决定与问题归位
+
+- 用户确认：需求对话本身在访谈 Skill 驱动下按需只读联网、澄清并形成**唯一准备计划草案**；在同一对话中修订和确认后直接交给 B-U，确认后不再调用另一轮模型生成可增改业务语义的独立 TaskPlan。内部合同若保留，只能投影同一草案版本；`TaskDraft` 是 B-U 后产生的链路草稿。决定见 [ADR 0011](../adr/0011-interview-produces-preparation-draft.md)，**代码和 Skill 尚未按此迁移**。
+- 本地现有改动先被原样固定为 `master@43ed385` 的一次快照提交；该提交不是新架构实现或新增产品验收。之后本轮只修改文档，不执行新的 B-U、正式复跑或根级全量测试。
+
+| 问题 | 本轮可核对的事实 | 结论与边界 |
+| --- | --- | --- |
+| 旧任务靠旧结果补救 | 历史任务 `2a777a77-353e-4894-9b96-1e505827d366` 的代表试做虽成功，原链固定历史 `a[6]`；后续开发脚本借旧数据手工修草稿、调预算才试跑和发布。 | 旧运行是真实技术记录，但不是新任务一次试做、首编译、复跑都正确的验收；不再为旧发布结构加特例。 |
+| B-U 新开页暂停 | B-A-T 已接入单 Browser 的 `Runtime.runIfWaitingForDebugger` 恢复适配；定点、headless 新页样本 2/2 以及新任务跨两次 tab 的来源成功有记录。 | 当前 Windows 样本证明新页恢复有效；升级 B-U 或跨平台仍需按实际边界复核。 |
+| 旧链读取集合上限 | 旧可见复跑在无消费者的全页 `a` 读取超过 200 条时失败；通用编译裁剪后，全新任务首编译 `gaps=[]` 且样本、独立复验和正式复跑技术完成。 | 该已知旧缺口的修正不能解释下面另一条可见读失败；不得把两者未经证据合并。 |
+| 运行时没有窗口 | 先前 API 继承 `BAT_UPSTREAM_BROWSER_HEADLESS=1`，产品浏览器无窗口；运行结束会关闭浏览器，`media_playback=playing` 只表示当时页面状态。 | 当前没有持续观看或用户满意的验收证据；无窗口的直接原因已查明。 |
+| 单次 headless 开关 | 运行弹窗已提供默认关闭的 Headless 选项，选择经合同、持久化和现有 BrowserProfile 传递；定点合同/API 12/12 与类型检查通过，勾选后的正式运行确有 `--headless` 并 completed。 | 开关控制路径有证据；这不证明可见模式的任务也已通过。 |
+| 可见模式读取失败 | execution `6771d738-8191-429d-8c0f-27803639d6c9` 保存 `headless=false`，第 4 节点 `s-a-0004 browser.read-fields` 在 7 次命令后报 `hybrid_runner_failed:RuntimeError`，清理已确认。 | 底层异常被边界脱敏，当前精确原因未知；需在读取层定点取证和修复，不能撞运气重复整跑。 |
+
+### 错误入口的精确交接链
+
+1. 新任务 `60d9b658-ba77-4da2-82d8-771d2d0bc9c7` 的需求对话持久化为四条消息，没有搜索工具事件；`sourceResolutions` 为 0，已确认 Requirement V1 的 `confirmationFacts.sources=[]`，需求正文仅写 Bilibili 与官方来源，并明确“具体页面入口由准备任务调查”。用户没有确认某个内容页 URL。
+2. 唯一准备 job `97f8f1e8-89f4-47c1-8fce-c49e003cbb45` 的第一次计划候选 `issues=[]`，`entryUrls` 包含 `https://www.bilibili.com/`、`https://www.bilibili.com/bangumi/` 和 `https://www.bilibili.com/bangumi/play/ss34430`。`planPrompt` 要模型列首页、搜索和内容入口；现有计划准入核验 URL 结构及执行合同，却未要求具体内容页有本轮已确认来源引用。
+3. `browserUseTask` 把计划三个入口逐条列为“预执行入口”，要求 B-U 从中开始；真实来源首个导航打开 `ss34430` 并观察到《咒术回战》，第二个导航转到 Bilibili 番剧入口后才搜索《凡人修仙传》，最终技术后置条件观察到 `playing`。
+4. Release V1 画布的两张“打开页面”卡对应上述两次真实导航，并非画布复制节点。该任务没有要求必须从首页进入，所以错误首跳不能单独否定后来 `playing` 的技术完成记录；它暴露了**对话草案无入口依据、确认后模型又增添深层 URL、准入未核对证据来源**的架构交接缺口。
+
+当前退出状态：B-U 新页恢复和新任务一次首编译/技术复跑有样本证据；唯一准备计划草案、来源入口核验、可见模式完整运行和持续可见播放仍未通过正式产品验收。旧 Release 与历史运行保持不变；后续先做文档所列边界修复和定点验证，再用**新任务**取得同一条完整产品路径的证据，不能复用旧结果冒充通过。全部退出门未满足，本轮不关机。
+
+## 2026-09-25 ADR 0011 边界修复与同一全新任务的正式工作台验收记录（未退出）
+
+- checkout 保持 `master@43ed385`；该提交后的原有文档改动保留，未建 worktree、reset、clean、推送或改相邻项目。访谈 Skill 和协议现要求唯一可审阅准备计划草案；来源搜索仍由模型根据完整对话决定，宿主只校验真实工具结果引用。用户原文 URL 仅记为候选，宿主不因提及网址强制提问；草案确认时核对入口与同版来源。确认后的 TaskPlan 是零模型技术投影，B-U 指令核对 Requirement 版本、摘要和入口，不再由第二轮模型增添业务计划或网址。当前结构化投影支持草案明确的文本、整数、数字、布尔和文本列表字段；更复杂输入及多步组合尚无本轮产品证据。
+- 正式工作台新建**唯一**任务 `e0a89257-9bf6-49f1-b0df-9713239fce9a`，访谈 Pi 只读搜索后经来源 Question 选定 `https://www.bilibili.com/bangumi/play/ep4863921`，确认 Requirement V1 `46a1da1c-ab68-4473-8644-876c883e9ab1`，`confirmationFacts.entries` 与搜索来源 resolution `ee4a6b65-b9e3-48f3-9c35-fe44cd3518d7` 一致。准备 Plan V1 `10388d60-db04-4562-86ff-b674c858149c` 的 digest 为 `97467593803027a31d08fd52b4ce1bb6a0387925968b591421676092005bfab0`；形成计划的审计为 `plan_projection`、模型调用 0。此前错误深链没有带入本次入口。
+- 必须区分同任务的四个准备 job 与三次实际 B-U 浏览器试做：job `6e052de3-db9c-4ab4-805b-70001ca44a1f` 有失败来源，模型观察后页面 URL 在同文档内变化，旧点击被正确拒绝；同文档重观察的通用定点修复随后通过 Python 2/2。job `408caefd-291a-4eca-8a01-8377b642c463` 因受管源码摘要未更新在启动浏览器前失败，未进入 B-U；已更新清单并通过核验。job `992070a0-c171-4448-879f-152df55b1557` 在第 13 步 `wait` 前置观察约 60 秒后失败；诊断只证明 Python `author_step` 返回，TS `session.author` 未返回，来源保存代码未执行。旧持久化记录没有 fd3 接收、schema 与响应校验阶段，不能唯一指认该边界内的异常。只在现有 owner JSONL 增加固定结果边界阶段码，没有记录页面正文或异常原文；不能称修复后一次通过。
+- 同一已确认草案的工作台手动重试 job `60082b5a-57ae-4b68-88b3-7e8a81656fda` 产生全新 B-U 来源 `da570e66-57d7-43cf-8564-857c05467087`：`sourceSuccess=true`、6 次浏览器命令、trace completed、source closed；诊断有 `author_response_received` 和 `author_response_accepted`。首次编译 artifact `1e705824-41c0-4182-8e4a-4990066a1ff2` 为 9 节点、8 连线、`gaps=[]`；两次候选读取各由 Function 选择运行时目标，点击使用运行时 ordinal。链路草稿 `3afb8844-577d-4a3d-8b0b-90570c9f14a6` revision 0 / checksum `6472fc75c5b9fcf3a0f4b94f58e9c6b9a5d86032eef28819c91ac1d6c741de13` 未经开发脚本修订。
+- 自动样本 execution `1a843ffa-8451-4ccc-85ca-d21cf9341a23` / TaskRun `735981a1-f7bb-4ec5-87e2-cde5fca2b122`，独立复验 execution `bb937292-a201-4a77-80aa-425d62e95575` / TaskRun `5e8176ca-3067-4099-8693-f7ec528f79f0` 均 completed、10 次浏览器命令、0 次复跑模型调用、cleanup confirmed；每条 TaskRun 各有 27 条本次节点事件。正式画布人工发布 Release V1 `f808e48f-932d-43d5-87c4-05a465d01616`，发布引用绑定上述两次验证。正式画布启动的独立 execution `92dc7fbe-007a-456b-89e9-5cc3b9c2430d` / TaskRun `5b01df41-6f23-41f4-8cd1-e81595511d37` 同样 completed、10 次命令、0 次模型调用、27 条本次节点事件、cleanup confirmed；SQLite 保存 `browser.headless=false`，运行时产品 Chrome 主进程 PID 864 无 `--headless` 参数，结束后进程退出。UI、API 和 SQLite 均显示同一 Release V1 与正式 execution 完成；截图在忽略目录 `work/recovery-20260925/formal-fresh-*.png`。
+- **正式业务结果未获证明**：确认草案要求运行时选择最新可播放常规正片、观察到播放，并在结果说明中写明集数/标题及播放状态；没有要求执行结束后持续观看。B-U 来源完整读取 43 个剧集候选，排除第 193 集预告，选择函数输出第 192 集的 ordinal 3；点击后的同集 `o-0011` 有 `media_playback=playing`，是曾观察到播放的结构化证据。`done` 另称进度从 09:04 到 09:15，但原始画面未保存；稍后的 `o-0012` 为 `not_playing`，不能抹掉先前阳性观察，也不能证明此后一直播放。发布链从运行时 `read-fields` 候选经版本化任务数据中的 Function 计算 ordinal，并覆盖样本点击序号，没有在平台代码中固定集数或最终 URL；它没有单独判断候选是否可播放，末尾等待也只检查 URL 不变。三次 TaskRun 的业务证据为空、输出为 null、结果摘要只有技术完成，没有保存实际选中集数或播放状态，亦未交付草案要求的结果说明。因此不能从技术 `completed` 推断正式复跑已播放最新可播放正片。产品 Chrome 在 execution 清理时关闭；持续观看未测，应与本任务条件分开报告。旧可见 `browser.read-fields` 失败的原始异常不可恢复；其前驱曾通过完全相同 ReadSpec 的稳定检查，不能按后来的 64/100 条样本推断超限。本轮新链有两个不同规格的 `browser.read-fields` 在有界面复跑技术成功，只证明当前样本，安全固定错误码透传供未来同条件故障定点判别。
+- **正式产品验收未退出**：本任务发布后只有一次独立正式 execution；[五道退出门](PRODUCT_LOOP_CAPABILITY_AUDIT.md#6-最小闭环的五道退出门)第 4 门要求两次，且第 5 门要求发布后服务重启核对需求、发布、结果、历史和资源所有权，本任务未做重启。四个准备 job、三次实际 B-U 浏览器试做也不是一次通过。上述技术完成仅保留为局部事实，不能当成本轮完整链路通过。
+- 最小验证：来源 10/10、访谈协议 13/13、草案交接 4/4、同文档观察恢复 Python 2/2、读取阶段 Python 3/3 与安全码单项 1/1，API/Workbench/contracts 类型检查、Workbench 构建、受管 fork 摘要和 `git diff --check` 通过；未运行根级或全量测试。新版来源与正式复跑并未复用旧任务、旧 Release 或脚本注入草稿。
+
+### 同一任务失败后的根因定点修复（尚无修后产品验收）
+
+- **确定的编译错误**：成功来源中，`a-0005` 点击从旧播放页进入所选目标页，目标页即时 `o-0010=not_playing`，相邻等待的前观察 `o-0011=playing`、后观察 `o-0012=not_playing`。旧自然编译先为导航返回 `url_digest changed`，又因等待的后观察不是 playing 而编出 `url_digest unchanged`；来源已有的目标页播放阳性事实没有进入 TaskChain。故首编译 `gaps=[]` 和三次技术 completed 均不能证明播放。这是来源→编译合同的确定缺口，不是 B-U 新页恢复或 headless 开关问题。
+- **定点修复**：受管自然编译现在只把同一目标页、相邻且 30 秒内的 playing 观察归给产生该页的浏览器动作；旧页原本已 playing 不计为新动作效果。导航 URL 与播放条件在同一节点合并并在编译期一起校验，无法归属时给 gap。现有后置检查的一次 attempt 固定同一个 Page，开始/结束校验 targetId、URL 与焦点，漂移仅由既有有界 settle 重查，不重复点击。访谈 Skill 补充“状态交付不得在自由文本另承诺动态业务值”的成稿规则；旧已确认草案、Release、TaskRun 均未改写。
+- **定点验证**：媒体编译新测试 6/6、既有导航 8/8、动态选择 11/11、页面身份新测试 2/2、现有 ConsumerReadiness 22/22 通过；原始 canonical 历史来源仅用于离线诊断，重编译 `gaps=[]` 且 TS 物化 9 节点，目标点击节点含 `url_digest changed` 与 `media_playback=playing` 两项同一 30 秒策略。受管 fork 来源摘要 `d0363e2ad2189d381b853876463020d79b8f2d147dc2fbb2732831723a2b99c1`、新增 vendor 文件定点 Ruff 和 `git diff --check` 通过；本地 Python 环境初次 `--check` 报 `hybrid_installed_source_changed`，已用项目 setup 同步并重新 `--check` 通过，避免重现浏览器启动前的摘要失败。整个改动文件集合的 Ruff 仍报 `hybrid_main.py` 在本次之前已存在的未用导入，未为此扩大清理。没有浏览器新运行。
+- **仍未查明/未验**：第三次准备 job 只可定位为 Python `author_step` 已返回而 TS `session.author` 未返回，旧记录没有 fd3 接收与校验阶段；新固定阶段诊断尚未遇到同类失败。旧可见 `browser.read-fields` 的原始异常栈缺失，其前驱同规格就绪检查已通过；新安全阶段诊断 6/6 通过，但不能称旧故障运行时根因已修。`media_playback` 只证明目标页有可见媒体曾 playing，不证明具体流身份或执行结束后持续播放。修后正式工作台全新任务、首编译、候选验证、手动发布、两次独立正式复跑、重启和用户体验均**未测**；自动审批拒绝了启动带远程调试端口的可见 Chrome 工作台命令，理由仅返回 `blocked by policy`，没有绕过后用 API/旧任务冒充 UI 验收。
+
+### 旧 B-U 失败的两层边界与定点取证修复（无新产品运行）
+
+- 只读复核 job `992070a0-c171-4448-879f-152df55b1557`：其 owner `30a200e4-0f33-4545-8774-f028a6ad43d6` 的 JSONL 在 `08:17:19.913Z` 记录第 13 步 `wait` 动作前观察开始，`08:18:19.903Z` 失败，期间没有该动作的派发记录。`before_action` 真实调用路径涉及动作前 live document sample（Page target/CDP document）、media 读取与 title/url 观察。media 单独异常被既有捕获器忽略，不会直接导致该 failed 事件；当前 browser-use 每个 CDP 请求默认 60 秒，Agent step 是 180 秒，59.990 秒强烈指向动作前某一 CDP 读取超时。但原始异常和具体方法没有写入旧日志，不能唯一确认是哪一次 CDP 读取或浏览器不应答的底层原因。
+- 同一 JSONL 在 `08:21:20.412Z` 记录 Python `author_step` 返回，SQLite job 在 `08:21:24.820Z` 失败且 `exploration.sources=[]`。TS 只在 `await session.author` 返回后把来源加入数组，所以 Python 完成后 fd3 编码/写入、TS 协议接收/结果 schema/响应验证之间发生了独立交接失败；旧记录没有这些边界的安全阶段，不能把任一候选臆断为旧根因。
+- 现已在动作前 live document sample 与 title/url 读取失败点向同一 owner fd4→JSONL 记录固定阶段和异常类别；Python hybrid author 响应的 fd3 编码、写入分别记录固定阶段。若结果不可 JSON 编码，fd3 返回 `hybrid_runner_failed:RuntimeError:author_result_serialization_failed` 固定错误包；原值和异常原文不外传。TS 对新事件严格枚举并只入本地 owner JSONL，不扩大工作台进度合同。原异常链、超时、Agent loop、Browser 控制与重试策略均未改。写入通道自身断开时只能在 fd4 记 `write_failed`，无法保证已断开的 fd3 交付响应。
+- 所属定点验证：Python fd3/诊断 4/4、动作前观察阶段 3/3、既有 callback stop 6/6；TS owner JSONL 固定事件 1/1，API 类型检查通过，变更 Python 文件定点 Ruff 通过。受管 fork 清单与安装环境同步后 `setup-upstream-browser-runner --check` 通过，摘要 `94b58403354c4f0ced9b2fcc197b20c7e46529d0e29ee4c85e34189e31187970`。这些验证只证明下一次故障可归因及编码失败可安全回应，不证明旧 CDP 故障已恢复，也不构成新任务一次通过。
+
+### 修后唯一新任务的正式入口与浏览器启动阻断（尚未进入 B-U）
+
+- 工作台唯一新任务 `0d9f377d-d83b-477d-bafa-b768146a7312` 由正式“新建需求”入口创建，需求原文从正式对话发送。Pi 访谈只读搜索后，Question Panel 选择 Bilibili 官方番剧候选 `https://www.bilibili.com/bangumi/play/ep4863921`；第二次提问依据原需求确认“最新正片受限则停止，不回退”。草案 v1 在正式 UI 审阅并确认，Requirement v1 `6f752b2c-f082-4d16-8ea2-babbf476611c`、digest `e7ca3bd54954b701e19c7bf41fe9a22c30e286a1a414f750587912aad7ab1a67`，`confirmationFacts.entries` 与同版已选择来源一致。草案只把该 URL 当试做入口，运行时仍动态选择最新常规正片；无运行输入，仅交付播放或受限停止状态。SQLite 当前没有该任务的 Plan、准备 job、来源、TaskChain 草稿、Release 或 execution；不能把 Requirement 确认算成 B-U 或首编译通过。
+- 同一浏览器 owner 的专用 Profile `data/browser-profile/default` 在本机启动失败：默认 Browser-Use 0.13.8 选择 bundled Chromium 134，Profile 的 `Default/Preferences.profile.created_by_version` 为 Chrome 153；对应尝试生成 Chrome breakpoint crash dump。空 Profile + Chromium 134 可启动，专用 Profile 的临时副本 + Chrome 153 可启动。由此确认当前二进制/Profile 版本不匹配并强烈关联启动崩溃；尚未排除原 Profile 路径自身的状态问题，不能把崩溃的唯一底层原因说成已证实。直接指定 Chrome channel 会触发 Browser-Use 把 Profile 复制到系统临时目录，破坏现有精确 Profile 所有权；单纯外部 CDP 连接又无法由现有 owner 清理外部 Chrome 进程。停止用 Chromium 134 重试旧 Profile，B-U 尚未启动。
+- 额外的 Chrome channel 定点探针遗留一份 Profile 临时副本；针对该确切目录的 PowerShell 删除请求被自动审批以 `blocked by policy` 拒绝，未换 shell 或其他方式绕过。不得把这份临时副本加入 Git 或日志；后续需按允许的所有权清理路径处理。此前启动可调试可见 Chrome 的命令也被自动审批拒绝，故当前可见模式 UI/B-U 运行门未通过。
+- 旧观察测试在诊断改动后初次全文件执行 14 项中 10 通过、4 个旧断言错误；旧断言将同文档 URL 变化期待为普通 `ValueError`，与已采纳的 `ObservationRefreshRequired` 恢复语义不符。只改两处对应断言后，所属 `tests.test_observation_scope` 全文件 14/14 通过。受管 fork 清单已更新并同步安装环境，最终 `--check` 摘要为 `94cd4739d9bdec404173b1d3bdd2557a82b6f4eb79580f8fe9af02bf4feeeb10`；没有因此改动重试、超时或浏览器控制。
+- 当前分项状态：访谈、来源确认和草案到 Requirement v1 **通过**；B-U、首编译、样本、独立复验、手动发布、正式复跑与发布后重启 **未测**；专用 Profile 启动 **失败**；旧可见 `browser.read-fields` 的确切原始异常 **无法由旧持久化事实还原**，须在可启动的相同 owner 中做一次定点复现，不能声称已修复。旧任务技术成功和旧 Release 不计入本任务。
+
+### 同 Profile 原生 owner 启动定点通过；正式服务尚未加载修复
+
+- `RunnerProcess` 现在仅在 Windows 子进程内把 `PLAYWRIGHT_BROWSERS_PATH` 指向本次 owner 的空临时目录，沿用 Browser-Use 0.13.8 的默认查找和原生 LocalBrowserWatchdog；未指定 Chrome channel、未复制 Profile、未建立外部 CDP owner。受控 Python 探针解析到 `C:\Program Files\Google\Chrome\Application\chrome.exe`，同一专用 Profile 在可见模式启动成功，实际 `user_data_dir` 精确等于 `data/browser-profile/default`，目标页可用；`browser.kill()` 返回后无该 Profile 的 Chrome 进程。再经正式 TS `RunnerProcess.startProfile` 启动同一 Profile，结果 `profile_start=ok`、`cleanup=confirmed`；结束后同样没有该 Profile 进程。两者都是定点启动/关闭，不是新任务 B-U。
+- API package `npm run check --workspace @browser-capture/api` 通过。当前工作台服务仍是旧进程 PID 29008；尝试停止并以隐藏窗口重启该进程的工具命令被自动审批直接拒绝，返回 `blocked by policy`，旧进程未被停止，HTTP `/api/health` 仍为 200。未使用其他 shell/脚本绕过；已请求用户按本机方式重启以加载代码。任务 `0d9f377d-d83b-477d-bafa-b768146a7312` 保持 Requirement v1 已确认、Plan/job/source/chain/release/execution 均无；正式 B-U、首编译、样本/独立复验、手动发布、复跑仍 **未测**。
+- 因此前段的“Profile 启动失败”是旧二进制组合的已定位故障；新配置的**定点**启动/清理已通过，但正式服务内的产品验收尚未开始。旧 `read-fields` 原始异常仍无法追认；即使新任务成功也须报告它是否在相同可见 ReadSpec 上定点复现，不能把不同规格读取通过当修复。
+- 对旧可见失败 execution `6771d738-8191-429d-8c0f-27803639d6c9` / TaskRun `16cf3692-c699-44a1-8b3e-5ba14eac34aa` 的只读复核确认：前驱 `s-a-0003` 用同一 `ReadSpec` 连续两次读到稳定值，`s-a-0004` 在约 230 毫秒后以未分阶段 `RuntimeError` 失败。其来源当时已记录 Bilibili `/bangumi/` 标题“出错啦”，故错误页本身不能被事后臆断为旧故障原因。用原专用 Profile、Chrome 153、可见模式与完全相同的 `div`/textContent/可选 class、100 项、128000 字节 `ReadSpec` 和 URL scope 做**一次**定点读取：当前 URL 与错误标题相同，但实时 DOM 的 `div` 数为 0，读取按输出合同得到 `read_output_schema_mismatch`（异常类 `FieldReadError`），owner 正常关闭且无残留 Profile 进程。当前页面状态不同于旧稳定读取现场，因此这次只证明新状态的类型化失败，**没有复现或查明旧 `RuntimeError` 的具体底层子因**；不再重复整跑碰运气。
+
+## 2026-09-25 同一全新任务最终验收与资源清理
+
+- checkout 仍为 `master@43ed3851636e748aed973df67fd1c61bc76e96eb`，原有未提交文档与本轮代码改动均保留；未建 worktree、reset、clean、提交、推送或改相邻项目。先核对进程所有权，只结束两个遗留的本项目 `formal-ui-driver.mts` UI 驱动 PID 19996/12960；未触碰游戏、WeGame 或归属不明的 `browser.exe`。当前 API PID 23684 正监听 `127.0.0.1:4175`，两次正式执行后无本项目 Profile 的 Chrome/Python 残留。
+- 较早 Chrome channel 探针遗留的确切临时 Profile 副本 `%TEMP%\browser-use-user-data-dir-o4fc06u7` 仍存在，已核验位于系统 Temp、不是重解析点且无 Chrome 使用；对该绝对目录的原生 PowerShell `Remove-Item -LiteralPath ... -Recurse` 请求再次被自动审批以 `blocked by policy` 拒绝。未换 shell 或间接脚本绕过，故只能确认项目运行进程已回收，**不能声称该临时副本已清理**；它没有写入 Git。
+- 同一正式工作台新任务 `0d9f377d-d83b-477d-bafa-b768146a7312` 沿上节的 Requirement V1/唯一已确认准备草案 v1 继续。第一次准备 job `e27d9627-1314-4d5a-8b70-cbd1c9428dec` 在 Python 已写 fd3、TS 已收响应而来源未保存时随 API 退出，SQLite 保留 `interrupted`、来源数 0；**首次 B-U 到编译没有一次通过**。Windows 20:16:18 事件 2004 记录系统提交量 `35,983,015,936 / 36,081,029,120` 字节，只余约 98 MB。项目 Chrome 是当时大内存贡献者之一；旧 API 无退出码和 stderr，无法证明唯一退出机制，更不能把责任归给用户游戏。中断后的诊断状态交接只修 `planRecovery` 的 `interrupted` 准入，使正式工作台显示同版草案重新试做入口；旧 job 不改写，不假装能续接已消失的 Browser。
+- 从正式工作台点击“重新试做当前草案”启动第二 job `f6d17aa7-c418-438a-8f42-b3de517317c2`，仍属同一 Requirement/草案版本。B-U owner `ca1312e0-5596-4977-8655-572a4ebf789c` 的响应有 `author_response_received` 和 `author_response_accepted`，8 条浏览器命令后 `done`；来源 artifact `b5341801-4b12-4178-8712-5fa3bb67a004` 为 `sourceSuccess=true`、`closed=true`、`gaps=[]`。首编译 artifact `e096de29-31b8-4104-8f2f-b975e589db4c` 绑定同一 Requirement digest `e7ca3bd5…`、Plan digest `886aff4c…`，`gaps=[]`；候选链含两次实时 `browser.read-fields` 和两段选集 Function。两次动态 ordinal 点击从对应 Function 输出取值，源码没有加入站点或集数特例。自动样本 execution `5f106767-c688-4220-8590-6ae5b2e8ac96` 与独立复验 `c23bb656-c93a-49fe-8815-181e32e534aa` 各有独立 TaskRun，均 completed、10 条浏览器命令、0 模型调用、cleanup confirmed；相同输入摘要符合本任务的 `null` 输入合同。
+- 正式画布的“发布→确认发布”新增且仅新增 Release V1 `211242d4-6ddd-44c0-86e7-a1544e9ebdd3`，digest `0071b0f61eac86cb431270b680234e1c75beb846dc016dbca5eea810b1ae4358`，冻结上述样本与独立复验。没有手工改草稿、注入 API/SQLite 或复用旧 Release。正式 UI 默认 `headless=false` 启动两次独立执行：`cfd437fa-8879-448b-8a38-b46816cc9b13`→TaskRun `45e0ad7c-57fb-4839-8a08-e682e6525164`；`5d25709f-8311-401e-8578-034613a6ed96`→TaskRun `1128ca4c-dee9-4517-8d7c-baef7d02ec85`。二者同一 Release/链摘要，各自 9 个节点全部 success、10 条浏览器命令、0 LLM 调用、execution/TaskRun completed、auditComplete=true、cleanup confirmed；末尾 `wait` 的现场 `media_playback=playing` 后置均通过。
+- 第二次正式执行过程中只读实测本项目 Chrome 根 PID 10252 使用 `data/browser-profile/default`，命令行无 `--headless`，窗口句柄 8718780 且 `IsWindowVisible=true`；窗口标题先为作品页，后为“凡人修仙传第192集…”。21:19:24 后该 Profile 的 Chrome 进程已退出。可证浏览器窗口曾可见、进入第 192 集且运行时播放器状态检查通过；没有本次画面采集。TaskRun 输出为 null，事件只保存节点状态，未保存当次候选数、函数输出序号或最终 URL，故不能拿 B-U 的选集值冒充两次复跑实际值，也不能证明结束后持续观看。旧可见 `browser.read-fields RuntimeError` 原始子因仍未知；本轮两次新规格可见读取成功不等于该旧故障根因已修。
+- UI 重开后画布显示 Release V1、最新“运行完成”和 `8/8 已完成`，截图在忽略目录 `work/recovery-20260925/fresh-task-published-20260925.png`、`fresh-task-replay-completed-20260925.png`、`fresh-task-replay2-completed-20260925.png`。API `/api/task-chain` 返回最新 execution completed/cleanup confirmed，同任务历史接口返回一条 Release 和两条正式加样本/复验共四条 execution；SQLite 只读打开 `data/workbench.sqlite` 同样保留第一 job interrupted、第二 job completed、两件新 artifact、一条 Release、四条 completed execution。所属 API 恢复测试最终 3/3 通过，API package 类型检查先前通过；未运行根级或全量测试。
+- **验收结论**：同一新任务第二次准备尝试后的 B-U→首编译→样本/独立复验→手动发布→两次正式复跑，技术链路通过；“从需求对话一次性稳定通过”**失败**，因为第一次准备 job 中断且需正式 UI 重试。发布后 API 重启命令被自动审批直接拒绝（仅返回 `blocked by policy`），未换 shell 绕过；API PID 23684 保持健康，**重启后持久化未测**。结束后持续观看、当次选中集数的持久化证明也未测/未实现。五道退出门第 4 门满足本轮技术证据，第 5 门未退出，不能宣称完整产品验收通过。
+
+### 首次 B-U 响应交接的定点修复（尚无修后正式任务）
+
+- 首次 job 的 `author_response_received` 已证明 Python fd3→TS 协议接收成功，丢失发生在接受校验、Browser owner 关闭和来源保存之前；同一时间窗口的 Windows 事件证明系统提交量仅余约 98 MB。现有代码在 Browser 仍占用内存时运行 Function 校验 Worker，这是可定位的资源生命周期缺口。由于首次 payload、API 退出码和 stderr 未保留，**不能证明**这就是唯一退出机制，也不能把两次 B-U 的不同模型动作路径当成已证实的失败原因。
+- 只在计划最后一个步骤的 TS 会话调用中标记 `closeAfterResponse`：收到完整响应后，先调用现有且幂等的 `RunnerProcess.close()`，确认 Browser/Python owner 释放，再做响应 schema、Function 校验和来源准入。中间步骤继续使用同一个 Browser；关闭未确认则沿既有 `RuntimeCleanupRequiredError` 阻止接受来源。标记不进入 Python source、公共合同或版本摘要；没有改访谈、B-U Agent、编译、发布、复跑和任何站点规则。
+- 定点结果：新增所属 API 顺序/多步/关闭失败测试 3/3，通过；现有真实 Function 校验 4/4、真实 Python owner 清理 6/6、草案版本交接 4/4，通过；API package TypeScript 检查和 `git diff --check` 通过。当前监听 4175 的 API PID 23684 由 `node --import tsx apps/api/src/main.ts` 启动，没有 watch，**仍运行修复前代码**。此前对该进程的重启命令已被自动审批以 `blocked by policy` 拒绝；本轮没有改道绕过，也没有新建任务再做完整链路。因此修后从需求对话到首次 B-U、首编译、样本/独立复验、手动发布、正式复跑、UI/API/SQLite、可见播放**未测**，一次性稳定性尚未证明。
+
+## 2026-09-25 简短需求正式访谈与来源题板复核
+
+- 原过长输入任务 `a40711c9-91f0-4e07-a022-dfa67f9ecf03` 不能验收需求对话主动拆解普通需求；其草案 v2 未确认，未启动 B-U。该任务首轮腾讯题板的根因是访谈模型自行用含“腾讯视频”的搜索词，忽略同轮“B站独播”等相反摘要，把两个旧单集页当作动态最新入口；宿主虽验证 URL 来自原结果，却丢弃摘要、称为“多个合理来源”并按首位标推荐。没有页面调查证明腾讯候选合格。改动限于既有 Skill/访谈指令、Pi 搜索摘要到 `SourceCandidate.description` 的投影和 Question 文案/推荐标记；没有站点特例、词表评分、第二来源事实源或业务计划生成器。
+- 所属来源测试 11/11、API package TypeScript 检查和 `git diff --check` 通过。API 已以 `node --import tsx apps/api/src/main.ts` 重新启动，PID 11936、监听 127.0.0.1:4175、`/api/health` 200；旧段的“PID 23684 仍运行旧代码”仅为当时快照。
+- 正式工作台新任务 `b3726b40-02ab-4d0b-b1fd-78e199c67f82` 的首句仅为“帮我播放《凡人修仙传》最新一集。”。Pi 本轮搜索 `《凡人修仙传》 动画 官方 在线观看 最新集`，来源题板显示哔哩哔哩国创页 `https://www.bilibili.com/bangumi/play/ss28747` 的原始“高清独家在线观看”摘要且无推荐徽标；验收操作者在正式 UI 选择该候选。模型随后以 Question Panel 确认“最新一集”选择公开可看的最新正片、不包括会员抢先看；生成唯一草案 v1，正式 UI 确认。草案含动态选集、排除预告花絮、受限时停下、实际播放状态要求。API `confirmedVersion=1`、来源 `selected`；SQLite 只读核对 `tasks.confirmedVersion=1`、`drafts` 仅 v1、`sourceResolutions` 状态 selected、`decisions` 含两次选项与一次草案确认，`plans=0`、`chains=0`。这是访谈与草案交接通过，不是 B-U/网页播放通过。
+- 这句原文没有“动画”，模型首次搜索却自行加了该形态。来源题干明确写“动画”，验收操作者选择“哔哩哔哩国创”候选，故本次对象可视为通过题板确认；但唯一搜索提前限定形态可能排除同名其他对象。已在通用 Skill/阶段指令补充未确认内容形态不得作为唯一搜索限定词及同名对象需用户核对；该提示增量尚未加载到现有 API，也没有新的访谈实测，不能把这条任务之前的成功反过来当作新提示已验。
+- 关闭本次 UI 驱动 Chrome 后回执 `closed=true`，API 保持健康。系统可用提交内存约 2.11 GiB，旧可见 B-U 的项目 Chrome 曾占约 4.89 GiB；旧首次失败前事件曾只余约 98 MB。用户游戏及归属不明、昨日已存在的 `browser.exe` 均未关闭。为避免已知资源耗尽条件下再次让 API 中断，未从工作台启动这条任务的 B-U。当前任务 Plan/job/source/chain/release/execution、首编译、样本/独立复验、手动发布、正式复跑、UI/API/SQLite 全链证据、可见播放未测；一次通过稳定性未证明。待资源足够，仅沿这条已确认草案继续一次正式链路验收，失败保留原层证据，不用旧任务或同版第二次试做冒充首次成功。
+- 题板追加完整 URL 路径用于区分同域候选后，所属来源测试再次 11/11、API 类型检查通过。对当前 API PID 11936 执行停止并重新启动以加载此改动的命令被自动审批直接拒绝，仅返回 `blocked by policy`，命令未执行；PID 11936 继续监听且 `/api/health` 200。没有绕过审批，故当前产品现场仅验证此前已加载的原摘要/无推荐版本，完整 URL 展示只通过定点代码验证。
+
+### 旧可见 read-fields 的可证边界与内层阶段补证
+
+- SQLite 旧 execution `6771d738-8191-429d-8c0f-27803639d6c9` / TaskRun `16cf3692-c699-44a1-8b3e-5ba14eac34aa` 是 `headless=false`：`s-a-0003` 于 06:04:05.139Z 在同一 `/bangumi/` scope、`div`/textContent/可选 class、100 项/128000 字节规格成功，`s-a-0004 browser.read-fields` 于 `.142Z` 开始、`.369Z` 仅报顶层 `RuntimeError`；累计浏览器命令 7、模型调用 0、清理 confirmed。旧 fd3/SQLite 没有 Python 异常链或内层阶段；之前当前页面 0 个 `div` 得到的 `FieldReadError:read_output_schema_mismatch` 属不同现场，不能充当旧 `RuntimeError` 的根因。旧故障究竟在页面身份、CDP 集合查询、字段投影或读后观察，现有持久化证据不能唯一判定。
+- 受管 `read_fields`/`TargetResolver` 的内层前后 scope、集合快照和 CSS 查询现加固定安全阶段 note，并由原 Runner 映射成不同 fd3 码；CSS 容器定位错误只在真实 CSS 查询阶段分类。原异常链只留 Python owner，未改读取算法、超时、重试或 Browser 会话。所属 Python 故障注入测试 8/8、正常读取合同 2/2、受管 fork setup 与 `--check` 通过，最终来源摘要 `80bbe96277d770752d150432a5534ad0a84f5eceb3c5b06df245e7c7b3d71b5b`；未启动真实浏览器。这是后续故障归因能力，**不是旧故障已修或可见模式已通过的证据**。
+
+## 2026-09-25 主动清理开发端口的 npm script
+
+- 用户的 `npm run dev` 被 4175 占用阻断；监听 PID 11936 是此前本轮独立启动的本项目 API，其相对入口命令和无 `development` 身份的健康响应使自动启动守卫无法证明 checkout，故安全拒停。只读持久化确认无活动访谈、准备或执行后，核对 PID/命令并只停止该进程，4173/4175 均释放。
+- 按用户要求新增根脚本 `npm run clean`，仅处理工作台 4173 和当前配置的 API 端口。显式命令复用 TCP LISTEN PID 查询，二次核对后只停止初始占用者并等待端口释放；新占用者不会被连带终止。语法检查、空端口实际命令、随机端口临时监听进程真实清理及 PID 变化不误停样本均通过；未运行根级或全量测试。原 `npm run dev` 的自动身份守卫保持不变。
+
+## 2026-09-26 新需求输入误锁定点修复
+
+- 截图时新任务 `6416bb34-f72c-4066-9b80-ee065f90c496` 空闲。旧 execution `82bdc9d7-e341-4d0d-8885-cd091f56c15b` 是 `cleanup_required`/`unconfirmed`，审计 `activeResources:false`，却被 `/api/tasks` 投影成 `executing`；工作台把它误当全局占用并把共享输入框设为 `disabled`。另一 B-U job 在截图后才启动，不是截图锁定原因。
+- 已把待清理显示为单独 TaskSummary 状态，排除在全局运行互斥之外；若别的任务真实运行，输入框仍可聚焦并编辑本地草稿，发送继续受限。采用 AI Connect 现成 `sendDisabled`，没有改浏览器 owner 或运行调度。命令行受 `forbidden_ai_origin` 拦截，未伪造工作台来源去改旧执行。
+- 合同、Workbench、API 所属包 TypeScript 检查通过，Workbench 现有发送门测试 3/3，差异检查通过。确认最新 B-U job 结束且项目 Python/Chrome 已退出后，重启本项目开发服务；新 `/api/tasks` 显示旧任务 `cleanup_required`、新任务 `new`，4173 返回 200，Vite 载入新输入属性。**UI 实际点击与键入未测**；旧执行清理仍待产品受控恢复，原业务失败保留。没有运行全量测试或借旧运行宣称新任务验收通过。
+
+## 2026-09-26 正式任务样本读取范围失败
+
+- 正式短需求任务 `b3726b40-02ab-4d0b-b1fd-78e199c67f82` 的第二次准备 job `ea2ccf85-cda3-4f63-8f64-87ddcb5f637c` 完成 B-U 6 步与首编译；样本 `2a0c20dd…` 在 `browser.read-fields` 的读前范围核验失败，码为 `hybrid_read_inner_pre_scope_value_error`，清理 confirmed。独立复验、手动发布、正式复跑均未发生；该任务不是“一次性通过”。
+- 原因定位到来源→物化：B-U 导航后，同一 tab/同一 document 的 URL 在被排除的只读 `find_elements` 前变化，来源有 `readonly_observation_refreshed` 证据；旧分类器仍强制 URL 完全相同，运行节点留着试做剧集页的静态 scope。本次修复让已证明的中间只读同文档变化产生现有运行时 scope 重绑标记；跨文档、缺诊断和点击路径仍拒绝。合成正反例测试 5/5、API 类型检查通过；失败作业持久化来源只读重新分类得到 `runtimeScopeFrom=s-a-0001`/`readOnlySameDocument=true`。未重跑旧任务冒充成功，后续新任务完整验收仍待进行。
+- 修复后仅重启本项目开发服务，`/api/health` 返回 PID 2256、4173 页面 200；任务列表仍如实显示旧 execution 为 `cleanup_required`、该正式任务为 `failed`、新建空任务为 `new`。当前系统空闲提交内存约 4.18 GiB；未在这个现场再启动一次高内存可见浏览器整链，也未把旧 job 或离线重新分类列为新任务通过。
+
+## 2026-09-26 访谈视角纠正与污染任务
+
+- 正式工作台新任务 `7dc29061-f591-4559-ab72-8a3fcca21464` 的唯一初始用户输入为“帮我在哔哩哔哩播放《凡人修仙传》最新一集。”首轮确有只读搜索与来源确认，但访谈随后先问播放状态并给出草案 v1，没有主动调查和询问可能改变“最新一集”可完成性的会员资格。此时自然短句访谈门已失败。
+- 操作者错误地用**产品用户身份**追加了“先核查会员、再问我”等产品规则，随后又追加纠正，模型才搜索观看资格并问是否具备会员。该 Question 的产生不能算访谈自主行为。用户没有回答此题，也没有确认草案或授权准备。当前 `/api/interview` 只读检查：revision 5、confirmedVersion=null、草案 1 份、1 个 open 业务 Question、来源状态 `selected/open`、五轮 succeeded；第二个 open 来源决议对应的来源 Question 已 superseded，是本次纠正留下的孤儿状态。旧已选来源和对话历史保留，未直接修改 SQLite。
+- 根因分别是：当时的访谈指令没有把成稿前资格调查写成明确门，模型把会员未知留给 B-U；已选来源内的业务资格搜索被错误提交给来源候选工具，导致多余来源题板；`finishRound` 只取代旧 Question，未同步其 open 来源决议；Question Authoring 被设置为 `recommendation: "required"`，迫使只问用户本人事实的会员题也给“有会员”标推荐。操作者代用户补写指导是验收方法错误，不是产品能力。
+- 已定点修正访谈 Skill/阶段指令：成稿前按需调查可能改变目标的访问资格；已选来源内的业务事实搜索只用于业务解释或 Question，不再作为新来源提案；只有证据支持的方案取舍可推荐，用户自身资格和意愿题不推荐答案。协议改用 AI Connect 公开的可选推荐。轮次状态同步 superseded Question 与其 open 来源决议，并在下一轮收敛已持久化孤儿。无网站、剧集或会员专用运行分支；B-U 新页恢复、单次 headless 开关和旧 Release 均未改动。
+- 所属协议/来源测试合计 27/27、API 包 `tsc --noEmit`、`git diff --check` 通过。此验证只证明协议可表达无推荐题、多个推荐被拒绝和孤儿状态能收敛；没有对污染任务代答、确认草案、启动 B-U，也没有再建任务整跑。由于首轮已经失败且后续被指导性用户消息污染，不能从这条任务报告首编译、样本、独立复验、手动发布、正式复跑、可见播放通过；这些均未测。
+- 核对任务列表没有运行中任务后，使用现有 `npm run dev` 的同 checkout 身份守卫关闭 PID 17072 并启动 PID 16132；4173/4175 同属新 PID，`/api/health` 200。重启前后该任务仍为 revision 5、未确认、1 个 open 问题及 `selected/open` 来源决议；修复只会在未来新一轮状态转换时收敛旧孤儿，未静默改写既有持久化记录。
+
+## 2026-09-26 全新普通目录任务的首次编译失败（保留失败事实）
+
+- 本轮起点是现有 `master@43ed385` 和全部 dirty work；核对同 checkout 的 4173/4175 服务及 SQLite 后才实施修复。正式工作台新任务 `486738b7-00fb-4d7d-9e23-93d2dc62f49c` 的普通需求是读取 Python 官方《Python 教程》最新稳定版目录，按页面顺序给出全部一级章节的标题与链接，完成后保留原页面。访谈在 Timeline 显示一次公开搜索，来源 Question Panel 选定 `https://docs.python.org/3/tutorial/index.html`；唯一草案 v1 经 UI 确认，Requirement 同版入口和 `browserHandoff=keep_open` 的 Plan 候选一致。UI 驱动在初次来源题板刷新后误点停止键，导致一次访谈轮次 cancelled；随后使用工作台“重新提交本轮”完成 revision 3。此人工驱动中断不算产品访谈成功一次通过。
+- 第一次正式准备 job `d562f3e0-c59b-487e-8757-6b19436950e4` 只启动一次 B-U，来源 artifact `c346fc71-7bf9-41a1-8d59-1be223d5c781` 已保存，5 次浏览器命令、8 次准备模型调用；在官方页面执行 `navigate`、模型 `extract`、三个 DOM 查询与 `done`。精确 `main li.toctree-l1 > a` 查询为 0，宽 `ul li > a` 与 `a[href]` 分别为 156/175；输出把章节标题和链接拼成两个长字符串。已确认草案的结果合同也是两个顶层文本字段，与用户要求的逐项配对记录列表不符。B-U 标 `sourceSuccess=true` 不证明章节全集或可复跑数据读取。
+- **第一次编译失败，不能称一次通过。** Job 在 `compiling` 阶段 failed；技术 gap 包括 `natural_field_read_evidence_missing`、`natural_output_assembly_incomplete`、`consumer_readiness_live_read_required`、`natural_result_binding_incomplete`。工作台显示“代表执行记录已保留，但链路编译仍有缺口，尚未发布”，截图保存在忽略目录 `work/formal-acceptance/first-task-first-compile-failed.png`。SQLite 只读核验该 task 为 `confirmedVersion=1`，草案 v1/revision 3、来源决议 1 条、失败 job 1 条、来源 artifact 1 条、Plan/Chain/Release/Execution 均 0；未点同版重新编译或重新采集，未用失败来源冒充成功。
+- 本轮通用修复随后给新草案增加“单条记录/记录列表”同版形状，并在 B-U 同一 Browser/Agent 内为结构化集合补现场证据门；旧 task 的已确认草案、来源与失败记录不改写。修后全新正式任务的首 B-U、首编译、样本、独立复验、手动发布、正式复跑和原窗口交付仍须另记结果。
+
+## 2026-09-26 第二条全新目录任务的首次 B-U 失败（持续诊断）
+
+- 修复加载到同 checkout API PID 14700 后，正式工作台新建普通需求任务 `233dd9fe-0be6-4927-8f05-d326f0721b53`，初始输入要求 Python 官方教程目录逐项给出一级章节标题及对应链接，并保留原页面。访谈自主只读搜索，Timeline 展示 `site:docs.python.org/3/tutorial/ Python Tutorial table of contents`；来源题板选定官方 `https://docs.python.org/3/tutorial/index.html`。模型又主动澄清“一级章节”范围，第一次选项对 Appendix 的描述自相矛盾，下一轮自行发现并重问；用户侧选择“不纳入 Appendix”。唯一草案 v1/revision 4 在工作台确认：`记录列表` 的章节标题/链接成对字段、官方同版入口及 `页面交付：保留现场`。SQLite 确认 `confirmedVersion=1`、来源决议 1 条、草案 1 份。
+- 工作台首次生成 job `6e9d9a5d-abc6-4a0e-8ce6-7bbc09d953f4` 的来源 artifact `525f35a9-813d-4f1e-82b6-f7d4ecbe4232` 保留。B-U 在官方页执行 1 次导航、2 次完整 `find_elements`、1 次原生 extract 与 `done(success=true)`；两次 `div.toctree-wrapper > ul > li > a` 查询均完整、各命中 16，`done.data.value` 为排除 Appendix 的 15 条标题/链接对象，准备模型调用 12 次。但源结果 `output=null`、`sourceSuccess=false`，编译诊断含 `business_output_schema_not_proven`，准备 job 在 `exploring` 阶段 failed；没有 Plan/Chain/Release/Execution 成功事实。
+- 这暴露两个待分开的通用边界：根 `array<object>` 的原生 done 到结果合同解包失败；完整 16 候选与业务筛出的 15 结果不可被简单“查询与最终数组完全同 ID/同数量”规则合并。已派定点调查；不能为通过而把 Appendix 写成固定网站例外、把 15 项硬编码进公共选择器或改写这条来源。首编译、样本、独立复验、手动发布、正式复跑及原窗口交付仍未测。
+
+## 2026-09-26 第三条全新目录任务的首次 B-U 失败与删除产品样本
+
+- 根数组 JSON 值适配经所属 Python 定点测试 1/1（对象列表、字符串列表、标量、`null`）和旧失败产物只读解码核验后，使用项目 `npm run dev` 的 checkout 身份守卫将 4173/4175 服务重启为 PID 7424；`/api/health` 显示当前根目录，Workbench 页面返回 200。第二条任务的失败记录未更改，16→15 筛选仍缺可复跑证据合同。
+- 第三条普通任务 `43f3e9f1-7f27-4175-8a11-f45ed20484ed` 完全由正式工作台新建。用户请求按 Python 官方《Python 教程》目录页原顺序交付所有一级条目，包括编号章节和 Appendix，各有标题与完整链接，并在完成后保留原页。访谈自主搜索，Timeline 展示公开搜索和官方候选；来源题板选定 `https://docs.python.org/3/tutorial/index.html?utm_source=openai`。唯一 v1 草案在 UI 审阅并确认，明确 `记录列表`、来源入口、全 16 项范围和 `页面交付：保留现场`。正式画布的第一次生成 job 为 `14e5db31-389e-40f7-8dd5-fef51182ec77`。
+- **首次 B-U 失败，尚未进入首编译。** 工作台显示“代表任务没有正常结束或输出不符合已确认合同”，来源 artifact `29fecd9f…` 与 job 失败状态保留；SQLite 只读核验 Plan、Chain、Release、Execution 均 0。原生 `done` 和两次完整 `find_elements` 各有 16 个含 Appendix 的有序记录；`sourceSuccess=false`，诊断包含 `collection_completion_evidence_missing` 和 `natural_field_read_evidence_missing`。定点调查发现记录投影在根数组 schema 没有可选 `maxItems` 时无法生成配对读；此外末尾 `scroll` 被自然编译识别为不能证明完成的动作。这些修复/核验另记，不能反算本任务首次通过，也未点击同版重新试做。首次编译、样本、独立复验、发布、正式复跑和原窗口交付仍未测。
+- **对应的局部修复与限制**：未声明 `maxItems` 的合法动态记录列表使用 ReadSpec 已有 300 项读取上限，显式超限仍拒绝；宿主双快照容器摘要改用与原生查询相同的 backendNodeId 顺序；已观察到的 `scroll_position changed` 只编译为滚动物理后置条件，结果完成依旧需要独立 ReadSpec、装配和集合范围证据。纯 DOM/selector helper 拆到新模块，改动代码文件均不超过 500 行。所属 Python 测试分别 6/6、5/5、2/2；记录投影 14/15，唯一 `host_record_projection_ambiguous` 与原 HEAD 已复现的基线一致。旧 artifact 没有宿主双快照，离线不能证明修复后的来源或编译成功，第三条原失败继续保留。
+- 在同一正式工作台对**仅由本轮创建的临时任务**验证永久删除：空任务 `e3c6355d-abea-4a60-8d80-e9a972ac59ed` 与有一轮访谈、搜索及待回答来源题板的任务 `b40077c3-4f00-40cb-a50f-eef9aaf9aabd` 均经“永久删除任务？”二次确认后从 UI 和 `/api/tasks` 消失。SQLite 所有含 `taskId` 的表对后者均为 0、`tasks` 行为 0，第三条失败任务仍存在；`data/pi-agent-session` 搜不到后者 UUID。此样本证明静止访谈任务的删除路径，含运行/Release/浏览器租约的正式删除及真实人工等待通知仍未做产品验收。
+
+## 2026-09-26 第四条首次来源失败、第五条停在草案与提醒区收敛
+
+- 第三条局部修复的受管 fork `--check` 通过后，使用同 checkout 守卫重启 4173/4175 为 PID 10564；API health 和 Workbench 均返回 200。第四条普通任务 `1e2f7df3-cf02-4734-bca4-d4cd4db4de34` 在正式 UI 自主搜索并确认 Python 官方目录页，唯一 v1 草案为全 16 条一级目录含 Appendix 的成对标题/链接列表与原页面交付；首次准备 job `85926371-d0d6-4c26-8e12-32350d25e7a0` 已失败，来源 artifact `50ba75fe-b83d-4536-807e-4a8ca683c4a1` 原样保留。
+- 第四条来源的结构化输出是含 Appendix 的 16 条记录，三次完整稳定原生查询覆盖同一批 16 个 backend 节点；保存的 `sourceSuccess=false`，编译诊断仍有 `collection_completion_evidence_missing` 和 `natural_field_read_evidence_missing`，并引出结果装配/绑定缺口。宿主没有产生符合最终 schema 的可复跑配对 ReadSpec；本轮没有完成对该缺口的通用修复，也没有第二次试做。SQLite 该任务的 Plan、Chain、TaskDraft、Release、Execution 均 0；首次编译、样本、独立复验、发布、正式复跑与原窗口交付均未通过。
+- 为单独核验后段产品门槛，正式 UI 又建立单页任务 `362d6fcb-fe53-4350-9e70-c87cdd998b7f`，需求是返回 Python 官方教程页面标题、完整网址并保留原页。访谈自主搜索，用户侧在中英文官方候选中选择英文页，唯一草案 v1 已确认。用户指出工作台提醒区严重遮挡主内容后，本任务停在草案审阅；SQLite 有草案 1、来源决议 1，准备 job/Release 均 0，**从未启动 B-U**。
+- 用户指出跨任务提醒常驻卡片堆叠遮挡工作区后，移除了工作区上方整排卡片和“开启桌面提醒”入口。提醒现为顶栏小铃铛，点击才展开当前待处理任务并可跳转；侧栏状态保留，浏览器系统通知申请与推送代码已移除。Workbench `tsc --noEmit` 和定点 `git diff --check` 通过；正式 UI 核对常驻卡片 0、顶栏铃铛显示 2 项待处理、弹出菜单能列出对应任务、主工作区紧接 70px 顶栏。截图在忽略目录 `work/formal-acceptance/attention-compact-sidebar-after.png`。这只证明提醒布局收敛，不证明真实人工等待/通知的产品路径。
+- **当前停止新增 B-U 试做。** 旧失败任务与 source、当前未确认的后续验收门均保留；不以第五条的草案、离线结果或局部 Runner 样本宣称一条正式任务一次通过。
+## 2026-09-26 第四次断点定点修复与第六条新任务首次验收启动
+
+- 当前仍为现有 `master@43ed385`（ahead 6），保留全部 dirty work，无 worktree/reset/clean/commit/push。用户切换开发模型后恢复修复；历史失败来源不改写。
+- 第四条持久化来源的三个原生完整查询各有同序 16 项，`标题 ← text`、`链接 ← attribute_href` 为全列唯一对应。无模型现场诊断复现宿主投影缺口：旧 adapter 只遍历 `is_visible` 节点，且不利用原生集合身份，16 条只有 5 条能直接定位，其余为 `anchor_missing`（包含视口外条目和重复导航项）。旧 artifact 未保存冻结 DOM，不能把新诊断追认为旧快照的精确内容。
+- 新 query/snapshot adapter 保留原始原生查询，借完整查询约束两次 extract 快照的 target、URL、有序 backend IDs 与全列字段值，复用既有结构 selector 和 ReadSpec；不猜字段、不筛记录、不固定条数。无模型真实页面中，新规则重读全部 16 条，逐项值/顺序及节点集合摘要完全一致。完整集合的 `requireComplete` 标记使预算超限明确失败，旧缺省规格摘要不变；另核验 actionRef 和 20,000 节点预算。
+- 所属 Python 新验证 7/7（包括宿主来源到 compile_verified_read、输出装配）、增量溢出/兼容/错配验证 3/3；已有 host mapping 6/6、collection completion 5/5；API TypeScript 检查、Zod 新旧规格 roundtrip 均通过。只运行这些所属包定点检查。受管 fork setup 来源摘要 `d42a255a8e83dc6acf7e961c121c9ac254c0f14eae73cc7d660d99d7648980b4`。
+- 提醒菜单继承 Radix 的固定行高造成两行文本重叠，现仅以局部 CSS 让条目自然增高并截断长标题。真实 UI 测得两个条目各约 54px，标题底部和说明顶部相隔 3px，无重叠；截图 `work/formal-acceptance/attention-menu-layout-fixed.png`。常驻卡片及系统桌面通知入口仍已移除。
+- 第六条普通任务 `9644a3a9-351a-45d4-93ca-9a6bc26c5087` 完全从正式工作台新建：整理 Python 官方英文教程所有一级条目含附录、标题/完整链接、按页面顺序、保留原页面。访谈自主公开搜索，Timeline 与来源题板展示官方候选；来源与一级层级在 UI 选择，唯一草案 v1/revision 3 审阅确认，入口 `https://docs.python.org/3/tutorial/index.html`、动态记录列表及保留现场明确。无脚本改稿或 API 注入。
+- 同 checkout 开发服务已加载修复，health PID 2724/root 核实。正式画布首次“生成草稿”创建唯一 prepare job `fcd7d36e-9528-4fbb-864e-302eeb3a9f7d`，当前运行中。首 B-U、首编译和后续验收结论将依真实结果追加，不能提前宣称通过。
+
+### 第六条任务的首次结果交接失败
+
+- 本次已失败，覆盖上段“运行中”的时点状态。owner `5d005582-76a8-4e1d-8aea-455e207b9357` 的追加式诊断证明：14:10:19 UTC 第 15 步 done 完成；14:10:35 复核与 Python author 完成；14:10:36 序列化、write 和 host receive 完成；14:10:37 host `author_result_schema_invalid`。API PID 2724 仍在，未发生 API 中断。
+- SQLite 该任务没有来源 artifact、正式 execution，job 的 compilationCalls=0；不能断言 sourceSuccess 或首次 B-U 通过。首编译、样本、独立复验、发布、正式复跑、原窗口交付均未测。
+- 旧日志没有 Zod 具体 issue，临时原生历史也没有保存，精确字段子因未知。新 ReadSpec/root-array 的合成完整编译响应通过 TS 合同；这只是排除性诊断，不是这条真实来源的通过证据。
+- 修复接收证据丢失：Runner 响应在关闭/严格准入前保存任务私有 received-source/v1，状态 unverified；source/v2、候选和运行路径不接受它。协议拒绝日志只记限额内固定 code/path，动态字段名脱敏，不记页面值或异常正文。新增失败路径测试 1/1、诊断测试 2/2、API TypeScript 通过。旧第六条记录不能事后补造来源。
+
+### 第六条任务后续同版 job 的证据边界
+
+- 首次 job `fcd7d36e-9528-4fbb-864e-302eeb3a9f7d` 的持久事实仍是 schema 拒绝、来源 artifact 0、compilationCalls=0；上面的接收产物与字段诊断修复只能帮助后续定位，精确 schema 字段子因仍未知。当前同版第二次 job `3be09da7…` 在 exploring，仅作协议诊断；它的后续结果须独立记录，不能倒填首次来源，也不能算这条任务首次 B-U 或首编译一次通过。协议失败提示已改为固定文案，避免把这类失败误导为直接重试，所属文案测试 1/1 通过；它不修复结果 schema。
+- 当前门槛及局部验证见 [ROADMAP 当前门表](ROADMAP.md#当前阶段全新任务首次门槛仍未通过正式交付验收待完成)：需求阶段已有正式 UI 事实，完整查询到宿主双快照投影、提醒菜单、Windows 原窗口 Runner 和静止访谈任务删除各有局部样本；本轮全新任务的首编译、样本、独立复验、发布、正式复跑、真实人工等待、含 Release 删除与原窗口正式交付仍未通过。
+
+## 2026-09-27 显式读取方法引用的局部修复
+
+- 旧第五次来源 `sourceSuccess=true` 与 `repeat_annotation_read_method_mismatch` 的事实保留；首次规格 `normalizeWhitespace=true`、第二次缺省 false 不能视为等价。本轮没有改写旧来源，也没有新浏览器/模型试做。
+- `bat_read_fields` 首次全量参数保持兼容；后续可仅提交 `{ "readRef": "r1" }`。Pydantic 参数验证拒绝空引用、混用任何覆盖参数，序列化只产生引用字段。宿主从当前工具自己登记的成功记录深拷贝全部 ReadSpec/outputPath/readPath/预算；每次成功读取仍返回独立新 readRef 和当前页样本，失败不登记。
+- capture 将精确引用对应到同 owner 的更早成功记录，保留原生引用参数。自然编译沿同一 trace 中严格更早的成功方法逐级核验 action/pre/post/resultDigest、完整 ReadSpec 与路径，直到首个完整方法参数；没有放宽规格相等，也没有新 fact 字段、读取器或控制循环。
+- 最小验证首次通过：新增 `test_method_read_reference` 5 项与原始方法参数 roundtrip 1 项，6/6。为补足真实生产入口，把其共用 helper 升级为 Browser-Use `Tools.registry.execute_action → ActionRegistry.validate_action/model_dump → EvidenceCollector.field_read_facts → normalize_history → natural_compilation_request → compile_request`，只重跑受影响 3 项，3/3。无本轮首次测试失败；原产品来源失败仍独立保留。
+- 生产链样本证明 r1 → r2 → r3 原生参数仅含引用、normalizeWhitespace=true/maxItems=120 完整保留、3 个读取段自然编译零 gaps且未更改原 trace；混参、不存在引用、失败方法引用、跨记录集引用、前向引用及规格篡改拒绝。采样读取被 mock，本证据是离线生产消费验证，不代表真实页面或产品闭环。未运行全量、根级、API check 或浏览器/模型验收。
+- 来源摘要验证补记：root 的首次 `verifyForkSource` 失败为 `workflow_fork_source_mismatch:workflows/workflow_use/hybrid/natural_reads.py`。原因是本轮 manifest 更新误按文件原始 CRLF 字节计算，而既有 verify-source.mjs 按 LF 规范化；未改动源码来迎合摘要。按现有规则只重算本轮 5 条后，`verifyForkSource(process.cwd())` 通过，摘要 `8ed51f1bd90a5f6e546c3d7e6ef6b5ddcbc5f1b8f3711568d3982c7ea4ae335f`。此失败独立于前述 6/6 与 3/3 功能验证保留。
+
+## 2026-09-27 G6 首次根数组路径失败的最小修复
+
+- 原正式 job `b779c791-7719-44ea-88b0-016f83ed7d92` 的首次失败与来源保留。定位为真实输出合同是根记录数组，而 Browser-Use 结构化响应模型显示 value 包装；模型连续提交 outputPath=['value'] 或 ['value',0]，宿主按真实合同拒绝为 natural_read_output_path_invalid。
+- 工具注册现在从真实根数组合同生成 outputPath 的 description/examples=[[]]，工具说明同步明确 outputPath=[]；错误反馈追加固定安全解释，说明 value 属于响应包装。保持显式参数、严格校验与原业务 schema；没有默认改写错误路径、页面猜测、自动重试或新循环。
+- 新增所属 `test_method_root_array_path` 首次 2/2 通过（0.190s）。真实 output_model_for 包装仍存在；真实 Browser-Use Tools 执行两个包装路径都在采样前拒绝（sampler=0、records=0），随后显式 [] 与 readRef 通过 ActionRegistry/model_dump、Tools 和 EvidenceCollector，canonical args 保持原样、方法/预算完全相同。仅 mock 采样，不是浏览器或产品验收。
+- 只更新本轮 2 个 vendor 条目的 LF 规范摘要；未跑旧测试组、根级、API check、浏览器或模型。后续同任务显式重新试做与首次失败分开记录。

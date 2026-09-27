@@ -2,36 +2,30 @@ import { MarkerType, type Edge } from "@xyflow/react"
 import type { ChainPresentation, ChainStage, TaskChain, TaskExecutionEventBatch } from "@browser-capture/contracts"
 import type { ActionCanvasNode, StageCanvasNode, TerminalCanvasNode } from "./ChainCanvasNodes.js"
 import { actionPresentation, terminalPresentation } from "./chainNodePresentation.js"
-import { edgePortLabel, focusChainEdges, latestExecutionEvents, nodeRunTone, overviewChainEdges, stageProgress, stageRunTone,
+import { edgePortLabel, focusChainEdges, latestExecutionEvents, nodeRunTone, overviewChainEdges, stageRunTone,
   terminalCanvasId, type ChainRunTone, type ProjectedChainEdge } from "./chainWorkbenchProjection.js"
 import { layoutChainGraph, type ChainLayoutDirection } from "./chainLayout.js"
 
 type FlowNode = StageCanvasNode | ActionCanvasNode | TerminalCanvasNode
 
 export function buildCanvasGraph(chain: TaskChain, presentation: ChainPresentation, focus: ChainStage | null,
-  previewId: string | null, direction: ChainLayoutDirection, arranged: boolean,
-  batch: TaskExecutionEventBatch | null, onPreview: (id: string) => void,
-  onEnter: (id: string) => void) {
+  batch: TaskExecutionEventBatch | null, onEnter: (id: string) => void, onInspect: (id: string) => void) {
+  const direction: ChainLayoutDirection = "LR"
   const projected = focus ? focusChainEdges(chain, focus, batch) : overviewChainEdges(chain, presentation, batch)
   const edges = projected.map(flowEdge)
-  const raw = focus ? focusNodes(chain, presentation, focus, direction, batch)
-    : overviewNodes(chain, presentation, previewId, direction, batch, onPreview, onEnter)
-  // WHY：默认按可阅读字号纵向排布，避免把多阶段压进固定高度后变成无法辨认的小点。
-  return { nodes: direction === "TB" || arranged
-    ? layoutChainGraph(raw, edges, direction) : raw, edges }
+  const raw = focus ? focusNodes(chain, presentation, focus, direction, batch, onInspect)
+    : overviewNodes(chain, presentation, direction, batch, onEnter)
+  // WHY：画布布局只服务阅读，统一自动排布；拖拽与缩放不写回草稿或影响发布校验。
+  return { nodes: layoutChainGraph(raw, edges, direction), edges }
 }
 
-function overviewNodes(chain: TaskChain, presentation: ChainPresentation, previewId: string | null,
+function overviewNodes(chain: TaskChain, presentation: ChainPresentation,
   direction: ChainLayoutDirection, batch: TaskExecutionEventBatch | null,
-  onPreview: (id: string) => void, onEnter: (id: string) => void): FlowNode[] {
+  onEnter: (id: string) => void): FlowNode[] {
   const positions = new Map(presentation.overviewLayout.map((item) => [item.stageId, item]))
-  const stages: StageCanvasNode[] = presentation.stages.map((stage, index) => ({ id: stage.id, type: "chain-stage",
+  const stages: StageCanvasNode[] = presentation.stages.map((stage) => ({ id: stage.id, type: "chain-stage",
     position: positions.get(stage.id) ?? { x: 0, y: 0 }, width: 300, height: 148,
-    data: { title: stage.title, summary: stage.summary, actionCount: stage.nodeIds.length,
-      actionLabels: stage.nodeIds.map((id) => actionPresentation(chain.nodes.find((node) => node.id === id)!).title),
-      completedCount: stageProgress(stage, batch).completed, skippedCount: stageProgress(stage, batch).skipped,
-      order: index + 1, tone: stageRunTone(stage, batch), previewed: previewId === stage.id,
-      direction, onPreview, onEnter } }))
+    data: { title: stage.title, summary: stage.summary, tone: stageRunTone(stage, batch), direction, onEnter } }))
   const values = [...positions.values()], xs = values.map((item) => item.x), ys = values.map((item) => item.y)
   const start = direction === "LR" ? { x: Math.min(0, ...xs) - 150, y: Math.min(0, ...ys) }
     : { x: Math.min(0, ...xs), y: Math.min(0, ...ys) - 100 }
@@ -47,15 +41,14 @@ function overviewNodes(chain: TaskChain, presentation: ChainPresentation, previe
 }
 
 function focusNodes(chain: TaskChain, presentation: ChainPresentation, stage: ChainStage,
-  direction: ChainLayoutDirection, batch: TaskExecutionEventBatch | null): FlowNode[] {
+  direction: ChainLayoutDirection, batch: TaskExecutionEventBatch | null, onInspect: (id: string) => void): FlowNode[] {
   const layout = presentation.focusLayouts.find((item) => item.stageId === stage.id)
   const positions = new Map(layout?.nodes.map((item) => [item.nodeId, item]) ?? [])
   const actions: ActionCanvasNode[] = stage.nodeIds.map((id) => {
     const node = chain.nodes.find((item) => item.id === id)!
     const info = actionPresentation(node)
     return { id, type: "chain-action", position: positions.get(id) ?? { x: 0, y: 0 }, width: 240, height: 112,
-      data: { title: info.title, family: info.type, operation: info.description,
-        tone: nodeRunTone(id, batch, stage), direction } }
+      data: { title: info.title, tone: nodeRunTone(id, batch, stage), direction, onInspect } }
   })
   const entry = terminalNode("__stage_entry", "阶段入口", "start", direction, { x: -150, y: 0 })
   const exits = stage.exits.map((exit, index) => {

@@ -47,11 +47,18 @@ export function materializeHybridWorkflowCommand(config: Record<string, unknown>
 
 /** WHY：只有能力配置/值进入 Python；这里没有模型、Agent、图调度或独立检查点。 */
 type HybridRunner = Pick<RunnerProcess, "close" | "envBoolean" | "request" | "startHybrid">
+  & Partial<Pick<RunnerProcess, "handoff">>
 
-export async function withHybridCapabilities<T>(input: { root: string; directory: string; ownerId: string;
+type HybridCapabilitiesInput = { root: string; directory: string; ownerId: string;
   signal: AbortSignal; allowedOrigins: string[]; canRestoreByNavigation?: boolean; headless?: boolean;
+  managedWindow?: { ownerId: string; resume: boolean };
+  handoffPurpose?: () => "delivery" | "human_wait" | null;
+  onHandoff?: (purpose: "delivery" | "human_wait", lease: Awaited<ReturnType<RunnerProcess["handoff"]>>["lease"]) => void;
+  onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
   onCleanup?: (report: Awaited<ReturnType<HybridRunner["close"]>>) => void;
-  createRunner?: (root: string, signal: AbortSignal) => HybridRunner },
+  createRunner?: (root: string, signal: AbortSignal) => HybridRunner }
+
+export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
   work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T> {
   const owner = new AbortController()
   await verifyForkSource(input.root)
@@ -63,7 +70,8 @@ export async function withHybridCapabilities<T>(input: { root: string; directory
   try {
     await runner.startHybrid({ allowedOrigins: input.allowedOrigins,
       profilePath: path.join(input.directory, "browser-profile", "default"),
-      headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false) })
+      headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
+      ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}) })
     const admit = (capabilities: TaskChainCapabilities) => {
       // WHY：先从宿主总账授权，再计入实际派发；失败也保留消耗，预算拒绝不算已派发命令。
       capabilities.accountConsumption?.({ browserCommands: 1 })
@@ -79,9 +87,18 @@ export async function withHybridCapabilities<T>(input: { root: string; directory
         let missingTargetOutcome = false
         try {
           return await withinHybridSignal(invocation.signal, owner, async () => {
+            if (invocation.node.capability.name === "browser.wait-for-human") {
+              if (invocation.node.capability.version !== 1 || !invocation.node.human
+                || invocation.node.effect !== "read") throw new Error("hybrid_human_wait_contract_invalid")
+              z.object({}).strict().parse(invocation.config)
+              z.object({}).strict().parse(invocation.input)
+              // WHY：显式人工请求只交还原现场；用户操作和恢复仍归现有检查点，不另建等待器。
+              return { outcome: "human_required" as const, reason: invocation.node.human.prompt,
+                browser: await observe(this) }
+            }
             const config = z.record(z.string(), z.unknown()).parse(invocation.config)
             missingTargetOutcome = config.missingTargetOutcome === true
-            const scoped = await runtimeScope.commandConfig(invocation.node.capability.name, config, () => observe(this))
+            const scoped = await runtimeScope.commandConfig(invocation.node.capability.name, config, () => observe(this), invocation.node.id)
             invocation.signal.throwIfAborted()
             const command = hybridCommandSchema.parse({ ...invocation.node.capability,
               ...(invocation.node.capability.name === "browser.workflow-step"
@@ -109,41 +126,75 @@ export async function withHybridCapabilities<T>(input: { root: string; directory
           throw error
         }
       },
-      verifyResume(this: TaskChainCapabilities, checkpoint, signal) { return withinHybridSignal(signal, owner, async () => {
-        runtimeScope.clear()
-        let browser = await observe(this)
-        const sameSession = checkpoint.browser?.sessionId === browser.sessionId && checkpoint.browser.tabId === browser.tabId
-        const humanNavigationResume = checkpoint.resumeWhen?.operator === "exists"
-          && checkpoint.resumeWhen.path.length === 1 && checkpoint.resumeWhen.path[0] === "url"
-        // WHY: 只有整个调用闭包都仅导航/读取时才允许重开来源页；表单或未决写入仍不能借导航伪造恢复。
-        const restore = !sameSession && input.canRestoreByNavigation && !checkpoint.pendingEffect
-          && (!checkpoint.resumeWhen || humanNavigationResume) && checkpoint.browser
-        let restored = false
-        if (restore && isWithinBrowserSites(checkpoint.browser!.url, input.allowedOrigins)) {
-          admit(this)
-          const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({
-            id: randomUUID(), type: "hybrid_execute", command: { name: "browser.workflow-step", version: 2, actionName: "navigate",
-              args: { url: checkpoint.browser!.url, new_tab: false }, target: null, postconditions: [{ kind: "url", bindingArgument: "url" }] } })))
-          browser = result.browser
-          restored = true
-        }
-        const same = (sameSession || restored) && checkpoint.browser?.url === browser.url
-          && (humanNavigationResume || checkpoint.browser.observationDigest === browser.observationDigest)
-        // WHY：跨 session 的导航恢复可以继续普通链，但无法证明 dependent scope 的直接浏览器前驱身份。
-        if (same && sameSession) runtimeScope.restore(checkpoint, browser)
-        return { ok: same, browser, ...(checkpoint.resumeWhen ? { observation: jsonValueSchema.parse(browser) } : {}),
-          ...(!same ? { reason: "hybrid_browser_session_changed" } : {}) }
-      }) },
+      verifyResume(this: TaskChainCapabilities, checkpoint, signal) {
+        return withinHybridSignal(signal, owner, () => verifyHybridResume(checkpoint,
+          { input, runner, runtimeScope, capabilities: this, observe, admit }))
+      },
     })
     primary = { status: "completed", value }
   } catch (error) { primary = { status: "failed", error } }
-  const cleanup = await runner.close()
+  const purpose = primary.status === "completed" ? input.handoffPurpose?.() : null
+  let cleanup: Awaited<ReturnType<HybridRunner["close"]>>
+  if (purpose && input.managedWindow && runner.handoff) {
+    try {
+      const handed = await runner.handoff()
+      cleanup = handed.report
+      input.onHandoff?.(purpose, handed.lease)
+    } catch (error) {
+      input.onHandoffFailure?.(purpose, error instanceof Error ? error.message : "browser_handoff_failed")
+      cleanup = await runner.close()
+    }
+  } else {
+    if (purpose) input.onHandoffFailure?.(purpose, "browser_handoff_unavailable")
+    cleanup = await runner.close()
+  }
   input.onCleanup?.(cleanup)
   if (cleanup.status === "unconfirmed") {
     throw new RuntimeCleanupRequiredError(input.ownerId, cleanup, primary)
   }
   if (primary.status === "failed") throw primary.error
   return primary.value
+}
+
+async function verifyHybridResume(
+  checkpoint: Parameters<NonNullable<TaskChainCapabilities["verifyResume"]>>[0],
+  context: { input: Pick<HybridCapabilitiesInput, "canRestoreByNavigation" | "allowedOrigins">;
+    runner: HybridRunner; runtimeScope: HybridRuntimeScopeState; capabilities: TaskChainCapabilities;
+    observe: (capabilities: TaskChainCapabilities) => Promise<z.infer<typeof hybridBrowserStateSchema>>;
+    admit: (capabilities: TaskChainCapabilities) => void }) {
+  const { input, runner, runtimeScope, capabilities, observe, admit } = context
+  runtimeScope.clear()
+  let browser = await observe(capabilities)
+  const sameSession = checkpoint.browser?.sessionId === browser.sessionId && checkpoint.browser.tabId === browser.tabId
+  const humanNavigationResume = checkpoint.resumeWhen !== null
+    && checkpoint.resumeWhen.path.length === 1 && checkpoint.resumeWhen.path[0] === "url"
+  // WHY: 只有整个调用闭包都仅导航/读取时才允许重开来源页；表单或未决写入仍不能借导航伪造恢复。
+  const restore = !sameSession && input.canRestoreByNavigation && !checkpoint.pendingEffect
+    && !checkpoint.resumeWhen && checkpoint.browser
+  let restored = false
+  if (restore && isWithinBrowserSites(checkpoint.browser!.url, input.allowedOrigins)) {
+    admit(capabilities)
+    const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({
+      id: randomUUID(), type: "hybrid_execute", command: { name: "browser.workflow-step", version: 2, actionName: "navigate",
+        args: { url: checkpoint.browser!.url, new_tab: false }, target: null, postconditions: [{ kind: "url", bindingArgument: "url" }] } })))
+    browser = result.browser
+    restored = true
+  }
+  // WHY：人工处理只接受同一受控 tab 在授权来源内跳转；重开相同 URL 不能替代用户处理的原现场。
+  const sameUrl = checkpoint.browser?.url === browser.url || (sameSession && humanNavigationResume
+    && isWithinBrowserSites(browser.url, input.allowedOrigins))
+  const same = (sameSession || restored) && sameUrl
+    && (humanNavigationResume || checkpoint.browser?.observationDigest === browser.observationDigest)
+  // WHY：跨 session 的导航恢复可以继续普通链，但无法证明 dependent scope 的直接浏览器前驱身份。
+  const scoped = same && sameSession && runtimeScope.restore(checkpoint, browser)
+  if (same && sameSession && checkpoint.resumeWhen && !checkpoint.pendingEffect) {
+    runtimeScope.resumeHuman(checkpoint.cursor, browser)
+  }
+  const associationFailed = checkpoint.browserNodeId !== undefined && !checkpoint.resumeWhen && !scoped
+  return { ok: same && !associationFailed, browser,
+    ...(checkpoint.resumeWhen ? { observation: jsonValueSchema.parse(browser) } : {}),
+    ...(!same ? { reason: "hybrid_browser_session_changed" }
+      : associationFailed ? { reason: "hybrid_browser_checkpoint_association_invalid" } : {}) }
 }
 
 function materializeTargetReadinessCommand(config: Record<string, unknown>) {

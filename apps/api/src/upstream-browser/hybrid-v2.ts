@@ -24,11 +24,13 @@ export async function validateAndMaterializeFunctionDraft(input: { id: string; l
     inputs: z.record(z.string(), valueBindingSchema).parse(input.bindings), timeoutMs: input.timeoutMs,
     outputContract: contract(input.id, draft.outputSchema), writes: [],
   }) as Extract<StableChainNodeV2, { kind: "function" }>
-  for (const example of draft.examples) {
+  for (const [exampleIndex, example] of draft.examples.entries()) {
     const parsedInput = parseExample(inputContract, example.input)
     const result = await executeFunctionNode(node, parsedInput, input.signal ?? new AbortController().signal)
-    if (result.outcome !== "success" || !isDeepStrictEqual(result.output, example.output)) {
-      throw new Error(result.reason ?? "function_draft_example_mismatch")
+    if (result.outcome !== "success") throw new Error(result.reason ?? "function_draft_example_mismatch")
+    if (!isDeepStrictEqual(result.output, example.output)) {
+      // WHY：反馈只携带结果差异和样例位置，不携带页面输入；调用边界负责限制可向Agent暴露的值类型。
+      throw new Error("function_draft_example_mismatch", { cause: { exampleIndex, actual: result.output, expected: example.output } })
     }
   }
   return node

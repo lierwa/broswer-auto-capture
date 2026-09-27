@@ -1,5 +1,6 @@
 """Typed fact adapter for the existing workflow-use StepVerifier; no wait/retry/model loop."""
 import asyncio
+from contextvars import ContextVar
 from types import SimpleNamespace
 from typing import Literal
 
@@ -16,6 +17,7 @@ from .read import ReadSpec, read_fields
 from .rendered_field_text import FieldReadError
 from .semantic import bounded_schema
 from .target_scroll import read_target_in_view
+from .target_preparation import current_document_id
 from .targets import TargetResolver, materialize_target
 from .visible_wait import read_visible_target
 
@@ -51,6 +53,9 @@ _VALUE_READ_CODES = frozenset({'page_unavailable', 'target_scope_mismatch', 'rea
 _CHECK_REASONS = _FIELD_READ_CODES | _VALUE_READ_CODES | frozenset({
     'baseline_missing', 'fact_mismatch', 'projection_not_ready', 'projection_not_stable', 'check_error',
 })
+_PAGE_FACT_KINDS = frozenset({'url', 'url_digest', 'title', 'scroll_position',
+                              'visible_overlays', 'media_playback'})
+_ATTEMPT_PAGE = ContextVar('bat_postcondition_attempt_page', default=None)
 
 
 def _safe_check_error(error):
@@ -162,6 +167,26 @@ def _runtime_read_scope(condition, conditions, args):
     return {'url': dynamic_urls[0], 'urlDigest': digest(dynamic_urls[0])}
 
 
+def action_result_readiness(action_name, raw):
+    """Select an existing transition consumer; never create or erase a postcondition."""
+    if action_name not in {'click', 'send_keys'}:
+        return None
+    conditions = [Postcondition.model_validate(item) for item in raw]
+    urls = [item for item in conditions if item.kind in {'url', 'url_digest'}]
+    if (not any(item.changed is True for item in urls)
+            or any(item.equals is not None or item.bindingArgument is not None for item in urls)):
+        return None
+    candidates = [index for index, item in enumerate(conditions)
+                  if item.kind == 'read_fields' and item.transition is True]
+    if len(candidates) != 1:
+        return None
+    candidate = conditions[candidates[0]]
+    complete = (candidate.read is not None and candidate.scope is not None and candidate.settle is not None
+                and isinstance(candidate.consumerRef, str) and bool(candidate.consumerRef))
+    # WHY：实际动作结果只参数化唯一消费者的读取作用域；固定 URL 条件仍是独立授权与验证。
+    return candidates[0] if complete else None
+
+
 async def capture_check_baselines(browser, checks):
     for check in checks:
         if (check.parameters.get('changed') is True or check.parameters.get('unchanged') is True
@@ -197,8 +222,30 @@ async def verify_declared(browser, checks, policy=None):
 async def verify_once(browser, checks):
     for check in checks:
         check.parameters.pop('_batFailureReason', None)
-    step = SimpleNamespace(type='hybrid_declared', verification_checks=checks)
-    outcome = await StepVerifier(llm=None).verify_step(step, browser)
+    # WHY：同轮多个页面事实必须来自同一 Page；身份漂移只重读有界事实，不重派动作。
+    page_checks = sum(check.parameters.get('kind') in _PAGE_FACT_KINDS for check in checks)
+    pinned = page_checks > 1 or any(check.parameters.get('kind') == 'read_fields' for check in checks)
+    try:
+        identity = await _page_attempt_identity(browser) if pinned else None
+        if identity is not None:
+            _bind_attempt_reads(checks, identity)
+    except PostconditionNotMet:
+        _reset_read_stability(checks)
+        raise
+    token = _ATTEMPT_PAGE.set(identity[0]) if identity is not None else None
+    try:
+        step = SimpleNamespace(type='hybrid_declared', verification_checks=checks)
+        outcome = await StepVerifier(llm=None).verify_step(step, browser)
+        if identity is not None:
+            await _assert_page_attempt_identity(browser, identity)
+    except BaseException:
+        _reset_read_stability(checks)
+        raise
+    finally:
+        if token is not None:
+            _ATTEMPT_PAGE.reset(token)
+        for check in checks:
+            check.parameters.pop('_runtimeReadScope', None)
     if outcome.result != VerificationResult.SUCCESS or outcome.checks_failed:
         failed = set(outcome.checks_failed)
         for check in checks:
@@ -211,6 +258,64 @@ async def verify_once(browser, checks):
         raise PostconditionNotMet('ordinary_postcondition_failed')
 
 
+async def _page_attempt_identity(browser):
+    try:
+        page = await browser.get_current_page()
+        info = await page.get_target_info() if page is not None else None
+        target_id = info.get('targetId') if isinstance(info, dict) else None
+        url = await page.get_url() if page is not None else None
+        if (not isinstance(target_id, str) or not target_id or not isinstance(url, str) or not url
+                or getattr(browser, 'agent_focus_target_id', None) != target_id):
+            raise ValueError('page_identity_unavailable')
+        document_id = await current_document_id(browser, page=page)
+        await TargetResolver(browser).assert_scope({'url': url}, target_id)
+        if getattr(browser, 'agent_focus_target_id', None) != target_id:
+            raise ValueError('target_document_changed')
+        return page, target_id, url, document_id, getattr(browser, 'id', None)
+    except Exception as error:
+        raise PostconditionNotMet('ordinary_postcondition_page_identity_changed') from error
+
+
+async def _assert_page_attempt_identity(browser, identity):
+    page, target_id, url, document_id, session_id = identity
+    try:
+        if (getattr(browser, 'agent_focus_target_id', None) != target_id
+                or getattr(browser, 'id', None) != session_id):
+            raise ValueError('target_document_changed')
+        await TargetResolver(browser).assert_scope({'url': url}, target_id)
+        if (await current_document_id(browser, page=page) != document_id
+                or await page.get_url() != url
+                or getattr(browser, 'agent_focus_target_id', None) != target_id
+                or getattr(browser, 'id', None) != session_id):
+            raise ValueError('target_document_changed')
+    except Exception as error:
+        raise PostconditionNotMet('ordinary_postcondition_page_identity_changed') from error
+
+
+def _bind_attempt_reads(checks, identity):
+    _, target_id, url, document_id, session_id = identity
+    key = (session_id, target_id, document_id, url)
+    for check in checks:
+        parameters = check.parameters
+        if parameters.get('kind') != 'read_fields':
+            continue
+        if parameters.get('_stablePageIdentity') != key:
+            parameters.pop('stableDigest', None)
+            parameters['_stablePageIdentity'] = key
+        owner = parameters.get('_actionResultOwner')
+        if owner is not None:
+            if owner != {'sessionId': session_id, 'targetId': target_id}:
+                raise PostconditionNotMet('ordinary_postcondition_action_page_changed')
+            parameters['_runtimeReadScope'] = {'url': url, 'urlDigest': digest(url)}
+
+
+def _reset_read_stability(checks):
+    for check in checks:
+        check.parameters.pop('stableDigest', None)
+        check.parameters.pop('_stablePageIdentity', None)
+        check.parameters.pop('_runtimeReadScope', None)
+
+
 async def check_fact(parameters, browser):
     parameters.pop('_batFailureReason', None)
     if ((parameters.get('changed') is True or parameters.get('unchanged') is True
@@ -221,6 +326,7 @@ async def check_fact(parameters, browser):
     try:
         actual = await read_check_value(parameters, browser)
     except Exception as error:
+        parameters.pop('stableDigest', None)
         parameters['_batFailureReason'] = _safe_check_error(error)
         if not readiness_projection_unavailable(parameters, error):
             # WHY：上游 StepVerifier 会记录捕获的异常文本；不能把页面或依赖消息交给它写日志。
@@ -265,7 +371,8 @@ def readiness_projection_unavailable(parameters, error):
 
 async def read_check_value(parameters, browser):
     return await read_fields(browser, ReadSpec.model_validate(parameters['read']),
-                             scope=parameters.get('scope')) if parameters['kind'] == 'read_fields' else (
+                             scope=parameters.get('_runtimeReadScope', parameters.get('scope')),
+                             page=_ATTEMPT_PAGE.get()) if parameters['kind'] == 'read_fields' else (
            await read_fact(parameters['kind'], parameters['target'], browser,
                            parameters.get('_retainedElement')))
 
@@ -294,7 +401,9 @@ async def read_fact(kind, target, browser, retained_element=None):
             return await read_target_in_view(element)
         # Fixed property reads use the public Element API; no task-provided script is executed.
         return await element.evaluate('() => this.textContent')
-    page = await browser.get_current_page()
+    page = _ATTEMPT_PAGE.get()
+    if page is None:
+        page = await browser.get_current_page()
     if page is None:
         raise ValueError('page_unavailable')
     if kind in ('scroll_position', 'visible_overlays', 'media_playback'):

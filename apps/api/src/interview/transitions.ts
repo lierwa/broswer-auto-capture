@@ -12,9 +12,11 @@ import { conflict } from "../errors.js"
 import {
   applySourceResolutionAnswer,
   assertRequirementReady,
+  projectProvidedDraftSources,
   recordSourceResolution,
   recordUserProvidedSources,
 } from "./source-resolution.js"
+import { parsePreparationDraft } from "./preparation-draft.js"
 
 export type ModelCommand = Extract<InterviewCommand, { type: "message" | "retry" }>
 export function beginRound(state: InterviewState, command: ModelCommand) {
@@ -28,6 +30,7 @@ export function beginRound(state: InterviewState, command: ModelCommand) {
     recordUserProvidedSources(state, command.text, state.revision + 1)
   }
   if (!userMessageId) conflict("没有可以继续处理的用户原文。")
+  supersedeAbandonedSourceResolutions(state)
   state.revision += 1; state.confirmedVersion = null; state.active = true; state.cancellationRequested = false
   const assistantMessageId = randomUUID(), id = randomUUID()
   state.messages.push({ id: assistantMessageId, role: "assistant", text: "", status: "running", question: null, draftVersion: null, aiEvents: [] })
@@ -127,10 +130,16 @@ function commonAnswerText(question: CommonSurfaceQuestion, answer: Record<string
 export function confirmDraft(state: InterviewState, version: number) {
   if (currentDraft(state)?.version !== version) conflict("只能确认当前对话对应的最新草稿。")
   if (state.confirmedVersion === version) return
-  try { assertRequirementReady(state, currentDraft(state)!.markdown) }
-  catch { conflict("仍有重要待决事项或来源尚未确认，不能确认需求草稿。") }
+  let projected: InterviewState
+  try {
+    projected = projectProvidedDraftSources(state, currentDraft(state)!.markdown)
+    assertRequirementReady(projected, currentDraft(state)!.markdown, true)
+    parsePreparationDraft(currentDraft(state)!.markdown)
+  }
+  catch { conflict("仍有重要待决事项，或试做入口缺少已确认的来源引用，不能确认准备计划草案。") }
+  state.sourceResolutions = projected.sourceResolutions
   state.confirmedVersion = version
-  state.decisions.push({ id: randomUUID(), revision: state.revision, kind: "draft_confirmation", text: `确认需求草稿 v${version}`,
+  state.decisions.push({ id: randomUUID(), revision: state.revision, kind: "draft_confirmation", text: `确认准备计划草案 v${version}`,
     messageId: null, questionId: null, draftVersion: version, createdAt: new Date().toISOString(),
   })
   for (const question of state.unresolved) question.status = "resolved"
@@ -147,7 +156,7 @@ export function finishRound(state: InterviewState, id: string, outcome: "succeed
   if (status === "succeeded" && output) {
     // WHY：流中正文已由唯一 authoring parser 原位增长；终态只以同一解析结果校准，不能再次追加而制造重复消息。
     assistant.text = output.assistantText; assistant.question = output.question; assistant.parts = output.parts
-    for (const question of state.unresolved) if (question.status === "open") question.status = "superseded"
+    supersedePriorQuestions(state, state.revision)
     if (output.question) state.unresolved.push({ id: assistant.id, revision: state.revision, question: output.question, status: "open", answerMessageId: null })
     if (sourceResolution) recordSourceResolution(state, sourceResolution)
     if (output.draft) {
@@ -159,4 +168,22 @@ export function finishRound(state: InterviewState, id: string, outcome: "succeed
     assistant.text += `\n${status === "cancelled" ? "已停止，本轮未提交草稿。" : reason ?? "本轮未完成，结果未提交。请重试。"}`
   }
   state.active = false; state.activeTurnId = null; state.cancellationRequested = false
+}
+
+/** WHY：草案准入与成功轮次必须看到相同的旧题板取代结果；失败轮次不调用此函数写回。 */
+export function supersedePriorQuestions(state: InterviewState, revision: number) {
+  for (const question of state.unresolved) {
+    if (question.status === "open" && question.revision < revision) question.status = "superseded"
+  }
+  supersedeAbandonedSourceResolutions(state)
+}
+
+function supersedeAbandonedSourceResolutions(state: InterviewState) {
+  // WHY：来源题板已被新对话取代时，对应候选不能继续阻塞草案确认；保留历史事实，不自动选择候选。
+  const abandoned = new Set(state.unresolved.filter((question) => question.status === "superseded").map((question) => question.id))
+  for (const resolution of state.sourceResolutions) {
+    if (resolution.status === "open" && resolution.questionId && abandoned.has(resolution.questionId)) {
+      resolution.status = "superseded"
+    }
+  }
 }

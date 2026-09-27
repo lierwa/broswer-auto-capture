@@ -71,14 +71,18 @@ class DynamicSelectionTest(unittest.TestCase):
 
     def test_only_incomplete_find_elements_may_remain_agent_internal(self):
         registry = SimpleNamespace(validate_action=lambda _name, _args: None)
-        action = SimpleNamespace(id='a-0001', name='find_elements', status='succeeded', args={},
-                                 resultRef=EvidenceRef(ref='result', digest='2' * 64))
+        action = SimpleNamespace(id='a-0001', name='find_elements', status='succeeded', effect='read',
+            args={'selector': 'a.item', 'max_results': 10, 'include_text': True, 'attributes': []},
+            preObservationRef='o-pre', postObservationRef='o-post',
+            resultRef=EvidenceRef(ref='result', digest='2' * 64))
         pre = SimpleNamespace(id='o-pre', tabId='tab-1', url=URL, sourceRefs=[REF],
                               facts=[fact('url-pre', 'url_digest', URL_DIGEST)])
         incomplete = query(total=12, truncated=True)
+        query_fact = fact('query', 'dom_query', incomplete.model_dump(mode='json'))
+        query_fact.sourceRefs = [EvidenceRef(ref='query-proof', digest=digest(query_fact.value))]
         post = SimpleNamespace(id='o-post', tabId='tab-1', url=URL, sourceRefs=[REF], facts=[
             fact('url-post', 'url_digest', URL_DIGEST),
-            fact('query', 'dom_query', incomplete.model_dump(mode='json')),
+            query_fact,
         ])
 
         coverage = natural_dom_lookup_coverage(registry, action, pre, post)

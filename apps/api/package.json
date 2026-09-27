@@ -9,9 +9,7 @@
     "check": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "preaccept:requirement-dialogue": "npm run build --workspace @browser-capture/workbench",
-    "accept:requirement-dialogue": "tsx tests/requirement-dialogue-workbench-acceptance.ts",
-    "preaccept:workbench-simplification": "npm run build --workspace @browser-capture/workbench",
-    "accept:workbench-simplification": "tsx tests/workbench-simplification-acceptance.ts"
+    "accept:requirement-dialogue": "tsx tests/requirement-dialogue-workbench-acceptance.ts"
   },
   "dependencies": {
     "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-e61cfe91.tgz",

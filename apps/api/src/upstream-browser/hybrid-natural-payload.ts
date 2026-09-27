@@ -17,7 +17,31 @@ const parseWithSource = JSON.parse as (text: string,
 const evidenceKinds = new Set(["dom_structure", "dom_query", "natural_binding", "native_extraction",
   "native_action_dispatch", "native_action_result", "native_dom_event", "browser_context",
   "url_digest", "verified_natural_read", "verified_target_scroll", "verified_visible_wait",
-  "verified_natural_summary", "verified_output_assembly", "selection_function", "observation_diagnostic", "document_identity"])
+  "verified_natural_summary", "verified_output_assembly", "selection_function", "repeat_method",
+  "native_completion_review", "observation_diagnostic", "document_identity", "verified_human_resume"])
+
+/** WHY：采集只交接一份原始 request；不依赖编译结果才能验证或保存来源。 */
+export function naturalSourceContext(canonicalRequest: string) {
+  const transportRequest = record(parseRawPayload(canonicalRequest), "hybrid_natural_request_invalid")
+  const request = z.record(z.string(), jsonValueSchema).parse(JSON.parse(canonicalRequest))
+  const ordinary = hybridNaturalRequestSchema.parse(request)
+  for (const key of ["requirement", "plan", "trace"] as const) {
+    const { digest, ...body } = record(transportRequest[key], "hybrid_natural_source_invalid")
+    if (createHash("sha256").update(canonicalRaw(body)).digest("hex") !== digest) {
+      throw new Error("hybrid_natural_source_digest_mismatch")
+    }
+  }
+  const rawTrace = record(transportRequest.trace, "hybrid_natural_trace_payload_invalid")
+  const assertFact = (fact: NaturalFact, observationId: string): void => { assertRawFact(rawTrace, fact, observationId) }
+  const assertTraceEvidence = () => {
+    for (const observation of ordinary.trace.observations) for (const fact of observation.facts) {
+      if (evidenceKinds.has(fact.kind)) assertFact(fact, observation.id)
+    }
+  }
+  assertTraceEvidence()
+  // WHY：校验器的默认值不能改写跨语言来源；交给编译器的 request 仍是 canonical 原文。
+  return { request, ordinary, transportRequest, assertFact, assertTraceEvidence }
+}
 
 /** WHY：sourcePayloads 是 Python canonical bytes 的唯一词法锚；普通 request 仍负责结构和业务语义。 */
 export function naturalPayloadContext(envelope: Envelope, request: Record<string, JsonValue>) {
@@ -33,7 +57,7 @@ export function naturalPayloadContext(envelope: Envelope, request: Record<string
     runtimeInputSchema: rawSources[3], trace: { ...rawTrace, digest: ordinary.trace.digest } }
   const semantic = hybridNaturalRequestSchema.parse(plainValue(transportRequest))
   if (!isDeepStrictEqual(semantic, ordinary)) throw new Error("hybrid_natural_payload_semantic_mismatch")
-  const assertFact = (fact: NaturalFact, observationId: string) => assertRawFact(rawTrace, fact, observationId)
+  const assertFact = (fact: NaturalFact, observationId: string): void => { assertRawFact(rawTrace, fact, observationId) }
   const assertTraceEvidence = () => {
     for (const observation of ordinary.trace.observations) for (const fact of observation.facts) {
       if (evidenceKinds.has(fact.kind)) assertFact(fact, observation.id)
@@ -62,6 +86,16 @@ export function digestNaturalPayload(payload: string) {
   return createHash("sha256").update(canonicalRaw(parseRawPayload(payload))).digest("hex")
 }
 
+/** WHY：嵌套回执也必须沿用来源数字词法，不能把业务解析后的对象重新编码再核验。 */
+export function digestNaturalFactField(payload: Pick<ReturnType<typeof naturalPayloadContext>, "transportRequest">,
+  fact: NaturalFact, observationId: string, field?: string) {
+  const matches = assertRawFact(record(payload.transportRequest.trace, "hybrid_natural_trace_payload_invalid"), fact, observationId)
+  if (matches.length !== 1) throw new Error("hybrid_natural_fact_payload_ambiguous")
+  const value = matches[0]!.value
+  const target = field === undefined ? value : record(value, "hybrid_natural_fact_value_invalid")[field]
+  return createHash("sha256").update(canonicalRaw(target)).digest("hex")
+}
+
 function assertRawFact(rawTrace: Record<string, unknown>, fact: NaturalFact, observationId: string) {
   const observations = array(rawTrace.observations, "hybrid_natural_trace_payload_invalid")
   const rawObservations = observations.filter((item) => record(item, "hybrid_natural_trace_payload_invalid").id === observationId)
@@ -85,6 +119,7 @@ function assertRawFact(rawTrace: Record<string, unknown>, fact: NaturalFact, obs
       throw new Error("hybrid_natural_fact_digest_mismatch")
     }
   }
+  return rawFacts
 }
 
 function parseRawPayload(payload: string) {

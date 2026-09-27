@@ -1,5 +1,5 @@
 import {
-  CONTRACT_VERSION, UNRECORDED_EXECUTION_CLEANUP,
+  CONTRACT_VERSION, UNRECORDED_BROWSER_HANDOFF, UNRECORDED_EXECUTION_CLEANUP,
   type JsonValue, type RunnableTaskRelease, type TaskDraft, type TaskExecution, type TaskPlan,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
@@ -16,6 +16,8 @@ export function queuedExecution(taskId: string, requestId: string, plan: TaskPla
     release: { id: release.id, version: release.version, digest: digestJson(release) },
     input, inputDigest: digestJson(input), pacing, browser, consumed: zeroConsumption(), status: "queued", sequence: 0,
     cleanup: { ...UNRECORDED_EXECUTION_CLEANUP }, cleanupResume: null,
+    // WHY：排队不代表已取得浏览器租约；此时重启或版本失效也不能锁住共享 Profile。
+    browserHandoff: { ...UNRECORDED_BROWSER_HANDOFF },
     currentStepId: null, currentRunId: null,
     steps: plan.steps.map((step) => { const chain = release.content.steps.find((item) => item.stepId === step.id)?.chain
       if (!chain) throw new Error("release_step_missing")
@@ -36,6 +38,7 @@ export function queuedDraftExecution(taskId: string, requestId: string, draft: T
     draft: draftReference(draft), mode, input, inputDigest: digestJson(input), pacing,
     consumed: zeroConsumption(), status: "queued", sequence: 0,
     cleanup: { ...UNRECORDED_EXECUTION_CLEANUP }, cleanupResume: null,
+    browserHandoff: { ...UNRECORDED_BROWSER_HANDOFF },
     currentStepId: null, currentRunId: null,
     steps: plan.steps.map((step) => {
       const chain = draft.content.steps.find((item) => item.stepId === step.id)?.chain

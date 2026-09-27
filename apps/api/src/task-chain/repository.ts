@@ -6,7 +6,8 @@ import {
   type TaskDraft, type TaskDraftContent, type TaskExecutionCandidate, type TaskPlan, type TaskRequirement, type TaskRun,
 } from "@browser-capture/contracts"
 import {
-  executionCleanupSchema, legacyContractSummarySchema, taskAuthoringJobSchema, taskExecutionSchema,
+  UNRECORDED_BROWSER_HANDOFF, executionCleanupSchema,
+  taskAuthoringJobSchema, taskExecutionSchema,
   type ExecutionCleanup, type TaskAuthoringJob, type TaskExecution,
 } from "@browser-capture/contracts/api"
 import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
@@ -71,13 +72,6 @@ export class TaskContractRepository {
     this.store.task(taskId)
     const row = this.store.db.select().from(taskAuthoringJobs).where(and(eq(taskAuthoringJobs.taskId, taskId),
       eq(taskAuthoringJobs.type, "prepare")))
-      .orderBy(desc(taskAuthoringJobs.updatedAt)).limit(1).get()
-    return row ? taskAuthoringJobSchema.parse(row.body) : null
-  }
-  latestAdjustmentJob(taskId: string) {
-    this.store.task(taskId)
-    const row = this.store.db.select().from(taskAuthoringJobs).where(and(eq(taskAuthoringJobs.taskId, taskId),
-      eq(taskAuthoringJobs.type, "adjustment")))
       .orderBy(desc(taskAuthoringJobs.updatedAt)).limit(1).get()
     return row ? taskAuthoringJobSchema.parse(row.body) : null
   }
@@ -238,7 +232,7 @@ export class TaskContractRepository {
 
   updateExecutionCleanup(taskId: string, executionId: string, expectedSequence: number, value: unknown,
     lifecycle?: TaskExecution["status"] | { status: TaskExecution["status"]; reason: string;
-      result: TaskExecution["result"] | null; cleanupResume: null }) {
+      result: TaskExecution["result"] | null; cleanupResume: null; browserHandoff?: TaskExecution["browserHandoff"] }) {
     const cleanup = executionCleanupSchema.parse(value)
     return this.store.db.transaction(() => {
       const current = this.execution(taskId, executionId)
@@ -248,7 +242,8 @@ export class TaskContractRepository {
         ?? (cleanup.status === "unconfirmed" ? "cleanup_required" : current.status)
       const body = taskExecutionSchema.parse({ ...current, status, cleanup,
         ...(typeof lifecycle === "object" ? { reason: lifecycle.reason,
-          result: lifecycle.result ?? undefined, cleanupResume: lifecycle.cleanupResume } : {}), sequence: current.sequence + 1,
+          result: lifecycle.result ?? undefined, cleanupResume: lifecycle.cleanupResume,
+          ...(lifecycle.browserHandoff ? { browserHandoff: lifecycle.browserHandoff } : {}) } : {}), sequence: current.sequence + 1,
         updatedAt: new Date().toISOString() })
     this.store.db.update(taskExecutions).set({ status: body.status, sequence: body.sequence,
       updatedAt: body.updatedAt, body })
@@ -284,21 +279,6 @@ export class TaskContractRepository {
       eq(taskArtifacts.artifactId, artifactId))).get()
     if (!row) throw new DomainError("artifact_not_found", "产物不存在。", 404)
     return row
-  }
-
-  legacy(taskId: string) {
-    return this.store.legacyContractRows(taskId).map((row) => {
-      const result = readTaskContractJson(row.body)
-      if (result.status === "current") throw new Error("current_contract_in_legacy_table")
-      const reason = result.status === "legacy_read_only" ? "缺少新协议版本，仅可读取或导出。"
-        : result.status === "unsupported_version" ? "协议版本不受当前程序支持，仅可导出。" : "历史 JSON 无法作为新协议执行。"
-      return legacyContractSummarySchema.parse({ source: row.source, id: row.id, status: result.status, reason })
-    })
-  }
-  legacyOriginal(taskId: string, source: "plans" | "chains" | "executions", id: string) {
-    const row = this.store.legacyContractRows(taskId).find((item) => item.source === source && item.id === id)
-    if (!row) throw new DomainError("legacy_record_not_found", "历史记录不存在。", 404)
-    return row.body
   }
 
   private contents(taskId: string): TaskDraftContent[] {
@@ -370,6 +350,16 @@ export class TaskContractRepository {
       this.saveRun(run)
     }
     for (const execution of this.store.db.select().from(taskExecutions).all().map((row) => taskExecutionSchema.parse(row.body))) {
+      if (execution.browserHandoff.status === "pending" && !execution.browserHandoff.leaseId) {
+        // WHY：旧队列写入了无 owner 的 pending；未开始的记录可解锁，已开始的记录必须按确定 owner 核验。
+        execution.browserHandoff = execution.cleanup.status === "not_recorded"
+          ? { ...UNRECORDED_BROWSER_HANDOFF }
+          : { ...execution.browserHandoff, status: "unavailable",
+            leaseId: stableUuid(execution.id, "managed-window"),
+            ownerId: stableUuid(execution.id, "managed-window"), targetDigest: null,
+            reason: "browser_handoff_interrupted", updatedAt: new Date().toISOString() }
+        execution.sequence++; execution.updatedAt = new Date().toISOString(); this.saveExecution(execution)
+      }
       if (execution.status === "cleanup_required") continue
       const interrupted = execution.status === "queued" || execution.status === "running"
       if (!interrupted && execution.cleanup.status !== "pending") continue

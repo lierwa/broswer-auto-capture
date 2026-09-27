@@ -51,7 +51,10 @@ function failureReason(error: unknown) {
     if (["interview_authoring_stream_text_mismatch", "interview_authoring_part_text_mismatch", "interview_authoring_card_order_missing"].includes(error.message)) {
       return "生成内容前后不一致，结果未提交。请重试。"
     }
-    if (error.message === "interview_output_invalid") return "生成的需求草稿不符合要求，结果未提交。请重试。"
+    if (error.message === "interview_output_invalid") return "生成的准备计划草案不符合要求，结果未提交。请重试。"
+    if (error.message.startsWith("interview_entry_") || error.message.startsWith("interview_draft_url_")) {
+      return "准备计划草案中的网址缺少已确认来源引用，或试做入口格式不完整；本轮未提交，请继续核实来源。"
+    }
   }
   return "本轮未完成，结果未提交。请重试。"
 }
@@ -67,6 +70,8 @@ export class InterviewCoordinator {
   }
   snapshot(id: string) { this.available(); return this.store.snapshot(id) }
   list() { this.available(); return this.store.list() }
+  isActive(taskId: string) { return [...this.jobs].some((job) => job.taskId === taskId) }
+  isAnyActive() { return this.jobs.size > 0 }
   taskAction(input: TaskCommand) { this.available(); return this.store.taskAction(taskCommandSchema.parse(input)) }
   dispatch(id: string, input: InterviewCommand) {
     this.available()

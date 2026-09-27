@@ -46,7 +46,7 @@ test("业务正文、草稿和确认卡作为 canonical entries 进入共享投�
   const content = entries.filter((entry) => entry.value.kind === "content")
     .map((entry) => entry.value.kind === "content" ? renderToStaticMarkup(entry.value.content) : "").join("")
   assert.match(content, /验收需求/)
-  assert.match(content, /需求 v1 已确认/)
+  assert.match(content, /草案已确认/)
 })
 
 test("只有最新 open waitpoint 成为选择题 Interaction，提交保留 identity", () => {

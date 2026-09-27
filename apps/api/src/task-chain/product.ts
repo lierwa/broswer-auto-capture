@@ -17,14 +17,7 @@ export class TaskProductService {
     return release && releaseMatchesRequirement(release, requirement) ? release : null
   }
 
-  assertCurrentDraftRequirement(taskId: string, draft: TaskDraft) {
-    const requirement = syncConfirmedRequirement(this.store, this.repository, taskId)
-    if (!requirement || !draftMatchesRequirement(draft, requirement)) {
-      throw new DomainError("adjustment_requirement_stale", "已确认需求发生变化，请返回需求对话并重新定位。", 409)
-    }
-  }
-
-  publishDraft(taskId: string, draft: TaskDraft) {
+  publishDraft(taskId: string, draft: TaskDraft, recordReceipt: (releaseId: string) => void) {
     return this.store.db.transaction(() => {
       const current = this.repository.draft(taskId)
       if (!current || current.id !== draft.id || current.revision !== draft.revision || current.checksum !== draft.checksum) {
@@ -45,6 +38,8 @@ export class TaskProductService {
         requirement: draft.requirement, content: structuredClone(draft.content), validation: pair, createdAt: now })
       this.repository.saveRelease(release)
       this.repository.deleteDraft(taskId, draft)
+      // WHY：发布、草稿删除和请求回执必须同成同败；回执失败时由现有 SQLite 事务回滚发布。
+      recordReceipt(release.id)
       return release
     })
   }

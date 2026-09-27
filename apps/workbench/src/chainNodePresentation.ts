@@ -1,4 +1,4 @@
-import type { ChainNode } from "@browser-capture/contracts"
+import { browserActionTitle, type ChainNode } from "@browser-capture/contracts"
 
 const chainFamilyLabels: Record<ChainNode["kind"], string> = {
   capability: "通用能力", function: "确定性函数", branch: "分支", browser: "浏览器动作", observe: "现场观察",
@@ -6,21 +6,14 @@ const chainFamilyLabels: Record<ChainNode["kind"], string> = {
   checkpoint: "检查点", emit: "发布输出", terminal: "终态",
 }
 
-const actionLabels: Record<string, string> = {
-  navigate: "打开页面", input: "输入内容", click: "点击目标", wait: "等待条件满足", scroll: "滚动页面",
-  go_back: "返回上一页", switch: "切换页面", close: "关闭页面", send_keys: "发送按键",
-  upload_file: "上传文件", select_dropdown: "选择选项", drag_drop: "拖放目标",
-  dropdown_options: "读取选项", bat_scroll_to: "滚动到目标", bat_wait_for: "等待目标就绪",
-}
-
-export function browserActionLabel(action: string) { return actionLabels[action] ?? action }
+export function browserActionLabel(action: string) { return browserActionTitle(action) ?? action }
 
 export function actionPresentation(node: ChainNode) {
   if (node.kind === "terminal") return { type: "结束", description: node.reason, title: terminalPresentation(node).label }
   const action = browserAction(node)
   const type = node.kind === "function" ? "Function" : node.kind === "capability" ? capabilityType(node, action)
     : node.kind === "observe" ? "读取" : chainFamilyLabels[node.kind]
-  const description = action ? actionLabels[action] ?? "执行浏览器动作"
+  const description = action ? browserActionTitle(action) ?? "执行浏览器动作"
     : node.kind === "function" ? "执行 JavaScript，按输入计算结果"
     : type === "读取" ? "读取当前页面数据" : type === "分支" ? "按条件选择后续动作" : type
   return { type, description, title: node.label && node.label !== node.id ? node.label : description }

@@ -1,15 +1,15 @@
-import { ChevronRight, CornerDownRight } from "lucide-react"
+import { CornerDownRight } from "lucide-react"
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react"
 import type { ChainLayoutDirection } from "./chainLayout.js"
 import type { ChainRunTone } from "./chainWorkbenchProjection.js"
 
 export type StageCanvasData = Record<string, unknown> & {
-  title: string; summary: string; actionCount: number; actionLabels: string[]; completedCount: number; skippedCount: number; order: number;
-  tone: ChainRunTone; previewed: boolean; direction: ChainLayoutDirection;
-  onPreview(id: string): void; onEnter(id: string): void;
+  title: string; summary: string; tone: ChainRunTone; direction: ChainLayoutDirection;
+  onEnter(id: string): void;
 }
 export type ActionCanvasData = Record<string, unknown> & {
-  title: string; family: string; operation: string; tone: ChainRunTone; direction: ChainLayoutDirection;
+  title: string; tone: ChainRunTone; direction: ChainLayoutDirection;
+  onInspect(id: string): void;
 }
 export type TerminalCanvasData = Record<string, unknown> & {
   label: string; terminal: "start" | "end"; tone: ChainRunTone; direction: ChainLayoutDirection;
@@ -25,26 +25,22 @@ function Handles({ direction }: { direction: ChainLayoutDirection }) {
 }
 
 export function StageCanvasCard({ id, data }: NodeProps<StageCanvasNode>) {
-  return <article className="chain-stage-card" data-tone={data.tone}
-    onDoubleClickCapture={(event) => { event.stopPropagation(); data.onEnter(id) }}>
+  return <article className="chain-stage-card" data-tone={data.tone}>
     <Handles direction={data.direction} />
-    <header><span>阶段 {String(data.order).padStart(2, "0")}</span><strong>{toneLabel(data.tone)}</strong></header>
+    {data.tone !== "idle" && <header><strong>{toneLabel(data.tone)}</strong></header>}
     <h3>{data.title}</h3><p>{data.summary}</p>
-    <footer><button className="nodrag" onClick={(event) => { event.stopPropagation(); data.onPreview(id) }}>
-      {data.tone === "idle" ? `${data.actionCount} 个动作` : `${data.completedCount}/${data.actionCount} 已完成`}
-      <ChevronRight size={13} aria-hidden="true" data-open={data.previewed} /></button>
-      <button className="nodrag" onClick={(event) => { event.stopPropagation(); data.onEnter(id) }}>展开动作 <CornerDownRight size={13} /></button></footer>
-    {data.previewed && <section className="chain-stage-preview nodrag" onClick={(event) => event.stopPropagation()}>
-      <small>阶段动作{data.skippedCount ? ` · ${data.skippedCount} 个未执行` : ""}</small><ol>{data.actionLabels.map((label, index) => <li key={`${index}:${label}`}>{label}</li>)}</ol>
-      <button onClick={() => data.onEnter(id)}>进入阶段 <CornerDownRight size={13} aria-hidden="true" /></button>
-    </section>}
+    <footer><button className="nodrag" onClick={(event) => { event.stopPropagation(); data.onEnter(id) }}>
+      展开动作 <CornerDownRight size={13} aria-hidden="true" /></button></footer>
   </article>
 }
 
-export function ActionCanvasCard({ data }: NodeProps<ActionCanvasNode>) {
+export function ActionCanvasCard({ id, data }: NodeProps<ActionCanvasNode>) {
+  // WHY：React Flow 的键盘选择不调用 onNodeClick，详情入口复用原生按钮的键盘语义。
   return <article className="chain-action-card" data-tone={data.tone}>
-    <Handles direction={data.direction} /><header><span>{data.family}</span><i aria-hidden="true" /></header>
-    <h3>{data.title}</h3><p>{data.operation}</p><small>{toneLabel(data.tone)}</small>
+    <Handles direction={data.direction} /><h3><button type="button" className="nodrag"
+      aria-label={`查看动作：${data.title}`}
+      onClick={(event) => { event.stopPropagation(); data.onInspect(id) }}>{data.title}</button></h3>
+    {data.tone !== "idle" && <small>{toneLabel(data.tone)}</small>}
   </article>
 }
 

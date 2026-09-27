@@ -75,6 +75,8 @@ export const sourceCandidateSchema = z.object({
 }).strict()
 export const sourceResolutionSchema = z.object({
   id: text, revision, subject: text, query: text,
+  // WHY：历史来源仍可读；新来源固定模型实际可见的搜索调用身份，避免同词多次搜索串证据。
+  searchId: z.string().trim().min(1).max(300).optional(),
   // WHY：来源工具由 Pi extension registry 决定，公共事实只保存实际工具/证据来源标识，不能冻结供应商枚举。
   provider: z.string().trim().min(1).max(200),
   searchStatus: z.enum(["ok", "unavailable"]).default("ok"),

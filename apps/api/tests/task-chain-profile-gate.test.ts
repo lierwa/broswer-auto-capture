@@ -7,7 +7,7 @@ import { openFixture, projectRoot } from "./helpers.js"
 
 const headers = { host: "127.0.0.1:4175", origin: "http://127.0.0.1:4175", "sec-fetch-site": "same-origin" }
 
-test("专用浏览器占用时离线编译恢复仍被阻止，因为成功后会自动试跑浏览器", async () => {
+test("专用浏览器阻止需占用浏览器的命令，退役调整命令在准入层拒绝", async () => {
   const fixture = await openFixture()
   await fixture.coordinator.close(); await fixture.store.close()
   const application = await createApplication({ root: projectRoot, directory: fixture.directory })
@@ -28,11 +28,13 @@ test("专用浏览器占用时离线编译恢复仍被阻止，因为成功后�
       assert.equal(response.statusCode, 409)
       assert.equal(response.json<{ code: string }>().code, "browser_profile_busy")
     }
-    for (const type of ["cancel_chain_adjustment", "reject_chain_adjustment"] as const) {
+    for (const type of ["request_chain_adjustment", "recover_chain_adjustment",
+      "accept_chain_adjustment", "reject_chain_adjustment", "cancel_chain_adjustment"] as const) {
       const response = await application.app.inject({ method: "POST", url: `/api/task-chain?taskId=${taskId}`,
-        headers, payload: { type, requestId: randomUUID(), jobId: randomUUID(), expectedSequence: 0 } })
-      assert.equal(response.statusCode, 404)
-      assert.equal(response.json<{ code: string }>().code, "job_not_found")
+        headers, payload: { type, requestId: randomUUID(), jobId: randomUUID(), executionId: randomUUID(),
+          expectedSequence: 0 } })
+      assert.equal(response.statusCode, 400)
+      assert.equal(response.json<{ code: string }>().code, "invalid_request")
     }
     assert.deepEqual(application.taskChain.repository.jobs(taskId), [])
   } finally { await application.app.close(); await rm(fixture.directory, { recursive: true, force: true }) }

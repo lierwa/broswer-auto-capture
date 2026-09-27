@@ -289,7 +289,7 @@ test("合法终点不再被链尾完成 predicate 二次改判，真实节点错
   assert.equal(invalidOutput.status, "failed")
 })
 
-test("浏览器 capability 的协议级认证等待以 fresh URL 恢复同一运行", async () => {
+test("浏览器 capability 的协议级认证等待核验现场后重试可重复能力", async () => {
   const chain = capabilityEffectChain(), request = requestFor(chain, null)
   const browser = { sessionId: "session-1", tabId: "tab-1", url: "https://example.com/private",
     observationDigest: "a".repeat(64), observedAt: "2026-09-20T00:00:00.000Z" }
@@ -310,7 +310,7 @@ test("浏览器 capability 的协议级认证等待以 fresh URL 恢复同一运
   }, control: { checkpoint, resumeRequest: resumeRequest(checkpoint) } })
   assert.equal(completed.status, "completed")
   assert.equal(completed.binding.runId, waiting.binding.runId)
-  assert.equal(dispatched, 1)
+  assert.equal(dispatched, 2)
 })
 
 test("显式 llm 节点先记调用意图，再按供应商实际回报计数", async () => {

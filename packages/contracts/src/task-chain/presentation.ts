@@ -51,3 +51,13 @@ export const chainPresentationSchema = z.object({
 export type ChainStage = z.infer<typeof chainStageSchema>
 export type ChainPresentationContent = z.infer<typeof chainPresentationContentSchema>
 export type ChainPresentation = z.infer<typeof chainPresentationSchema>
+
+// WHY：当前图和历史事件都使用同一动作名称，避免旧运行与当前图对同一动作给出不同文案。
+const browserActionTitles: Record<string, string> = {
+  navigate: "打开页面", input: "输入内容", click: "点击目标", wait: "等待条件满足", scroll: "滚动页面",
+  go_back: "返回上一页", switch: "切换页面", close: "关闭页面", send_keys: "发送按键",
+  upload_file: "上传文件", select_dropdown: "选择选项", drag_drop: "拖放目标",
+  dropdown_options: "读取选项", bat_scroll_to: "滚动到目标", bat_wait_for: "等待目标就绪",
+}
+
+export function browserActionTitle(action: string): string | undefined { return browserActionTitles[action] }

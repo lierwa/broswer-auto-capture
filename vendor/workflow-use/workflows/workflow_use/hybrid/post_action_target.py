@@ -2,7 +2,8 @@
 import re
 from dataclasses import dataclass, replace
 
-from .dom_evidence import CollectionReadRequired, node_tag, node_value, structural_children
+from .collection_structure import query_targets_share_collection
+from .dom_evidence import CollectionReadRequired, node_tag, node_value
 from .evidence import digest
 from .history_target import HistoryTargetIdentity, capture_history_target, match_history_target
 from .natural_reads import read_fields_with_proof
@@ -92,7 +93,7 @@ async def verified_collection_query(browser, summary, identity, queries, selecto
                    if backend == identity.backend]
         if len(matches) == 1:
             # WHY：全页控件查询即使完整，也不证明点击的是该业务列表的一项。
-            # 单例精确查询可以独立成立；多项查询须有当前 DOM 中同父、同类的候选。
+            # 单例精确查询可以独立成立；多项查询须属于同一重复条目的对应目标。
             if query.total > 1 and not _has_matching_peer(
                     summary, selector_index, set(backends)):
                 unscoped_match = True
@@ -114,22 +115,7 @@ async def verified_collection_query(browser, summary, identity, queries, selecto
 
 
 def _has_matching_peer(summary, selector_index, backends):
-    target = _selector_node(summary, selector_index)
-    parent = node_value(target, 'parent_node')
-    if parent is None:
-        return False
-    target_tag = node_tag(target)
-    target_classes = set(str((node_value(target, 'attributes') or {}).get('class') or '').split())
-    for sibling in structural_children(parent):
-        if sibling is target or node_tag(sibling) != target_tag:
-            continue
-        sibling_backend = _node_backend_or_none(sibling)
-        sibling_classes = set(str((node_value(sibling, 'attributes') or {}).get('class') or '').split())
-        if (sibling_backend in backends
-                and (not target_classes and not sibling_classes
-                     or bool(target_classes.intersection(sibling_classes)))):
-            return True
-    return False
+    return query_targets_share_collection(_selector_node(summary, selector_index), backends)
 
 
 async def callback_target_element(browser, summary, selector_index, target_id):

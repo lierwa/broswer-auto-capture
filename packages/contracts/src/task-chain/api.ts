@@ -8,7 +8,7 @@ import {
   taskExecutionPacingSchema,
 } from "./product.js"
 import { requirementReferenceSchema, taskRequirementSchema } from "./requirement.js"
-import { chainRevisionOperationSchema, taskDraftContentSchema, taskDraftReferenceSchema, taskDraftSchema } from "./revision.js"
+import { taskDraftReferenceSchema, taskDraftSchema } from "./revision.js"
 import { capabilityDescriptorSchema } from "./capability-descriptor.js"
 import { nodeExecutionEventSchema, taskRunModeSchema, taskRunSchema } from "./run.js"
 import { jsonValueSchema, taskOutputSchema } from "./value.js"
@@ -16,8 +16,8 @@ export { taskExecutionBrowserSchema, taskExecutionPacingSchema } from "./product
 
 export const authoringAuditSchema = z.object({
   // 旧 chain_compilation 只用于读取迁移期间已落库的终态 job；新链路生成写入完整探索与编译用途。
-  purpose: z.enum(["plan_creation", "plan_contract_revalidation", "chain_compilation",
-    "chain_exploration_and_compilation", "chain_offline_compilation", "chain_adjustment"]), model: textSchema, effort: textSchema,
+  purpose: z.enum(["plan_creation", "plan_projection", "plan_contract_revalidation", "chain_compilation",
+    "chain_exploration_and_compilation", "chain_offline_compilation"]), model: textSchema, effort: textSchema,
   status: z.enum(["intended", "completed", "failed", "interrupted"]),
   reportedInvocations: z.number().int().nonnegative().nullable(), events: z.array(aiEventSchema),
   escalations: z.array(z.object({ model: textSchema, effort: textSchema, reason: textSchema }).strict()).default([]),
@@ -81,6 +81,18 @@ export const authoringProgressSchema = z.object({
 export const taskExecutionStatusSchema = z.enum(["queued", "running", "completed", "partial", "waiting_for_human",
   "paused", "cleanup_required", "blocked", "failed", "cancelled", "stale"])
 export const executionCleanupStatusSchema = z.enum(["not_recorded", "pending", "confirmed", "unconfirmed"])
+export const taskExecutionBrowserHandoffSchema = z.object({
+  status: z.enum(["not_requested", "pending", "active", "ended", "unavailable"]),
+  purpose: z.enum(["delivery", "human_wait"]).nullable(),
+  leaseId: identitySchema.nullable(), ownerId: identitySchema.nullable(), targetDigest: digestSchema.nullable(),
+  reason: textSchema.nullable(), updatedAt: z.string().datetime().nullable(),
+}).strict().superRefine((handoff, context) => {
+  if (handoff.status === "active" && (!handoff.leaseId || !handoff.ownerId || !handoff.targetDigest)) {
+    context.addIssue({ code: "custom", message: "active_browser_handoff_requires_owner_and_target" })
+  }
+})
+export const UNRECORDED_BROWSER_HANDOFF = { status: "not_requested", purpose: null, leaseId: null,
+  ownerId: null, targetDigest: null, reason: null, updatedAt: null } as const
 export const executionCleanupSchema = z.object({
   status: executionCleanupStatusSchema, attempt: z.number().int().nonnegative(), code: textSchema.nullable(),
   evidenceDigest: digestSchema.nullable(), updatedAt: z.string().datetime().nullable(),
@@ -130,38 +142,10 @@ export const taskExecutionCleanupResumeSchema = z.object({
 
 export const taskExecutionReviewSchema = z.object({
   id: identitySchema,
-  decision: z.enum(["accepted", "chain_revision", "requirement_revision"]),
+  decision: z.enum(["accepted", "requirement_revision"]),
   feedback: z.string().trim().min(1).max(2_000).nullable(),
   summary: z.string().trim().min(1).max(8_000),
-  chain: versionReferenceSchema.nullable(),
   createdAt: z.string().datetime(),
-}).strict()
-
-export const taskAdjustmentBaselineSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("draft"), draft: taskDraftReferenceSchema }).strict(),
-  z.object({ kind: z.literal("release"), release: versionReferenceSchema }).strict(),
-])
-export const taskAdjustmentOperationsSchema = z.array(z.object({
-  chainId: identitySchema, operations: z.array(chainRevisionOperationSchema).min(1).max(100),
-}).strict()).min(1).max(20)
-export const taskAdjustmentCandidateSchema = z.object({
-  summary: z.string().trim().min(1).max(2_000), rationale: z.string().trim().min(1).max(4_000),
-  // 旧的内部审阅候选只读兼容；正式接受门仍要求带完成审计的 model_generated。
-  provenance: z.enum(["internal_manual_review", "model_generated"]),
-  operations: taskAdjustmentOperationsSchema, content: taskDraftContentSchema, digest: digestSchema,
-  diff: z.array(z.object({ stepId: keySchema, title: textSchema, beforeDigest: digestSchema,
-    afterDigest: digestSchema, changedActions: z.number().int().nonnegative(),
-    changedRoutes: z.number().int().nonnegative() }).strict()).min(1).max(100),
-}).strict()
-export const taskAdjustmentRecordSchema = z.object({
-  sourceExecutionId: identitySchema, sourceEvidenceDigest: digestSchema, sourceChain: versionReferenceSchema,
-  stepId: keySchema.nullable(), nodeId: keySchema.nullable(), feedback: z.string().trim().min(1).max(2_000),
-  baseline: taskAdjustmentBaselineSchema, candidate: taskAdjustmentCandidateSchema.nullable(),
-  decision: z.enum(["awaiting_manual_review", "generating", "pending", "needs_clarification", "requirement_revision",
-    "accepted", "rejected", "cancelled"]),
-  guidance: z.string().trim().min(1).max(4_000).nullable().default(null),
-  recoveredFromJobId: identitySchema.nullable().default(null),
-  acceptedDraft: taskDraftReferenceSchema.nullable(),
 }).strict()
 
 export const planCandidateIssueSchema = z.object({
@@ -176,7 +160,7 @@ export const preparationPhaseSchema = z.enum(["forming_plan", "awaiting_represen
   "validating_sample", "awaiting_verification_input", "validating_verification", "publishing", "ready"])
 
 export const taskAuthoringJobSchema = z.object({
-  id: identitySchema, taskId: taskIdentitySchema, type: z.enum(["plan", "chain", "prepare", "repair", "adjustment"]), key: textSchema,
+  id: identitySchema, taskId: taskIdentitySchema, type: z.enum(["plan", "chain", "prepare", "repair"]), key: textSchema,
   status: z.enum(["queued", "running", "waiting_for_human", "completed", "failed", "interrupted"]), sequence: z.number().int().nonnegative(),
   reason: textSchema.nullable(), resultId: identitySchema.nullable(), browserRunId: identitySchema.nullable().default(null),
   waitpoint: humanWaitpointSchema.nullable().default(null),
@@ -213,7 +197,6 @@ export const taskAuthoringJobSchema = z.object({
     chains: z.array(versionReferenceSchema), sampleInput: jsonValueSchema, verificationInput: jsonValueSchema,
     validationExecutionIds: z.array(identitySchema),
   }).strict().optional(),
-  adjustment: taskAdjustmentRecordSchema.optional(),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
 }).strict()
 
@@ -240,6 +223,8 @@ export const taskExecutionSchema = z.object({
   pacing: taskExecutionPacingSchema.default(DEFAULT_TASK_EXECUTION_PACING),
   // WHY：可见性由单次执行授权决定；旧记录与草稿试跑没有此字段，正式运行在接单时写入明确值。
   browser: taskExecutionBrowserSchema.optional(),
+  // WHY：链路完成、自动化资源清理和用户继续使用原窗口是独立事实；旧记录缺失时不可推断窗口仍开放。
+  browserHandoff: taskExecutionBrowserHandoffSchema.default(UNRECORDED_BROWSER_HANDOFF),
   consumed: consumptionSchema.default({ transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 }),
   status: taskExecutionStatusSchema,
   sequence: z.number().int().nonnegative(), currentStepId: keySchema.nullable(), currentRunId: identitySchema.nullable(),
@@ -270,17 +255,13 @@ export const taskExecutionSchema = z.object({
   }
 })
 
-export const legacyContractSummarySchema = z.object({
-  source: z.enum(["plans", "chains", "executions"]), id: textSchema,
-  status: z.enum(["legacy_read_only", "unsupported_version", "invalid"]), reason: textSchema,
-}).strict()
-
 export const taskExecutionSummarySchema = z.object({
   id: identitySchema, mode: taskRunModeSchema.optional(), status: taskExecutionStatusSchema,
   sequence: z.number().int().nonnegative(), release: versionReferenceSchema.optional(), draft: taskDraftReferenceSchema.optional(),
   steps: z.array(z.object({ stepId: keySchema, chain: versionReferenceSchema,
     status: taskExecutionStepSchema.shape.status, reason: textSchema.nullable() }).strict()),
   result: taskExecutionResultSchema.optional(), cleanup: executionCleanupSchema,
+  browserHandoff: taskExecutionBrowserHandoffSchema.default(UNRECORDED_BROWSER_HANDOFF),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
 }).strict()
 
@@ -288,6 +269,7 @@ export const taskAuthoringActivitySchema = z.object({
   id: identitySchema, status: z.enum(["queued", "running", "waiting_for_human", "failed", "interrupted"]),
   phase: preparationPhaseSchema,
   sequence: z.number().int().nonnegative(), reason: textSchema.nullable(),
+  waitpoint: humanWaitpointSchema.nullable().default(null),
   inputRequest: z.object({ purpose: z.enum(["representative", "verification"]),
     contract: taskPlanSchema.shape.inputContract, prompt: textSchema,
     distinctFromDigest: digestSchema.nullable() }).strict().nullable(),
@@ -306,9 +288,6 @@ export const taskWorkspaceSnapshotSchema = z.object({
   activity: taskAuthoringActivitySchema.nullable(),
   draftReadiness: z.object({ phase: z.enum(["sample_needed", "verification_needed", "ready"]),
     distinctInputRequired: z.boolean() }).strict().nullable().default(null),
-  adjustment: z.object({ jobId: identitySchema, sequence: z.number().int().nonnegative(),
-    status: taskAuthoringJobSchema.shape.status, reason: textSchema.nullable(),
-    value: taskAdjustmentRecordSchema }).strict().nullable().default(null),
 }).strict()
 
 export const acceptedTaskExecutionSchema = z.object({
@@ -336,19 +315,18 @@ export const taskWorkspaceHistoryPageSchema = z.discriminatedUnion("kind", [
   taskReleaseHistoryPageSchema, taskExecutionHistoryPageSchema,
 ])
 export const taskWorkspaceDiagnosticsSchema = z.object({
-  capabilityDescriptors: z.array(capabilityDescriptorSchema), legacy: z.array(legacyContractSummarySchema),
-  adjustmentRecovery: z.object({ jobId: identitySchema, available: z.boolean(), reason: textSchema }).strict().nullable().default(null),
+  capabilityDescriptors: z.array(capabilityDescriptorSchema),
   preparation: z.object({ jobId: identitySchema, phase: preparationPhaseSchema,
     status: taskAuthoringJobSchema.shape.status, reason: textSchema.nullable(),
-    planCandidates: z.array(planCandidateRecordSchema.pick({ attempt: true, digest: true, issues: true })),
     compilationRecovery: z.object({ sourceJobId: identitySchema, available: z.boolean(), reason: textSchema }).strict().nullable(),
-    planRecovery: z.object({ sourceJobId: identitySchema, available: z.boolean(), reason: textSchema }).strict().nullable(),
   }).strict().nullable(),
 }).strict()
 
 export const taskExecutionEventSchema = z.object({
   executionId: identitySchema, sequence: z.number().int().positive(), stepId: keySchema,
   runId: identitySchema, runSequence: z.number().int().nonnegative(), event: nodeExecutionEventSchema,
+  // WHY：旧事件批次没有可读标题；读取时补投影，不改写持久化的原始节点事件。
+  stepTitle: textSchema.nullable().default(null), nodeTitle: textSchema.nullable().default(null),
 }).strict()
 export const taskExecutionEventBatchSchema = z.object({
   executionId: identitySchema, executionSequence: z.number().int().nonnegative(),
@@ -362,35 +340,18 @@ export const taskChainCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("prepare_task"), ...request, requirementVersion: z.number().int().positive() }).strict(),
   z.object({ type: z.literal("continue_preparation"), ...request, jobId: identitySchema,
     expectedSequence: z.number().int().nonnegative(), input: jsonValueSchema }).strict(),
-  z.object({ type: z.literal("correct_preparation_plan"), ...request, jobId: identitySchema,
-    expectedSequence: z.number().int().nonnegative() }).strict(),
+  z.object({ type: z.literal("resume_preparation_human"), ...request, jobId: identitySchema,
+    expectedSequence: z.number().int().nonnegative(), waitpointId: identitySchema }).strict(),
   z.object({ type: z.literal("recover_preparation_compilation"), ...request, jobId: identitySchema,
     expectedSequence: z.number().int().nonnegative() }).strict(),
-  z.object({ type: z.literal("resume_preparation_from_plan"), ...request, jobId: identitySchema,
-    expectedSequence: z.number().int().nonnegative() }).strict(),
-  z.object({ type: z.literal("save_task_draft"), ...request, draftId: identitySchema, chainId: identitySchema,
-    expectedRevision: z.number().int().nonnegative(), expectedChecksum: digestSchema,
-    operations: z.array(chainRevisionOperationSchema).min(1).max(100) }).strict(),
   z.object({ type: z.literal("trial_task_draft"), ...request, draftId: identitySchema,
     expectedRevision: z.number().int().nonnegative(), expectedChecksum: digestSchema, input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("publish_task_draft"), ...request, draftId: identitySchema,
     expectedRevision: z.number().int().nonnegative(), expectedChecksum: digestSchema }).strict(),
   z.object({ type: z.literal("review_execution"), ...request, executionId: identitySchema,
     expectedSequence: z.number().int().nonnegative(),
-    decision: z.enum(["accepted", "chain_revision", "requirement_revision"]),
-    feedback: z.string().trim().min(1).max(2_000).nullable(), chain: versionReferenceSchema.nullable() }).strict(),
-  z.object({ type: z.literal("request_chain_adjustment"), ...request, executionId: identitySchema,
-    expectedSequence: z.number().int().nonnegative(), chain: versionReferenceSchema,
-    stepId: keySchema.nullable(), nodeId: keySchema.nullable(),
-    feedback: z.string().trim().min(1).max(2_000) }).strict(),
-  z.object({ type: z.literal("recover_chain_adjustment"), ...request, jobId: identitySchema,
-    expectedSequence: z.number().int().nonnegative() }).strict(),
-  z.object({ type: z.literal("accept_chain_adjustment"), ...request, jobId: identitySchema,
-    expectedSequence: z.number().int().nonnegative() }).strict(),
-  z.object({ type: z.literal("reject_chain_adjustment"), ...request, jobId: identitySchema,
-    expectedSequence: z.number().int().nonnegative() }).strict(),
-  z.object({ type: z.literal("cancel_chain_adjustment"), ...request, jobId: identitySchema,
-    expectedSequence: z.number().int().nonnegative() }).strict(),
+    decision: z.enum(["accepted", "requirement_revision"]),
+    feedback: z.string().trim().min(1).max(2_000).nullable() }).strict(),
   z.object({ type: z.literal("run_task"), ...request, release: versionReferenceSchema,
     input: jsonValueSchema.optional(), pacing: taskExecutionPacingSchema.optional(),
     browser: taskExecutionBrowserSchema.optional() }).strict(),
@@ -410,10 +371,9 @@ export type TaskExecution = z.infer<typeof taskExecutionSchema>
 export type TaskExecutionCleanupResume = z.infer<typeof taskExecutionCleanupResumeSchema>
 export type ExecutionCleanupStatus = z.infer<typeof executionCleanupStatusSchema>
 export type ExecutionCleanup = z.infer<typeof executionCleanupSchema>
+export type TaskExecutionBrowserHandoff = z.infer<typeof taskExecutionBrowserHandoffSchema>
 export type TaskExecutionResult = z.infer<typeof taskExecutionResultSchema>
 export type TaskExecutionReview = z.infer<typeof taskExecutionReviewSchema>
-export type TaskAdjustmentRecord = z.infer<typeof taskAdjustmentRecordSchema>
-export type TaskAdjustmentCandidate = z.infer<typeof taskAdjustmentCandidateSchema>
 export type TaskExecutionFailureEvidence = z.infer<typeof taskExecutionFailureEvidenceSchema>
 export type TaskExecutionSummary = z.infer<typeof taskExecutionSummarySchema>
 export type TaskAuthoringActivity = z.infer<typeof taskAuthoringActivitySchema>

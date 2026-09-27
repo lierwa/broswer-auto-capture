@@ -21,7 +21,7 @@ function fixture() {
     preparation: { phase: "preexecuting", planCandidates: [] } } as unknown as TaskAuthoringJob
   const saved: TaskAuthoringJob[] = [], calls = { browser: 0, compiler: 0, model: 0 }
   const repository = { saveJob: (value: TaskAuthoringJob) => { saved.push(structuredClone(value)); return value },
-    jobs: () => [] }
+    job: () => ({ status: "completed" }) }
   const ai = { selection: () => selection, prepare: async () => ({ selection,
     generateObject: async () => { calls.model++; throw new Error("unexpected_model_call") } }) }
   const upstream = { withAuthoring: async () => { calls.browser++; throw new Error("unexpected_browser_call") },
@@ -56,11 +56,11 @@ test("离线恢复缺少精确来源时失败，且不创建浏览器 owner 或�
 test("旧动作注册不兼容时离线恢复停止，不回退为浏览器重跑", async () => {
   const { job, sourceJobId, requirement, plan, authoring, calls } = fixture()
   const source = { step: plan.steps[0], stepInput: null,
-    result: { request: naturalRequest(), response: {}, modelCalls: [] } }
-  authoring.assertReusableSources = () => ({ sources: [source], exploration: { mode: "workflow-use-authoring/v2",
+    result: { canonicalRequest: JSON.stringify(naturalRequest()), sourceGaps: [], modelCalls: [] } }
+  authoring.assertReusableSources = () => ({ sources: [source], exploration: { mode: "workflow-use-authoring/v3",
     sources: [], reusedFromJobId: sourceJobId } }) as never
   await assert.rejects(authoring.task(job, requirement, plan, null,
-    new AbortController().signal, sourceJobId), /hybrid_offline_source_registry_incompatible/)
+    new AbortController().signal, sourceJobId), /hybrid_action_registry_mismatch/)
   assert.deepEqual(calls, { browser: 0, compiler: 1, model: 0 })
   assert.equal(job.browserRunId, null)
   assert.equal(job.status, "failed")
@@ -70,13 +70,27 @@ test("来源候选精确绑定 job 和产物拥有者，拒绝借用另一失败
   const { job, requirement, plan } = fixture()
   const sourceId = randomUUID(), otherId = randomUUID(), sourceArtifactId = randomUUID()
   const candidate = (id: string, artifactId: string) => ({ id, key: job.key, status: "failed",
-    authoring: { stage: "compiling", exploration: { mode: "workflow-use-authoring/v2",
-      sources: [{ stepId: "step", artifact: { artifactId, digest: digestJson({}), mediaType: hybridSourceMediaType } }] } } })
+    authoring: { stage: "compiling", exploration: { mode: "workflow-use-authoring/v3",
+      sources: [{ stepId: "step", closed: true, artifact: { artifactId, digest: digestJson({}), mediaType: hybridSourceMediaType } }] } } })
   const accessed: string[] = []
-  const repository = { jobs: () => [candidate(sourceId, sourceArtifactId), candidate(otherId, randomUUID())],
+  const repository = { job: () => candidate(sourceId, sourceArtifactId),
     artifact: (_taskId: string, artifactId: string) => { accessed.push(artifactId)
       return { runId: otherId, mediaType: hybridSourceMediaType, digest: digestJson({}), body: {} } } }
   assert.throws(() => reusableHybridSources(repository as never, job, requirement, plan,
-    { resolve: () => null, accept: () => {}, finish: () => {} }, sourceId), /hybrid_source_artifact_digest_mismatch/)
+    { resolve: () => null, acceptSource: () => {}, finish: () => {} }, sourceId), /hybrid_source_artifact_digest_mismatch/)
   assert.deepEqual(accessed, [sourceArtifactId])
+})
+
+
+test("历史来源合同只供查看，不能作为当前离线恢复输入", () => {
+  const { job, requirement, plan } = fixture()
+  let reads = 0
+  const repository = { job: () => ({ id: randomUUID(), key: job.key, status: "failed",
+    authoring: { stage: "compiling", exploration: { mode: "workflow-use-authoring/v2", sources: [
+      { stepId: "step", artifact: { artifactId: randomUUID(), digest: hash,
+        mediaType: "application/vnd.bat.workflow-use-source+json;version=2" } }] } } }),
+    artifact: () => { reads++; throw new Error("old_source_must_not_be_read") } }
+  assert.equal(reusableHybridSources(repository as never, job, requirement, plan,
+    { resolve: () => null, acceptSource: () => {}, finish: () => {} }, randomUUID()), undefined)
+  assert.equal(reads, 0)
 })

@@ -1,8 +1,8 @@
 """Stop native exploration when its capture contract fails; retain the source evidence."""
-from .evidence import gap
 from .dom_evidence import CollectionReadRequired
-from .lifecycle_diagnostics import action_metadata, observe_lifecycle
-
+from .evidence import gap
+from .lifecycle_diagnostics import action_metadata, emit_lifecycle, observe_lifecycle
+from .observation_scope import ObservationRefreshRequired
 
 CAPTURE_ERROR_CODES = frozenset({
     'ambiguous_new_navigation_tab', 'new_navigation_tab_not_ready',
@@ -24,11 +24,13 @@ class AuthorCaptureStopped(RuntimeError):
 
 class AuthorCaptureCallbacks:
     def __init__(self, collector, registry_provider, *, diagnostic=None, normalize_action,
-                 action_outcomes, reject_navigation_scope):
+                 action_outcomes, reject_navigation_scope, before_dispatch=None):
         self.collector, self.registry_provider = collector, registry_provider
         self.diagnostic, self.normalize_action = diagnostic, normalize_action
         self.action_outcomes, self.reject_navigation_scope = action_outcomes, reject_navigation_scope
+        self.before_dispatch = before_dispatch
         self.agent, self.current_action, self.reason = None, {}, None
+        self.before_action_active = False
 
     @property
     def failed(self):
@@ -48,8 +50,28 @@ class AuthorCaptureCallbacks:
         metadata = action_metadata(self.registry_provider(), raw_action, step)
         self.current_action.clear()
         self.current_action.update(metadata)
-        return await self.observe('before_action',
-            lambda: self.collector.before_action(summary, model_output, step), metadata)
+        self.before_action_active = True
+        try:
+            async def capture_and_validate():
+                await self.collector.before_action(summary, model_output, step)
+                if self.before_dispatch is not None:
+                    self.before_dispatch()
+            return await self.observe('before_action', capture_and_validate, metadata)
+        finally:
+            self.before_action_active = False
+
+    def record_before_action_detail(self, stage, error):
+        # WHY：只在本次动作前观察中记录固定读取阶段和异常类，页面值及异常原文留在本地。
+        if not self.before_action_active or self.diagnostic is None:
+            return
+        kind = ('timeout_error' if isinstance(error, TimeoutError) else
+                'os_error' if isinstance(error, OSError) else
+                'runtime_error' if isinstance(error, RuntimeError) else
+                'value_error' if isinstance(error, ValueError) else 'other_error')
+        action = {key: self.current_action[key] for key in ('actionName', 'stepNumber')
+                  if key in self.current_action}
+        emit_lifecycle(self.diagnostic, 'before_action_detail', 'failed',
+                       {**action, 'stage': stage, 'errorKind': kind})
 
     async def after_step(self, agent):
         metadata = dict(self.current_action)
@@ -70,8 +92,8 @@ class AuthorCaptureCallbacks:
             raise AuthorCaptureStopped(self.reason)
         try:
             return await observe_lifecycle(self.diagnostic, phase, operation, metadata)
-        except CollectionReadRequired:
-            # WHY：这是可纠正的未派发动作；Browser-Use 下一轮收到读取提示，来源捕获仍继续。
+        except (CollectionReadRequired, ObservationRefreshRequired):
+            # WHY：可纠正的未派发动作交给 Browser-Use 下一轮重新观察，来源捕获仍继续。
             raise
         except Exception as error:
             self.abort(phase, error)

@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
-import type { ChainRevisionOperation } from "@browser-capture/contracts"
 import { eventsForStep } from "./chainWorkbenchProjection.js"
-import type { ChainLayoutDirection } from "./chainLayout.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 
-export type WorkbenchContextMode = "execution" | "history" | "diagnostics" | "preparation" | "adjustment" | null
+export type WorkbenchContextMode = "execution" | "history" | "diagnostics" | "preparation" | null
 
 export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const view = useSyncExternalStore(connection.subscribe, connection.snapshot, connection.snapshot)
@@ -12,13 +10,8 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null)
   const [focusStageId, setFocusStageId] = useState<string | null>(null)
-  const [previewStageId, setPreviewStageId] = useState<string | null>(null)
-  const [direction, setDirection] = useState<ChainLayoutDirection>("LR")
-  const [arranged, setArranged] = useState(false)
   const [runDialogMode, setRunDialogMode] = useState<"trial" | "run" | null>(null)
   const [contextMode, setContextMode] = useState<WorkbenchContextMode>(null)
-  const [adjustmentTarget, setAdjustmentTarget] = useState<{ stepId: string | null; nodeId: string | null } | null>(null)
-  const [editorError, setEditorError] = useState("")
   useChainPolling(connection, active)
 
   const workspace = view.workspace
@@ -38,8 +31,6 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const chainEvents = useMemo(() => step ? eventsForStep(step.stepId, visibleExecutionId, view.eventBatch) : null,
     [step?.stepId, visibleExecutionId, view.eventBatch])
   const selectedNode = chain?.nodes.find((node) => node.id === selectedNodeId) ?? null
-  const selectedDescriptor = selectedNode?.kind === "capability" ? view.diagnostics?.capabilityDescriptors.find((item) =>
-    item.capability.name === selectedNode.capability.name && item.capability.version === selectedNode.capability.version) ?? null : null
   const selectedStage = presentation?.stages.find((stage) => stage.id === selectedStageId)
     ?? presentation?.stages.find((stage) => selectedNode && stage.nodeIds.includes(selectedNode.id)) ?? null
   const focusStage = presentation?.stages.find((stage) => stage.id === focusStageId) ?? null
@@ -47,61 +38,33 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
     .includes(selectedExecution.status))
   const activityRunning = Boolean(workspace?.activity && ["queued", "running", "waiting_for_human"]
     .includes(workspace.activity.status))
-  const editingBusy = view.busy || executionRunning || activityRunning
 
   useEffect(() => {
     if (!step && stepId) setStepId(null)
     else if (step && step.stepId !== stepId) setStepId(step.stepId)
   }, [step?.stepId, stepId])
   useEffect(() => {
-    setFocusStageId(null); setPreviewStageId(null); setSelectedNodeId(null); setSelectedStageId(null); setArranged(false)
+    setFocusStageId(null); setSelectedNodeId(null); setSelectedStageId(null)
   }, [chain?.id, chain?.version])
   useEffect(() => {
-    if (active && draft) void connection.reloadTargetSelection()
-  }, [active, connection, draft?.id])
-  useEffect(() => {
-    if (!active || !draft || selectedNode?.kind !== "capability" || view.diagnostics || view.diagnosticsBusy) return
-    void connection.reloadDiagnostics()
-  }, [active, connection, draft?.id, selectedNode?.id, view.diagnostics, view.diagnosticsBusy])
-  useEffect(() => {
     if (active && workspace?.activity && (["failed", "interrupted"].includes(workspace.activity.status)
-      || (workspace.activity.status === "waiting_for_human" && workspace.activity.inputRequest))) {
+      || (workspace.activity.status === "waiting_for_human"
+        && (workspace.activity.inputRequest || workspace.activity.waitpoint?.status === "waiting")))) {
       setContextMode("preparation")
     }
   }, [active, workspace?.activity?.id, workspace?.activity?.sequence])
-  useEffect(() => {
-    if (!active || !["opening", "selecting"].includes(view.targetSelection?.status ?? "")) return
-    const controller = new AbortController()
-    const timer = setInterval(() => void connection.reloadTargetSelection(controller.signal), 500)
-    return () => { controller.abort(); clearInterval(timer) }
-  }, [active, connection, view.targetSelection?.status])
-
-  const apply = (operations: ChainRevisionOperation[]) => {
-    if (!draft || !chain) return
-    setEditorError("")
-    void connection.dispatch({ type: "save_task_draft", requestId: crypto.randomUUID(), draftId: draft.id,
-      chainId: chain.id, expectedRevision: draft.revision, expectedChecksum: draft.checksum, operations })
-  }
-  const mutate = (operations: () => ChainRevisionOperation[]) => {
-    try { apply(operations()) } catch (error) {
-      setEditorError(error instanceof Error ? error.message : "无法保存这次修改。")
-    }
-  }
   const openContext = (mode: Exclude<WorkbenchContextMode, null>) => {
     setSelectedNodeId(null); setSelectedStageId(null); setContextMode(mode)
-  }
-  const openAdjustment = (stepId: string | null, nodeId: string | null) => {
-    setAdjustmentTarget({ stepId, nodeId }); openContext("adjustment")
   }
   const closeContext = () => { setSelectedNodeId(null); setSelectedStageId(null); setContextMode(null) }
 
   return {
     view, workspace, source, plan, steps, step, chain, displayChain: chain, presentation, draft, release,
-    selectedExecution, acceptedExecutionId, chainEvents, selectedNode, selectedDescriptor, selectedStage, focusStage,
-    editorError, direction, arranged, runDialogMode, selectedNodeId, selectedStageId, focusStageId, previewStageId,
-    contextMode, adjustmentTarget, executionRunning, activityRunning, editingBusy, setStepId, setRunDialogMode, setFocusStageId,
-    setSelectedStageId, setSelectedNodeId, setPreviewStageId, setDirection, setArranged, setContextMode,
-    openContext, openAdjustment, closeContext, apply, mutate,
+    selectedExecution, acceptedExecutionId, chainEvents, selectedNode, selectedStage, focusStage,
+    runDialogMode, selectedNodeId, selectedStageId, focusStageId,
+    contextMode, executionRunning, activityRunning, setStepId, setRunDialogMode, setFocusStageId,
+    setSelectedStageId, setSelectedNodeId, setContextMode,
+    openContext, closeContext,
   }
 }
 
@@ -142,7 +105,7 @@ function acceptedMatchesSurface(accepted: ReturnType<TaskChainConnection["snapsh
 export type LiveChainModel = ReturnType<typeof useLiveChain>
 
 export function preparationPhaseLabel(phase: string) {
-  return ({ forming_plan: "形成预执行方案", awaiting_representative_input: "等待代表输入",
+  return ({ forming_plan: "核验准备计划草案", awaiting_representative_input: "等待代表输入",
     preexecuting: "代表试做与链路编译", validating_sample: "草稿试跑",
     awaiting_verification_input: "等待另一组输入", validating_verification: "独立复跑检查",
     ready: "草稿可发布" } as Record<string, string>)[phase] ?? "草稿生成"
