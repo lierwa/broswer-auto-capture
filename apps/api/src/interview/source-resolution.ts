@@ -22,6 +22,7 @@ const proposalInputSchema = z.object({
   query: z.string().trim().min(1).max(500),
   searchId: z.string().trim().min(1).max(300),
   candidateIds: z.array(z.string().trim().min(1).max(200)).max(2),
+  confirmation: z.enum(["question", "draft"]).default("question"),
 }).strict()
 type Fetcher = typeof fetch
 export type SourceSearch = {
@@ -68,6 +69,7 @@ export function createSourceResolutionTools(input: {
 }): MainModelTool[] {
   const searches: SourceSearch[] = []
   let resolved = false
+  let proposals = 0
   const searchTool: MainModelTool = {
     name: "search_sources",
     label: "通用只读搜索后备",
@@ -102,20 +104,26 @@ export function createSourceResolutionTools(input: {
   const proposalTool: MainModelTool = {
     name: "present_source_candidates",
     label: "提交来源候选判断",
-    description: "仅在需要新增或改选业务来源、试做入口时调用。比较原始搜索结果的支持及反证，引用模型已看到的 searchId 和该次结果 ID；无可靠候选交空数组。web_search 后先调用 source_search_references 取得可见 ID。已选来源内其他业务事实的搜索不调用本工具。",
+    description: "新增或改选业务来源、试做入口时调用。仍有重要来源取舍用 confirmation=question；用户已明确指定或委托、证据足以确定来源时用 draft，将唯一候选随同草案确认，不重复提问。来源依据不等于执行起点，不得用目标深链替换用户指定起点。web_search 后先调用 source_search_references；其他业务事实的搜索不调用本工具。",
     parameters: {
       type: "object", additionalProperties: false,
       required: ["subject", "query", "searchId", "candidateIds"], properties: {
-        subject: { type: "string", description: "需要用户确认的业务来源对象" },
+        subject: { type: "string", description: "来源对象或试做起点；不同对象分别提交" },
         query: { type: "string", description: "传给该搜索工具的原样搜索词" },
         searchId: { type: "string", description: "实际看到的指定搜索调用 ID" },
         candidateIds: { type: "array", maxItems: 2, items: { type: "string" },
           description: "按推荐顺序引用同一搜索调用中真实可见的结果 ID；没有可靠候选时留空" },
+        confirmation: { type: "string", enum: ["question", "draft"],
+          description: "question：尚需用户选择，结束本轮；draft：已明确或受托决定，仅一个候选，继续形成草案并写明依据" },
       },
     },
     async execute(_callId: string, params: unknown) {
       if (resolved) throw new Error("interview_source_proposal_already_submitted")
+      if (proposals >= 6) throw new Error("interview_source_proposal_budget_exhausted")
       const proposal = proposalInputSchema.parse(params)
+      if (proposal.confirmation === "draft" && proposal.candidateIds.length !== 1) {
+        throw new Error("interview_source_draft_candidate_required")
+      }
       const fallback = searches.find((search) => search.id === proposal.searchId)
       const native = input.piSearches?.findById(proposal.searchId)
       if ((!fallback && !native) || (fallback && fallback.query !== proposal.query)
@@ -126,6 +134,9 @@ export function createSourceResolutionTools(input: {
         throw new Error("interview_source_candidate_count_invalid")
       }
       const evidence = fallback ?? native!
+      if (proposal.confirmation === "draft" && evidence.status !== "ok") {
+        throw new Error("interview_source_search_reference_invalid")
+      }
       const candidates = proposal.candidateIds.map((id) => evidence.candidates.find((candidate) => candidate.id === id))
       if (candidates.some((candidate) => !candidate)) throw new Error("interview_source_candidate_reference_invalid")
       const outcome = candidates.length === 0 ? "none" : candidates.length === 1 ? "unique" : "multiple"
@@ -133,11 +144,14 @@ export function createSourceResolutionTools(input: {
         id: randomUUID(), revision: input.revision, subject: proposal.subject, query: proposal.query,
         searchId: proposal.searchId, provider: native ? "pi-web-access:web_search" : "bing_rss",
         searchStatus: evidence.status, outcome, status: "open",
-        candidates, questionId: input.questionId, selectedCandidateId: null, answerMessageId: null,
+        candidates, questionId: proposal.confirmation === "question" ? input.questionId : null,
+        selectedCandidateId: null, answerMessageId: null,
         createdAt: new Date().toISOString(),
       })
-      resolved = true; input.onResolution(value)
-      return { content: [{ type: "text", text: "候选引用已校验；宿主会生成来源确认 Question，本轮不要再生成问题或草稿。" }], details: value }
+      resolved = proposal.confirmation === "question"; proposals += 1; input.onResolution(value)
+      return { content: [{ type: "text", text: resolved
+        ? "候选引用已校验；宿主会生成来源确认 Question，本轮不要再生成问题或草稿。"
+        : "引用已校验，尚未由用户确认。继续形成同版草案；将该 URL 写作来源依据或实际试做入口，不得替换用户明确路径。" }], details: value }
     },
   }
   return [searchTool, proposalTool, piReferenceTool]
@@ -224,21 +238,21 @@ export function assertRequirementReady(state: InterviewState, markdown?: string,
   const userProvided = state.sourceResolutions.filter((item) => item.provider === "user_provided")
     .flatMap((item) => item.candidates.map((candidate) => candidate.url))
   for (const url of markdownUrls(markdown)) {
-    if (!selected.some((source) => source.url === url) && !userProvided.includes(url)) {
+    if (!selected.some((source) => sourceSupportsEntry(source.url, url)) && !userProvided.includes(url)) {
       throw new Error("interview_draft_url_unverified")
     }
   }
   if (requireEntries || /^##\s+试做入口\s*$/mu.test(markdown)) preparationEntryFacts(state, markdown)
 }
 
-/** WHY：用户原文 URL 是来源候选；访谈 Skill 负责业务取舍，用户确认同版草案时才固定所选入口。 */
+/** WHY：无题板的候选由模型写入同版草案，确认时才固定；宿主不凭排名或站名自动选择。 */
 export function projectProvidedDraftSources(state: InterviewState, markdown: string): InterviewState {
-  const entryUrls = new Set(draftEntryUrls(markdown))
+  const citedUrls = new Set(markdownUrls(markdown))
   const projected = structuredClone(state)
   for (const resolution of projected.sourceResolutions) {
-    if (resolution.provider !== "user_provided" || resolution.status !== "open" || resolution.questionId !== null) continue
+    if (resolution.status !== "open" || resolution.questionId !== null) continue
     const candidate = resolution.candidates[0]
-    if (candidate && entryUrls.has(candidate.url)) {
+    if (resolution.candidates.length === 1 && candidate && citedUrls.has(candidate.url)) {
       resolution.status = "selected"
       resolution.selectedCandidateId = candidate.id
     } else resolution.status = "superseded"
@@ -251,10 +265,16 @@ export function preparationEntryFacts(state: InterviewState, markdown: string) {
   const entryUrls = draftEntryUrls(markdown)
   const selected = selectedSourceFacts(state)
   return entryUrls.map((url) => {
-    const source = selected.findLast((item) => item.url === url)
+    const source = selected.findLast((item) => sourceSupportsEntry(item.url, url))
     if (!source) throw new Error("interview_entry_reference_invalid")
     return { url, resolutionId: source.resolutionId }
   })
+}
+
+/** WHY：真实来源 URL 同时证明它的站点首页；只允许根路径，不把“同站”扩成任意深链授权。 */
+export function sourceSupportsEntry(sourceUrl: string, entryUrl: string) {
+  const source = new URL(sourceUrl), entry = new URL(entryUrl)
+  return entry.href === source.href || entry.href === `${source.origin}/`
 }
 
 function draftEntryUrls(markdown: string) {
@@ -275,7 +295,7 @@ function draftEntryUrls(markdown: string) {
 }
 
 function markdownUrls(markdown: string) {
-  return [...markdown.matchAll(/https?:\/\/[^\s<>"']+/gu)].map((match) => {
+  return [...markdown.matchAll(/https?:\/\/[^\s<>"'，。；]+/gu)].map((match) => {
     const raw = match[0].replace(/[),.;\]，。；）]+$/u, "")
     try { return new URL(raw).href } catch { throw new Error("interview_draft_url_invalid") }
   })

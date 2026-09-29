@@ -75,15 +75,40 @@ test("TaskPlanExecutor 分别保留 primary 与 cleanup 的四种组合", async 
   assert.match(failedUnconfirmed.record.cleanupResume?.reason ?? "", /primary_failed/)
 })
 
-function fixture(failFirst: boolean, cleanup?: RunnerCleanupReport, primaryError?: Error) {
+test("replay 确定性失败会同步结束当前 step，不留下 running 假象", async () => {
+  const current = fixture(true, confirmedCleanup(), undefined, "deterministic")
+
+  await current.executor.execute(current.record, new AbortController().signal)
+
+  assert.equal(current.record.status, "failed")
+  assert.equal(current.record.steps[0]?.status, "failed")
+  assert.equal(current.record.steps[0]?.reason, "function_output_invalid")
+  assert.equal(current.record.result?.failure?.code, "run_failed")
+})
+
+test("过期 execution 会把恢复中的 step 结算为 blocked", async () => {
+  const current = fixture(false, undefined, undefined, "external", 2)
+  current.record.status = "running"
+  current.record.currentStepId = current.record.steps[0]!.stepId
+  current.record.steps[0]!.status = "running"
+
+  await current.executor.execute(current.record, new AbortController().signal, true)
+
+  assert.equal(current.record.status, "stale")
+  assert.equal(current.record.steps[0]?.status, "blocked")
+  assert.equal(current.record.steps[0]?.reason, "需求或计划版本已变化，原授权不能继续执行。")
+})
+
+function fixture(failFirst: boolean, cleanup?: RunnerCleanupReport, primaryError?: Error,
+  failureMode: "external" | "deterministic" = "external", confirmedVersion = 1) {
   const taskId = "access-pressure-task", now = "2026-09-13T00:00:00.000Z"
   const item = { id: "item", version: 1, dialect: "bat-value-schema/v1" as const, schema: { type: "object" as const,
     properties: { id: { type: "string" as const }, value: { type: "string" as const } },
     required: ["id", "value"], additionalProperties: false } }
   const inputContract = { id: "batch", version: 1, dialect: "bat-value-schema/v1" as const, schema: { type: "object" as const,
     properties: { items: { type: "array" as const, items: item.schema, maxItems: 10 } }, required: ["items"], additionalProperties: false } }
-  const outputContract = { id: "results", version: 1, dialect: "bat-value-schema/v1" as const,
-    schema: { type: "array" as const, items: item.schema, maxItems: 10 } }
+  const outputContract = failureMode === "deterministic" ? item : { id: "results", version: 1,
+    dialect: "bat-value-schema/v1" as const, schema: { type: "array" as const, items: item.schema, maxItems: 10 } }
   const requirement: TaskRequirement = { contractVersion: CONTRACT_VERSION, kind: "requirement", id: randomUUID(), taskId,
     version: 1, revision: 1, goal: "处理动态页面", scope: "两个以上输入", definition: { format: "markdown", body: "处理页面" },
     inputContract, outputContract, constraints: [], completionCriteria: ["输出已保存"],
@@ -96,8 +121,12 @@ function fixture(failFirst: boolean, cleanup?: RunnerCleanupReport, primaryError
   const plan = taskPlanSchema.parse({ contractVersion: CONTRACT_VERSION, kind: "plan", id: randomUUID(), taskId, version: 1,
     requirement: { id: requirement.id, version: 1, revision: 1, digest: digestJson(requirement) }, summary: "逐项处理",
     inputContract, outputContract, steps: [{ id: stepId, title: "逐项处理", goal: "输出结果", dependsOn: [], inputContract: item,
-      outputContract: item, input: { source: "variable", name: "entry", path: [] }, invocation: { mode: "each", collection: {
-        source: "input", path: ["items"] }, itemVariable: "entry", stableKeyPath: ["id"], maxItems: 10, onItemFailure: "continue" },
+      outputContract: item,
+      input: failureMode === "deterministic" ? { source: "input", path: ["items", 0] }
+        : { source: "variable", name: "entry", path: [] },
+      invocation: failureMode === "deterministic" ? { mode: "once" } : { mode: "each", collection: {
+        source: "input", path: ["items"] }, itemVariable: "entry", stableKeyPath: ["id"], maxItems: 10,
+      onItemFailure: "continue" },
       chain: { id: chainId, version: 1 }, budget, completion: [completion], risks: [] }],
     output: { source: "node", nodeId: stepId, path: [] }, budget, completion: [completion], evidence: [], authorizationScope: "测试" })
   const planDigest = digestJson(plan)
@@ -120,14 +149,14 @@ function fixture(failFirst: boolean, cleanup?: RunnerCleanupReport, primaryError
   const inputs: string[] = [], runs: TaskRun[] = []
   const repository = { plan: () => plan, requirement: () => requirement, chain: () => chain, runs: () => runs,
     saveExecution: (value: TaskExecution) => value, saveCleanupAudit: (value: unknown) => value } as unknown as TaskContractRepository
-  const store = { snapshot: () => ({ active: false, confirmedVersion: 1 }) } as unknown as ProductStore
+  const store = { snapshot: () => ({ active: false, confirmedVersion }) } as unknown as ProductStore
   const host = { group: async (group: { browserRunId: string; onCleanup?(report: RunnerCleanupReport): void },
     work: (execute: (chain: TaskChain, request: { input: JsonValue }) => Promise<TaskRun>) => Promise<unknown>) => {
     let primary: { status: "completed"; value: unknown } | { status: "failed"; error: Error }
     if (primaryError) primary = { status: "failed", error: primaryError }
     else primary = { status: "completed", value: await work(async (selected, request) => {
       const value = request.input as { id: string; value: string }; inputs.push(value.id)
-      const run = failFirst && inputs.length === 1 ? failedRun(selected, request as never)
+      const run = failFirst && inputs.length === 1 ? failedRun(selected, request as never, failureMode)
         : completedRun(selected, request as never, value)
       runs.push(run); return run
     }) }
@@ -147,13 +176,15 @@ function completedRun(chain: TaskChain, request: { binding: TaskRun["binding"]; 
     auditComplete: true, externalFailure: null }
 }
 
-function failedRun(chain: TaskChain, request: { binding: TaskRun["binding"]; input: JsonValue; mode: TaskRun["mode"] }): TaskRun {
+function failedRun(chain: TaskChain, request: { binding: TaskRun["binding"]; input: JsonValue; mode: TaskRun["mode"] },
+  failureMode: "external" | "deterministic"): TaskRun {
   const externalFailure = { category: "rate_limited" as const, code: "rate_limited", origin: "https://example.com",
     observedOrigin: "https://example.com", httpStatus: 429, retryAt: null }
   return { contractVersion: CONTRACT_VERSION, kind: "run", binding: request.binding, mode: request.mode, input: request.input,
     budget: chain.budget, sequence: 1, status: "failed", outputs: {}, checkpoint: null, consumed: empty(),
-    outcome: { status: "failed", code: "rate_limited", reason: "来源限制访问", evidence: [] }, events: [], modelCalls: [],
-    auditComplete: true, externalFailure }
+    outcome: { status: "failed", code: failureMode === "external" ? "rate_limited" : "function_output_invalid",
+      reason: failureMode === "external" ? "来源限制访问" : "function_output_invalid", evidence: [] },
+    events: [], modelCalls: [], auditComplete: true, externalFailure: failureMode === "external" ? externalFailure : null }
 }
 
 function empty() { return { transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 } }

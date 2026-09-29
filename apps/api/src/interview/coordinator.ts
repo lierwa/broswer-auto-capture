@@ -24,6 +24,7 @@ import {
   createSourceResolutionTools,
   PiSourceSearchObserver,
   ReadOnlySourceResolver,
+  recordSourceResolution,
   sourceResolutionOutput,
 } from "./source-resolution.js"
 import type { SourceResolution } from "@browser-capture/contracts/interview"
@@ -124,7 +125,7 @@ export class InterviewCoordinator {
     return this.snapshot(id)
   }
   private async run(job: Job) {
-    let output: InterviewOutput | undefined, sourceResolution: SourceResolution | undefined, reason: string | undefined
+    let output: InterviewOutput | undefined, sourceResolutions: SourceResolution[] = [], reason: string | undefined
     let model: PreparedMainAIModel | undefined
     let confirmAcceptedStep: (() => Promise<boolean>) | undefined
     let committed = false
@@ -135,14 +136,14 @@ export class InterviewCoordinator {
       model = await this.aiModel.prepareMain(selection)
       const result = await this.runShared(job, model, signal)
       output = result.output
-      sourceResolution = result.sourceResolution
+      sourceResolutions = result.sourceResolutions
       confirmAcceptedStep = result.confirmAcceptedStep
     } catch (error) { output = undefined; reason = failureReason(error) }
     finally {
       try {
         this.store.mutate(job.taskId, (state) => {
           finishRound(state, job.turnId,
-            job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason, sourceResolution)
+            job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason, sourceResolutions)
           committed = state.turns.find((turn) => turn.id === job.turnId)?.status === "succeeded"
         })
         // WHY：持久化终态已经是下一轮的唯一并发门；Pi 确认与模型关闭属于本轮收尾，不能让 UI 读到 idle 后又被旧 job 拒绝。
@@ -158,11 +159,11 @@ export class InterviewCoordinator {
     const state = this.store.snapshot(job.taskId)
     const assistantMessageId = state.turns.find((turn) => turn.id === job.turnId)!.assistantMessageId
     const { session: authoring, prompt } = createInterviewMainAuthoring(state, this.interviewSkill, job.ui)
-    let sourceResolution: SourceResolution | undefined
+    const sourceResolutions: SourceResolution[] = []
     const piSearches = new PiSourceSearchObserver()
     const sourceTools = createSourceResolutionTools({ resolver: this.sourceResolver, revision: state.revision,
       onSearch: () => undefined,
-      piSearches, questionId: assistantMessageId, onResolution: (value) => { sourceResolution = value } })
+      piSearches, questionId: assistantMessageId, onResolution: (value) => { sourceResolutions.push(value) } })
     let streamedText = ""
     let pendingQuestion: InterviewOutput["question"] = null
     const parts: InterviewMessagePart[] = []
@@ -214,14 +215,15 @@ export class InterviewCoordinator {
       const projection = acceptText(returnedText)
       if (projection) this.appendProjection(job, projection.text, projection.question)
     }
-    if (sourceResolution) return {
+    const sourceQuestion = sourceResolutions.find((value) => value.questionId !== null)
+    if (sourceQuestion) return {
       // WHY：来源 Question 由已校验候选生成，但搜索前后的可见正文仍属于本轮助手事实。
       // 工具轮可能有多条 assistant 消息，不能用末条 outputText 覆盖已流出的完整正文。
-      output: sourceResolutionOutput(sourceResolution, job.turnId, {
+      output: sourceResolutionOutput(sourceQuestion, job.turnId, {
         assistantText: parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("").trim(),
         question: null, draft: null, parts: parts.filter((part) => part.type === "text"),
       }),
-      sourceResolution,
+      sourceResolutions,
       ...(generated.confirmAcceptedStep ? { confirmAcceptedStep: generated.confirmAcceptedStep } : {}),
     }
     if (returnedText !== streamedText) throw new Error("interview_authoring_stream_text_mismatch")
@@ -230,11 +232,14 @@ export class InterviewCoordinator {
       appendTextPart(parts, job.turnId, result.textDelta)
       this.appendProjection(job, result.textDelta)
     }
-    const object = parseInterviewAuthoringOutput(result, this.store.snapshot(job.taskId), parts, job.turnId,
+    // WHY：候选只在本轮解析副本中可见；失败/取消不能泄漏为已接受的来源事实。
+    const projected = this.store.snapshot(job.taskId)
+    for (const value of sourceResolutions) recordSourceResolution(projected, value)
+    const object = parseInterviewAuthoringOutput(result, projected, parts, job.turnId,
       assistantMessageId)
     return {
       output: object,
-      ...(sourceResolution ? { sourceResolution } : {}),
+      sourceResolutions,
       ...(generated.confirmAcceptedStep ? { confirmAcceptedStep: generated.confirmAcceptedStep } : {}),
     }
   }

@@ -3,6 +3,7 @@ from .dom_evidence import CollectionReadRequired
 from .evidence import gap
 from .lifecycle_diagnostics import action_metadata, emit_lifecycle, observe_lifecycle
 from .observation_scope import ObservationRefreshRequired
+from .author_compilation import AuthorCompilationStopped
 
 CAPTURE_ERROR_CODES = frozenset({
     'ambiguous_new_navigation_tab', 'new_navigation_tab_not_ready',
@@ -14,7 +15,6 @@ CAPTURE_ERROR_CODES = frozenset({
     'single_action_capture_required',
     'observation_changed_during_capture', 'observation_changed_after_capture',
     'observation_snapshot_document_mismatch', 'observation_baseline_unavailable',
-    'observation_target_index_unavailable',
 })
 
 
@@ -24,11 +24,12 @@ class AuthorCaptureStopped(RuntimeError):
 
 class AuthorCaptureCallbacks:
     def __init__(self, collector, registry_provider, *, diagnostic=None, normalize_action,
-                 action_outcomes, reject_navigation_scope, before_dispatch=None):
+                 action_outcomes, reject_navigation_scope, before_dispatch=None, compilation=None):
         self.collector, self.registry_provider = collector, registry_provider
         self.diagnostic, self.normalize_action = diagnostic, normalize_action
         self.action_outcomes, self.reject_navigation_scope = action_outcomes, reject_navigation_scope
         self.before_dispatch = before_dispatch
+        self.compilation = compilation
         self.agent, self.current_action, self.reason = None, {}, None
         self.before_action_active = False
 
@@ -53,6 +54,8 @@ class AuthorCaptureCallbacks:
         self.before_action_active = True
         try:
             async def capture_and_validate():
+                if self.compilation is not None:
+                    self.compilation.before_action(raw_action)
                 await self.collector.before_action(summary, model_output, step)
                 if self.before_dispatch is not None:
                     self.before_dispatch()
@@ -81,6 +84,8 @@ class AuthorCaptureCallbacks:
             if outcome is not None:
                 metadata.update(outcome(agent))
             self.reject_navigation_scope(agent)
+            if self.compilation is not None:
+                await self.compilation.after_step(agent)
             return result
         try:
             return await self.observe('after_step', collect, metadata)
@@ -101,7 +106,7 @@ class AuthorCaptureCallbacks:
     def abort(self, phase, error):
         if not self.failed:
             code = str(error)
-            self.reason = code if code in CAPTURE_ERROR_CODES else (
+            self.reason = error.code if isinstance(error, AuthorCompilationStopped) else code if code in CAPTURE_ERROR_CODES else (
                 'author_' + phase + '_capture_timeout' if isinstance(error, TimeoutError)
                 else 'author_' + phase + '_capture_failed')
             pending = self.collector.pending

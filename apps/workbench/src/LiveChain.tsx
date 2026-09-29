@@ -30,7 +30,7 @@ export function LiveChain({ connection, active, theme, onInterview, onRequiremen
         onClick={() => void connection.closeBrowserProfileAndRetry()}>关闭账号浏览器后重试</Button>}
     </Callout.Root>}
     <ExecutionStrip model={model} />
-    {!model.chain || !model.presentation ? <div className="chain-layout"
+    {!model.build && (!model.chain || !model.presentation) ? <div className="chain-layout"
       data-inspector-open={Boolean(model.contextMode)}>
         <EmptyCanvas model={model} connection={connection} onInterview={onInterview} />
         <WorkbenchContext model={model} connection={connection}
@@ -58,10 +58,10 @@ function WorkbenchToolbar({ model, connection, onInterview, onPublish }: {
   const activity = workspace.activity
   return <header className="chain-command-bar">
     <div className="chain-surface-identity">
-      <Badge color={draft ? "amber" : release ? "green" : "gray"} variant="soft">
-        {draft ? "工作草稿" : release ? `已发布 V${release.reference.version}` : "等待生成"}
+      <Badge color={model.build ? "gray" : draft ? "amber" : release ? "green" : "gray"} variant="soft">
+        {model.build ? "生成片段" : draft ? "工作草稿" : release ? `已发布 V${release.reference.version}` : "等待生成"}
       </Badge>
-      {activity && model.chain && model.presentation && <button className="activity-chip" data-status={activity.status}
+      {activity && (model.build || model.chain && model.presentation) && <button className="activity-chip" data-status={activity.status}
         onClick={() => model.openContext("preparation")}>
         <i aria-hidden="true" />{preparationActivityLabel(activity.phase, activity.status)}</button>}
       {steps.length > 1 && step && <Select.Root value={step.stepId} onValueChange={model.setStepId}>
@@ -72,20 +72,23 @@ function WorkbenchToolbar({ model, connection, onInterview, onPublish }: {
       {model.presentation && <LiveChainCanvasToolbar model={model} />}
     </div>
     <div className="chain-run-controls">
-      {model.chain && activity?.status === "waiting_for_human" && <Button size="1" onClick={() => model.openContext("preparation")}>
+      {(model.chain || model.build) && activity?.status === "waiting_for_human" && <Button size="1" onClick={() => model.openContext("preparation")}>
         {activity.waitpoint?.status === "waiting" ? "处理人工请求" : activity.inputRequest ? "处理所需输入" : "查看等待原因"}</Button>}
-      {model.chain && activity && ["failed", "interrupted"].includes(activity.status) && <Button size="1" variant="soft"
+      {(model.chain || model.build) && activity && ["failed", "interrupted"].includes(activity.status) && <Button size="1" variant="soft"
         onClick={() => model.openContext("preparation")}>查看原因与继续操作</Button>}
-      {draft && <DraftControls readiness={workspace.draftReadiness} busy={view.busy || activityRunning} running={executionRunning}
+      {draft && <DraftControls readiness={workspace.draftReadiness} busy={view.busy || activityRunning || Boolean(model.build)} running={executionRunning}
         onTrial={() => model.setRunDialogMode("trial")} onPublish={onPublish} />}
-      {!draft && release && <Button size="1" disabled={view.busy || executionRunning}
+      {!draft && release && <Button size="1" disabled={view.busy || activityRunning || executionRunning || Boolean(model.build)}
         onClick={() => model.setRunDialogMode("run")}><Play size={13} fill="currentColor" />运行</Button>}
       <DropdownMenu.Root><DropdownMenu.Trigger><Button size="1" variant="ghost" color="gray" aria-label="更多操作">
         <Ellipsis size={15} /></Button></DropdownMenu.Trigger><DropdownMenu.Content align="end">
-        {draft && release && <DropdownMenu.Item onSelect={() => model.setRunDialogMode("run")}>
+        {draft && release && <DropdownMenu.Item disabled={activityRunning || executionRunning || Boolean(model.build)} onSelect={() => model.setRunDialogMode("run")}>
           <Play size={13} />运行已发布任务</DropdownMenu.Item>}
         <DropdownMenu.Item onSelect={() => model.openContext("history")}><History size={13} />历史记录</DropdownMenu.Item>
         <DropdownMenu.Item onSelect={() => model.openContext("diagnostics")}><Wrench size={13} />诊断详情</DropdownMenu.Item>
+        {workspace.requirement && <DropdownMenu.Item disabled={view.busy || activityRunning || executionRunning}
+          onSelect={() => void connection.dispatch({ type: "prepare_task", requestId: crypto.randomUUID(),
+            requirementVersion: workspace.requirement!.version })}>重新准备当前需求</DropdownMenu.Item>}
         <DropdownMenu.Separator /><DropdownMenu.Item onSelect={onInterview}><MessageSquare size={13} />返回需求对话</DropdownMenu.Item>
       </DropdownMenu.Content></DropdownMenu.Root>
     </div>

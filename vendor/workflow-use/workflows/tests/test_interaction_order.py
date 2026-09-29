@@ -134,6 +134,24 @@ class PreparationTests(unittest.IsolatedAsyncioTestCase):
         capability.execute.assert_awaited_once()
         self.assertEqual(verify.await_count, 3)
 
+    async def test_failed_settle_keeps_original_attempt_diagnostic_without_redispatch(self):
+        capability = OrdinaryCapability.__new__(OrdinaryCapability)
+        capability.browser = object()
+        capability.execute = AsyncMock(return_value=ActionResult())
+        condition = {'kind': 'url', 'equals': 'https://example.test/ready',
+                     'settle': {'maxMs': 1000, 'maxAttempts': 3, 'intervalMs': 10}}
+        failure = PostconditionNotMet('ordinary_postcondition_failed_url_fact_mismatch',
+                                      diagnostic={'kind': 'url', 'attempts': 3})
+        with patch('workflow_use.hybrid.postconditions.verify_once', new=AsyncMock(side_effect=failure)):
+            with self.assertRaises(PostconditionNotMet) as raised:
+                await capability.execute_checked('navigate', {'url': 'https://example.test/ready'}, None, [condition])
+
+        capability.execute.assert_awaited_once()
+        self.assertEqual(raised.exception.diagnostic['dispatchCount'], 1)
+        self.assertEqual(raised.exception.diagnostic['kind'], 'url')
+        self.assertIsNone(raised.exception.diagnostic['beforePage'])
+        self.assertIsNone(raised.exception.diagnostic['afterPage'])
+
 
 class HitContractTests(unittest.TestCase):
     def test_hidden_disabled_or_covered_targets_are_rejected_before_dispatch(self):

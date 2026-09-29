@@ -5,31 +5,30 @@ import json
 
 import aiohttp
 from browser_use.agent.views import ActionResult
-from pydantic import Field
+from pydantic import Field, JsonValue
 from jsonschema import Draft202012Validator
 
-from .dom_evidence import CollectionReadRequired, DomQueryEvidence
+from .dom_evidence import DomQueryEvidence
 from .evidence import Contract, EvidenceRef, ObservationFact, digest
 from .natural_reads import VerifiedNaturalRead, find_elements_read_spec
+from .natural_repeat_evidence import _assert_same_document
 from .natural_target_compile import natural_target
-from .selection_annotation import SelectionExample
+
+
+class SelectionExample(Contract):
+    candidates: list[dict[str, JsonValue]] = Field(min_length=1, max_length=300)
+    ordinal: int = Field(gt=0, le=300)
 
 
 class SelectionCheck(Contract):
     source: str = Field(min_length=1, max_length=20000, description=
         'Pure JavaScript function main({candidates}). Each candidate has original ordinal and text; return '
-        'candidate.ordinal, never an array index. Array order can differ from DOM ordinal order.')
-    examples: list[SelectionExample] = Field(min_length=2, max_length=4, description=
-        'Changed examples: {candidates:[{ordinal:1,text:"..."},...],ordinal:<expected selected ordinal>}. '
-        'EVERY candidate requires its own unique ordinal and text. Vary count and selected ordinal.')
-
-
-class SelectionMethodRequired(CollectionReadRequired):
-    def __init__(self):
-        RuntimeError.__init__(self, 'selection_method_required: call bat_validate_selection with a pure '
-            'function main({candidates}) and 2-4 changed examples. The validator computes the current ordinal. '
-            'Correct any reported error in this same preparation, then click that candidate using its '
-            'current Browser-Use click index. Do not change the confirmed selection rule.')
+        'candidate.ordinal, never an array index. Candidates follow DOM order; preserve their ordinal '
+        'if your function filters or sorts them.')
+    examples: list[SelectionExample] = Field(default_factory=list, max_length=4, description=
+        'Optional additional examples: {candidates:[{ordinal:1,text:"..."},...],ordinal:<expected ordinal>}. '
+        'EVERY candidate requires its original ordinal and text. Expected ordinals follow the task rule; '
+        'first-item and fixed-position rules may always return the same ordinal. Current live input is checked automatically.')
 
 
 class PreparedSelections:
@@ -59,6 +58,12 @@ class PreparedSelections:
         try:
             fact = self.current_read()
             read = fact.value
+            # WHY：空集合是页面查询结果，不是函数错误；必须重新读取，不能回用旧集合或诱导反复改函数。
+            if not read['output']:
+                return ActionResult(error='selection_candidates_empty: the latest find_elements query returned '
+                    'zero candidates. Inspect the current page and use find_elements with a corrected scoped '
+                    'query before validating a selection rule. Changing the function cannot create missing '
+                    'candidates; older reads are not used and no click has been performed.')
             body = {**params.model_dump(mode='json'), 'candidates': read['output'],
                     'candidateSchema': read['specification']['outputSchema'],
                     'maxItems': read['specification']['maxItems']}
@@ -82,7 +87,7 @@ class PreparedSelections:
                 reason = checked.get('reason', 'selection_validation_failed')
                 details = {key: checked[key] for key in ('exampleIndex', 'actual', 'expected') if key in checked}
                 return ActionResult(error=reason + ' ' + json.dumps(details) + ': correct the program or expected examples using the '
-                    'confirmed rule. exampleIndex 1 is the first changed example, 0 is the current candidates. '
+                    'confirmed rule. exampleIndex 0 is the current input; 1 onward are your optional examples. '
                     'Do not change the task rule merely to match an answer; no click has been performed.')
             ordinal = checked['ordinal']
             if type(ordinal) is not int or not any(item.get('ordinal') == ordinal for item in body['candidates']):
@@ -119,16 +124,18 @@ class PreparedSelections:
         candidate = structures[0].get('queryCandidate') if len(structures) == 1 else None
         if not candidate or not candidate.get('readActionRef'):
             return
-        if self.unique_query_target(candidate, target, pre):
+        records = [item for item in self.validated.values() if item['readActionRef'] == candidate['readActionRef']]
+        if not records:
+            guard = self.unique_query_guard(candidate, target, pre)
+            if guard is not None:
+                records = [guard]
+        if len(records) != 1 or records[0]['ordinal'] != target['ordinal']:
+            # WHY：缺少程序是编译缺口，不是浏览器操作错误；交给动作后的在线生成。
             return
-        records = [item for item in self.validated.values() if item['readActionRef'] == candidate['readActionRef']
-                   and item['ordinal'] == target['ordinal']]
-        if len(records) != 1:
-            raise SelectionMethodRequired()
         self.clicks[pre.id] = deepcopy(records[0])
 
-    def unique_query_target(self, candidate, target, pre):
-        """A complete singleton control needs no selection algorithm during exploration."""
+    def unique_query_guard(self, candidate, target, pre):
+        """Reuse the proven singleton query; never infer a choice among multiple candidates."""
         try:
             fact = self.current_read()
             read = VerifiedNaturalRead.model_validate(fact.value)
@@ -137,13 +144,10 @@ class PreparedSelections:
                        if item.kind == 'dom_query' and isinstance(item.value, dict)
                        and item.value.get('actionRef') == read.actionRef]
             if len(observations) != 1 or len(queries) != 1:
-                return False
+                return None
             query = DomQueryEvidence.model_validate(queries[0])
-            from .natural_repeat_evidence import _assert_same_document
             _assert_same_document(observations[0], pre)
-            # WHY：这里只放行当前完整唯一控件；普通集合编译仍要求 selection_function，
-            # repeat 编译另外核验每一轮 query 身份、原生动作及新记录，不能把单例当动态选择规则。
-            return (candidate['readActionRef'] == read.actionRef and read.stable is True
+            if not (candidate['readActionRef'] == read.actionRef and read.stable is True
                 and read.output == [{**read.output[0], 'ordinal': 1}] and target['ordinal'] == 1
                 and read.targetId == pre.tabId and query.scope.tabId == pre.tabId
                 and query.scope.frameId is None and query.scope.url == pre.url
@@ -151,9 +155,17 @@ class PreparedSelections:
                 and query.complete is True and query.truncated is False
                 and query.total == query.showing == 1
                 and query.query.model_dump(mode='json') == target['items']
-                and digest(read.specification) == digest(find_elements_read_spec(query)))
+                and digest(read.specification) == digest(find_elements_read_spec(query))):
+                return None
+            # WHY：这是唯一性保护，不是从单例猜业务规则；复跑出现第二项必须失败而非选第一项。
+            draft = {'language': 'javascript', 'source': 'function main({candidates}) { '
+                'if (candidates.length !== 1) throw new Error("target_not_unique"); '
+                'return candidates[0].ordinal; }', 'inputs': {'candidates': read.specification.outputSchema},
+                'outputSchema': {'type': 'integer', 'minimum': 1, 'maximum': read.specification.maxItems},
+                'examples': [{'input': {'candidates': read.output}, 'output': 1}]}
+            return {'draft': draft, 'ordinal': 1, 'readFactRef': fact.id, 'readActionRef': read.actionRef}
         except (ValueError, IndexError, KeyError, TypeError):
-            return False
+            return None
 
     def attach(self, trace):
         updated = trace.model_copy(deep=True)
@@ -165,9 +177,15 @@ class PreparedSelections:
             value = {'actionRef': action.id, 'readFactRef': record['readFactRef'],
                      'requirementDigest': self.request.requirementDigest, 'draft': record['draft']}
             fingerprint = digest(value)
-            observations[action.preObservationRef].facts.append(ObservationFact(
+            prepared = ObservationFact(
                 id='selection-' + action.id, kind='selection_function', value=value,
-                sourceRefs=[EvidenceRef(ref='sha256:' + fingerprint, digest=fingerprint)]))
+                sourceRefs=[EvidenceRef(ref='sha256:' + fingerprint, digest=fingerprint)])
+            facts = observations[action.preObservationRef].facts
+            existing = [item for item in facts if item.id == prepared.id]
+            if existing and existing != [prepared]:
+                raise ValueError('selection_function_snapshot_conflict')
+            if not existing:
+                facts.append(prepared)
         body = updated.model_dump(mode='json', exclude={'digest'})
         return type(trace).model_validate({**body, 'digest': digest(body)})
 
@@ -176,8 +194,9 @@ def register_selection_tool(tools):
     records = PreparedSelections()
 
     @tools.registry.action('Validate a deterministic rule over the latest complete find_elements candidates '
-        'BEFORE clicking a dynamic collection item. Supply JavaScript function main({candidates}) and 2-4 '
-        'changed examples; vary both candidate count and selected ordinal. The tool computes the current ordinal. '
+        'BEFORE clicking a collection item. Supply JavaScript function main({candidates}) implementing '
+        'the confirmed task rule. Extra examples are optional, not proof of business correctness. '
+        'A first-item rule may always return ordinal 1. The tool computes the current ordinal from live input. '
         'No browser, network, imports or async. The same program becomes the replay method.', param_model=SelectionCheck)
     async def bat_validate_selection(params: SelectionCheck):
         return await records.validate(params)

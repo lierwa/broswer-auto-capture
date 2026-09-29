@@ -13,6 +13,8 @@ export const taskRequirementSchema = z.object({
   authorization: z.object({ scope: textSchema, risks: z.array(textSchema), requiredApprovals: z.array(textSchema) }).strict(),
   confirmation: z.object({ confirmedAt: z.string().datetime(), requestId: identitySchema }).strict().nullable(),
   confirmationFacts: z.object({
+    // WHY：原文不能只存在访谈历史里而在交给 B-U 时丢失；optional 不改变旧版本摘要。
+    userMessages: z.array(z.object({ id: identitySchema, text: z.string().min(1).max(30_000) }).strict()).optional(),
     decisions: z.array(z.object({ id: identitySchema, kind: z.enum(["option", "free_text"]), text: textSchema,
       createdAt: z.string().datetime() }).strict()),
     sources: z.array(z.object({ resolutionId: identitySchema, label: textSchema, url: z.string().url(),

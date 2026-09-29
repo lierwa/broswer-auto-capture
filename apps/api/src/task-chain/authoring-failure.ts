@@ -1,6 +1,19 @@
-export function failureLayer(error: unknown, stage: string) {
+import { RuntimeCleanupRequiredError } from "../upstream-browser/cleanup.js"
+
+export class RequirementClarificationRequired extends Error {
+  constructor(readonly issues: Array<{ code: string; clauseRefs: string[] }>) {
+    super("hybrid_requirement_clarification_required")
+  }
+}
+
+export function failureLayer(error: unknown, stage: string): string {
+  if (error instanceof RuntimeCleanupRequiredError && error.primary.status === "failed") {
+    return failureLayer(error.primary.error, stage)
+  }
   const message = error instanceof Error ? error.message : "unknown"
   if (message === "hybrid_source_protocol_invalid") return "来源结果交接"
+  if (/hybrid_compilation_(ack|save)/.test(message)) return "在线节点保存"
+  if (/^hybrid_(compilation_|prefix_|online_final_)/.test(message)) return "在线节点编译"
   if (/^hybrid_(annotation_audit_missing|source_model_audit_)/.test(message)) return "准备模型调用审计"
   if (message.includes("hybrid_action_registry_mismatch")) return "离线编译动作合同"
   if (/workflow_fork_/.test(message)) return "workflow-use 受管源码校验"
@@ -13,6 +26,10 @@ export function failureLayer(error: unknown, stage: string) {
 }
 
 export function authoringFailureMessage(error: unknown): string {
+  // WHY：清理是独立结果，不能覆盖导致准备停止的主错误；只投影既有安全消息，不暴露原异常正文。
+  if (error instanceof RuntimeCleanupRequiredError && error.primary.status === "failed") {
+    return `${authoringFailureMessage(error.primary.error)} 浏览器资源清理尚未确认。`
+  }
   if (error instanceof AggregateError) {
     const primary = error.errors.find((item) => item instanceof Error
       && item.message !== "hybrid_source_and_cleanup_failed")
@@ -21,6 +38,9 @@ export function authoringFailureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "authoring_failed"
   if (message === "hybrid_source_protocol_invalid") {
     return "代表执行的结果交接未通过协议校验；本轮已停止，需要修复该问题后继续。"
+  }
+  if (/^hybrid_(compilation_(?!gaps$)|prefix_|online_final_)/.test(message)) {
+    return "在线节点生成或保存未通过；已有来源和节点保留，未重新执行动作。"
   }
   if (message === "workflow_fork_source_verifier_unavailable") {
     return "受管 workflow-use 源码校验器不可用，系统已在准备模型和启动浏览器前停止；请检查上游运行环境。"

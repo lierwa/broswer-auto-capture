@@ -61,6 +61,29 @@ class AuthorTransportTests(unittest.TestCase):
         self.assertEqual([item['stage'] for item in map(json.loads,
                          diagnostics.channel.getvalue().splitlines())], ['observation_title'])
 
+    def test_runtime_action_failure_accepts_only_bounded_identity_and_boolean_state(self):
+        diagnostics = DiagnosticChannel()
+        diagnostics.channel = io.StringIO()
+        identity = {'sessionDigest': '1' * 64, 'targetDigest': '2' * 64,
+                    'documentDigest': '3' * 64, 'urlDigest': '4' * 64}
+        event = {'phase': 'runtime_action_failure', 'status': 'failed', 'actionRef': 's-a-0002',
+                 'actionName': 'click',
+                 'errorCode': 'ordinary_postcondition_failed_target_state_fact_mismatch',
+                 'dispatchCount': 1, 'check': {'kind': 'target_state', 'attempts': 2,
+                     'expected': {'aria-expanded': True, 'disabled': False},
+                     'actual': {'aria-expanded': False, 'disabled': False}},
+                 'beforePage': identity, 'afterPage': identity,
+                 'validationTarget': {'sessionDigest': '1' * 64, 'targetDigest': '2' * 64,
+                     'documentDigest': '3' * 64, 'backendDigest': '5' * 64},
+                 'eventTarget': {'relation': 'descendant', 'trusted': True, 'eventCount': 1,
+                     'targetKind': 'element', 'targetTag': 'span', 'targetRef': 'n-0001'}}
+        diagnostics.emit(event)
+        diagnostics.emit({**event, 'raw': 'private page value'})
+        saved = list(map(json.loads, diagnostics.channel.getvalue().splitlines()))
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]['dispatchCount'], 1)
+        self.assertNotIn('private', diagnostics.channel.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main()

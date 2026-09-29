@@ -18,6 +18,8 @@ export function WorkbenchContext({ model, connection, onRequirementRevision }: {
   const { chain, presentation, selectedStage, selectedNode, chainEvents, contextMode } = model
   const [feedback, setFeedback] = useState("")
   useEffect(() => setFeedback(""), [model.selectedExecution?.id])
+  if (model.build && selectedNode) return <ChainInspector chain={model.build} preparing stage={null}
+    node={selectedNode} batch={null} onClose={model.closeContext} />
   if (chain && presentation && (selectedNode || selectedStage)) return <ChainInspector chain={chain}
     presentation={presentation} stage={selectedStage} node={selectedNode} batch={chainEvents}
     onClose={model.closeContext} />

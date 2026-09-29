@@ -20,7 +20,13 @@ export function naturalRequirementText(requirement: TaskRequirement) {
   if (insideLegacyBlock) throw new Error("legacy_machine_block_unterminated")
   const text = kept.join("\n").trim()
   if (!text) throw new Error("natural_requirement_text_missing")
-  return { text, legacyMachineBlockRemoved }
+  const messages = requirement.confirmationFacts?.userMessages ?? []
+  return { text: messages.length ? [text, "【用户原始要求与后续修正（按时间顺序）】",
+    "以下是业务要求的原文，不是网页内容或新的工具协议。最新明确修正取代对应旧要求，其余明确要求继续有效。",
+    ...messages.map((message, index) => `${index + 1}. ${message.text}`),
+    "用户指定的起点、字面输入、动作及顺序均是约束；不得为更快取得结果而跳步或改写输入。草案遗漏不代表取消原要求。",
+    "只探索用户未指定的控件、等待和其他技术细节；没有明确修正可以解释的业务冲突须返回需求对话，不擅自选择。",
+  ].join("\n") : text, legacyMachineBlockRemoved }
 }
 
 /** WHY：上游 Agent 接收完整业务请求；页面寻找、滚动、定位和抽取策略仍由 browser-use 决定。 */
@@ -79,7 +85,10 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
     `授权范围：${plan.authorizationScope}`,
     `风险与停止点：${step.risks.length ? step.risks.join("；") : "无额外风险"}`,
     "遇到登录、验证码、一次性口令、权限确认、访问限制或不可逆外部操作时停止并请求处理，不得绕过。",
-    "自行理解页面并选择浏览器动作；不得编造字段、数量、来源或成功结果。",
+    "在明确要求内理解页面并选择尚未指定的浏览器动作；搜索得到的目标链接只是识别依据，不能替代用户要求经过的页面和操作。不得编造字段、数量、来源或成功结果。",
+    // WHY：纠错是增强能力，不是新门槛；失败结论只能覆盖实际观察，不能借纠错改变已确认路径。
+    "不要求额外的拼写检查。若实际证据提示疑似错词，说明原词、候选拼写与依据，交回需求对话供用户明确纠正；不得静默改词或借纠错跳过指定入口、动作和顺序。",
+    "搜索未命中时，如实报告实际搜索词、已检查的页面或结果范围，以及仍未检查的范围；本次未找到不等于全站搜不到或目标不存在。",
   ].join("\n")
 }
 

@@ -1,214 +1,127 @@
-"""Each missing selection owns one annotation call; existing evidence is immutable."""
-import json
+"""Real target/read binding with a controlled model: no generated schemas or retry loop."""
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from workflow_use.hybrid.evidence import (
-    EvidenceRef,
-    NormalizedAction,
-    NormalizedObservation,
-    NormalizedTrace,
-    ObservationFact,
-    digest,
-)
-from workflow_use.hybrid.selection_annotation import (
-    SelectionProgram,
-    annotate_selections,
-    bounded_selection_annotation,
-    bounded_selection_program,
-    selection_action_context,
-)
+from workflow_use.hybrid.author_compilation import AuthorCompilation
+from workflow_use.hybrid.selection_annotation import SelectionProgram, annotate_selections
+from workflow_use.hybrid.evidence import digest
+from workflow_use.hybrid.natural_selection import bind_selection_function
+from workflow_use.hybrid.natural_binding_compile import natural_bindings
+from workflow_use.hybrid.natural_reads import runtime_read_specification
+from test_prepared_selection_dispatch import fixture
 
-REF = EvidenceRef(ref='fixture', digest='1' * 64)
-CONTEXT = SimpleNamespace(requirementText='Choose the eligible item.', task='Choose it.', requirementDigest='2' * 64)
-PROGRAM = {'source': 'function main({candidates}) { return candidates[0].ordinal; }', 'examples': [
-    {'candidates': [{'text': 'changed', 'ordinal': 2}], 'ordinal': 2},
-    {'candidates': [{'text': 'another', 'ordinal': 3}], 'ordinal': 3}]}
-
-
-def success(program):
-    return {'outcome': 'program', 'program': program, 'reason': None}
-
-
-def refusal(reason):
-    return {'outcome': 'insufficient_evidence', 'program': None, 'reason': reason}
-
-
-READ = SimpleNamespace(output=[{'text': 'sample', 'ordinal': 1}],
-    specification=SimpleNamespace(outputSchema={'type': 'array'}, maxItems=10))
-
-
-def trace_with_clicks(count=2, existing=False):
-    actions, observations = [], []
-    for index in range(count):
-        action_id, observation_id = f'a-{index + 1:04d}', f'o-{index + 1:04d}'
-        facts = []
-        if existing and index == 0:
-            value = {'actionRef': action_id, 'draft': {'source': 'original'}, 'number': 1.0}
-            facts.append(ObservationFact(id='selection-' + action_id, kind='selection_function', value=value,
-                sourceRefs=[EvidenceRef(ref='existing', digest=digest(value))]))
-        observations.append(NormalizedObservation(id=observation_id, sequence=index,
-            url='https://fixture.invalid/', tabId='tab-1', facts=facts, sourceRefs=[REF]).model_dump(mode='json'))
-        actions.append(NormalizedAction(id=action_id, stepIndex=index, actionIndex=0, name='click', args={},
-            status='succeeded', preObservationRef=observation_id, effect='ui_state').model_dump(mode='json'))
-    body = {'mediaType': 'application/vnd.bat.browser-use-trace+json;version=2',
-        'source': {'provider': 'browser-use', 'version': '0.13.8', 'historyRef': 'fixture'},
-        'completed': True, 'actions': actions, 'observations': observations,
-        'finalResultRef': None, 'redactionManifestRef': REF.model_dump()}
-    return NormalizedTrace.model_validate({**body, 'digest': digest(body)})
-
-
-def annotation_dependencies():
-    return (patch('workflow_use.hybrid.selection_annotation.natural_target',
-                  return_value=({'ordinal': 1}, [], [])),
-            patch('workflow_use.hybrid.selection_annotation.selection_read',
-                  return_value=(SimpleNamespace(id='read-fact'), READ)))
+SOURCE = 'function main({candidates}) { return candidates[0].ordinal; }'
 
 
 class SelectionAnnotationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_existing_fact_is_never_rewritten_and_only_missing_action_is_annotated(self):
-        trace = trace_with_clicks(existing=True)
-        original = trace.model_dump(mode='json')
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=success(PROGRAM))))
-        target, read = annotation_dependencies()
-        with target, read:
-            updated, gaps = await annotate_selections(CONTEXT, trace, model)
+    async def test_duplicate_destination_uses_one_program_and_original_navigation(self):
+        prepared, trace, segment = fixture(3)
+        action = trace.actions[-1]
+        action.name, action.effect = 'navigate', 'navigation'
+        action.args = {'url': 'https://example.test/list?page=2'}
+        source = next(f for f in trace.observations[0].facts if f.kind == 'verified_natural_read')
+        read = source.value
+        for index, row in enumerate(read['output']):
+            row['text'] = ['1', '2', 'Next'][index]
+            row['attribute_href'] = 'https://example.test/list?page=' + ('1' if index == 0 else '2')
+        spec = read['specification']
+        spec['fields']['attribute_href'] = {'selector': ':scope', 'attribute': 'href', 'resolveUrl': True,
+                                           'valueType': 'string'}
+        spec['outputSchema']['items']['properties']['attribute_href'] = {'type': 'string'}
+        source.sourceRefs = [source.sourceRefs[0].model_copy(update={'digest': digest(read)})]
+        from workflow_use.hybrid.read import ReadSpec
+        segment['operation']['specification'] = runtime_read_specification(ReadSpec.model_validate(spec))
+        code = 'function main({candidates}) { return candidates.find(c => c.text === "2").attribute_href; }'
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion={'source': code})))
+        with patch('workflow_use.hybrid.selection_annotation.validate_selection_source',
+                   new=AsyncMock(return_value=None)):
+            updated, gaps = await annotate_selections(prepared.request, trace, model)
         self.assertEqual(gaps, [])
-        self.assertEqual(trace.model_dump(mode='json'), original)
-        self.assertEqual(updated.observations[0], trace.observations[0])
-        self.assertEqual(updated.observations[1].facts[0].value['actionRef'], 'a-0002')
-        self.assertEqual(model.ainvoke.await_count, 1)
-        self.assertIs(model.ainvoke.call_args.kwargs['output_format'], bounded_selection_annotation(10))
-        self.assertNotIn('actionRef', SelectionProgram.model_fields)
-        self.assertEqual(bounded_selection_program(50).model_json_schema()['$defs'][
-            'SelectionExampleBounded50']['properties']['ordinal']['maximum'], 50)
-        content = json.loads(model.ainvoke.call_args.args[0][1].content)
-        self.assertEqual(content['candidateSchema'], READ.specification.outputSchema)
-        self.assertEqual(content['actionContext']['selectedCandidate'], READ.output[0])
+        model.ainvoke.assert_awaited_once()
+        request = SimpleNamespace(trace=updated, runtimeInputSchema={'type': 'null'},
+            requirement=SimpleNamespace(sourceDigest=prepared.request.requirementDigest))
+        functions, navigation, issues = bind_selection_function(request, action, [segment],
+            {'id': 's-a-0002', 'target': None})
+        self.assertEqual(issues, [])
+        self.assertEqual(functions[0]['draft']['outputSchema'], {'type': 'string'})
+        self.assertEqual(functions[0]['draft']['examples'][0]['output'], action.args['url'])
+        decisions, issues = natural_bindings(request, action, updated.observations[-1], False, [segment])
+        self.assertEqual(issues, [])
+        self.assertEqual(decisions[0]['binding'], {'source': 'node', 'nodeId': 'selection-a-0002', 'path': []})
+        self.assertIsNone(navigation['target'])
+
+    def test_guidance_requires_equivalent_navigation_presentations_to_be_interchangeable(self):
+        from workflow_use.hybrid.selection_annotation import SELECTION_GUIDANCE
+        self.assertIn('deduplicate by the exact href', SELECTION_GUIDANCE)
+        self.assertIn('equivalent presentation disappears', SELECTION_GUIDANCE)
+
+    async def test_host_builds_actual_sample_and_only_source_is_requested(self):
+        prepared, trace, _ = fixture(3)
+        original = trace.model_dump()
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(
+            completion=SelectionProgram(source=SOURCE))))
+        with patch('workflow_use.hybrid.selection_annotation.validate_selection_source',
+                   new=AsyncMock(return_value=None)) as validator:
+            updated, gaps = await annotate_selections(prepared.request, trace, model)
+        self.assertEqual(gaps, [])
+        self.assertEqual(trace.model_dump(), original)
+        facts = [f for o in updated.observations for f in o.facts if f.kind == 'selection_function']
+        self.assertEqual(len(facts), 1)
+        draft = facts[0].value['draft']
+        self.assertEqual(draft['examples'], [{'input': {'candidates': [
+            {'text': 'chosen', 'ordinal': 1}, {'text': 'other', 'ordinal': 2},
+            {'text': 'other', 'ordinal': 3}]}, 'output': 1}])
+        self.assertEqual(set(SelectionProgram.model_fields), {'source'})
+        self.assertIs(model.ainvoke.call_args.kwargs['output_format'], SelectionProgram)
+        validator.assert_awaited_once()
+        self.assertEqual(validator.call_args.args[3], 1)
         self.assertEqual(updated.digest, digest(updated.model_dump(mode='json', exclude={'digest'})))
 
-    async def test_changed_example_cannot_exceed_current_read_schema(self):
-        specification = SimpleNamespace(maxItems=3, outputSchema={
-            'type': 'array', 'maxItems': 3, 'items': {'type': 'object',
-                'properties': {'text': {'type': 'string'},
-                               'ordinal': {'type': 'integer', 'minimum': 1, 'maximum': 3}},
-                'required': ['text', 'ordinal'], 'additionalProperties': False}})
-        read = SimpleNamespace(output=[{'text': 'sample', 'ordinal': 1}],
-                               specification=specification, actionRef='prior')
-        program = {'source': PROGRAM['source'], 'examples': [
-            {'candidates': [{'text': 'changed', 'ordinal': 4}], 'ordinal': 4},
-            {'candidates': [{'text': 'another', 'ordinal': 2}], 'ordinal': 2}]}
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=success(program))))
-        trace = trace_with_clicks(count=1)
-        with patch('workflow_use.hybrid.selection_annotation.natural_target',
-                   return_value=({'ordinal': 1}, [], [])), patch(
-                       'workflow_use.hybrid.selection_annotation.selection_read',
-                       return_value=(SimpleNamespace(id='read-fact'), read)):
-            updated, gaps = await annotate_selections(CONTEXT, trace, model)
-        self.assertEqual([item.reason for item in gaps], ['selection_annotation_example_schema_invalid'])
-        self.assertEqual(updated.observations[0].facts, [])
-        self.assertEqual(trace.observations[0].facts, [])
-        self.assertEqual(model.ainvoke.await_count, 1)
-
-    async def test_bounded_model_instance_is_accepted_by_base_program(self):
-        # WHY：真实结构化模型返回 Pydantic 实例；不同基类会把有效输出误判为不可用。
-        completion = bounded_selection_annotation(10).model_validate(success(PROGRAM))
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=completion)))
-        target, read = annotation_dependencies()
-        with target, read:
-            updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(count=1), model)
-        self.assertEqual(gaps, [])
-        self.assertEqual(updated.observations[0].facts[0].kind, 'selection_function')
-
-    async def test_changed_example_output_must_be_present_once_in_candidates(self):
-        program = {'source': PROGRAM['source'], 'examples': [
-            {'candidates': [{'text': 'changed', 'ordinal': 2}], 'ordinal': 3},
-            {'candidates': [{'text': 'another', 'ordinal': 4}], 'ordinal': 4}]}
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=success(program))))
-        target, read = annotation_dependencies()
-        with target, read:
-            updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(count=1), model)
-        self.assertEqual([item.reason for item in gaps], ['selection_annotation_example_ordinal_invalid'])
-        self.assertEqual(updated.observations[0].facts, [])
-        self.assertEqual(model.ainvoke.await_count, 1)
-
-    def test_action_context_uses_current_click_and_nearest_singleton_read(self):
-        url, next_url = 'https://example.test/search', 'https://example.test/work'
-        prior = SimpleNamespace(id='prior', name='find_elements', postObservationRef='prior-post')
-        click = SimpleNamespace(id='click', name='click', preObservationRef='click-pre',
-                                postObservationRef='click-post')
-        read_fact = ObservationFact(id='prior-read', kind='verified_natural_read', value={
-            'actionRef': 'prior', 'stable': True, 'specification': {'container': 'a.title'},
-            'output': [{'text': 'one work', 'ordinal': 1}]}, sourceRefs=[REF])
-        before_title = ObservationFact(id='before-title', kind='title', value='Search', sourceRefs=[REF])
-        after_title = ObservationFact(id='after-title', kind='title', value='Work', sourceRefs=[REF])
-        observations = [
-            SimpleNamespace(id='prior-post', tabId='tab', url=url, facts=[read_fact]),
-            SimpleNamespace(id='click-pre', tabId='tab', url=url, facts=[before_title]),
-            SimpleNamespace(id='click-post', tabId='new-tab', url=next_url, facts=[after_title])]
-        trace = SimpleNamespace(actions=[prior, click], observations=observations)
-        read = SimpleNamespace(actionRef='current-read', output=[{'text': 'Watch', 'ordinal': 17}])
-        context = selection_action_context(trace, click, {'ordinal': 17}, read)
-        self.assertEqual(context['selectedCandidate'], {'text': 'Watch', 'ordinal': 17})
-        self.assertEqual(context['pageBefore'], {'url': url, 'title': 'Search'})
-        self.assertEqual(context['pageAfter'], {'url': next_url, 'title': 'Work'})
-        self.assertEqual(context['previousUniqueRead']['candidate']['text'], 'one work')
-
-    async def test_failed_or_omitted_program_retains_gap_without_retrying_that_action(self):
-        model = SimpleNamespace(ainvoke=AsyncMock(side_effect=[
-            SimpleNamespace(completion={}), SimpleNamespace(completion=success(PROGRAM))]))
-        target, read = annotation_dependencies()
-        with target, read:
-            updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(), model)
-        self.assertEqual(model.ainvoke.await_count, 2)
-        self.assertEqual([(item.actionRefs, item.reason) for item in gaps],
-                         [(['a-0001'], 'selection_annotation_invalid_response')])
-        self.assertEqual(updated.observations[0].facts, [])
-        self.assertEqual(updated.observations[1].facts[0].value['actionRef'], 'a-0002')
-
-    async def test_legal_refusal_keeps_source_without_fake_selection_fact(self):
-        trace = trace_with_clicks(count=1)
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(
-            completion=refusal('candidate_fields_insufficient'))))
-        target, read = annotation_dependencies()
-        with target, read:
-            updated, gaps = await annotate_selections(CONTEXT, trace, model)
-        self.assertEqual(updated.observations[0].facts, [])
-        self.assertEqual(trace.observations[0].facts, [])
-        self.assertEqual([(item.code, item.reason, item.resolution) for item in gaps],
-                         [('missing_binding', 'selection_annotation_candidate_fields_insufficient', 'collect_evidence')])
-        self.assertEqual(model.ainvoke.await_count, 1)
-
-    async def test_requirement_conflict_returns_to_intent_confirmation(self):
-        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(
-            completion=refusal('observed_choice_conflicts_requirement'))))
-        target, read = annotation_dependencies()
-        with target, read:
-            updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(count=1), model)
-        self.assertEqual(updated.observations[0].facts, [])
-        self.assertEqual([(item.code, item.reason, item.resolution) for item in gaps],
-                         [('ambiguous_clause_alignment', 'selection_annotation_observed_choice_conflicts_requirement',
-                           'confirm_intent')])
-
-    async def test_model_service_failure_is_not_evidence_refusal(self):
-        model = SimpleNamespace(ainvoke=AsyncMock(side_effect=RuntimeError('provider_failed')))
-        target, read = annotation_dependencies()
-        with target, read:
-            updated, gaps = await annotate_selections(CONTEXT, trace_with_clicks(count=1), model)
-        self.assertEqual(updated.observations[0].facts, [])
-        self.assertEqual([(item.code, item.reason) for item in gaps],
-                         [('missing_binding', 'selection_annotation_unavailable')])
-
-    async def test_missing_selection_count_is_bounded_before_model_work(self):
+    async def test_existing_fact_is_immutable_and_does_not_request_model(self):
+        prepared, trace, _ = fixture()
+        prepared.before_dispatch()
+        trace = prepared.attach(trace)
         model = SimpleNamespace(ainvoke=AsyncMock())
-        target, read = annotation_dependencies()
-        with target, read:
-            original = trace_with_clicks(41)
-            updated, gaps = await annotate_selections(CONTEXT, original, model)
-        self.assertIs(updated, original)
-        self.assertEqual(gaps[0].reason, 'selection_annotation_count_limit')
+        updated, gaps = await annotate_selections(prepared.request, trace, model)
+        self.assertEqual(updated, trace)
+        self.assertEqual(gaps, [])
         model.ainvoke.assert_not_awaited()
+
+    async def test_failed_generation_or_validation_is_remembered_without_stopping_exploration(self):
+        for completion, validation, reason in (
+            ({}, None, 'selection_annotation_invalid_response'),
+            ({'source': None}, None, 'selection_annotation_insufficient_evidence'),
+            ({'source': SOURCE}, 'selection_annotation_observed_choice_mismatch',
+             'selection_annotation_observed_choice_mismatch')):
+            with self.subTest(reason=reason):
+                prepared, trace, _ = fixture(3)
+                prepared.collector.source_gaps = []
+                model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion=completion)))
+                live = AuthorCompilation(prepared.request, prepared.collector, prepared,
+                    AsyncMock(), None, model)
+                with patch('workflow_use.hybrid.selection_annotation.validate_selection_source',
+                           new=AsyncMock(return_value=validation)):
+                    first = await live.annotate(trace)
+                    await live.annotate(first)
+                self.assertEqual(model.ainvoke.await_count, 1)
+                self.assertEqual([g.reason for g in prepared.collector.source_gaps], [reason])
+                self.assertFalse(any(f.kind == 'selection_function' for o in first.observations for f in o.facts))
+                self.assertIsNone(live.failure)
+                live.before_action({'click': {'index': 42}})
+
+    async def test_success_is_retained_in_collector_and_never_repeated(self):
+        prepared, trace, _ = fixture(3)
+        prepared.collector.source_gaps = []
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(completion={'source': SOURCE})))
+        live = AuthorCompilation(prepared.request, prepared.collector, prepared, AsyncMock(), None, model)
+        with patch('workflow_use.hybrid.selection_annotation.validate_selection_source',
+                   new=AsyncMock(return_value=None)):
+            updated = await live.annotate(trace)
+            await live.annotate(updated)
+        self.assertEqual(model.ainvoke.await_count, 1)
+        facts = [f for o in prepared.collector.observations for f in o.facts if f.kind == 'selection_function']
+        self.assertEqual(len(facts), 1)
 
 
 if __name__ == '__main__':

@@ -128,7 +128,7 @@ test("确认后计划投影不调用模型", async () => {
 })
 
 
-test("本次来源先保存并关闭 owner；首编译失败只保留来源，不搜索旧任务或重新采集", async () => {
+test("本次来源保存并关闭 owner；缺在线最终编译即失败，不搜索旧任务或离线补编译", async () => {
   const draft = requirement(), plan = projectPreparationPlan(draft, 1), events: string[] = []
   const job = { id: randomUUID(), taskId: draft.taskId, key: "current", status: "queued", sequence: 0,
     type: "prepare", browserRunId: null } as TaskAuthoringJob
@@ -171,12 +171,12 @@ test("本次来源先保存并关闭 owner；首编译失败只保留来源，�
     recompile: async () => { events.push("compile"); throw new Error("compiler_fixture_failure") },
   }
   const authoring = new TaskChainAuthoring(repository as never, ai as never, upstream as never)
-  await assert.rejects(authoring.task(job, draft, plan, null, new AbortController().signal), /compiler_fixture_failure/)
-  assert.deepEqual(events, ["browser-open", "persist-source", "browser-closed", "compile"])
+  await assert.rejects(authoring.task(job, draft, plan, null, new AbortController().signal), /hybrid_online_final_compilation_required/)
+  assert.deepEqual(events, ["browser-open", "persist-source", "browser-closed"])
   assert.equal(artifacts.length, 1)
   assert.equal(JSON.stringify(artifacts), frozenSource)
-  assert.equal(job.authoring?.stage, "compiling")
-  assert.equal(job.authoring?.consumption.compilationCalls, 1)
+  assert.equal(job.authoring?.stage, "exploring")
+  assert.equal(job.authoring?.consumption.compilationCalls, 0)
   assert.equal(job.status, "failed")
   assert.deepEqual((job.authoring!.exploration as { sources: { closed: boolean }[] }).sources.map((s) => s.closed), [true])
 })

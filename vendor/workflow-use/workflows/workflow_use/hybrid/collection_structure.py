@@ -1,5 +1,6 @@
 """Local repeated-item relationships from the existing Browser-Use DOM snapshot."""
 from .dom_evidence import ancestor_chain, node_tag, node_value, structural_children
+from .targets import _walk_structural
 
 ITEM_TAGS = frozenset({'li', 'tr', 'option', 'article', 'section'})
 ITEM_ROLES = frozenset({'listitem', 'row', 'option', 'treeitem'})
@@ -33,21 +34,18 @@ def query_targets_share_collection(target, backends):
     ancestors, cycled, _boundary = ancestor_chain(target)
     if cycled:
         return False
-    path = []
     for item in reversed(ancestors):
         parent = node_value(item, 'parent_node')
         if parent is None:
             break
         peers = [node for node in structural_children(parent)
-                 if same_shape(item, node, allow_unstyled=not path)]
+                 if same_shape(item, node, allow_unstyled=item is target)]
         if len(peers) > 1:
-            corresponding = [_corresponding_target(peer, path) for peer in peers]
-            ids = {_backend(node) for node in corresponding if node is not None}
-            # WHY：全页 query 中恰好含一对同类控件不等于业务候选集合。
-            # 全部命中均须属于同一个局部重复条目的对应位置，才可复用原始 ordinal。
-            if len(backends) > 1 and backends.issubset(ids):
+            members = [{_backend(node) for node in _walk_structural(peer)} & backends for peer in peers]
+            # WHY：真实 CSS 查询已确定目标；selected/visited 样式不改变集合归属。
+            # 全部命中必须落在同组不同条目，不能把跨组查询或一项多个控件冒充集合。
+            if len(backends) > 1 and all(len(group) <= 1 for group in members) and set().union(*members) == backends:
                 return True
-        path.insert(0, item)
     return False
 
 
@@ -62,23 +60,6 @@ def same_shape(left, right, *, allow_unstyled=False):
         return bool(left_classes.intersection(right_classes))
     role = left_attrs.get('role')
     return allow_unstyled or tag in ITEM_TAGS or (role in ITEM_ROLES and role == right_attrs.get('role'))
-
-
-def _corresponding_target(item, path):
-    current = item
-    for component in path:
-        matches = [child for child in structural_children(current)
-                   if _same_path_component(component, child)]
-        if len(matches) != 1:
-            return None
-        current = matches[0]
-    return current
-
-
-def _same_path_component(left, right):
-    left_classes = str((node_value(left, 'attributes') or {}).get('class') or '').split()
-    right_classes = str((node_value(right, 'attributes') or {}).get('class') or '').split()
-    return _tag(left) == _tag(right) and set(left_classes) == set(right_classes)
 
 
 def _tag(node):

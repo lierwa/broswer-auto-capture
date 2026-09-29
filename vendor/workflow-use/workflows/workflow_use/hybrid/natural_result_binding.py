@@ -120,6 +120,9 @@ def compile_empty_list_branches(result_spec, result_binding, segments):
     if not indexed:
         return [], []
     edges = spec.get('edgeCases', []) if spec['mode'] == 'data' else []
+    # WHY：未声明空结果也算成功时，缺失值由普通绑定明确失败；不能强要一个用户未定义的成功分支。
+    if not edges:
+        return [], []
     if result_binding is None or len(edges) != len(indexed):
         return [], [_binding_gap('natural_empty_list_control_required')]
     branches = []

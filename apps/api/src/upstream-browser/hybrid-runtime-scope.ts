@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { JsonValue, TaskCheckpoint } from "@browser-capture/contracts"
 import { checkpointBrowserReceipt } from "@browser-capture/runtime"
 import { isCompleteDiscovery } from "./hybrid-discovery.js"
+import { advanceBoundedNavigationWait, sameDocumentIdentity } from "./hybrid-navigation-wait-scope.js"
 
 export const RUNTIME_SCOPE_FROM = "runtimeScopeFrom"
 export const RUNTIME_SCOPE_READ_ONLY = "runtimeScopeReadOnlySameDocument"
@@ -19,21 +20,23 @@ type NaturalTrace = { actions: NaturalAction[]; observations: NaturalObservation
 type Compilation = {
   compilerVersion: string
   segments: Array<{ id: string; kind: string; operation?: { name: string; actionName?: string }; target?: unknown;
-    proofRefs?: EvidenceReference[] }>
+    postconditions?: unknown; proofRefs?: EvidenceReference[] }>
   controlGraph: { edges: Array<{ from: string; outcome: string; to: string }> }
   coverage: Array<{ actionRef: string; disposition: string; ownerSegmentId: string | null;
     exclusionRule: string | null; evidenceRefs?: EvidenceReference[] }>
 }
 type AssertFact = (fact: NaturalFact, observationId: string) => void
+type RuntimeScopeInput = { compilation: Compilation; trace: NaturalTrace; assertFact: AssertFact;
+  discoveries?: ReadonlySet<string> }
 
 export type RuntimeScopeDecision = Readonly<{ segmentId: string; runtimeScopeFrom?: string;
-  readOnlySameDocument?: true; limitation?: string }>
+  readOnlySameDocument?: true; predecessorCompletionObservationRef?: string; limitation?: string }>
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
 const browserOperations = new Set(["browser.workflow-step", "browser.read-fields"])
 
 /** WHY：marker 只能来自完整源证据；这里不修改 Python 编译产物，也不推断站点语义。 */
-export function classifyRuntimeScopeDecisions(input: { compilation: Compilation; trace: NaturalTrace; assertFact: AssertFact; discoveries?: ReadonlySet<string> }) {
+export function classifyRuntimeScopeDecisions(input: RuntimeScopeInput) {
   if (input.compilation.compilerVersion !== "bat-hybrid/2") return [] as RuntimeScopeDecision[]
   const result: RuntimeScopeDecision[] = []
   for (const segment of input.compilation.segments) {
@@ -43,8 +46,7 @@ export function classifyRuntimeScopeDecisions(input: { compilation: Compilation;
   return result
 }
 
-function classifySegment(segmentId: string, input: { compilation: Compilation; trace: NaturalTrace; assertFact: AssertFact; discoveries?: ReadonlySet<string> }): RuntimeScopeDecision {
-  const { compilation, trace, assertFact } = input
+function classifySegment(segmentId: string, { compilation, trace, assertFact, discoveries }: RuntimeScopeInput): RuntimeScopeDecision {
   const incoming = compilation.controlGraph.edges.filter((edge) => edge.to === segmentId)
   if (incoming.length !== 1 || incoming[0]!.outcome !== "success") return limited(segmentId, "runtime_scope_direct_predecessor_unproven")
   const predecessorId = browserPredecessor(incoming[0]!.from, compilation)
@@ -69,13 +71,18 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
   let failedFieldReadProbe = false
   let preparationValidationProbe = false
   let discoveryProbe = false
+  let predecessorCompletionObservationRef: string | undefined
   const intermediate = trace.actions.slice(previousIndex + 1, currentIndex)
   for (const action of intermediate) {
     const row = compilation.coverage.find((item) => item.actionRef === action.id)
     if (!row) return limited(segmentId, "runtime_scope_intermediate_coverage_missing")
     if (row.disposition === "supporting" && row.ownerSegmentId === predecessorId) {
-      boundary = advanceReadOnlyBoundary(boundary, action, observations, assertFact, "wait")
+      const direct = advanceReadOnlyBoundary(boundary, action, observations, assertFact, "wait")
+      const delayed: NaturalObservation | undefined = direct ? undefined
+        : advanceBoundedNavigationWait(boundary, action, row, predecessor, observations, assertFact)
+      boundary = direct ?? delayed
       if (!boundary) return limited(segmentId, "runtime_scope_supporting_wait_discontinuous")
+      if (delayed) predecessorCompletionObservationRef ??= delayed.id
       continue
     }
     if (row.disposition === "agent_internal"
@@ -83,7 +90,7 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
         || row.exclusionRule === "native_text_lookup_observation/v1"
         || row.exclusionRule === "dom_node_inspection_observation/v1")) {
       const discovery = isCompleteDiscovery(action, observations.get(action.postObservationRef ?? ""))
-      if (discovery && !input.discoveries?.has(action.id)) return limited(segmentId, "runtime_scope_discovery_unproven")
+      if (discovery && !discoveries?.has(action.id)) return limited(segmentId, "runtime_scope_discovery_unproven")
       const next = advanceReadOnlyBoundary(boundary, action, observations, assertFact, discovery ? "discovery" : "read")
       if (!next) return limited(segmentId, "runtime_scope_read_exclusion_discontinuous")
       discoveryProbe ||= discovery
@@ -135,7 +142,9 @@ function classifySegment(segmentId: string, input: { compilation: Compilation; t
   const scope = segmentScope(compilation.segments.find((item) => item.id === segmentId)!)
   const sourceDigest = urlIdentity(before, assertFact)?.urlDigest
   if (!scope?.urlDigest || scope.urlDigest !== sourceDigest) return limited(segmentId, "runtime_scope_static_scope_unproven")
-  return { segmentId, runtimeScopeFrom: predecessorId, ...(readOnlySameDocument ? { readOnlySameDocument: true } : {}) }
+  return { segmentId, runtimeScopeFrom: predecessorId,
+    ...(readOnlySameDocument ? { readOnlySameDocument: true } : {}),
+    ...(predecessorCompletionObservationRef ? { predecessorCompletionObservationRef } : {}) }
 }
 
 function sameDocumentReadBoundary(previous: NaturalObservation, current: NaturalObservation,
@@ -162,17 +171,6 @@ function sameDocumentReadBoundary(previous: NaturalObservation, current: Natural
     && baseline.documentDigest === a.data.documentDigest && refreshed.documentDigest === b.data.documentDigest
     && baseline.urlDigest === urlIdentity(previous, assertFact)?.urlDigest
     && refreshed.urlDigest === urlIdentity(current, assertFact)?.urlDigest
-}
-
-function sameDocumentIdentity(previous: NaturalObservation, current: NaturalObservation, assertFact: AssertFact) {
-  if (!previous.tabId || previous.tabId !== current.tabId) return false
-  const left = soleFact(previous, "document_identity"), right = soleFact(current, "document_identity")
-  if (!left || !right) return false
-  assertFact(left, previous.id); assertFact(right, current.id)
-  const identity = z.object({ targetId: z.string().min(1), documentDigest: hash }).strict()
-  const a = identity.safeParse(left.value), b = identity.safeParse(right.value)
-  return a.success && b.success && a.data.targetId === previous.tabId
-    && b.data.targetId === current.tabId && a.data.documentDigest === b.data.documentDigest
 }
 
 function browserPredecessor(initial: string, compilation: Compilation) {
@@ -291,7 +289,14 @@ function assertNotDispatched(action: NaturalAction, all: NaturalObservation[], b
   if (matches.length !== 1) return false
   assertFact(matches[0]!.fact, matches[0]!.observation.id)
   const before = action.preObservationRef ? observations.get(action.preObservationRef) : boundary
-  if (!before || !sameUrlIdentity(boundary, before, assertFact)) return false
+  if (!before) return false
+  // WHY：未派发提议可能在现场采集完成前被拒绝，原生历史只保存 URL/tab。
+  // 不补造 url_digest；现有事实仍核验，缺失时只接受相同原生元数据，后继实际边界照常检查。
+  const samePage = before.facts.some((fact) => fact.kind === "url_digest")
+    ? sameUrlIdentity(boundary, before, assertFact)
+    : typeof boundary.url === "string" && boundary.url === before.url
+      && typeof boundary.tabId === "string" && boundary.tabId === before.tabId
+  if (!samePage) return false
   if (!action.postObservationRef) return true
   const after = observations.get(action.postObservationRef)
   return Boolean(after && sameUrlIdentity(before, after, assertFact))

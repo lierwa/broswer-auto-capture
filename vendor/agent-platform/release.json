@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "producer": {
-    "head": "357013502817e836bcbc7473c0705ae48893e686",
-    "dirty": true
+    "head": "82f28e6dd6b119766498f1c220dcf49d8505f113",
+    "dirty": false
   },
   "build": [
     {
@@ -34,8 +34,8 @@
     "core": {
       "name": "@agent-platform/ai-connect",
       "version": "0.3.2",
-      "file": "agent-platform-ai-connect-0.3.2-e61cfe91.tgz",
-      "sha256": "e61cfe916dbd23d3220ead89c04897097f4e342f4751b26a9e1f364f98bea622",
+      "file": "agent-platform-ai-connect-0.3.2-f0ef768f.tgz",
+      "sha256": "f0ef768ff01f51ffa1f1d213f8a34394cff7744aad823c645674709c35a3ae56",
       "exports": [
         "./browser",
         "./client",
@@ -94,8 +94,8 @@
     "react": {
       "name": "@agent-platform/ai-connect-react",
       "version": "0.3.2",
-      "file": "agent-platform-ai-connect-react-0.3.2-15d6e5f0.tgz",
-      "sha256": "15d6e5f0f43c8cc382f2025e304346a96093364fe9681d83cc2aeb94a6f284c1",
+      "file": "agent-platform-ai-connect-react-0.3.2-cc7d94fe.tgz",
+      "sha256": "cc7d94fee2fd62b401811b8c2cdcd163f432c0998cf7357af8b45dc1568d53dc",
       "exports": [
         ".",
         "./chat",
@@ -124,8 +124,8 @@
     "agentSession": {
       "name": "@agent-platform/pi-agent-session",
       "version": "0.1.0",
-      "file": "agent-platform-pi-agent-session-0.1.0-52e0e9c6.tgz",
-      "sha256": "52e0e9c6630c47cb41874591dc4e5e9f7db36aca8180e4fca47b379b91be01f5",
+      "file": "agent-platform-pi-agent-session-0.1.0-7b0cd258.tgz",
+      "sha256": "7b0cd25806f8ea81055cd2e9aa8332751c969699b573d543d61cfff86ae5a912",
       "exports": [
         ".",
         "./platform-internal"
@@ -133,7 +133,7 @@
       "styles": []
     }
   },
-  "core": "agent-platform-ai-connect-0.3.2-e61cfe91.tgz",
-  "react": "agent-platform-ai-connect-react-0.3.2-15d6e5f0.tgz",
-  "agentSession": "agent-platform-pi-agent-session-0.1.0-52e0e9c6.tgz"
+  "core": "agent-platform-ai-connect-0.3.2-f0ef768f.tgz",
+  "react": "agent-platform-ai-connect-react-0.3.2-cc7d94fe.tgz",
+  "agentSession": "agent-platform-pi-agent-session-0.1.0-7b0cd258.tgz"
 }

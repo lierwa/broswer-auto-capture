@@ -149,6 +149,61 @@ class NaturalReadLivenessTests(unittest.TestCase):
         self.assertEqual(len(retained), len(segments))
         self.assertEqual(coverage[0].disposition, 'compiled')
 
+    def test_trace_only_read_proofs_do_not_keep_query_live(self):
+        for kind in ('natural_binding', 'dom_structure', 'selection_function'):
+            with self.subTest(kind=kind):
+                trace, segments, _ledger = self.fixture()
+                segments[-1]['bindings'] = []
+                trace.observations[-1].facts.append(fact('stale-' + kind, kind, {
+                    'actionRef': 'a-0003',
+                    'binding': {'source': 'node', 'nodeId': 'a-0002', 'path': []},
+                }))
+
+                self.assertEqual(consumed_query_ids(trace, segments), set())
+
+    def test_retained_owner_without_executable_reference_does_not_keep_query_live(self):
+        trace, segments, _ledger = self.fixture()
+        segments[-1]['bindings'] = []
+        trace.observations[-1].facts.append(fact('stale-owned-binding', 'natural_binding', {
+            'actionRef': 'a-0005',
+            'binding': {'source': 'node', 'nodeId': 'a-0002', 'path': []},
+        }))
+
+        self.assertEqual(consumed_query_ids(trace, segments), set())
+
+    def test_retained_executable_references_keep_query_live(self):
+        references = {
+            'bindings': [{'binding': {'source': 'node', 'nodeId': 's-a-0002', 'path': []}}],
+            'target': {'strategy': 'history',
+                       'ordinalBinding': {'source': 'node', 'nodeId': 's-a-0002', 'path': []}},
+            'inputBindings': {
+                'candidates': {'source': 'node', 'nodeId': 's-a-0002', 'path': []}},
+        }
+        for key, value in references.items():
+            with self.subTest(key=key):
+                trace, segments, _ledger = self.fixture()
+                segments[-1]['bindings'] = []
+                segments[-1][key] = value
+
+                self.assertEqual(consumed_query_ids(trace, segments), {'a-0002'})
+
+    def test_repeat_method_read_reference_keeps_query_live(self):
+        trace, segments, ledger = self.fixture()
+        segments[-1]['bindings'] = []
+        trace.observations[-1].facts.append(fact('repeat', 'repeat_method', {
+            'iterations': [{'readActionRef': 'a-0002',
+                            'continuationActionRef': 'a-0003',
+                            'advanceActionRef': 'a-0005'}],
+        }))
+
+        retained, _coverage, consumed, issues = prune_unused_queries(
+            SimpleNamespace(trace=trace), REGISTRY, segments, ledger)
+
+        self.assertEqual(issues, [])
+        self.assertIn('a-0002', consumed)
+        self.assertIn('s-a-0002', [segment['id'] for segment in retained])
+        self.assertNotIn('s-a-0004', [segment['id'] for segment in retained])
+
     def test_scroll_keeps_physical_effect_after_all_following_reads_are_pruned(self):
         trace, segments, ledger = self.fixture()
         producer = trace.actions[0]

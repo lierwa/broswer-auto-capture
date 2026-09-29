@@ -12,9 +12,10 @@ from browser_use.tools.views import ScrollAction
 
 from tests.test_author_callback_stop import setup_callbacks
 from workflow_use.hybrid.author import normalize_author_action
+from workflow_use.hybrid.action_dispatch import ActionDispatchAudit
 from workflow_use.hybrid.author_callbacks import AuthorCaptureStopped
 from workflow_use.hybrid.capture import EvidenceCollector
-from workflow_use.hybrid.evidence import EvidenceRef, digest
+from workflow_use.hybrid.evidence import EvidenceRef, ObservationFact, digest
 from workflow_use.hybrid.observation_scope import (
     ObservationRefreshRequired, SourceObservationScope, live_document_sample, summary_document_digest,
 )
@@ -38,7 +39,7 @@ def setup_scope(url='https://example.test/current?private=value'):
     page = SimpleNamespace(get_target_info=AsyncMock(return_value={'targetId': 'tab-1', 'url': url}),
         get_elements_by_css_selector=AsyncMock(return_value=[SimpleNamespace(
             get_basic_info=AsyncMock(return_value={'backendNodeId': 11}))]))
-    browser = SimpleNamespace(agent_focus_target_id='tab-1', get_current_page=AsyncMock(return_value=page),
+    browser = SimpleNamespace(id='test-browser', agent_focus_target_id='tab-1', get_current_page=AsyncMock(return_value=page),
         get_browser_state_summary=AsyncMock(return_value=summary(url)))
     native_dom = SimpleNamespace(getDocument=AsyncMock(return_value={'root': {'children': [
         {'nodeName': 'HTML', 'nodeType': 1, 'backendNodeId': 11}]}}))
@@ -48,8 +49,35 @@ def setup_scope(url='https://example.test/current?private=value'):
 
 
 class ObservationScopeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_model_index_keeps_native_retry_and_undispatched_audit(self):
+        scope, browser, page, callbacks = setup_scope()
+        browser.id = 'test-browser'
+        observed = await scope.capture()
+        audit = ActionDispatchAudit()
+        collector = EvidenceCollector(browser, SimpleNamespace(), dispatch_audit=audit,
+            put_evidence=lambda kind, value: EvidenceRef(ref=kind + '-' + digest(value), digest=digest(value)),
+            redact_action=lambda value: value)
+        collector.observation_scope = scope
+        scope.collector = callbacks.collector = collector
+        raw = {'click': {'index': 4771}}
+        model = SimpleNamespace(action=[SimpleNamespace(model_dump=lambda **kwargs: raw)])
+
+        with self.assertRaisesRegex(ObservationRefreshRequired, 'index'):
+            await callbacks.before_action(observed, model, 1)
+        await callbacks.after_step(callbacks.agent)
+
+        self.assertFalse(callbacks.failed)
+        callbacks.agent.stop.assert_not_called()
+        self.assertEqual(collector.source_gaps, [])
+        self.assertIsNone(collector.pending)
+        self.assertIsNone(audit.active)
+        self.assertFalse(audit.entries[(1, 0)]['entered'])
+        self.assertFalse(audit.entries[(1, 0)]['resultReceived'])
+        self.assertIs(await scope.verify_before_action(observed, 2, 1, 'click'), observed)
+
     async def test_post_diagnostics_keep_pending_step_and_safe_live_url_evidence(self):
         scope, browser, page, callbacks = setup_scope()
+        browser.id = 'test-browser'
         callbacks.agent.state.n_steps = 2
         scope.collector.pending = {'nativeStep': 1}
         observed = await scope.capture_post()
@@ -60,10 +88,19 @@ class ObservationScopeTests(unittest.IsolatedAsyncioTestCase):
         imported = SimpleNamespace(records=[SimpleNamespace(preObservationRef='o-1')], observations=[observation])
         history = SimpleNamespace(history=[SimpleNamespace(metadata=SimpleNamespace(step_number=1),
             model_output=SimpleNamespace(action=[{}]))])
-        scope.collector.value_fact = lambda kind, value: {'kind': kind, 'value': value}
+        scope.collector.value_fact = lambda kind, value: ObservationFact(id='fact-' + digest(value),
+            kind=kind, value=value, sourceRefs=[EvidenceRef(ref='test', digest=digest(value))])
         scope.attach(imported, history)
-        self.assertEqual([item['value']['actionRef'] for item in observation.facts], ['a-0001', 'a-0001'])
+        self.assertEqual([item.value['actionRef'] for item in observation.facts], ['a-0001', 'a-0001'])
         self.assertNotIn('private=', str(observation.facts))
+        original = [item.model_copy(deep=True) for item in observation.facts]
+        # WHY：在线 retain/snapshot/final 重复投影同一来源，不能累加旧诊断撑破传输上限。
+        for _ in range(40):
+            scope.attach(imported, history)
+        self.assertEqual(observation.facts, original)
+        observation.facts[0].value = {'changed': True}
+        with self.assertRaisesRegex(ValueError, 'observation_diagnostic_conflict'):
+            scope.attach(imported, history)
 
     async def test_stable_document_corrects_cached_url_before_model_observation(self):
         scope, browser, page, callbacks = setup_scope()
@@ -91,22 +128,38 @@ class ObservationScopeTests(unittest.IsolatedAsyncioTestCase):
                 page.get_target_info.return_value = {'targetId': 'tab-1', 'url': 'https://example.test/next'}
             else:
                 native_document(browser).return_value['root']['children'][0]['backendNodeId'] = 22
-            expected = ((ObservationRefreshRequired, 'observation_refresh_required') if changed == 'url'
-                        else (ValueError, 'observation_changed_after_capture'))
-            with self.subTest(changed=changed), self.assertRaisesRegex(*expected):
+            with self.subTest(changed=changed), self.assertRaises(ObservationRefreshRequired):
                 await scope.verify_before_action(observed, 1)
             self.assertEqual(browser.get_browser_state_summary.await_count, 1)
             self.assertEqual(scope.diagnostics[-1]['outcome'], 'changed_after_capture')
 
-    async def test_navigation_during_capture_stops_before_returning_model_observation(self):
+    async def test_navigation_during_capture_defers_to_native_retry_without_returning_mixed_observation(self):
         scope, browser, page, callbacks = setup_scope()
         old, new = {'targetId': 'tab-1', 'url': 'https://example.test/old'}, {
             'targetId': 'tab-1', 'url': 'https://example.test/new'}
         page.get_target_info.side_effect = [old, old, new, new]
-        with self.assertRaisesRegex(AuthorCaptureStopped, 'observation_changed_during_capture'):
+        with self.assertRaises(ObservationRefreshRequired):
             await scope.capture()
-        self.assertTrue(callbacks.failed)
+        self.assertFalse(callbacks.failed)
+        callbacks.agent.stop.assert_not_called()
+        self.assertEqual(scope.collector.source_gaps, [])
         self.assertEqual(scope.stamps, [])
+
+    async def test_capture_ownership_loss_still_stops_including_post_action(self):
+        for change in ('tab', 'session'):
+            scope, browser, page, callbacks = setup_scope()
+            async def changed_summary(**kwargs):
+                if change == 'tab':
+                    browser.agent_focus_target_id = 'tab-2'
+                    page.get_target_info.return_value = {'targetId': 'tab-2', 'url': 'https://example.test/new'}
+                else:
+                    browser.id = 'other-browser'
+                return summary('https://example.test/current?private=value')
+            scope.original.side_effect = changed_summary
+            with self.subTest(change=change), self.assertRaises(AuthorCaptureStopped):
+                await scope.capture_post()
+            self.assertTrue(callbacks.failed)
+            self.assertEqual(scope.stamps, [])
 
     async def test_post_action_navigation_remains_retryable_without_reusing_old_model_baseline(self):
         scope, browser, page, callbacks = setup_scope()
@@ -150,7 +203,7 @@ class ReadOnlyRefreshTests(unittest.IsolatedAsyncioTestCase):
                 native_document(browser).return_value['root']['children'][0]['backendNodeId'] = 22
             if change == 'tab':
                 page.get_target_info.return_value['targetId'] = browser.agent_focus_target_id = 'tab-2'
-            expected = ((ObservationRefreshRequired, 'observation_refresh_required') if change == 'url'
+            expected = ((ObservationRefreshRequired, 'observation_refresh_required') if change != 'tab'
                         else (ValueError, 'observation_changed_after_capture'))
             with self.subTest(name=name, change=change), self.assertRaisesRegex(*expected):
                 await scope.verify_before_action(observed, 1, index, name)
@@ -164,8 +217,7 @@ class ReadOnlyRefreshTests(unittest.IsolatedAsyncioTestCase):
             last = {'targetId': 'tab-1', 'url': 'https://example.test/later'}
             page.get_target_info.side_effect = [new, new, *(new if moment == 'during' else last for _ in range(2)), last, last]
             browser.get_browser_state_summary.return_value = summary(last['url'] if moment == 'before' else new['url'])
-            with self.subTest(moment=moment), self.assertRaisesRegex((ValueError, AuthorCaptureStopped),
-                                                                      'observation_changed_during_capture'):
+            with self.subTest(moment=moment), self.assertRaises(ObservationRefreshRequired):
                 await scope.verify_before_action(observed, 1, action_name='find_elements')
             self.assertEqual(browser.get_browser_state_summary.await_count, 2)
 
@@ -337,7 +389,7 @@ class PublicBrowserObservationTests(unittest.IsolatedAsyncioTestCase):
                 blank = await browser.get_browser_state_summary(include_screenshot=False)
                 self.assertEqual(blank.url, 'about:blank')
                 await scope.verify_before_action(blank, 1)
-                with self.assertRaisesRegex(ValueError, 'observation_target_index_unavailable'):
+                with self.assertRaisesRegex(ObservationRefreshRequired, 'target index'):
                     await scope.verify_before_action(blank, 1, 77)
                 await page.goto(f'http://127.0.0.1:{server.server_port}/first')
                 observed = await browser.get_browser_state_summary(include_screenshot=False)
@@ -346,7 +398,7 @@ class PublicBrowserObservationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(summary_document_digest(observed, sample['targetId']), sample['documentDigest'])
                 await scope.verify_before_action(observed, 1)
                 await page.goto(f'http://127.0.0.1:{server.server_port}/second')
-                with self.assertRaisesRegex(ValueError, 'observation_changed_after_capture'):
+                with self.assertRaises(ObservationRefreshRequired):
                     await scope.verify_before_action(observed, 1)
             finally:
                 if scope is not None:

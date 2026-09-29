@@ -20,7 +20,7 @@ const presentation = { presentationDigest: "a".repeat(64), stages: [stage],
   focusLayouts: [{ stageId: stage.id, nodes: [{ nodeId: "read", x: 43, y: 54 }] }],
 } as ChainPresentation
 
-test("展开与查看使用独立图投影，冻结图源及验证元数据保持不变", () => {
+test("单节点阶段直接显示真实动作卡，冻结图源及验证元数据保持不变", () => {
   const source = structuredClone({ chain, presentation, revision: 4, checksum: "b".repeat(64),
     validation: { status: "passed", revision: 4, checksum: "b".repeat(64) } })
   const before = structuredClone(source)
@@ -28,17 +28,48 @@ test("展开与查看使用独立图投影，冻结图源及验证元数据保�
   const entered: string[] = [], inspected: string[] = []
   const overview = buildCanvasGraph(source.chain, source.presentation, null, null,
     (id) => entered.push(id), (id) => inspected.push(id))
-  const stageNode = overview.nodes.find((node) => node.type === "chain-stage") as StageCanvasNode
-  stageNode.data.onEnter(stageNode.id)
-  const focused = buildCanvasGraph(source.chain, source.presentation, source.presentation.stages[0]!, null,
-    (id) => entered.push(id), (id) => inspected.push(id))
-  const action = focused.nodes.find((node) => node.type === "chain-action") as ActionCanvasNode
+  assert.equal(overview.nodes.some((node) => node.type === "chain-stage"), false)
+  const action = overview.nodes.find((node) => node.type === "chain-action") as ActionCanvasNode
   action.data.onInspect(action.id)
   action.position.x += 100
   action.selected = true
-  assert.deepEqual(entered, [stage.id])
+  assert.deepEqual(entered, [])
   assert.deepEqual(inspected, ["read"])
   assert.deepEqual(source, before)
+})
+
+test("展开多节点阶段只替换该阶段并把外边接回真实入口与出口", () => {
+  const grouped = { id: "grouped", title: "读取并选择", summary: "读取 → 选择", nodeIds: ["first", "second"],
+    entryNodeId: "first", exits: [{ id: "next", label: "继续", sourceNodeId: "second", sourcePort: "success" }] }
+  const tail = { id: "tail", title: "读取结果", summary: "读取结果", nodeIds: ["third"], entryNodeId: "third",
+    exits: [{ id: "done", label: "完成", sourceNodeId: "third", sourcePort: "success" }] }
+  const groupedChain = { entry: "first", nodes: [
+    { id: "first", kind: "function", label: "读取候选" }, { id: "second", kind: "function", label: "选择候选" },
+    { id: "third", kind: "function", label: "读取结果" },
+    { id: "done", kind: "terminal", label: "完成", status: "completed", reason: "完成" },
+  ], edges: [{ from: "first", port: "success", to: "second" },
+    { from: "second", port: "success", to: "third" }, { from: "third", port: "success", to: "done" }] } as TaskChain
+  const groupedPresentation = { stages: [grouped, tail], overviewLayout: [], focusLayouts: [
+    { stageId: grouped.id, nodes: grouped.nodeIds.map((nodeId, index) => ({ nodeId, x: index * 100, y: 0 })) },
+    { stageId: tail.id, nodes: [{ nodeId: "third", x: 0, y: 0 }] },
+  ] } as unknown as ChainPresentation
+  const entered: string[] = []
+  const collapsed = buildCanvasGraph(groupedChain, groupedPresentation, null, null,
+    (id) => entered.push(id), () => {})
+  assert.ok(collapsed.nodes.some((node) => node.id === grouped.id && node.type === "chain-stage"))
+  assert.ok(collapsed.nodes.some((node) => node.id === "third" && node.type === "chain-action"))
+  ;(collapsed.nodes.find((node) => node.id === grouped.id) as StageCanvasNode).data.onEnter(grouped.id)
+  assert.deepEqual(entered, [grouped.id])
+  const expanded = buildCanvasGraph(groupedChain, groupedPresentation, grouped, null, () => {}, () => {})
+  assert.equal(expanded.nodes.some((node) => node.id === grouped.id), false)
+  assert.deepEqual(["first", "second", "third"].map((id) => expanded.nodes.some((node) => node.id === id)), [true, true, true])
+  assert.equal(expanded.nodes.some((node) => node.id.startsWith("__stage_")), false)
+  assert.ok(expanded.edges.some((edge) => edge.source === "__start" && edge.target === "first"))
+  assert.ok(expanded.edges.some((edge) => edge.source === "second" && edge.target === "third"))
+  const internalRight = Math.max(...expanded.nodes.filter((node) => grouped.nodeIds.includes(node.id))
+    .map((node) => node.position.x + Number(node.width ?? 240)))
+  const tailLeft = expanded.nodes.find((node) => node.id === "third")!.position.x
+  assert.ok(tailLeft > internalRight, "展开后的动作不能覆盖后续阶段")
 })
 
 test("动作详情与阶段展开保留原生按钮，详情激活仅调用当前节点回调", () => {

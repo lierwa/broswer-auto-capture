@@ -15,7 +15,11 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   useChainPolling(connection, active)
 
   const workspace = view.workspace
-  const source = workspace?.draft?.content ?? workspace?.release?.value.content
+  const activityRunning = Boolean(workspace?.activity && ["queued", "running", "waiting_for_human"]
+    .includes(workspace.activity.status))
+  // WHY：停止的生成片段保留在准备记录中，不能遮住已有可运行链路。
+  const build = activityRunning || !workspace?.draft && !workspace?.release ? workspace?.activity?.build : undefined
+  const source = build ? undefined : workspace?.draft?.content ?? workspace?.release?.value.content
   const plan = source?.plan
   const steps = source?.steps ?? []
   const step = steps.find((item) => item.stepId === stepId) ?? steps[0]
@@ -23,21 +27,19 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const presentation = step?.presentation
   const draft = workspace?.draft ?? null
   const release = workspace?.release ?? null
-  const selectedExecution = workspace?.execution && executionMatchesSurface(workspace.execution, draft, release)
+  const selectedExecution = !build && workspace?.execution && executionMatchesSurface(workspace.execution, draft, release)
     ? workspace.execution : null
-  const acceptedExecutionId = acceptedMatchesSurface(view.acceptedExecution, draft, release)
+  const acceptedExecutionId = !build && acceptedMatchesSurface(view.acceptedExecution, draft, release)
     ? view.acceptedExecution!.executionId : null
   const visibleExecutionId = selectedExecution?.id ?? acceptedExecutionId
   const chainEvents = useMemo(() => step ? eventsForStep(step.stepId, visibleExecutionId, view.eventBatch) : null,
     [step?.stepId, visibleExecutionId, view.eventBatch])
-  const selectedNode = chain?.nodes.find((node) => node.id === selectedNodeId) ?? null
+  const selectedNode = (build?.nodes ?? chain?.nodes)?.find((node) => node.id === selectedNodeId) ?? null
   const selectedStage = presentation?.stages.find((stage) => stage.id === selectedStageId)
     ?? presentation?.stages.find((stage) => selectedNode && stage.nodeIds.includes(selectedNode.id)) ?? null
   const focusStage = presentation?.stages.find((stage) => stage.id === focusStageId) ?? null
   const executionRunning = Boolean(selectedExecution && ["queued", "running", "waiting_for_human", "paused", "cleanup_required"]
     .includes(selectedExecution.status))
-  const activityRunning = Boolean(workspace?.activity && ["queued", "running", "waiting_for_human"]
-    .includes(workspace.activity.status))
 
   useEffect(() => {
     if (!step && stepId) setStepId(null)
@@ -45,7 +47,7 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   }, [step?.stepId, stepId])
   useEffect(() => {
     setFocusStageId(null); setSelectedNodeId(null); setSelectedStageId(null)
-  }, [chain?.id, chain?.version])
+  }, [chain?.id, chain?.version, build?.stepId, build ? workspace?.activity?.id : undefined])
   useEffect(() => {
     if (active && workspace?.activity && (["failed", "interrupted"].includes(workspace.activity.status)
       || (workspace.activity.status === "waiting_for_human"
@@ -59,7 +61,8 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const closeContext = () => { setSelectedNodeId(null); setSelectedStageId(null); setContextMode(null) }
 
   return {
-    view, workspace, source, plan, steps, step, chain, displayChain: chain, presentation, draft, release,
+    view, workspace, source, plan, steps, step, chain, displayChain: chain, presentation, draft, release, build,
+    canvasKey: build ? `build:${workspace!.activity!.id}:${build.stepId}` : `${chain?.id}:${chain?.version}`,
     selectedExecution, acceptedExecutionId, chainEvents, selectedNode, selectedStage, focusStage,
     runDialogMode, selectedNodeId, selectedStageId, focusStageId,
     contextMode, executionRunning, activityRunning, setStepId, setRunDialogMode, setFocusStageId,
@@ -106,7 +109,7 @@ export type LiveChainModel = ReturnType<typeof useLiveChain>
 
 export function preparationPhaseLabel(phase: string) {
   return ({ forming_plan: "核验准备计划草案", awaiting_representative_input: "等待代表输入",
-    preexecuting: "代表试做与链路编译", validating_sample: "草稿试跑",
+    preexecuting: "生成节点", compiling: "生成节点", validating_sample: "草稿试跑",
     awaiting_verification_input: "等待另一组输入", validating_verification: "独立复跑检查",
     ready: "草稿可发布" } as Record<string, string>)[phase] ?? "草稿生成"
 }

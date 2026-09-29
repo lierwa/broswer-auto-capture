@@ -48,7 +48,7 @@ class AuthorRequestLoop:
                 active = self.author is not None and not self.author.done()
                 if active and request.get('type') == 'close':
                     await self.cancel_author()
-                elif active and request.get('type') != 'hybrid_author_resume':
+                elif active and request.get('type') not in ('hybrid_author_resume', 'hybrid_compilation_ack'):
                     self.write(request, {'id': request.get('id'), 'ok': False, 'code': 'hybrid_runner_failed',
                         'reason': 'ValueError:hybrid_author_request_in_progress'})
                     continue

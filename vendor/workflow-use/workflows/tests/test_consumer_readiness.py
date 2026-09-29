@@ -1,5 +1,7 @@
 """Consumer-owned readiness: producers run once and wait only on proven downstream facts."""
+import json
 import unittest
+from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -74,14 +76,28 @@ class CompilerReadinessTests(unittest.TestCase):
         self.assertEqual(segment['operation']['name'], 'browser.read-fields')
         self.assertEqual(segment['id'], 's-a-0002')
 
-    def test_same_document_effect_uses_transition_of_the_next_read(self):
+    def test_same_document_effect_does_not_invent_a_read_value_transition(self):
         readiness = consumer_readiness_by_action(readiness_trace('external_write'))['a-0001']
 
-        self.assertEqual(readiness['condition']['transition'], True)
+        self.assertEqual(readiness['condition']['ready'], True)
         self.assertEqual(readiness['condition']['consumerRef'], 's-a-0002')
         expected = SPECIFICATION.model_dump(mode='json')
         expected['maxInputBytes'] = 128000
         self.assertEqual(readiness['condition']['read'], expected)
+
+    def test_only_a_proven_change_of_the_same_projection_requires_transition(self):
+        for previous_output, authority in [([{'title': 'Old'}], 'transition'),
+                                            ([{'title': 'Ready'}], 'ready')]:
+            with self.subTest(authority=authority):
+                trace = readiness_trace('ui_state')
+                prior = deepcopy(trace.observations[-1].facts[-1])
+                prior.id = 'prior-read'; prior.value['actionRef'] = 'a-prior'
+                prior.value['output'] = previous_output
+                trace.observations[0].facts.append(prior)
+                trace.actions.insert(0, SimpleNamespace(id='a-prior', name='extract', effect='read',
+                    status='succeeded', preObservationRef='o-0001', postObservationRef='o-0001'))
+                condition = consumer_readiness_by_action(trace)['a-0001']['condition']
+                self.assertTrue(condition[authority])
 
     def test_navigation_uses_stable_ready_projection_without_old_page_baseline(self):
         readiness = consumer_readiness_by_action(readiness_trace('navigation'))['a-0001']
@@ -326,6 +342,32 @@ class PostconditionDiagnosticTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(PostconditionNotMet) as raised:
                 await verify_once(object(), checks)
         self.assertEqual(str(raised.exception), 'ordinary_postcondition_failed_url_digest_fact_mismatch')
+
+    async def test_target_state_mismatch_keeps_only_fixed_boolean_expected_and_actual(self):
+        expected = json.dumps({'aria-expanded': True, 'disabled': False}, sort_keys=True,
+                              separators=(',', ':'))
+        actual = json.dumps({'aria-expanded': False, 'disabled': False}, sort_keys=True,
+                            separators=(',', ':'))
+        checks = declared_checks([{'kind': 'target_state', 'equals': expected}], {},
+                                 {'strategy': 'css', 'value': 'button'})
+        with patch('workflow_use.hybrid.postconditions.read_check_value', new=AsyncMock(return_value=actual)):
+            with self.assertRaises(PostconditionNotMet) as raised:
+                await verify_once(object(), checks)
+        self.assertEqual(raised.exception.diagnostic, {
+            'kind': 'target_state', 'attempts': 1,
+            'expected': {'aria-expanded': True, 'disabled': False},
+            'actual': {'aria-expanded': False, 'disabled': False},
+        })
+
+    async def test_sensitive_fact_mismatch_never_keeps_raw_expected_or_actual(self):
+        checks = declared_checks([{'kind': 'target_value', 'equals': 'private-before'}], {},
+                                 {'strategy': 'css', 'value': 'input'})
+        with patch('workflow_use.hybrid.postconditions.read_check_value',
+                   new=AsyncMock(return_value='private-after')):
+            with self.assertRaises(PostconditionNotMet) as raised:
+                await verify_once(object(), checks)
+        self.assertEqual(raised.exception.diagnostic, {'kind': 'target_value', 'attempts': 1})
+        self.assertNotIn('private', json.dumps(raised.exception.diagnostic))
 
     async def test_visible_wait_preserves_timeout_classification_for_diagnostic_suffix(self):
         class ToolSink:

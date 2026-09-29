@@ -28,7 +28,16 @@ export const hybridArtifactSchema = z.object({
     closed: z.literal(true) }).strict(),
   modelCalls: z.array(z.object({ callId: z.string().min(1), purpose: z.enum(["agent", "judge", "extract", "semantic_annotation"]),
     model: z.string(), intendedAt: z.string().datetime(), status: z.enum(["intended", "completed", "failed", "interrupted"]),
-    reportedInvocations: z.number().int().nonnegative().nullable() }).strict()),
+    reportedInvocations: z.number().int().nonnegative().nullable(),
+    failureCategory: z.literal("ai_event_failure").optional(),
+    failureCode: z.enum(["ai_generation_failed", "ai_model_image_unsupported", "ai_structured_output_invalid",
+      "ai_capability_unavailable", "model_account_model_unavailable"]).optional(),
+  }).strict().superRefine((call, context) => {
+    const metadata = call.failureCategory !== undefined || call.failureCode !== undefined
+    if (metadata && call.status !== "failed" || (call.failureCategory === undefined) !== (call.failureCode === undefined)) {
+      context.addIssue({ code: "custom", message: "model failure metadata must be complete" })
+    }
+  })),
 }).strict()
 
 const sourceArtifactSchema = z.object({ mode: z.literal("workflow-use-source/v3"), status: z.literal("received"),
@@ -89,7 +98,7 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
   throw new Error("hybrid_current_source_required")
 }
 
-function assertNaturalSourceIdentity(raw: unknown, requirement: TaskRequirement, plan: TaskPlan,
+export function assertNaturalSourceIdentity(raw: unknown, requirement: TaskRequirement, plan: TaskPlan,
   step: TaskPlanStep, input: JsonValue, history: { localRef: string; digest: string },
   repair: TaskExecutionFailureEvidence | undefined,
   payload: Pick<ReturnType<typeof naturalPayloadContext>, "assertFact" | "assertTraceEvidence">) {

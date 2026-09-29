@@ -145,7 +145,7 @@ export function confirmDraft(state: InterviewState, version: number) {
   for (const question of state.unresolved) question.status = "resolved"
 }
 export function finishRound(state: InterviewState, id: string, outcome: "succeeded" | "failed" | "cancelled", output?: InterviewOutput,
-  reason?: string, sourceResolution?: SourceResolution) {
+  reason?: string, sourceResolutions?: SourceResolution | SourceResolution[]) {
   if (state.activeTurnId !== id) return
   const turn = state.turns.find((item) => item.id === id)!
   const assistant = state.messages.find((item) => item.id === turn.assistantMessageId)!
@@ -158,7 +158,9 @@ export function finishRound(state: InterviewState, id: string, outcome: "succeed
     assistant.text = output.assistantText; assistant.question = output.question; assistant.parts = output.parts
     supersedePriorQuestions(state, state.revision)
     if (output.question) state.unresolved.push({ id: assistant.id, revision: state.revision, question: output.question, status: "open", answerMessageId: null })
-    if (sourceResolution) recordSourceResolution(state, sourceResolution)
+    for (const resolution of Array.isArray(sourceResolutions) ? sourceResolutions : sourceResolutions ? [sourceResolutions] : []) {
+      recordSourceResolution(state, resolution)
+    }
     if (output.draft) {
       const version = (state.drafts.at(-1)?.version ?? 0) + 1
       state.drafts.push({ ...output.draft, version, revision: state.revision }); assistant.draftVersion = version

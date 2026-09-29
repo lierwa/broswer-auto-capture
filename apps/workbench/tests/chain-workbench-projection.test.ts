@@ -32,8 +32,10 @@ test("完成终态与阶段出口只按本次事件上色，运行中不能提�
   const ended = { ...batch, status: "completed", events: [...batch.events,
     executionEvent(4, "second", "finished", "success"), executionEvent(5, "terminal", "finished", "success")] } as TaskExecutionEventBatch
   assert.equal(graph(ended).nodes.find((node) => node.id === "__end:terminal")?.data.tone, "success")
-  assert.equal(graph(batch, true).nodes.find((node) => node.id === "__stage_exit:next")?.data.tone, "success")
-  assert.equal(graph(batch, true).nodes.find((node) => node.id === "__stage_exit:fallback")?.data.tone, "skipped")
+  assert.deepEqual(graph(batch, true).edges.filter((edge) => edge.source === "first")
+    .map((edge) => [edge.target, edge.className]), [
+      ["second", "chain-edge chain-edge-running"], ["second", "chain-edge chain-edge-idle"],
+    ])
 })
 
 test("阶段总览和聚焦子图只投影绑定 execution 的真实节点与连线状态", () => {

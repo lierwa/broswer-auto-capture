@@ -4,6 +4,7 @@ import {
 import { digestJson, stableUuid } from "@browser-capture/runtime"
 import { browserGrantLimits } from "@browser-capture/browser"
 import { parsePreparationDraft } from "../interview/preparation-draft.js"
+import { sourceSupportsEntry } from "../interview/source-resolution.js"
 
 /** WHY：预算是宿主技术上界；访谈草案与模型都不能填写图执行预算。 */
 export function planningEnvelope(invocations: number) {
@@ -30,7 +31,8 @@ export function projectPreparationPlan(requirement: TaskRequirement, version: nu
   }
   const sources = new Map(requirement.confirmationFacts.sources.map((source) => [source.resolutionId, source.url]))
   const entries = requirement.confirmationFacts.entries
-  if (entries.some((entry) => sources.get(entry.resolutionId) !== entry.url)
+  if (entries.some((entry) => !sources.has(entry.resolutionId)
+    || !sourceSupportsEntry(sources.get(entry.resolutionId)!, entry.url))
     || new Set(entries.map((entry) => entry.url)).size !== entries.length) {
     throw new Error("preparation_entry_reference_mismatch")
   }

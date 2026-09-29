@@ -149,7 +149,12 @@ def attach_action_facts(observations, observation_links, step_index, action_inde
     reference = observation_links.get((step_index, action_index, 'pre'))
     observation = linked_observation(observations, reference)
     if observation is not None:
-        observation.facts.extend(facts)
+        for fact in facts:
+            existing = [item for item in observation.facts if item.id == fact.id]
+            if existing and existing != [fact]:
+                raise ValueError('native_action_fact_conflict')
+            if not existing:
+                observation.facts.append(fact)
         return True
     return False
 
@@ -186,6 +191,8 @@ def retain_auxiliary_results(step_index, item, results, observations, put_eviden
                          'isDone': result.is_done, 'success': result.success} for result in results]}
     fact_ref = put_evidence('agent-step-result', body)
     fact = ObservationFact(id='fact-' + fact_ref.digest, kind='agent_step_result', value=body, sourceRefs=[fact_ref])
+    if any(fact == existing for observation in observations for existing in observation.facts):
+        return True
     source = {'url': url, 'tabId': tab_id, 'source': 'history_agent_step_auxiliary',
               'factDigest': digest(body)}
     observation_ref = put_evidence('observation', source)

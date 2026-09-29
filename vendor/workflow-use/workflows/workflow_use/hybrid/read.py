@@ -1,7 +1,7 @@
 """Typed field binding over fixed browser-native values and scalar conversions."""
 import json
 import math
-from typing import Literal
+from typing import Annotated, Literal
 
 from jsonschema import Draft202012Validator
 from jsonschema import ValidationError as JsonSchemaValidationError
@@ -153,7 +153,22 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
 }"""
 
 
-async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None):
+ReadPaths = list[Annotated[list[str | Annotated[int, Field(strict=True, ge=0)]], Field(min_length=1)]]
+
+
+def assert_read_paths(output, paths):
+    """WHY：运行绑定需要哪一个值就检查哪一个值，不要求其它行具有同样的可选字段。"""
+    for path in paths:
+        value = output
+        for key in path:
+            present = (isinstance(value, list) and isinstance(key, int) and 0 <= key < len(value)
+                       or isinstance(value, dict) and isinstance(key, str) and key in value)
+            if not present:
+                raise FieldReadError('read_output_schema_mismatch', reason='projected_output_invalid')
+            value = value[key]
+
+
+async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None, required_paths=()):
     resolver = TargetResolver(browser)
     target_id = None
     if page is not None:
@@ -196,6 +211,7 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None
     except JsonSchemaValidationError as error:
         # WHY：字段类型/长度等投影结果不符合合同是可修复的 selector 结果，不应折叠成未知工具失败。
         raise FieldReadError('read_output_schema_mismatch', reason='projected_output_invalid') from error
+    assert_read_paths(output, required_paths)
     if scope is not None:
         try:
             await resolver.assert_scope(scope, target_id)

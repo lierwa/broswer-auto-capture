@@ -15,6 +15,11 @@ REQUEST = TypeAdapter(CompilationRequest | NaturalCompilationRequest)
 
 def compilation_response(request, registry, verified_children=(), source_gaps=(), *, output_schema=None):
     compilation = compile_request(request, registry, verified_children, source_gaps, output_schema=output_schema)
+    return compilation_envelope(request, compilation)
+
+
+def compilation_envelope(request, compilation):
+    """The prefix and final boundaries preserve the same canonical numeric bytes."""
     result = compilation.model_dump(mode='json')
     sources = _compilation_sources(request)
     return {'compilation': result, 'canonicalPayload': canonical_json({k: v for k, v in result.items() if k != 'canonicalDigest'}),

@@ -7,38 +7,22 @@ from .natural_readiness import consumer_readiness_by_action
 
 
 def consumed_query_ids(trace, segments):
-    """Exclude ConsumerReadiness from liveness: a wait cannot make its own read necessary."""
+    """Return reads referenced by retained executable consumers or the final result."""
     references = set()
     for segment in segments:
         for key in ('bindings', 'target', 'inputBindings'):
             references.update(_node_refs(segment.get(key)))
-    facts = [fact for observation in trace.observations for fact in observation.facts]
-    fact_actions = {fact.id: fact.value.get('actionRef') for fact in facts if isinstance(fact.value, dict)}
     for observation in trace.observations:
         for fact in observation.facts:
+            # WHY：自然绑定、DOM 结构与选择函数是来源证明；只有编译进执行段、最终输出或
+            # repeat method 的引用才是复跑消费者，历史证明本身不能让探查读取继续存活。
             if fact.kind == 'verified_output_assembly' and isinstance(fact.value, dict):
                 references.update(_node_refs(fact.value.get('fields')))
             if fact.kind == 'repeat_method' and isinstance(fact.value, dict):
                 references.update(row.get(key) for row in fact.value.get('iterations', [])
                     for key in ('readActionRef', 'continuationActionRef', 'advanceActionRef')
                     if isinstance(row, dict) and isinstance(row.get(key), str))
-            if fact.kind in ('natural_binding', 'dom_structure', 'selection_function', 'verified_output_assembly'):
-                references.update(_node_refs(fact.value))
-                references.update(_source_read_refs(fact.value, fact_actions))
     return {reference.removeprefix('s-') for reference in references}
-
-
-def _source_read_refs(value, fact_actions):
-    if isinstance(value, list):
-        return {ref for item in value for ref in _source_read_refs(item, fact_actions)}
-    if not isinstance(value, dict):
-        return set()
-    found = {value[key] for key in ('readActionRef', 'queryActionRef') if isinstance(value.get(key), str)}
-    found.update(fact_actions[value[key]] for key in ('sourceReadRef', 'readFactRef')
-                 if isinstance(value.get(key), str) and isinstance(fact_actions.get(value[key]), str))
-    for child in value.values():
-        found.update(_source_read_refs(child, fact_actions))
-    return found
 
 
 def retire_unused_discovery(request, registry, ledger, issues, consumed):
@@ -134,7 +118,10 @@ def rebind_consumer_readiness(trace, segments, ledger):
                               'consumer_readiness_ambiguous', 'reject_trace'))
             continue
         direct = [item for item in conditions if item.get('consumerRef') is None]
-        if current is None and previous:
+        proven_direct = [item for item in direct if isinstance(item.get('clauseRef'), str)]
+        # WHY：裁掉探查读取后，已有来源 clause 的物理后态仍能独立证明动作；无来源的占位
+        # 条件或仅有 consumer wait 的动作不能借此绕过缺证。
+        if current is None and previous and not proven_direct:
             issues.append(gap('missing_effect_proof', [segment['id'].removeprefix('s-')],
                               'consumer_readiness_live_read_required', 'collect_evidence'))
         segment['postconditions'] = [*direct, *([current['condition']] if current else [])]

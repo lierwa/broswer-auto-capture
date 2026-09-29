@@ -28,13 +28,7 @@ def finalize_natural_compilation(request, registry, compilation_type, linear_gra
     issues.extend(derivation_issues)
     segments, ledger, repeat_methods, repeat_issues = fold_repeat(request, repeat, segments, ledger)
     issues.extend(repeat_issues)
-    seen = set()
-    for segment in segments:
-        signature = _reuse_digest(segment)
-        if signature in seen:
-            issues.append(gap('unsupported_capability', [segment['id'][2:]],
-                              'repeated_operation_reuse_unproven', 'collect_evidence'))
-        seen.add(signature)
+    # WHY：相同原生操作不证明业务循环；重复方法由已有 repeat 证据负责，不能猜测并阻断正常序列。
     assembly = _compile_output(request, output_schema, segments, issues)
     issues.extend(repeat_assembly_issues(assembly, repeat_methods))
     result_binding, binding_issues = compile_result_binding(request.plan.resultSpec, assembly, output_schema)
@@ -80,13 +74,3 @@ def _compile_output(request, output_schema, segments, issues):
         request.runtimeInputSchema, request.requirement.text, request.plan.resultSpec)
     issues.extend(assembly_issues)
     return assembly
-
-
-def _reuse_digest(segment):
-    if segment['kind'] in ('explicit_llm', 'function'):
-        return digest({key: value for key, value in segment.items() if key != 'id'})
-    return digest({'operation': segment['operation'], 'target': segment['target'],
-        'bindings': [{'argumentPath': item['argumentPath'], 'kind': item['kind'], 'binding': item['binding']}
-                     for item in segment['bindings']],
-        'postconditions': [{key: value for key, value in item.items() if key != 'clauseRef'}
-                           for item in segment['postconditions']], 'outputs': segment['outputs']})

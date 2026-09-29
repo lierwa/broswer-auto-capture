@@ -17,11 +17,13 @@ import { withSelectionValidation } from "./hybrid-selection.js"
 import { assertAnnotationSource, missingSelectionActions, missingRepeatActions } from "./hybrid-annotation.js"
 import { parseCapturedSource, type HybridSourceResult, type CapturedSourceReceipt } from "./hybrid-captured-source.js"
 import type { AuthoringHumanHandlers } from "./hybrid-author-human.js"
+import type { CompilationHandler } from "./hybrid-compilation-checkpoint.js"
 
 export type { HybridSourceResult } from "./hybrid-captured-source.js"
 export type HybridAuthoringProgress = SourceLifecycleProgress
 export interface HybridAuthorSession {
   author(source: z.infer<typeof hybridAuthorSourceSchema>, options?: { closeAfterResponse?: boolean;
+    onCompilation?: CompilationHandler;
     onSource?: (source: CapturedSourceReceipt) => void }): Promise<HybridSourceResult>
 }
 
@@ -78,7 +80,10 @@ export async function recompileHybridSource(input: Omit<z.infer<typeof hybridCom
   } catch (error) { primary = { status: "failed", error } }
   const cleanup = await runner.close()
   let bridgeFailure: unknown
-  try { await bridge?.close() } catch (error) { bridgeFailure = error } finally { diagnostics?.close() }
+  try { await bridge?.close() } catch (error) { bridgeFailure = error } finally {
+    diagnostics?.recordRuntimeOutcome(primary, cleanup, bridgeFailure)
+    diagnostics?.close()
+  }
   if (cleanup.status === "unconfirmed") throw new RuntimeCleanupRequiredError(input.annotation?.ownerId ?? "hybrid-compiler", cleanup, primary)
   if (primary.status === "failed") throw primary.error
   if (bridgeFailure) throw bridgeFailure
@@ -99,7 +104,11 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
     bridge = await (dependencies.openBridge ?? openModelBridge)({ ...input, allowedPurposes: ["agent", "judge", "extract", "semantic_annotation"],
       onAudit: (audit) => { const report = modelReport(audit, input.selection.modelId, intended)
         reports.push(report); diagnostics?.recordModel(report) } })
-  } catch (error) { diagnostics?.close(); throw error }
+  } catch (error) {
+    diagnostics?.recordRuntimeOutcome({ status: "failed", error }, null)
+    diagnostics?.close()
+    throw error
+  }
   const runner = dependencies.createRunner?.(input.root, input.signal,
     diagnostics ? (line) => diagnostics.acceptPythonLine(line) : undefined)
     ?? new RunnerProcess(input.root, input.signal,
@@ -111,15 +120,21 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
       headless: runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false) })
     const value = await work({ author: async (source, options) => {
       const offset = reports.length
+      let compilationError: unknown
       let raw: JsonValue
       try {
         raw = await runner.request(hybridAuthorRequestSchema.parse({ id: randomUUID(), type: "hybrid_author",
-          source,
-          model: { model: input.selection.modelId, endpoint: bridge.url, token: bridge.token } }), input.onHumanWait)
+          source, onlineCompilation: Boolean(options?.onCompilation),
+          model: { model: input.selection.modelId, endpoint: bridge.url, token: bridge.token } }), input.onHumanWait,
+          options?.onCompilation ? async (event, signal) => {
+            try { await options.onCompilation!(event, signal) }
+            catch (error) { compilationError = error; throw error }
+          } : undefined)
       } catch (error) { diagnostics?.recordTransportBoundary("author_request_failed"); throw error }
       diagnostics?.recordTransportBoundary("author_response_received")
       // WHY：收到的原文只落库一次；即使协议校验拒绝也可查证，准入失败不能消灭来源。
       options?.onSource?.({ result: raw, forkSourceDigest: fork, modelCalls: reports.slice(offset) })
+      if (compilationError) throw compilationError
       let result: HybridSourceResult
       try { result = parseCapturedSource(raw, fork, reports.slice(offset)) }
       catch (error) {
@@ -136,7 +151,10 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
   } catch (error) { primary = { status: "failed", error } }
   const cleanup = await runner.close()
   let bridgeFailure: unknown
-  try { await bridge.close() } catch (error) { bridgeFailure = error } finally { diagnostics?.close() }
+  try { await bridge.close() } catch (error) { bridgeFailure = error } finally {
+    diagnostics?.recordRuntimeOutcome(primary, cleanup, bridgeFailure)
+    diagnostics?.close()
+  }
   if (cleanup.status === "unconfirmed") throw new RuntimeCleanupRequiredError(input.ownerId, cleanup, primary)
   if (primary.status === "failed") throw primary.error
   if (bridgeFailure) throw bridgeFailure

@@ -1,5 +1,6 @@
 import {
-  CONTRACT_VERSION, chainEdgePort, chainPresentationContentSchema, chainPresentationSchema, type ChainPresentation,
+  CONTRACT_VERSION, chainEdgePort, chainNodeDisplayTitle, chainPresentationContentSchema, chainPresentationSchema, nodeBindings,
+  predicateBindings, type ChainNode, type ChainPresentation,
   type ChainPresentationContent, type TaskChain, type TaskPlan,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "@browser-capture/runtime"
@@ -23,10 +24,8 @@ export function createChainPresentation(chain: TaskChain, content?: ChainPresent
 export function createStepChainPresentation(chain: TaskChain,
   step: Pick<TaskPlan["steps"][number], "id" | "title" | "goal">) {
   if (chain.stepId !== step.id) invalid("presentation_plan_step_mismatch")
-  const content = defaultPresentationContent(chain)
-  // WHY：新链完整实现一个已确认计划步骤，直接复用该业务事实；不推测更细阶段，也不改写旧版展示。
-  return createChainPresentation(chain, { ...content,
-    stages: content.stages.map((stage) => ({ ...stage, title: step.title, summary: step.goal })) })
+  // WHY：阶段只来自冻结控制流和节点证据；业务词不足时宁可显示真实动作，也不从 URL 或 Function 源码臆测。
+  return createChainPresentation(chain, groupedPresentationContent(chain, step))
 }
 
 export function presentationForRevision(chain: TaskChain, current: ChainPresentation) {
@@ -109,6 +108,245 @@ function defaultPresentationContent(chain: TaskChain): ChainPresentationContent 
     focusLayouts: [{ stageId: stage.id, nodes: nodeIds.map((nodeId, index) => ({
       nodeId, x: index % 2 * 300, y: Math.floor(index / 2) * 150,
     })) }] }
+}
+
+function groupedPresentationContent(chain: TaskChain,
+  step: Pick<TaskPlan["steps"][number], "title" | "goal">): ChainPresentationContent {
+  const executable = controlFlowNodes(chain)
+  if (!executable.length) return { stages: [], overviewLayout: [], focusLayouts: [] }
+  const groups = deterministicStageGroups(chain, executable)
+  const stageByNode = new Map<string, string>()
+  const reservedIds = new Set(chain.nodes.map((node) => node.id))
+  const stages: ChainPresentationContent["stages"] = groups.map((nodes, index) => {
+    let suffix = index + 1, id = `stage-${index + 1}`
+    while (reservedIds.has(id)) id = `stage-${index + 1}-${++suffix}`
+    reservedIds.add(id)
+    for (const node of nodes) stageByNode.set(node.id, id)
+    const titles = nodes.map(chainNodeDisplayTitle)
+    const title = stageTitle(nodes, titles, step)
+    const summary = titles.length === 1 ? titles[0]! : titles.slice(0, 4).join(" → ")
+    return { id, title, summary, nodeIds: nodes.map((node) => node.id),
+      entryNodeId: stageCandidateEntry(chain, nodes) ?? nodes[0]!.id, exits: [] }
+  })
+  for (const stage of stages) {
+    const inStage = new Set(stage.nodeIds)
+    stage.exits = chain.edges.filter((edge) => inStage.has(edge.from) && stageByNode.get(edge.to) !== stage.id)
+      .map((edge, index) => ({ id: `exit-${index + 1}`, label: chainEdgePort(edge),
+        sourceNodeId: edge.from, sourcePort: chainEdgePort(edge) }))
+  }
+  return { stages, overviewLayout: stages.map((stage, index) => ({ stageId: stage.id, x: index * 340, y: 0 })),
+    focusLayouts: stages.map((stage) => ({ stageId: stage.id, nodes: stage.nodeIds.map((nodeId, index) => ({
+      nodeId, x: index * 300, y: 0,
+    })) })) }
+}
+
+function deterministicStageGroups(chain: TaskChain, nodes: ChainNode[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  const order = new Map(nodes.map((node, index) => [node.id, index]))
+  const consumers = new Map<string, string[]>()
+  const variableWriters = new Map<string, string[]>()
+  for (const node of nodes) for (const write of node.writes) {
+    const writers = variableWriters.get(write.variable) ?? []
+    writers.push(node.id); variableWriters.set(write.variable, writers)
+  }
+  const recordConsumer = (binding: ReturnType<typeof nodeBindings>[number], consumerId: string) => {
+    const producers = binding.source === "node" ? [binding.nodeId]
+      : binding.source === "variable" ? variableWriters.get(binding.name) ?? [] : []
+    for (const producer of producers) {
+      const values = consumers.get(producer) ?? []
+      if (!values.includes(consumerId)) values.push(consumerId)
+      consumers.set(producer, values)
+    }
+  }
+  for (const node of chain.nodes) for (const binding of nodeBindings(node)) recordConsumer(binding, node.id)
+  for (const condition of chain.completion) for (const binding of predicateBindings(condition.predicate)) {
+    recordConsumer(binding, `completion-${condition.id}`)
+  }
+  let groups = nodes.map((node) => [node])
+  const merge = (nodeIds: string[]) => {
+    const requested = new Set(nodeIds)
+    const selected = groups.filter((group) => group.some((node) => requested.has(node.id)))
+    if (selected.length < 2) return
+    const candidate = selected.flat().sort((left, right) => order.get(left.id)! - order.get(right.id)!)
+    if (!validStageCandidate(chain, candidate)) return
+    const selectedSet = new Set(selected)
+    const insertion = Math.min(...selected.map((group) => groups.indexOf(group)))
+    groups = groups.filter((group) => !selectedSet.has(group))
+    groups.splice(insertion, 0, candidate)
+  }
+
+  // 独占值依赖可证明“读取/确定性选择”只服务这个动作；共享 producer 不能被吞进某一个阶段。
+  for (const action of nodes.filter(isBrowserAction)) {
+    const support = exclusiveSupport(action.id, byId, consumers)
+    merge([...support, action.id])
+  }
+  // 无目标 send_keys 延续前一 input 的已知焦点；这是原生动作合同，不靠同 URL 或页面词义猜测。
+  for (const inputNode of nodes.filter((node) => workflowActionName(node) === "input")) {
+    const successor = chain.edges.find((edge) => edge.from === inputNode.id && chainEdgePort(edge) === "success")?.to
+    const next = successor ? byId.get(successor) : undefined
+    if (next && workflowActionName(next) === "send_keys" && workflowTarget(next) === null) merge([inputNode.id, next.id])
+  }
+  // 动作自带 consumerRef 证明后续读取是它的 readiness；若该读取另有值消费者，则留给后续真实依赖。
+  for (const action of nodes.filter(isBrowserAction)) for (const consumerRef of readinessConsumers(action)) {
+    const read = byId.get(consumerRef)
+    if (read && isReadFields(read) && !(consumers.get(read.id)?.length)
+      && reachableWithinChain(chain, action.id, read.id)) merge([action.id, read.id])
+  }
+  // 从 completed terminal 的正式输出/证据反向追踪；展示标题绝不能反过来决定业务分组。
+  for (const terminal of chain.nodes.filter((node) => node.kind === "terminal" && node.status === "completed")) {
+    for (const binding of nodeBindings(terminal)) {
+      if (binding.source !== "node") continue
+      const tail = outputTail(binding.nodeId, terminal.id, byId, consumers)
+      if (tail.length > 1) merge(tail)
+    }
+  }
+  return groups
+}
+
+function exclusiveSupport(consumerId: string, nodes: Map<string, ChainNode>, consumers: Map<string, string[]>) {
+  const found = new Set<string>()
+  const visit = (id: string) => {
+    const node = nodes.get(id)
+    if (!node) return
+    for (const binding of nodeBindings(node)) {
+      if (binding.source !== "node" || found.has(binding.nodeId)) continue
+      const producer = nodes.get(binding.nodeId)
+      if (!producer || !isDeterministicSupport(producer)
+        || consumers.get(producer.id)?.length !== 1) continue
+      found.add(producer.id); visit(producer.id)
+    }
+  }
+  visit(consumerId)
+  return [...found]
+}
+
+function stageCandidateEntry(chain: TaskChain, nodes: ChainNode[]) {
+  const ids = new Set(nodes.map((node) => node.id))
+  const externalTargets = chain.edges.filter((edge) => !ids.has(edge.from) && ids.has(edge.to)).map((edge) => edge.to)
+  const entry = ids.has(chain.entry) ? chain.entry : externalTargets[0]
+  if (!entry || externalTargets.some((target) => target !== entry)) return null
+  const reachable = new Set([entry])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const edge of chain.edges) if (reachable.has(edge.from) && ids.has(edge.to) && !reachable.has(edge.to)) {
+      reachable.add(edge.to); changed = true
+    }
+  }
+  return nodes.every((node) => reachable.has(node.id)) ? entry : null
+}
+
+function validStageCandidate(chain: TaskChain, nodes: ChainNode[]) {
+  return stageCandidateEntry(chain, nodes) !== null
+}
+
+function outputTail(rootId: string, terminalId: string, nodes: Map<string, ChainNode>, consumers: Map<string, string[]>) {
+  const found = new Set<string>(), visiting = new Set<string>()
+  const visit = (id: string): boolean => {
+    if (found.has(id)) return true
+    if (visiting.has(id)) return false
+    const node = nodes.get(id)
+    if (!node || !(isPureReadFields(node) || node.kind === "capability"
+      && node.capability.name === "data.transform" && node.effect === "read")) return false
+    visiting.add(id)
+    if (node.kind === "capability" && node.capability.name === "data.transform") {
+      const producers = nodeBindings(node).filter((binding) => binding.source === "node").map((binding) => binding.nodeId)
+      if (!producers.length || producers.some((producer) => !visit(producer))) { visiting.delete(id); return false }
+    }
+    visiting.delete(id); found.add(id)
+    return true
+  }
+  if (!visit(rootId) || ![...found].some((id) => isPureReadFields(nodes.get(id)!))) return []
+  if ([...found].some((id) => (consumers.get(id) ?? []).some((consumer) => consumer !== terminalId && !found.has(consumer)))) return []
+  return [...found]
+}
+
+function isBrowserAction(node: ChainNode) {
+  if (node.kind === "browser") return true
+  return node.kind === "capability" && node.capability.name === "browser.workflow-step"
+}
+
+function isReadFields(node: ChainNode) {
+  return node.kind === "capability" && node.capability.name === "browser.read-fields"
+}
+
+function isDeterministicSupport(node: ChainNode) {
+  return node.kind === "function" || node.kind === "capability"
+    && node.effect === "read" && ["browser.read-fields", "data.transform"].includes(node.capability.name)
+}
+
+function isPureReadFields(node: ChainNode) {
+  return isReadFields(node) && node.kind === "capability" && node.effect === "read"
+}
+
+function workflowActionName(node: ChainNode) {
+  if (node.kind === "browser") return node.operation
+  return node.kind === "capability" && node.capability.name === "browser.workflow-step"
+    && isRecord(node.config) && typeof node.config.actionName === "string" ? node.config.actionName : null
+}
+
+function workflowTarget(node: ChainNode) {
+  if (node.kind === "browser") return node.target ?? null
+  return node.kind === "capability" && isRecord(node.config) ? node.config.target ?? null : null
+}
+
+function readinessConsumers(node: ChainNode) {
+  if (node.kind !== "capability" || !isRecord(node.config) || !Array.isArray(node.config.postconditions)) return []
+  return node.config.postconditions.flatMap((condition) => isRecord(condition) && condition.kind === "read_fields"
+    && (condition.ready === true || condition.transition === true) && typeof condition.consumerRef === "string"
+    ? [condition.consumerRef] : [])
+}
+
+function controlFlowNodes(chain: TaskChain) {
+  const executable = new Map(chain.nodes.filter((node) => node.kind !== "terminal").map((node) => [node.id, node]))
+  const ordered: ChainNode[] = [], visited = new Set<string>(), pending = [chain.entry]
+  while (pending.length) {
+    const id = pending.shift()!
+    if (visited.has(id)) continue
+    visited.add(id)
+    const node = executable.get(id)
+    if (node) ordered.push(node)
+    const successors = chain.edges.filter((edge) => edge.from === id)
+      .sort((left, right) => `${chainEdgePort(left)}:${left.to}`.localeCompare(`${chainEdgePort(right)}:${right.to}`))
+    pending.push(...successors.map((edge) => edge.to))
+  }
+  ordered.push(...[...executable.values()].filter((node) => !visited.has(node.id))
+    .sort((left, right) => left.id.localeCompare(right.id)))
+  return ordered
+}
+
+function reachableWithinChain(chain: TaskChain, from: string, to: string) {
+  const pending = [from], seen = new Set<string>()
+  while (pending.length) {
+    const current = pending.shift()!
+    if (current === to) return true
+    if (seen.has(current)) continue
+    seen.add(current)
+    pending.push(...chain.edges.filter((edge) => edge.from === current).map((edge) => edge.to))
+  }
+  return false
+}
+
+function stageTitle(nodes: ChainNode[], titles: string[], step: Pick<TaskPlan["steps"][number], "title" | "goal">) {
+  if (nodes.length === 1) return titles[0]!
+  const input = nodes.findIndex((node) => workflowActionName(node) === "input")
+  const keys = nodes.findIndex((node) => workflowActionName(node) === "send_keys")
+  if (input >= 0 && keys > input) return `${titles[input]}并${titles[keys]}`
+  const anchorIndex = nodes.findLastIndex(isBrowserAction)
+  if (anchorIndex >= 0) {
+    const anchor = titles[anchorIndex]!
+    const directRead = nodes.slice(0, anchorIndex).findLast((node) => node.kind === "capability"
+      && node.capability.name === "browser.read-fields")
+    if (directRead && anchor === "打开读取到的页面") return `${chainNodeDisplayTitle(directRead)}后打开页面`
+    return anchor
+  }
+  const fieldRead = nodes.findLast((node) => chainNodeDisplayTitle(node).startsWith("读取字段："))
+  if (fieldRead) return chainNodeDisplayTitle(fieldRead)
+  return titles.find((title) => title !== "处理数据") ?? step.title
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
 function sameIdentity(left: string[], right: string[]) {

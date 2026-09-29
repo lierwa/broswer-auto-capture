@@ -10,6 +10,7 @@ import { hybridBrowserStateSchema, hybridCommandSchema, hybridExecuteRequestSche
   hybridExecuteResultSchema, hybridObserveRequestSchema } from "./hybrid-protocol.js"
 import { HybridRuntimeScopeState, RUNTIME_SCOPE_FROM, withinHybridSignal } from "./hybrid-runtime-scope.js"
 import { isWithinBrowserSites } from "./site-scope.js"
+import { SourceLifecycleDiagnostics } from "./source-lifecycle-diagnostics.js"
 
 const TARGET_ORDINAL_INPUT = "targetOrdinal"
 
@@ -56,14 +57,17 @@ type HybridCapabilitiesInput = { root: string; directory: string; ownerId: strin
   onHandoff?: (purpose: "delivery" | "human_wait", lease: Awaited<ReturnType<RunnerProcess["handoff"]>>["lease"]) => void;
   onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
   onCleanup?: (report: Awaited<ReturnType<HybridRunner["close"]>>) => void;
-  createRunner?: (root: string, signal: AbortSignal) => HybridRunner }
+  createRunner?: (root: string, signal: AbortSignal, onDiagnostic?: (line: string) => void) => HybridRunner }
 
 export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
   work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T> {
   const owner = new AbortController()
   await verifyForkSource(input.root)
   const runnerSignal = AbortSignal.any([input.signal, owner.signal])
-  const runner = input.createRunner?.(input.root, runnerSignal) ?? new RunnerProcess(input.root, runnerSignal)
+  const diagnostics = SourceLifecycleDiagnostics.open(input.directory, input.ownerId)
+  const onDiagnostic = diagnostics ? (line: string) => diagnostics.acceptPythonLine(line) : undefined
+  const runner = input.createRunner?.(input.root, runnerSignal, onDiagnostic)
+    ?? new RunnerProcess(input.root, runnerSignal, onDiagnostic)
   let commands = 0
   const runtimeScope = new HybridRuntimeScopeState()
   let primary: RuntimePrimaryOutcome<T>
@@ -108,7 +112,7 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
             // One admitted provider command; errors after dispatch still consume the attempted action budget.
             admit(this)
             const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({
-              id: randomUUID(), type: "hybrid_execute", command })))
+              id: randomUUID(), type: "hybrid_execute", actionRef: invocation.node.id, command })))
             invocation.signal.throwIfAborted()
             runtimeScope.succeed(invocation.node.id, result.browser)
             return { outcome: "success", output: hybridCapabilityOutput(invocation.node.outputContract, result.output),
@@ -149,6 +153,8 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
     cleanup = await runner.close()
   }
   input.onCleanup?.(cleanup)
+  diagnostics?.recordRuntimeOutcome(primary, cleanup)
+  diagnostics?.close()
   if (cleanup.status === "unconfirmed") {
     throw new RuntimeCleanupRequiredError(input.ownerId, cleanup, primary)
   }
@@ -175,7 +181,8 @@ async function verifyHybridResume(
   if (restore && isWithinBrowserSites(checkpoint.browser!.url, input.allowedOrigins)) {
     admit(capabilities)
     const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({
-      id: randomUUID(), type: "hybrid_execute", command: { name: "browser.workflow-step", version: 2, actionName: "navigate",
+      id: randomUUID(), type: "hybrid_execute", actionRef: checkpoint.cursor,
+      command: { name: "browser.workflow-step", version: 2, actionName: "navigate",
         args: { url: checkpoint.browser!.url, new_tab: false }, target: null, postconditions: [{ kind: "url", bindingArgument: "url" }] } })))
     browser = result.browser
     restored = true

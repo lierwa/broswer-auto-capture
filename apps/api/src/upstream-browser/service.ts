@@ -27,6 +27,8 @@ import { browserAllowedSites } from "./site-scope.js"
 import { runnerOwnershipSchema, type RunnerOwnership } from "./runner-ownership.js"
 import { authoringHumanEventSchema, authoringHumanResumeResultSchema, hybridAuthorResumeRequestSchema,
   type AuthoringHumanHandlers } from "./hybrid-author-human.js"
+import { compilationCheckpointSchema, receiveCompilation, type CompilationHandler,
+  type CompilationPending } from "./hybrid-compilation-checkpoint.js"
 
 export type UpstreamAuthorResult = ReturnType<typeof runnerAuthorResultSchema.parse> & { modelCalls: ModelCallReport[] }
 export type UpstreamReplayResult = ReturnType<typeof runnerReplayResultSchema.parse> & { modelCalls: ModelCallReport[] }
@@ -114,7 +116,7 @@ export class RunnerProcess {
   private temporaryDirectory: string | null = null
   private readonly pending = new Map<string, { resolve(value: JsonValue): void; reject(error: unknown): void;
     onHumanWait?: AuthoringHumanHandlers["onHumanWait"]; waitpointId?: string; resuming?: boolean;
-    resumes?: { authorRequestId: string; waitpointId: string } }>()
+    resumes?: { authorRequestId: string; waitpointId: string } } & CompilationPending>()
   private lines: readline.Interface | null = null
   private diagnosticLines: readline.Interface | null = null
   private termination: Promise<void> | null = null
@@ -258,8 +260,8 @@ export class RunnerProcess {
           notRequired("child_exit"), notRequired("process_tree"))
       } else {
         await this.closeChild(child, stages)
-        activeResources = !hasExited(child) || (this.managedWindow !== null
-          && stages.some((stage) => stage.stage === "browser_close" && stage.status === "unconfirmed"))
+        activeResources = !hasExited(child)
+          || stages.some((stage) => stage.stage === "browser_close" && stage.status === "unconfirmed")
       }
     } finally {
       this.lines?.close(); this.diagnosticLines?.close(); this.child = null
@@ -344,12 +346,14 @@ export class RunnerProcess {
     return hasExited(child)
   }
 
-  request(request: RunnerRequest | HybridRunnerRequest, onHumanWait?: AuthoringHumanHandlers["onHumanWait"]): Promise<JsonValue> {
+  request(request: RunnerRequest | HybridRunnerRequest, onHumanWait?: AuthoringHumanHandlers["onHumanWait"],
+    onCompilation?: CompilationHandler): Promise<JsonValue> {
     this.signal.throwIfAborted()
     const child = this.child
     if (!child?.stdin?.writable) return Promise.reject(new Error("upstream_runner_unavailable"))
     return new Promise<JsonValue>((resolve, reject) => {
       this.pending.set(request.id, { resolve, reject, ...(onHumanWait ? { onHumanWait } : {}),
+        ...(onCompilation ? { onCompilation } : {}),
         ...(request.type === "hybrid_author_resume" ? { resumes: request } : {}) })
       child.stdin!.write(`${JSON.stringify(request)}\n`, (error) => { if (error) { this.pending.delete(request.id); reject(error) } })
     }).then((value) => { this.signal.throwIfAborted(); return value })
@@ -357,7 +361,19 @@ export class RunnerProcess {
   private accept(line: string) {
     let raw: unknown
     try { raw = JSON.parse(line) } catch { return this.rejectAll(new Error("upstream_protocol_invalid")) }
-    if (raw && typeof raw === "object" && "event" in raw) return this.acceptHumanWait(raw)
+    if (raw && typeof raw === "object" && "event" in raw) {
+      if (raw.event !== "authoring_compilation") return this.acceptHumanWait(raw)
+      const event = compilationCheckpointSchema.safeParse(raw)
+      const pending = event.success ? this.pending.get(event.data.id) : undefined
+      if (!event.success || !pending?.onCompilation) {
+        return this.rejectAll(new Error("hybrid_compilation_protocol_invalid"))
+      }
+      // 校验失败仍让原 author 返回来源；错误来源由保存层留档，不能丢掉主请求。
+      void receiveCompilation(event.data, pending, this.signal, (ack) => this.request(ack)).catch(error => {
+        if (error instanceof Error && error.message === "hybrid_compilation_inflight_conflict") this.rejectAll(error)
+      })
+      return
+    }
     const response = runnerResponseSchema.safeParse(raw)
     if (!response.success) return this.rejectAll(new Error("upstream_protocol_invalid"))
     const pending = this.pending.get(response.data.id)
@@ -475,5 +491,8 @@ export function modelReport(audit: ModelAudit, model: string, intendedAtByReques
   const intendedAt = intendedAtByRequest.get(audit.requestId) ?? new Date().toISOString()
   if (status !== "intended") intendedAtByRequest.delete(audit.requestId)
   return { callId: audit.requestId, purpose: audit.purpose, model, intendedAt, status,
-    reportedInvocations: status === "intended" ? null : 1 }
+    reportedInvocations: status === "intended" ? null : 1,
+    ...(audit.event.type === "generation.failed" ? {
+      failureCategory: "ai_event_failure" as const, failureCode: audit.event.code,
+    } : {}) }
 }

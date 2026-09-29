@@ -6,9 +6,10 @@ from .natural_facts import IGNORED_TECHNICAL_PARAMETERS, NaturalBindingFact, is_
 from .natural_reads import VerifiedNaturalRead, value_at_path
 from .prior_read_bindings import binding_from_prior_reads
 from .natural_repeat import derived_repeat_navigation_binding
+from .natural_selection import selection_navigation_binding
 
 
-def natural_bindings(request, action, pre, has_target, prior_segments=()):
+def natural_bindings(request, action, pre, has_target, prior_segments=(), *, dependencies=None):
     args = action.args if isinstance(action.args, dict) else {}
     decisions, issues = [], []
     facts = [fact for fact in pre.facts if fact.kind == 'natural_binding'
@@ -24,11 +25,16 @@ def natural_bindings(request, action, pre, has_target, prior_segments=()):
         matches = [fact for fact in facts if fact.value.get('argumentPath') == key]
         if len(matches) != 1:
             derived = (derived_repeat_navigation_binding(request, action, key, args[key], prior_segments)
-                       or derived_prior_read_binding(request, action, key, args[key], prior_segments)) \
+                       or derived_prior_read_binding(request, action, key, args[key], prior_segments)
+                       or selection_navigation_binding(request, action, key, prior_segments)) \
                 if not matches else None
             if derived is not None:
                 decisions.append(derived)
                 continue
+            if not matches and dependencies is not None:
+                from .natural_prefix_dependency import defer_repeat_navigation
+                if defer_repeat_navigation(request, action, key, args[key], prior_segments, dependencies):
+                    continue
             issues.append(gap('missing_binding', [action.id],
                               'natural_binding_evidence_missing:' + key, 'collect_evidence'))
             continue

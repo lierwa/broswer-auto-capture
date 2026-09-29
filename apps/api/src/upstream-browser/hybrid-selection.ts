@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util"
 import { createHash } from "node:crypto"
 import { z } from "zod"
-import { jsonValueSchema, stableChainNodeV2Schema, type JsonValue } from "@browser-capture/contracts"
+import { jsonValueSchema, stableChainNodeV2Schema, valueBindingSchema, type JsonValue } from "@browser-capture/contracts"
 import { functionDraftSchema, functionSegmentSchema, hybridNaturalRequestSchema, readSpecificationSchema,
   type HybridCompilation } from "./hybrid-schema.js"
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
@@ -80,7 +80,7 @@ function assertSelectionSource(segment: Segment, context: Context) {
   const source = request.trace.observations.flatMap((owner) => owner.facts
     .filter((item) => item.id === value.readFactRef && item.kind === "verified_natural_read")
     .map((item) => ({ item, owner })))
-  if (!action || action.name !== "click" || action.status !== "succeeded"
+  if (!action || (action.name !== "click" && action.name !== "navigate") || action.status !== "succeeded"
     || action.preObservationRef !== observation.id || source.length !== 1
     || segment.id !== `selection-${action.id}` || value.requirementDigest !== request.requirement.sourceDigest
     || !isDeepStrictEqual(value.draft, segment.draft) || !isDeepStrictEqual(fact.sourceRefs, segment.proofRefs)) {
@@ -90,6 +90,10 @@ function assertSelectionSource(segment: Segment, context: Context) {
   assertFact(readFact, owner.id)
   const read = z.object({ actionRef: z.string(), output: jsonValueSchema,
     specification: readSpecificationSchema, stable: z.literal(true) }).passthrough().parse(readFact.value)
+  if (action.name === "navigate") {
+    assertNavigationSelection(segment, context, action, read, owner, observation)
+    return
+  }
   const structures = observation.facts.filter((item) => item.kind === "dom_structure"
     && typeof item.value === "object" && item.value !== null && !Array.isArray(item.value)
     && item.value.actionRef === action.id)
@@ -115,4 +119,52 @@ function assertSelectionSource(segment: Segment, context: Context) {
     || !isDeepStrictEqual(segment.draft.examples[0], { input: { candidates: read.output }, output: target.ordinal })) {
     throw new Error("selection_function_binding_mismatch")
   }
+}
+
+function assertNavigationSelection(segment: Segment, context: Context, action: Request["trace"]["actions"][number],
+  read: { actionRef: string; output: JsonValue; specification: z.infer<typeof readSpecificationSchema> },
+  owner: Request["trace"]["observations"][number], before: Request["trace"]["observations"][number]) {
+  const trace = context.request.trace, args = z.object({ url: z.string() }).passthrough().parse(action.args)
+  const readIndex = trace.actions.findIndex(item => item.id === read.actionRef)
+  const actionIndex = trace.actions.indexOf(action)
+  const consumer = context.compilation.segments.find(item => item.id === `s-${action.id}`)
+  const rows = z.array(z.record(z.string(), jsonValueSchema)).parse(read.output)
+  if (readIndex < 0 || readIndex >= actionIndex || trace.actions[readIndex]?.name !== "find_elements"
+    || trace.actions[readIndex]?.status !== "succeeded" || trace.actions[readIndex]?.postObservationRef !== owner.id
+    || typeof owner.url !== "string" || typeof owner.tabId !== "string"
+    || owner.url !== before.url || owner.tabId !== before.tabId || !read.specification.includeOrdinal
+    || !rows.some(row => row.attribute_href === args.url)
+    || !isDeepStrictEqual(segment.inputBindings, { candidates: { source: "node", nodeId: `s-${read.actionRef}`, path: [] } })
+    || !isDeepStrictEqual(segment.draft.inputs, { candidates: read.specification.outputSchema })
+    || !isDeepStrictEqual(segment.draft.outputSchema, { type: "string" })
+    || !isDeepStrictEqual(segment.draft.examples[0], { input: { candidates: read.output }, output: args.url })
+    || consumer?.kind !== "deterministic" || consumer.operation.name !== "browser.workflow-step"
+    || consumer.operation.actionName !== "navigate" || !consumer.bindings.some(binding =>
+      "derivation" in binding && binding.derivation === "selection_function" && binding.sourceRef === segment.id)) {
+    throw new Error("selection_function_binding_mismatch")
+  }
+}
+
+/** WHY：新增的是现有 Function 输出到原导航参数的接线，不是另一种执行节点。 */
+export function assertSelectionValueBinding(raw: unknown, trace: Request["trace"],
+  assertFact: Context["assertFact"]) {
+  const decision = z.object({ actionRef: z.string(), argumentPath: z.literal("url"), sourceRef: z.string(),
+    binding: valueBindingSchema, proofRefs: z.array(z.object({ ref: z.string(), digest: z.string() }).strict()) })
+    .passthrough().parse(raw)
+  const action = trace.actions.find(item => item.id === decision.actionRef)
+  const before = trace.observations.find(item => item.id === action?.preObservationRef)
+  const matches = before?.facts.filter(fact => fact.id === decision.sourceRef && fact.kind === "selection_function") ?? []
+  if (!action || action.name !== "navigate" || action.status !== "succeeded" || matches.length !== 1
+    || !before || decision.sourceRef !== `selection-${action.id}`
+    || !isDeepStrictEqual(decision.binding, { source: "node", nodeId: decision.sourceRef, path: [] })) {
+    throw new Error("selection_function_binding_mismatch")
+  }
+  const fact = matches[0]!, value = evidence.parse(fact.value)
+  assertFact(fact, before.id)
+  const args = z.object({ url: z.string() }).passthrough().parse(action.args)
+  if (value.actionRef !== action.id || !isDeepStrictEqual(value.draft.outputSchema, { type: "string" })
+    || value.draft.examples[0]?.output !== args.url || !isDeepStrictEqual(decision.proofRefs, fact.sourceRefs)) {
+    throw new Error("selection_function_binding_mismatch")
+  }
+  return decision.binding
 }

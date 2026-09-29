@@ -6,10 +6,25 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { test } from "node:test"
 import { openModelBridge, type ModelAudit } from "../src/upstream-browser/model-bridge.js"
+import { modelReport } from "../src/upstream-browser/service.js"
+import { hybridArtifactSchema } from "../src/upstream-browser/hybrid-artifact.js"
 
 const selection = { connectionId: randomUUID(), modelId: "fixture", reasoningEffort: "medium" as const }
 type Subject = Parameters<typeof openModelBridge>[0]["subject"]
 const usage = { inputTokens: 3, outputTokens: 2, totalTokens: 5, reported: true }
+
+test("模型失败审计保留 allowlisted code、固定类别和调用关联", () => {
+  const requestId = randomUUID()
+  const report = modelReport({ requestId, purpose: "agent", event: {
+    type: "generation.failed", invocationId: "fixture-invocation", sequence: 2, createdAt: 1,
+    code: "ai_structured_output_invalid",
+  } } as ModelAudit, "fixture-model", new Map([[requestId, "2026-09-29T00:00:00.000Z"]]))
+  assert.deepEqual(report, { callId: requestId, purpose: "agent", model: "fixture-model",
+    intendedAt: "2026-09-29T00:00:00.000Z", status: "failed", reportedInvocations: 1,
+    failureCategory: "ai_event_failure", failureCode: "ai_structured_output_invalid" })
+  const legacy = { ...report, failureCategory: undefined, failureCode: undefined }
+  assert.equal(hybridArtifactSchema.shape.modelCalls.parse([legacy, report]).length, 2)
+})
 
 // 不变量：固定 browser-use 版本必须通过 BrowserProfile 持有 B-A-T 指定目录，不能退回临时 profile。
 test("上游浏览器适配器保留持久 profile 所有权和运行边界",

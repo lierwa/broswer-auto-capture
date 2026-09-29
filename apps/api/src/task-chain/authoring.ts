@@ -19,20 +19,17 @@ import type { TaskContractRepository } from "./repository.js"
 import { projectPreparationPlan } from "./preparation-plan-projection.js"
 import { reusableHybridSources } from "./hybrid-source-reuse.js"
 import { plannedProgression } from "./authoring-progression.js"
-import { authoringFailureMessage, failureLayer } from "./authoring-failure.js"
+import { authoringFailureMessage, failureLayer, RequirementClarificationRequired } from "./authoring-failure.js"
 import { createStepChainPresentation } from "./presentation.js"
+import { AuthoringBuild } from "./authoring-build.js"
 
 export { authoringFailureMessage } from "./authoring-failure.js"
 
-type RequirementIssue = { code: string; clauseRefs: string[] }
 const MAX_EXPLORATION_BROWSER_STEPS = 100
-class RequirementClarificationRequired extends Error {
-  constructor(readonly issues: RequirementIssue[]) { super("hybrid_requirement_clarification_required") }
-}
 
 export class TaskChainAuthoring {
   private readonly humanWaits = new Map<string, { job: TaskAuthoringJob; waitpointId: string;
-    resume: () => Promise<void>; signal: AbortSignal; resuming: boolean }>()
+    resume: () => Promise<void>; signal: AbortSignal; resuming: boolean; continuation?: Promise<void> }>()
   constructor(private readonly repository: TaskContractRepository, private readonly ai: AIModelProvider,
     private readonly upstream: UpstreamBrowserRuntime) {}
 
@@ -87,7 +84,7 @@ export class TaskChainAuthoring {
     }
     if (active.resuming) conflict("正在核验人工处理结果，请稍后查看。")
     active.resuming = true
-    try {
+    active.continuation = Promise.resolve().then(async () => {
       await active.resume()
       active.signal.throwIfAborted()
       // WHY：ACK 与下一轮事件可能同批到达；成功只收束原等待，不能覆盖下一处人工等待或终态。
@@ -95,7 +92,8 @@ export class TaskChainAuthoring {
       active.job.waitpoint.status = "completed"; active.job.waitpoint.resolvedAt = new Date().toISOString()
       active.job.status = "running"; active.job.reason = "人工处理已确认，正在继续原代表试做。"
       this.humanWaits.delete(jobId); this.touch(active.job)
-    } finally { active.resuming = false }
+    }).finally(() => { active.resuming = false })
+    await active.continuation
   }
 
   private waitForHuman(job: TaskAuthoringJob,
@@ -123,26 +121,27 @@ export class TaskChainAuthoring {
       consumption: { explorationToolCalls: 0, explorationSessions: recoverySourceJobId ? 0 : 1,
         compilationCalls: 0, providerInvocations: null } }
     this.touch(job)
-    if (!this.upstream.recompile) throw new Error("hybrid_offline_compiler_unavailable")
     const reused = recoverySourceJobId
       ? this.assertReusableSources(job, requirement, plan, input, recoverySourceJobId) : undefined
     if (!reused) { job.browserRunId = stableUuid(job.id, "upstream-browser"); this.touch(job) }
     const sources = reused?.sources
       ?? await this.explorePlan(job, requirement, plan, input, signal, model)
     if (reused) job.authoring.exploration = z.json().parse(reused.exploration)
-    // WHY：新采集和显式恢复都只走同一离线编译；编译异常没有回退到 Browser 的分支。
+    // WHY：首次准备消费原 author 已保存的编译结果；只有用户明确选择恢复才进入离线编译。
     job.authoring.stage = "compiling"; job.authoring.level = "E1"; this.touch(job)
     let compilationInvocations = 0
     const compiledSources = []
     for (const source of sources) {
       job.authoring.consumption.compilationCalls++; this.touch(job)
-      const compiled = await this.upstream.recompile({ canonicalRequest: source.result.canonicalRequest,
+      const compiled = reused ? await this.upstream.recompile!({ canonicalRequest: source.result.canonicalRequest,
         sourceGaps: source.result.sourceGaps, outputSchema: source.step.outputContract.schema,
         verifiedChildren: childContexts[source.step.id]!, signal,
         annotation: { selection: model.selection, ownerId: job.id,
           onProgress: (event) => this.recordProgress(job, event) } })
+        : ("compiled" in source ? source.compiled as ReturnType<AuthoringBuild["finish"]> : undefined)
+      if (!compiled) throw new Error("hybrid_online_final_compilation_required")
       compilationInvocations += completedModelInvocations(compiled.modelCalls)
-      const request = compiled.request ?? source.result.request
+      const request = "request" in compiled ? compiled.request ?? source.result.request : source.result.request
       const ambiguities = compiled.response.compilation.gaps.filter((gap) => gap.resolution === "confirm_intent")
         .map((gap) => ({ code: gap.reason, clauseRefs: [...gap.clauseRefs] }))
       if (ambiguities.length) throw new RequirementClarificationRequired(ambiguities)
@@ -178,7 +177,7 @@ export class TaskChainAuthoring {
     signal: AbortSignal, model: PreparedAIModel) {
     if (!job.authoring || !job.browserRunId) throw new Error("hybrid_authoring_context_missing")
     const progression = plannedProgression(plan, input), sources: Array<{ step: TaskPlan["steps"][number];
-      stepInput: JsonValue; result: HybridSourceResult }> = []
+      stepInput: JsonValue; result: HybridSourceResult; compiled: ReturnType<AuthoringBuild["finish"]> }> = []
     const sourceArtifacts: Array<{ stepId: string; closed: boolean;
       artifact: ReturnType<TaskContractRepository["saveArtifact"]> }> = []
     let explorationError: unknown, closed = false
@@ -193,8 +192,11 @@ export class TaskChainAuthoring {
       onProgress: (event) => this.recordProgress(job, event) }, async (session) => {
       try { for (const step of plan.steps) {
         signal.throwIfAborted()
+        job.authoring!.stage = "exploring"; job.authoring!.level = "E0"
         if (!step.resultSpec) throw new Error("plan_result_spec_required")
         const stepInput = progression.resolve(step)
+        const build = new AuthoringBuild({ repository: this.repository, job, requirement, plan, step,
+          input: stepInput, model: model.selection.modelId, signal })
         const task = browserUseTask({ requirement, plan, step, resolvedInput: stepInput })
         const result = await session.author({ task, input: stepInput,
           inputSchema: step.inputContract.schema, outputSchema: step.outputContract.schema,
@@ -206,7 +208,12 @@ export class TaskChainAuthoring {
           // WHY：计划预算是正式运行上界，不是首次探索的试错额度；准备阶段必须在有界动作内
           // 形成可复跑证据，否则快速失败并保留诊断，不能让模型在页面间无限绕路。
           maxSteps: Math.min(MAX_EXPLORATION_BROWSER_STEPS, Math.max(1, step.budget.maxBrowserCommands)) },
-          { closeAfterResponse: step === plan.steps.at(-1), onSource: (result) => {
+          { closeAfterResponse: step === plan.steps.at(-1), onCompilation: async (event, bounded) => {
+            // 人工恢复 ACK 与检查点可同批抵达；等原恢复把 job 保存为 running，不能误拒绝或覆盖等待。
+            await this.humanWaits.get(job.id)?.continuation
+            await build.accept(event, bounded)
+          },
+            onSource: (result) => {
             const artifact = this.repository.saveArtifact(plan.taskId, job.id, hybridSourceMediaType,
               z.json().parse(createHybridSourceArtifact(requirement, plan, step.id, stepInput, result)))
             sourceArtifacts.push({ stepId: step.id, closed: false, artifact })
@@ -214,7 +221,8 @@ export class TaskChainAuthoring {
             this.touch(job)
           } })
         assertCapturedSourceIdentity(requirement, plan, step.id, stepInput, result)
-        sources.push({ step, stepInput, result })
+        const compilationFailure = result.sourceGaps.find(gap => gap.reason.startsWith("hybrid_compilation_"))
+        if (compilationFailure) throw new Error(compilationFailure.reason)
         const ambiguities = result.sourceGaps.filter((gap) => gap.resolution === "confirm_intent")
           .map((gap) => ({ code: gap.reason, clauseRefs: [...gap.clauseRefs] }))
         // WHY：只有纯业务歧义可从未完成来源返回需求对话；缺证或拒绝来源仍按来源失败处理。
@@ -222,6 +230,7 @@ export class TaskChainAuthoring {
           && result.sourceGaps.every((gap) => gap.resolution === "confirm_intent")
         if (!result.sourceSuccess && !ambiguityOnly) throw new Error("hybrid_completed_source_required")
         if (ambiguities.length) throw new RequirementClarificationRequired(ambiguities)
+        sources.push({ step, stepInput, result, compiled: build.finish(result) })
         progression.acceptSource(step.id, stepInput, result)
         job.authoring!.consumption.explorationToolCalls += result.browserCommands
         this.touch(job)

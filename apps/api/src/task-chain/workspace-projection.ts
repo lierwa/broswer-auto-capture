@@ -105,11 +105,15 @@ function summarizeExecution(record: TaskExecution) {
   }
 }
 
-function projectActivity(job: TaskAuthoringJob | null) {
+export function projectActivity(job: TaskAuthoringJob | null) {
   if (!job || job.type !== "prepare" || !job.preparation) return null
   const phase = job.preparation.phase === "preexecuting" && ["compiling", "compiled"].includes(job.authoring?.stage ?? "")
     ? "compiling" : job.preparation.phase
+  // WHY：样本/独立验证开始后由正式草稿和本次 execution 接管画布，不能继续以生成片段遮住运行。
+  const build = ["preexecuting", "compiling"].includes(phase) ? job.authoring?.build : undefined
   return { id: job.id, status: job.status, phase, sequence: job.sequence, reason: job.reason,
+    ...(build ? { build: { stepId: build.stepId, sequence: build.sequence, digest: build.digest,
+      phase: build.phase, nodes: build.nodes, edges: build.edges } } : {}),
     inputRequest: job.preparation.inputRequest, waitpoint: job.waitpoint, updatedAt: job.updatedAt }
 }
 

@@ -1,4 +1,4 @@
-import { browserActionTitle, type ChainNode } from "@browser-capture/contracts"
+import { browserActionTitle, chainNodeDisplayTitle, type ChainNode } from "@browser-capture/contracts"
 
 const chainFamilyLabels: Record<ChainNode["kind"], string> = {
   capability: "通用能力", function: "确定性函数", branch: "分支", browser: "浏览器动作", observe: "现场观察",
@@ -16,7 +16,7 @@ export function actionPresentation(node: ChainNode) {
   const description = action ? browserActionTitle(action) ?? "执行浏览器动作"
     : node.kind === "function" ? "执行 JavaScript，按输入计算结果"
     : type === "读取" ? "读取当前页面数据" : type === "分支" ? "按条件选择后续动作" : type
-  return { type, description, title: node.label && node.label !== node.id ? node.label : description }
+  return { type, description, title: chainNodeDisplayTitle(node) }
 }
 
 export function terminalPresentation(node: ChainNode) {
@@ -30,7 +30,8 @@ export function terminalPresentation(node: ChainNode) {
 
 function browserAction(node: ChainNode) {
   if (node.kind === "browser") return node.operation
-  if (node.kind !== "capability" || !node.config || typeof node.config !== "object" || Array.isArray(node.config)) return null
+  if (node.kind !== "capability" || node.capability.name !== "browser.workflow-step"
+    || !node.config || typeof node.config !== "object" || Array.isArray(node.config)) return null
   return typeof node.config.actionName === "string" ? node.config.actionName : null
 }
 

@@ -3,7 +3,7 @@ import { Button } from "@radix-ui/themes"
 import { ChevronLeft } from "lucide-react"
 import { Background, Controls, MiniMap, ReactFlow, type Edge, type NodeTypes } from "@xyflow/react"
 import { ActionCanvasCard, StageCanvasCard, TerminalCanvasCard, type ActionCanvasNode, type StageCanvasNode, type TerminalCanvasNode } from "./ChainCanvasNodes.js"
-import { buildCanvasGraph } from "./ChainCanvasGraph.js"
+import { buildCanvasGraph, buildPreparationGraph } from "./ChainCanvasGraph.js"
 import type { LiveChainModel } from "./useLiveChain.js"
 
 type FlowNode = StageCanvasNode | ActionCanvasNode | TerminalCanvasNode
@@ -21,15 +21,17 @@ const ariaLabelConfig = {
 
 export function LiveChainCanvas({ model, active, theme }: { model: LiveChainModel; active: boolean; theme: "light" | "dark" }) {
   const { displayChain, presentation, focusStage, chainEvents, setSelectedStageId,
-    setFocusStageId, setSelectedNodeId, selectedNodeId, selectedStageId, focusStageId } = model
-  const graph = useMemo(() => displayChain && presentation ? buildCanvasGraph(displayChain, presentation, focusStage,
+    setFocusStageId, setSelectedNodeId, selectedNodeId, selectedStageId } = model
+  const graph = useMemo(() => model.build ? buildPreparationGraph(model.build,
+    id => { model.setContextMode(null); setSelectedStageId(null); setSelectedNodeId(id) })
+    : displayChain && presentation ? buildCanvasGraph(displayChain, presentation, focusStage,
     chainEvents, (id) => { setFocusStageId(id); setSelectedStageId(null); setSelectedNodeId(null) },
     (id) => { model.setContextMode(null); setSelectedStageId(null); setSelectedNodeId(id) })
     : { nodes: [] as FlowNode[], edges: [] as Edge[] },
-  [displayChain, focusStage, presentation, chainEvents])
-  if (!displayChain || !presentation) return null
-  return <div className="canvas-shell"><div className="flow-canvas chain-stage-canvas" aria-label={focusStage ? `${focusStage.title}动作子图` : "链路阶段总览"}>
-            {active && <ReactFlow<FlowNode, Edge> key={`${presentation.presentationDigest}:${focusStageId ?? "overview"}`}
+  [model.build, displayChain, focusStage, presentation, chainEvents])
+  if (!model.build && (!displayChain || !presentation)) return null
+  return <div className="canvas-shell"><div className="flow-canvas chain-stage-canvas" aria-label={focusStage ? `任务链路，已展开${focusStage.title}` : "链路阶段总览"}>
+            {active && <ReactFlow<FlowNode, Edge> key={model.canvasKey}
               nodes={graph.nodes.map((item) => ({ ...item, selected: item.id === selectedNodeId || item.id === selectedStageId }))}
               edges={graph.edges} nodeTypes={nodeTypes} colorMode={theme}
               fitView fitViewOptions={{ padding: 0.16, minZoom: 0.5, maxZoom: 1 }} minZoom={0.3} maxZoom={1.8}
@@ -37,7 +39,7 @@ export function LiveChainCanvas({ model, active, theme }: { model: LiveChainMode
               onNodeClick={(_, item) => { model.setContextMode(null); if (item.type === "chain-stage") {
                 setSelectedNodeId(null); setSelectedStageId(item.id)
               } else if (item.type === "chain-action") { setSelectedStageId(null); setSelectedNodeId(item.id) } }}
-              onEdgeClick={(_, edge) => { if (displayChain.nodes.some((item) => item.id === edge.source)) {
+              onEdgeClick={(_, edge) => { if ((model.build?.nodes ?? displayChain?.nodes)?.some((item) => item.id === edge.source)) {
                 setSelectedStageId(null); setSelectedNodeId(edge.source)
               } }}
               >
@@ -49,6 +51,6 @@ export function LiveChainCanvasToolbar({ model }: { model: LiveChainModel }) {
   const { focusStage, presentation, setFocusStageId, setSelectedNodeId } = model
   if (!presentation) return null
   return <div className="canvas-mode-controls"><div>{focusStage && <Button size="1" variant="ghost" onClick={() => {
-          setFocusStageId(null); setSelectedNodeId(null) }}><ChevronLeft size={14} />任务链路</Button>}
+          setFocusStageId(null); setSelectedNodeId(null) }}><ChevronLeft size={14} />收起阶段</Button>}
           <strong>{focusStage?.title ?? "任务链路"}</strong></div></div>
 }

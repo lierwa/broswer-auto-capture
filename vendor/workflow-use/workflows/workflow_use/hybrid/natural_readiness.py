@@ -21,14 +21,14 @@ def consumer_readiness_by_action(trace, settle=NATURAL_SETTLE, *, allowed_consum
                 break
             if allowed_consumer_ids is not None and consumer.id not in allowed_consumer_ids:
                 continue
-            readiness = _verified_consumer_readiness(producer, consumer, observations, settle)
+            readiness = _verified_consumer_readiness(producer, consumer, observations, settle, trace.actions[:index])
             if readiness is not None:
                 output[producer.id] = readiness
                 break
     return output
 
 
-def _verified_consumer_readiness(producer, consumer, observations, settle):
+def _verified_consumer_readiness(producer, consumer, observations, settle, preceding=()):
     if consumer.name not in ('extract', 'bat_read_fields', 'find_elements') or consumer.status != 'succeeded':
         return None
     pre, post = observations.get(consumer.preObservationRef), observations.get(consumer.postObservationRef)
@@ -50,13 +50,33 @@ def _verified_consumer_readiness(producer, consumer, observations, settle):
             or value.targetId != post.tabId or before_url is None or after_url is None
             or before_url.value != value.urlDigest or after_url.value != value.urlDigest):
         return None
-    authority = 'ready' if producer.effect == 'navigation' else 'transition'
+    # WHY：滚动/点击不代表后续字段必然变化；只有同一投影的前后读取能证明这种要求。
+    authority = ('transition' if producer.effect != 'navigation'
+                 and _observed_read_transition(preceding, observations, value) else 'ready')
     condition = {'kind': 'read_fields', authority: True, 'consumerRef': 's-' + consumer.id,
                  'clauseRef': facts[0].id, 'read': runtime_read_specification(value.specification),
                  'scope': {'url': pre.url, 'urlDigest': value.urlDigest}, 'settle': settle}
     refs = _unique_refs([consumer.resultRef, *pre.sourceRefs, *post.sourceRefs,
                          *(reference for fact in facts for reference in fact.sourceRefs)])
     return {'condition': condition, 'proofRefs': refs}
+
+
+def _observed_read_transition(preceding, observations, current):
+    for action in reversed(preceding):
+        if action.effect in DELAYED_EFFECTS:
+            break  # 其它页面动作隔开了因果边界，不能把更早的变化归给本动作。
+        post = observations.get(action.postObservationRef)
+        if action.status != 'succeeded' or post is None:
+            continue
+        for fact in _natural_facts(post, 'verified_natural_read', action.id):
+            try:
+                prior = VerifiedNaturalRead.model_validate(fact.value)
+            except Exception:
+                continue
+            if (prior.stable and prior.targetId == current.targetId and prior.urlDigest == current.urlDigest
+                    and digest(prior.specification) == digest(current.specification)):
+                return digest(prior.output) != digest(current.output)
+    return False
 
 
 def with_consumer_readiness(conditions, refs, consumer, settle=NATURAL_SETTLE):

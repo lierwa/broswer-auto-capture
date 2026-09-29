@@ -7,10 +7,14 @@ import time
 
 def cleanup_result(mode):
     capability = {'stage': 'capability_close', 'status': 'confirmed', 'code': None}
+    browser = {'stage': 'browser_close', 'status': 'confirmed', 'code': None}
     if mode == 'close_stage_failure':
         capability = {'stage': 'capability_close', 'status': 'unconfirmed',
                       'code': 'cleanup_capability_close_failed'}
-    stages = [capability, {'stage': 'browser_close', 'status': 'confirmed', 'code': None}]
+    if mode == 'browser_close_failure':
+        browser = {'stage': 'browser_close', 'status': 'unconfirmed',
+                   'code': 'cleanup_browser_close_failed'}
+    stages = [capability, browser]
     return {'closed': all(stage['status'] != 'unconfirmed' for stage in stages), 'stages': stages}
 
 

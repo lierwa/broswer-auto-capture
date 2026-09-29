@@ -3,11 +3,12 @@ from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import Field, JsonValue, TypeAdapter, model_validator
 from workflow_use.hybrid.evidence import CompilationGap, Contract
-from workflow_use.hybrid.read import ReadSpec
+from workflow_use.hybrid.read import ReadPaths, ReadSpec
 from workflow_use.hybrid.author import AuthorInput
 from workflow_use.hybrid.request import CompilationRequest, NaturalCompilationRequest
 from workflow_use.hybrid.invokes import VerifiedChild
 from browser_use_runner.profile_owner import RunnerOwnership
+from browser_use_runner.compilation_control import CompilationAck
 
 
 class AllowedSite(Contract):
@@ -61,6 +62,7 @@ class ReadCommand(Contract):
     version: Literal[2]
     specification: ReadSpec
     scope: 'ReadScope | None' = None
+    requiredPaths: ReadPaths = Field(default_factory=list)
 
 
 class TargetReadinessCommand(Contract):
@@ -108,6 +110,7 @@ class ProfileRecoverRequest(Envelope):
 
 class ExecuteRequest(Envelope):
     type: Literal['hybrid_execute']
+    actionRef: str | None = Field(default=None, min_length=1, max_length=256)
     command: StepCommand | ReadCommand | TargetReadinessCommand
 
 
@@ -141,6 +144,7 @@ class AuthorRequest(Envelope):
     type: Literal['hybrid_author']
     model: AuthorModel
     source: AuthorInput
+    onlineCompilation: bool = False
 
 
 class AuthorResumeRequest(Envelope):
@@ -163,4 +167,4 @@ class AnnotateRequest(CompileRequest):
     model: AuthorModel
 
 
-REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | CloseRequest | AuthorRequest | AuthorResumeRequest | CompileRequest | AnnotateRequest, Field(discriminator='type')])
+REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | CloseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest | AnnotateRequest, Field(discriminator='type')])

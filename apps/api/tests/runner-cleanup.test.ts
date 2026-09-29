@@ -4,14 +4,15 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
-import { RuntimeCleanupRequiredError } from "../src/upstream-browser/cleanup.js"
+import { RuntimeCleanupRequiredError, cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
+import { authoringFailureMessage, failureLayer } from "../src/task-chain/authoring-failure.js"
 import { withHybridCapabilities } from "../src/upstream-browser/hybrid-runtime.js"
 import { removeRunnerTemporaryDirectory, RunnerProcess } from "../src/upstream-browser/service.js"
 
 const projectRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)))
 const childScript = fileURLToPath(new URL("runner-process-child.py", import.meta.url))
 
-function controlledRunner(mode: "normal" | "close_stage_failure" | "timeout" | "nonzero_exit",
+function controlledRunner(mode: "normal" | "close_stage_failure" | "browser_close_failure" | "timeout" | "nonzero_exit",
   signal = new AbortController().signal) {
   return new RunnerProcess(projectRoot, signal, undefined, { runnerScript: childScript,
     runnerEnvironment: { BAT_TEST_RUNNER_MODE: mode }, closeTimeoutMs: 150, childCloseTimeoutMs: 150 })
@@ -40,6 +41,15 @@ test("close 阶段失败保留 allowlisted Python 阶段码而不退化为 exit 
   assert.equal(report.status, "unconfirmed")
   assert.equal(report.code, "cleanup_capability_close_failed")
   assert.equal(report.activeResources, false)
+})
+
+test("普通 owned browser 关闭未确认时必须报告仍有活动资源", async () => {
+  const runner = controlledRunner("browser_close_failure")
+  await runner.startCompiler()
+  const report = await runner.close()
+  assert.equal(report.status, "unconfirmed")
+  assert.equal(report.code, "cleanup_browser_close_failed")
+  assert.equal(report.activeResources, true)
 })
 
 test("结构化 owner close 已确认时，child 非零退出只证明进程已结束而不制造 cleanup_required", async () => {
@@ -82,4 +92,16 @@ test("Windows 临时句柄竞态使用有界原生重试参数", async () => {
   let captured: Parameters<typeof rm>[1] | undefined
   await removeRunnerTemporaryDirectory("bounded-owned-directory", async (_target, options) => { captured = options })
   assert.deepEqual(captured, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+})
+
+test("准备的主错误不被后续清理错误覆盖，清理未确认也仍然显示", () => {
+  const report = cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => ({ stage,
+    status: stage === "browser_close" ? "unconfirmed" : "confirmed",
+    code: stage === "browser_close" ? "cleanup_browser_close_failed" : null })), false)
+  const primary = new Error("upstream_runner_start_failed")
+  const error = new RuntimeCleanupRequiredError("owned-prepare", report, { status: "failed", error: primary })
+  assert.ok(authoringFailureMessage(error).includes(authoringFailureMessage(primary)))
+  assert.match(authoringFailureMessage(error), /清理尚未确认/)
+  assert.equal(failureLayer(error, "exploring"), failureLayer(primary, "exploring"))
+  assert.equal(error.report, report)
 })

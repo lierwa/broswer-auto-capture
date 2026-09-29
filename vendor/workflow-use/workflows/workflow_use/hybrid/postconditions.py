@@ -1,5 +1,6 @@
 """Typed fact adapter for the existing workflow-use StepVerifier; no wait/retry/model loop."""
 import asyncio
+import json
 from contextvars import ContextVar
 from types import SimpleNamespace
 from typing import Literal
@@ -13,7 +14,7 @@ from workflow_use.workflow.step_verifier import StepVerifier, VerificationCheck,
 from .evidence import Contract, digest
 from .natural_effects import read_page_effect, read_target_state, read_target_value
 from .natural_reads import deterministic_read_schema
-from .read import ReadSpec, read_fields
+from .read import ReadPaths, ReadSpec, read_fields
 from .rendered_field_text import FieldReadError
 from .semantic import bounded_schema
 from .target_scroll import read_target_in_view
@@ -34,7 +35,9 @@ class ConsumerReadinessScope(Contract):
 
 
 class PostconditionNotMet(RuntimeError):
-    pass
+    def __init__(self, message, *, diagnostic=None):
+        super().__init__(message)
+        self.diagnostic = dict(diagnostic) if isinstance(diagnostic, dict) else None
 
 
 # WHY：StepVerifier 的详情可能含依赖异常或页面内容；产品运行只接收受管适配层的固定诊断码。
@@ -82,6 +85,7 @@ class Postcondition(Contract):
     ready: bool | None = None
     transition: bool | None = None
     consumerRef: str | None = None
+    requiredPaths: ReadPaths | None = None
 
     @model_validator(mode='after')
     def one_authority(self):
@@ -112,7 +116,7 @@ class Postcondition(Contract):
             Draft202012Validator.check_schema(self.read.outputSchema)
             if self.changed is None and self.unchanged is None and self.ready is None and self.transition is None:
                 Draft202012Validator(self.read.outputSchema).validate(self.equals)
-        elif self.ready is not None or self.transition is not None or self.scope is not None or self.consumerRef is not None:
+        elif any(value is not None for value in (self.ready, self.transition, self.scope, self.consumerRef, self.requiredPaths)):
             raise ValueError('consumer_readiness_requires_read_projection')
         elif self.equals is not None and not isinstance(self.equals, str):
             raise ValueError('postcondition_text_required')
@@ -147,6 +151,7 @@ def declared_checks(raw: list[dict], args: dict, target: dict | None, allow_unre
                                      if condition.transition else {}),
                                   **({'ready': True} if condition.ready else {}),
                                   **({'read': condition.read.model_dump()} if condition.read else {}),
+                                  **({'requiredPaths': condition.requiredPaths} if condition.requiredPaths else {}),
                                   **({'scope': _runtime_read_scope(condition, conditions, args)}
                                      if condition.scope else {}),
                                   **({'consumerRef': condition.consumerRef} if condition.consumerRef else {})}))
@@ -210,6 +215,8 @@ def settle_policy(raw):
 
 
 async def verify_declared(browser, checks, policy=None):
+    for check in checks:
+        check.parameters['_batAttemptCount'] = 0
     if policy is None:
         return await verify_once(browser, checks)
     # WHY：成熟库只重查事实；Tools.act 已在外层执行一次，取消和时限不被重试吞掉。
@@ -222,6 +229,7 @@ async def verify_declared(browser, checks, policy=None):
 async def verify_once(browser, checks):
     for check in checks:
         check.parameters.pop('_batFailureReason', None)
+        check.parameters.pop('_batFailureDiagnostic', None)
     # WHY：同轮多个页面事实必须来自同一 Page；身份漂移只重读有界事实，不重派动作。
     page_checks = sum(check.parameters.get('kind') in _PAGE_FACT_KINDS for check in checks)
     pinned = page_checks > 1 or any(check.parameters.get('kind') == 'read_fields' for check in checks)
@@ -251,7 +259,11 @@ async def verify_once(browser, checks):
         for check in checks:
             reason = check.parameters.get('_batFailureReason')
             if check.name in failed and check.name in _CHECK_KINDS and reason in _CHECK_REASONS:
-                raise PostconditionNotMet(f'ordinary_postcondition_failed_{check.name}_{reason}')
+                diagnostic = {'kind': check.name,
+                              'attempts': check.parameters.get('_batAttemptCount', 0),
+                              **(check.parameters.get('_batFailureDiagnostic') or {})}
+                raise PostconditionNotMet(f'ordinary_postcondition_failed_{check.name}_{reason}',
+                                          diagnostic=diagnostic)
         for name in outcome.checks_failed:
             if name in _CHECK_KINDS:
                 raise PostconditionNotMet(f'ordinary_postcondition_failed_{name}_check_error')
@@ -318,6 +330,8 @@ def _reset_read_stability(checks):
 
 async def check_fact(parameters, browser):
     parameters.pop('_batFailureReason', None)
+    parameters.pop('_batFailureDiagnostic', None)
+    parameters['_batAttemptCount'] = parameters.get('_batAttemptCount', 0) + 1
     if ((parameters.get('changed') is True or parameters.get('unchanged') is True
              or parameters.get('transition') is True)
             and parameters.get('baselineCaptured') is not True):
@@ -357,7 +371,25 @@ async def check_fact(parameters, browser):
             return False, 'declared_projection_not_stable'
     if not passed:
         parameters['_batFailureReason'] = 'fact_mismatch'
+        if parameters.get('kind') == 'target_state':
+            expected, observed = _safe_target_state(parameters.get('expected')), _safe_target_state(actual)
+            if expected is not None and observed is not None:
+                parameters['_batFailureDiagnostic'] = {'expected': expected, 'actual': observed}
     return passed, 'declared_fact_checked'
+
+
+def _safe_target_state(value):
+    """Decode only the fixed boolean control-state vocabulary; arbitrary page values stay private."""
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        return None
+    allowed = {'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
+               'checked', 'selected', 'disabled'}
+    if (not isinstance(parsed, dict) or set(parsed) - allowed
+            or any(type(item) is not bool for item in parsed.values())):
+        return None
+    return {key: parsed[key] for key in sorted(parsed)}
 
 
 def readiness_projection_unavailable(parameters, error):
@@ -372,7 +404,7 @@ def readiness_projection_unavailable(parameters, error):
 async def read_check_value(parameters, browser):
     return await read_fields(browser, ReadSpec.model_validate(parameters['read']),
                              scope=parameters.get('_runtimeReadScope', parameters.get('scope')),
-                             page=_ATTEMPT_PAGE.get()) if parameters['kind'] == 'read_fields' else (
+                             page=_ATTEMPT_PAGE.get(), required_paths=parameters.get('requiredPaths', ())) if parameters['kind'] == 'read_fields' else (
            await read_fact(parameters['kind'], parameters['target'], browser,
                            parameters.get('_retainedElement')))
 

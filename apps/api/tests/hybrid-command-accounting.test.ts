@@ -42,13 +42,15 @@ test("没有 hybrid Browser-Use 的链路在接单前拒绝 headless", () => {
 
 test("hybrid scope观察和动作同步到 TaskRun 与 execution 总账，invoke 不双计", async () => {
   for (const nested of [false, true]) {
-    const { run, saved, requests, consumption } = await execute({ nested, limit: 3 })
+    const { run, saved, requests, wireRequests, consumption } = await execute({ nested, limit: 3 })
     assert.equal(run.status, "completed")
     assert.deepEqual(requests, ["hybrid_execute", "hybrid_observe", "hybrid_execute"])
     assert.equal(consumption.browserCommands, 3)
     const browserRun = [...saved.values()].find((item) => item.binding.chain.id !== (nested ? run.binding.chain.id : ""))!
     assert.equal(browserRun.consumed.browserCommands, 3)
     assert.equal(consumption.llmCalls, 0)
+    assert.deepEqual(wireRequests.filter((request) => request.type === "hybrid_execute")
+      .map((request) => request.actionRef), ["navigate", "read"])
   }
 })
 
@@ -132,9 +134,9 @@ test("保留原窗口时只交付已确认的 lease，Runner 清理回执仍独�
 
 async function execute(options: { limit: number; ledgerLimit?: number; nested?: boolean; failRead?: boolean }) {
   const child = readChain(options.limit), chain = options.nested ? parentChain(child) : child
-  const saved = new Map<string, TaskRun>(), requests: string[] = [], errors: string[] = []
+  const saved = new Map<string, TaskRun>(), requests: string[] = [], wireRequests: Array<{ type: string; actionRef?: string }> = [], errors: string[] = []
   let consumption = empty()
-  const runner = controlledRunner(requests, options.failRead)
+  const runner = controlledRunner(requests, options.failRead, wireRequests)
   const upstream: UpstreamBrowserRuntime = { withSession: async () => { throw new Error("model_session_forbidden") },
     withCapabilities: (input, work) => withHybridCapabilities({ ...input, root, directory: tmpdir(), createRunner: () => runner },
       (base) => work({ ...base, async capability(invocation) {
@@ -153,14 +155,16 @@ async function execute(options: { limit: number; ledgerLimit?: number; nested?: 
     budget: { ...chain.budget, maxBrowserCommands: options.ledgerLimit ?? options.limit },
     consumed: empty(), scopeConsumption: { [chain.stepId]: empty() },
     onConsumption: (_scope, snapshot) => { consumption = snapshot.total } }, (runChain) => runChain(chain, request))
-  return { run, saved, requests, consumption, errors }
+  return { run, saved, requests, wireRequests, consumption, errors }
 }
 
-function controlledRunner(requests: string[], failRead = false) {
+function controlledRunner(requests: string[], failRead = false,
+  wireRequests: Array<{ type: string; actionRef?: string }> = []) {
   return { startHybrid: async () => {}, envBoolean: () => true,
     request: async (raw: unknown) => {
       const request = raw as { type: string; command?: { name: string } }
       requests.push(request.type)
+      wireRequests.push(request as { type: string; actionRef?: string })
       if (request.type === "hybrid_observe") return browser
       if (failRead && request.command?.name === "browser.read-fields") throw new Error("provider_primary_failure")
       return { output: null, browser, browserCommands: 1, modelCalls: 0 }

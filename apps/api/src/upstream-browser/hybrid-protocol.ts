@@ -1,11 +1,12 @@
 import { z } from "zod"
 import { jsonValueSchema, resultSpecSchema } from "@browser-capture/contracts"
-import { hybridTargetSchema, readSpecificationSchema, targetScopeSchema } from "./hybrid-schema.js"
+import { hybridTargetSchema, readSpecificationSchema, targetScopeSchema, requiredReadPathsSchema } from "./hybrid-schema.js"
 import { valueSchemaSchema } from "@browser-capture/contracts"
 import { hybridCompilerResponseSchema, compilationGapSchema } from "./hybrid-schema.js"
 import { hybridVerifiedChildSchema } from "./hybrid-invoke.js"
 import { runnerOwnershipSchema } from "./runner-ownership.js"
 import { hybridAuthorResumeRequestSchema } from "./hybrid-author-human.js"
+import { compilationAckSchema } from "./hybrid-compilation-checkpoint.js"
 
 const id = z.uuid()
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
@@ -38,11 +39,12 @@ export const hybridCommandSchema = z.discriminatedUnion("name", [
     args: z.record(z.string(), jsonValueSchema), target: hybridTargetSchema.nullable(),
     postconditions: z.array(z.record(z.string(), jsonValueSchema)).min(1) }).strict(),
   z.object({ name: z.literal("browser.read-fields"), version: z.literal(2), specification: readSpecificationSchema,
-    scope: targetScopeSchema.optional() }).strict(),
+    scope: targetScopeSchema.optional(), requiredPaths: requiredReadPathsSchema.optional() }).strict(),
   z.object({ name: z.literal("browser.target-readiness"), version: z.literal(1),
     actionName: z.enum(["click", "input", "dropdown_options", "select_dropdown"]), target: hybridTargetSchema }).strict(),
 ])
-export const hybridExecuteRequestSchema = z.object({ id, type: z.literal("hybrid_execute"), command: hybridCommandSchema }).strict()
+export const hybridExecuteRequestSchema = z.object({ id, type: z.literal("hybrid_execute"),
+  actionRef: z.string().min(1).max(256).optional(), command: hybridCommandSchema }).strict()
 export const hybridObserveRequestSchema = z.object({ id, type: z.literal("hybrid_observe") }).strict()
 export const hybridHandoffRequestSchema = z.object({ id, type: z.literal("hybrid_handoff") }).strict()
 export const hybridManagedWindowRequestSchema = z.object({ id, type: z.literal("hybrid_managed_window"),
@@ -64,6 +66,7 @@ export type HybridRunnerRequest = z.infer<typeof hybridStartRequestSchema> | z.i
   | z.infer<typeof hybridManagedWindowRequestSchema> | z.infer<typeof hybridAuthorRequestSchema> | z.infer<typeof hybridCompileRequestSchema>
   | z.infer<typeof hybridAnnotateRequestSchema>
   | z.infer<typeof hybridAuthorResumeRequestSchema>
+  | z.infer<typeof compilationAckSchema>
 
 export const hybridCompileRequestSchema = z.object({ id, type: z.literal("hybrid_compile"), request: jsonValueSchema,
   outputSchema: valueSchemaSchema, sourceGaps: z.array(compilationGapSchema),
@@ -77,6 +80,7 @@ export const hybridAuthorSourceSchema = z.object({ task: z.string().min(1).max(1
   entryUrls: z.array(z.url()).max(32),
   maxSteps: z.number().int().min(1).max(100) }).strict()
 export const hybridAuthorRequestSchema = z.object({ id, type: z.literal("hybrid_author"), source: hybridAuthorSourceSchema,
+  onlineCompilation: z.boolean().default(false),
   model: z.object({ model: z.string().min(1), endpoint: z.url(), token: z.string().min(1) }).strict() }).strict()
 export const hybridAnnotateRequestSchema = hybridCompileRequestSchema.extend({ type: z.literal("hybrid_annotate"),
   model: hybridAuthorRequestSchema.shape.model }).strict()

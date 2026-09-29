@@ -1,5 +1,317 @@
 # 技术调研与复用结论
 
+## 2026-09-29 延迟导航 supporting wait 误拒绝：定因、修正与真实验收
+
+旧 job `8c036479-d914-4671-868c-492e7dd063d3` 在 sequence 13 被宿主拒绝，artifact `4677984b-1e03-4c13-87cb-5c42160ba4fe`。保存证据表明 `a-0010` 点击 Issues 已派发；其即时 post `o-0020` 仍是旧仓库 URL，紧邻 `a-0011` 是成功的 `bounded_postcondition_wait/v1`，pre/post `o-0021/o-0022` 已在同一新 Issues URL 和同一 tab/document 稳定，随后 `a-0012` 正常读取 Next 候选。旧 `hybrid-runtime-scope` 只接受动作 post 与 supporting wait pre 同 URL，因而产生 `runtime_scope_supporting_wait_discontinuous`，再被投影成 `hybrid_consumer_readiness_boundary_unproven` / `hybrid_compilation_host_rejected`。旧运行 12 次模型调用均 completed；模型、选择结果和页面读取不是本次根因。
+
+修正仍复用 workflow-use 已保存的 delayed postcondition coverage：只有 wait 类型/结果、相邻 observation sequence、同 tab、单调时间和 settle 上限、稳定新 URL、唯一 changed URL 后置条件、clauseRef、coverage 与 proofRefs 全部吻合时，才把 wait post 作为前驱动作的完成观察；普通同 URL supporting wait 仍先走原逻辑。消费者 readiness 复用同一次 scope 决策检查 URL 变化。任一顺序、时限、tab、URL 稳定、coverage 或引用被破坏时继续拒绝；没有新增依赖、浏览器动作、模型调用、重试或站点特例。
+
+定点证据：真实形状回归先红，旧代码返回 `runtime_scope_supporting_wait_discontinuous`；修正后 `hybrid-read-scope.test.ts` 与 `consumer-readiness.test.ts` 合计 14/14，API package check 通过。原 rejected artifact 经正式 `materializeHybridPrefix` 只读重放为 12 节点/11 连线并保留消费者，未调用模型、浏览器或写数据库。
+
+真实验收不是离线探针：新 job `31290e49-0ed3-4ce7-80d3-844764eff7e3` 跨过原 sequence 13，B-U 26 次 provider invocation 全部完成，final sequence 25、19 节点/18 连线。样本 `9ffd8c7b-c43e-4365-88bd-f9334f55a61f` 与独立复验 `e83d25cd-3e89-47a5-831a-dab6d767163a` 各为 19 transitions / 22 browserCommands / 0 llmCalls，cleanup confirmed；发布 Release V4 `eb5409ff-e3d1-4539-8c0b-6818b485a798` 后，正式 execution `52d8ccaa-1347-47ad-8f1b-b3dcc48a7c1f` 同样完成并返回 #9046 标题与正文，cleanup confirmed，精确 Profile 检查无残留。工作台可见 V4、运行完成和 8 个阶段。
+
+剩余边界单列：其它普通编译 proof gap 是否允许 B-U 继续仍需 sequence/ACK 安全分类，不能因此吞掉来源损坏、越权或保存失败；工作台重试按钮无即时反馈和阶段标签/横向布局仍待定位；历史 V2 首败及旧启动/模型失败的底层原因不可恢复。上述缺口不推翻当前 V4 正式运行通过，也不能被本次通过冒充已解决。
+
+## 2026-09-29 历史研究记录：已保存失败来源驱动的最小收尾修复
+
+真实收尾证据：6320f07d准备→在线final→样本795d23f1→复验ed19a4e9→本地V2发布均完成；后续正式cff34d1b完成24节点/32浏览器命令/模型0，标题正文已保存。V2正式首跑d3959bd6在首页搜索按钮的target_state条件失败仍未定因：新临时profile和原正式profile经同一Runner/ManagedWindow执行保存的前两步均为单次trusted点击、aria-expanded false→true；源码证实锁定Mouse.click按下/释放坐标相同，不是up(0,0)。后续正式运行仅加固定布尔诊断，没有改规则，成功不能证明该首败已修。诊断插桩已删除、摘要恢复，既有状态条件保留，不再无证据叠加补丁。历史06dc启动与ae44模型底层错误缺证据，亦不列为已修。
+
+同一准备9c8012df的B-U完成40动作、final41、26节点；样本96f87a0e在s-a-0022滚动后失败。原规则仅凭非navigation effect即要求后续读取值变化；滚动位置已经变化，但分页链接值可以完全相同，导致无意义等待30秒。删除这个按动作大类的推断：只有当前动作之前、未跨其它页面动作的同一已验证读取，与后态投影确实不同，才生成transition；否则生成ready。原URL/滚动位置/控件后置校验、字段schema和稳定读取保留。该规则同时适用于滚动到控件与点击已显示区域，不是网站特例；有实际前后数据变化证据的列表更新继续要求变化。prefix/final仍共用同一编译器，无新模型字段/次数/重派；TS同样核验ready与transition的真实来源。原失败source与草稿不改写。
+
+ebb69527在搜索页确认仓库存在后，done(false)明确以“没有可点击索引且不能使用查询序号/样本href”为原因提前结束，7动作、无编译gap。现只澄清已有系统提示：find_elements不承诺点击索引，缺索引应先使用原生wait/scroll/search_page刷新或露出目标，再按新状态点击；不能仅凭查询输出没索引就判任务不可能。保留用户路径、原生done(false)、原生预算和错误处理，不添加宿主补问/重试/强制成功，也不虚构索引。此为模型指引修正，不是已证明解决所有模型提前放弃；只能由后续真实运行验证。
+
+真实正式复跑 702b3b12 在 s-a-0024 的 `[0, attribute_href]` 绑定失败；样本与独立复验均成功，因此它们不能证明稳定性。已发布 IR 的 s-a-0023 允许空数组/缺 href，其前驱 readiness 也使用同一宽合同：旧页面 scope 不符时 baselineUnavailable=true，新页面连续空读取也可判成功。该漏洞可独立复现；本次失败未保留节点原始输出，不能声称已区分空数组与缺 href。
+
+最小修复继续共用原编译/物化、字段读取和 Tenacity settle：仅当读取成功后**直接、无条件**进入消费它的能力节点时，将已验证的 ValueBinding 精确路径交给运行读取与对应 readiness。条件分支和整体列表绑定不收紧，不改变用户允许的空结果语义，不依据样本条数或内容猜阈值，不增加模型字段、等待秒数、重派动作或校验循环。requiredPaths 仅由物化器从已有绑定生成，不进入 ReadSpec 或 B-U 工具输入。原始事实、已发布 V1 和失败运行保留；新来源经同一 prefix/final 物化规则生成新版本，不能手工修改 V1 冒充修复。
+
+初版 minItems/items.required 已撤换：实际只绑定第一项 href 时，其它项缺少该可选字段仍应通过；真实读取器反例先红后绿。保留原宽输出 schema，用精确路径存在性检查覆盖空数组/缺字段；未使用的其它行不受影响。普通节点仍无模型，既有 settle 只重读、不重派动作。
+
+沿用下方 Product Alignment / Reuse Assessment，不增删库、模型或运行器。983c259d 的真实路径是动作→原生 wait→正式读取；原 scope 分类已正确保留 wait，但 consumer readiness 又强制直接前驱必须是动作，导致误拒绝。该历史修正仅允许沿现有成功边跨过有同 tab/URL 证据的原生 wait；跨 URL 的严格 bounded navigation wait 是本文件顶部随后增加并由 V4 验收的独立分支。跨 tab、断边与隐藏动作仍拒绝。普通复跑模型 0。
+
+同批修正只作用于新任务：完整 final 收到并核验后将失败归在编译阶段；失败生成快照不得遮住已有草稿/发布链路，无链路时仍显示失败片段。另核对 prefix/final 的先前读取绑定是否受空业务输出影响；只有复现后才改。源码清单只更新本次实际修改文件的摘要，保留旧来源和失败历史。验证依次为已保存真实来源纯编译、所属边界回归、正式工作台新准备及普通复跑；前两者不冒充真实主线完成。
+
+## 2026-09-28 减少模型交互与探索/编译断流修正（实施中）
+
+2026-09-29 编译闸门减法（同一 Product Alignment）：983c259d 完成45个实际动作并读取详情，final 因 repeated_operation_reuse_unproven（两次原生wait）与 natural_empty_list_control_required（唯一下一页读取的数组索引绑定）拒绝。不是本次读到了空列表。原 rejected artifact 5269971b-c5fa-4b0e-8a02-6d1dcbe736ab 在无模型、无浏览器的正式重编译入口精确复现。删除仅按操作摘要相同推断业务循环的全局闸门，保留已声明 repeat_method/fold 和输入批量边界；相同等待/控件操作不等于重复处理N个业务输入。未声明空列表成功分支时，不替用户强造该业务行为，也不要求额外LLM/字段；既有 ValueBinding.readPath 在数据不足时抛 binding_path_missing，正常运行失败而非伪造空结果成功。已声明的 edgeCases 继续完整验证、生成原分支。两个最小生产编译回归均已先红，修正后还须回放原失败产物并走真实链路。
+
+2026-09-29 同一来源过滤边界修正：job 62ab4bbe 的 B-U 正常完成41步，最终主机因 hybrid_consumer_readiness_boundary_unproven 拒绝（artifact 71170a11-7e53-4750-8508-866bbdbbbd63）。正式物化入口只读重放精确复现：未派发 a-0016/18 的原生历史有 URL/tab 与 dispatch entered=false，却没有尚未完成的额外 url_digest 采集；Python 已按未派发排除，TS scope 又要求该缺失事实。同一 Product Alignment 下仅调整自有 IR 来源适配：已证明未派发且没有完整现场 URL fact 的提议，只核对原生 URL/tab 元数据，不补造事实；有 URL fact 时仍核验，后继实际观察仍核验连续性。复用现有派发审计与分类器，不增加模型、依赖或恢复循环；原拒绝来源保持不变。
+
+2026-09-29 延续同一 Product Alignment / Reuse Assessment：job 978a9267 点击 Issues 成功后，step10 尚未生成动作时，观察前后同一 target/document 的 URL 正常从仓库转到 Issues，被自有 scope 判为 observation_changed_during_capture 并 stop。source 99f77362-ac91-4598-8e8c-8ca81c46f91f 已关闭；9步8节点、重复事实0，不是原生模型或函数失败。修正同一受控 tab 的 URL/文档过渡：模型观察不交付混合快照，旧提议不派发，通过已有 ObservationRefreshRequired 回到原生 Agent.step 错误处理；动作后仍用已有 snapshot settle。tab/session 归属变化、读取身份失败、持久化失败继续停止。没有新增重试循环、字段、模型调用或上限。反例同时复现正常过渡误停和动作后归属变化误放；14项所属 scope/只读刷新/CDP读取检查通过，真实主线仍待验证。
+
+在线选择接线补齐（沿用本节 Product Alignment / Reuse Assessment）：job d741b45e 已由原生 B-U 完成详情读取与 done；分页读 a-0014 的12条结果中，页码2与 Next 是同一 href，a-0015 navigate 因普通值绑定要求唯一路径而缺口。final 又移除未消费读取，连带使 a-0010 readiness 与其 Function 消费者不完整。只复用现有 selection annotation / FunctionDraft / QuickJS / ValueBinding：必要的动态导航同样按实际动作生成一个源码，输出候选 href，由原导航节点消费；不放宽唯一路径规则，不固化样本 URL，不添 Agent loop 或编译修复轮。输入/输出 schema 与绑定仍由动作和真实读取决定，模型响应仍只有 source。此属补齐既有通用能力，可用于分页控件和目录/搜索结果导航；无新库、无新运行器、普通复跑模型0。
+
+同一 Product Alignment 下补齐原生错误恢复边界：真实 job d4b34548-c296-496c-8fb5-58587ab70ce6 的 a-0006 提议点击 index4771，尚未进入 Tools.act，因 B-A-T 将 `observation_target_index_unavailable` 判为来源破坏而 stop；此前5步在线保存、重复事实0。沿用已有 ObservationRefreshRequired 让同一已核验文档上的无效索引回到原生 step 错误处理，不另建重试/加次数/重新选目标；未派发审计保留，实际文档身份变化和保存失败仍拒绝。此修复必须先覆盖真实 callback → collector → scope → after_step 边界，再继续原任务，不能以局部验证宣布全链通过。
+
+真实修正过程保留：job 387ad9bb-9ef6-4da1-84b9-531875872e0f 已在线生成选择函数并到达 Issues，但查询分页链接反复进行。原 a-0029/30/35 查询均有11条实际结果，原生 MessageManager 因 long_term_memory 优先而不交付 extracted_content。此次删除整个 enrichment 连必要结果交付也删掉了，属本轮减法错误；主动取消该轮并确认 browser busy/cleanup=false，不把取消算成功。修复只用原生 include_extracted_content_only_once 交付原生查询原文，不再添加 DOM 查询/祖先/额外摘要。原生 search_page 使用同样结果合同，也应一起交付，避免只修一个工具。
+
+原候选集合检查还额外要求同位置元素 class 完全相等，会把 selected/visited 等样式差异当作集合不成立。删掉这层猜测：复用已验证 CSS 查询的实际 backend 成员以及原 DOM 树，要求全部命中属于同一重复条目组、每项至多一个命中；仍拒绝跨组和一项多个目标。复用既有 _walk_structural，不加选择器或语义打分；纯结构反例与原同组/跨组测试负责此边界，不能冒充真实 GitHub 全链通过。
+
+```text
+Product Alignment:
+- natural-language task: 保留用户指定入口与动作顺序，在原生探索中生成可复跑节点。
+- reusable chain boundary: 原生动作与现场证据 → 在线编译 → 同一持久化草稿；适用于列表导航与表单/控件操作。
+- runtime inputs: 确认输入及运行时 DOM 候选；不固定样本身份。
+- dynamic task outputs: 保留原字段读取与输出绑定。
+- generic platform capability used: B-U 原生回调/重试、现有 selection annotation、QuickJS、前缀编译及 ACK。
+- replay model calls: 普通节点 0；删除完成 judge，必要的选择函数按实际动作生成一次。
+- site/task-specific code added: no
+```
+
+不增删关键依赖、不重造 Agent loop/选择器/执行器。当前失败 a-0039..43 来自逆序伪反例；随后潜在的完成审查仅已有观察就达 278452 字节，超过自己的 256000 上限（该次真实任务未到此阶段）。删除审查而非提高预算。
+
+删除探索模型的 `bat_validate_selection` 前置任务；复用既有选择注解到在线回调，只让模型返回源码或 null，不要求 outcome/reason/examples。真实动作 ordinal 是检查样例，输入/schema/节点/连线全部由代码组装。唯一控件继续复用已证明单例的确定性保护。按动作来源键保留一次生成结果，包括失败；最终编译不重复请求。原 `bat_read_fields` 与人工接管保留：前者提供零模型复跑的字段方法，后者处理登录/验证码/访问限制。
+
+普通前缀缺口记录并继续原生探索；不再在下一动作前用未完成的编译依赖拦截动作。最终有缺口仍不得发布或伪称成功。来源保存/身份/权限失败仍停止。模型或函数失败不生成替代节点、不自动重放动作、不新建重试队列。在线片段不是已发布链路；历史失败来源保持不变。
+
+撤回上一小节“给 B-U 注入祖先结构”的修补：原生模型上下文不再由 action adapter 增加 DOM 祖先或压缩候选；结构证据仍由现有 collector 在 B-A-T 内部采集。下列旧记录是历史决策，凡与本节冲突均已被本节替代。
+
+## 2026-09-28 删除逆序伪反例，保留在线节点主线
+
+Product Alignment：同一确认任务在 B-U 实际动作后在线生成节点；选择输入来自原 DOM 顺序读取，输出仍绑定原 ordinal，复跑普通节点模型 0，不新增网站代码。保留原采集/前缀编译/持久化/画布/样本验证，不退回仅探索或结束后临时补节点。
+
+真实 job `e50ab706-4f6d-422b-825e-e17945e00ee3` 到达第二页，a-0038 返回 ordinal 1..25。a-0039 的 `return candidates[0].ordinal` 用原 QuickJS 执行成功返回 1；同一程序仅因 B-A-T 追加逆序输入被拒绝为 actual25/expected1，随后五次拒绝后 B-U 失败退出。删除这项与读取器 DOM 顺序合同冲突的校验及“输入可能无序”提示，不更换函数实现或放宽真实 ordinal/来源检查。
+
+另外，原 a-0009 结果有标题父级 h3 的结构，但只在 extracted_content；long_term_memory 没有 ancestry 且 include_extracted_content_only_once=false。锁定 Browser-Use 的 MessageManager 优先 memory，因而模型收不到这部分已采证据。复用原 ActionResult 的一次性读取字段来交付既有详情，不另建工具、选择器或 Agent 循环；以真实保存结果经过原 MessageManager 验证，不将仅原始输出中存在信息当成模型已收到。
+
+## 2026-09-28 撤掉与任务规则冲突的选择校验
+
+同一边界补齐空集合反馈：job `82bdbd3b-6d9b-480d-8c7a-5ac36a39dec6` 的原始五次选择请求都绑定到最新空读取，不是函数语法错。原工具现在在 HTTP 校验前明确要求纠正页面查询，不能跳回较早非空读取。保存来源重放五次均返回 `selection_candidates_empty`、HTTP 0；新增针对“旧非空/新空”组合的回归先红后绿。它只证明反馈归因修正，不证明 B-U 会正确恢复，也不替代完整任务验收。
+
+```text
+Product Alignment:
+- natural-language task: 按确认规则选择条目，包括始终选择第一项或固定页码。
+- reusable chain boundary: 真实 DOM 读取 → 需求规则对应的纯函数 → 原始 ordinal 绑定 → 点击。
+- runtime inputs: 当前真实候选；不固化样本标题、URL 或临时元素编号。
+- dynamic task outputs: 同版任务输出不变。
+- generic platform capability used: 原生 B-U 选择工具、原 QuickJS 执行和既有 Function 物化。
+- replay model calls: 0；不新增模型、语义裁判或重试流程。
+- site/task-specific code added: no
+```
+
+上一轮“强制变化、单例另开例外”应删除，不继续堆例外。序号固定不等于写死样本；用户要求第一项时，各个合法输入都返回 1 才正确。额外示例改为可选辅助验证，不以数量、内容变化或序号变化充当语义证明。已有大小上限仅作资源保护，不能解释为正确性门槛。仍保留真实候选执行、schema/ordinal 归属、原始顺序身份检查、QuickJS 沙箱、需求/读取来源绑定及提供示例的实际断言。
+
+沿用已验证来源事实幂等修正，不加大 8MB/超时预算。当前 500 动作合成来源测试不覆盖真实多步采集，不能用于宣布真实采集容量已通过。先让已保存反例经过正式校验入口，再进入实际任务；历史失败不改写。
+
+唯一控件复用原 `unique_query_target` 的同文档/完整查询/单项双读证明，不再要求 B-U 编造业务选择算法。系统派生一个使用既有 Function/QuickJS 的唯一性保护（输入长度必须为 1，否则抛错），随原 `selection_function` 来源进入同一编译器；多项候选仍由需求对应的模型程序决定，已有已验证规则优先，不能以唯一性保护覆盖冲突规则。无新增公共类型、选择器或执行器。原失败 source `d3ee8809-04ca-4aa2-8528-745b0726191d` 的 a-0030 已在内存副本经真实准备准入、attach、编译、TS 物化与 QuickJS 执行：无 gap、返回 1；加入第二候选即失败。该核查不修改 SQLite，也不冒充实际浏览器复跑。
+
+## 2026-09-28 点击前选择证据与在线编译统一
+
+同需求重跑又暴露两个独立不变量：`maxItems=1` 的集合合同不允许任何合法的数量/ordinal 变化，却仍强制这种变化；在线归档重复调用 `SourceObservationScope.attach` 把同一个诊断追加多次。真实 32 动作来源有 2611 个同观察同 ID 重复事实，最终检查点触发 `hybrid_compilation_payload_limit`（不是 selection gap）。仍沿用上面 Product Alignment：前者只在合同本身严格限单例时验证不同内容而非不可能的序号变化；普通集合变化检查不放宽，运行读取超上限仍拒绝。后者复用现有事实 ID 去重/冲突拒绝语义，不提高 8MB 上限、不裁掉真实诊断、不修改旧来源。
+
+```text
+Product Alignment:
+- natural-language task: 按确认步骤探索，成功动作当场具备节点编译证据。
+- reusable chain boundary: 完整候选读取、规则校验、点击、在线编译；适用于导航控件与业务列表。
+- runtime inputs: 当前候选和同版确认规则。
+- dynamic task outputs: 原任务输出不变。
+- generic platform capability used: 原 PreparedSelections、QuickJS 校验与 selection_function 事实。
+- replay model calls: 0；沿用固定 Function 节点。
+- site/task-specific code added: no
+```
+
+最小修正删除“完整单例直接放行”例外，所有已有 queryCandidate/readActionRef 的集合点击均要求匹配已验证规则，并在派发前记录。已有规则不再被提前返回丢弃；未校验时使用原 SelectionMethodRequired 让原生 Agent 在现场补齐，不新建重试循环。重复推进最终虽由 repeat 编译拥有，探索期间仍遵守相同点击准入，避免在 repeat 证据尚未闭合的在线前缀中漏掉节点证据。不改编译准入、不伪造历史规则。旧失败来源仍缺事实，不能靠重新编译将它变成成功。
+
+复用当前锁定的原生 B-U Tools 注册和原 QuickJS 校验，无增删依赖、无新执行器或选择器。定点回归覆盖单例已有/缺失规则、规则 ordinal 不匹配，以及记录进入原 attach/编译路径；随后继续相同已确认真实任务。
+
+## 2026-09-28 拼写提示与搜索结论边界
+
+```text
+Product Alignment:
+- natural-language task: 保留用户路径；有证据时提示疑似拼写差异，搜索未命中时只报告实际查过的范围。
+- reusable chain boundary: 同一需求确认版本到 B-U；用户明确纠正只替换对应输入。
+- runtime inputs: 同版草案声明的输入，不引入自动改词。
+- dynamic task outputs: 原输出字段不变；失败说明区分本次未找到与目标不存在。
+- generic platform capability used: 现有访谈 Skill、原始用户消息、B-U 任务提示。
+- replay model calls: 普通节点 0；不新增纠错模型、词典、循环或门槛。
+- site/task-specific code added: no
+```
+
+仅修改现有提示和交接回归，不引入或替换基础设施。拼写识别为增强能力，不是主流程必过门；发现时说明原词、候选拼写与实际依据，未经用户明确纠正不静默替换，更不能借此绕过指定入口或步骤。未发现时如实保留尝试和范围，不能从局部未命中推断全站无结果或目标不存在。
+
+本轮用户已授权把实际测试词改为 `LangGraph` 并重跑：通过原任务需求对话提交明确纠正，形成新版本，保留旧失败。只执行所属交接测试和该真实任务，不跑全量测试，不用手写节点或修改数据库代替正式入口。
+
+### 正确任务实跑暴露的独立阻塞（未修）
+
+job `aedbccd5-877f-4cb6-8009-5153ac4e7771` 到达 Issues 后停止，保存前缀 sequence32：a-0030 是成功的唯一 Issues 控件点击，a-0031 已读到分页链接；唯一编译 gap 是 `selection_function_evidence_required`。不是找不到仓库，也不是保存服务故障。
+
+诊断复现使用只读 SQLite 中该 job 的 `authoring.build.payload.canonicalRequest`，按 `NaturalCompilationRequest` 解析；由正式 `output_model_for(schema, 'HybridAgentOutput')` 与 `author_tools_for_result_spec(model, request.plan.resultSpec, selection_methods=True)` 创建同一 ActionRegistry，先断言 `registry.schemaDigest == request.actionRegistryVersion`，再调用 `compile_natural_prefix(request, registry, output_schema=schema)`。输出与已保存 `response.compilation.gaps` 完全相等，断言无 gap 稳定失败：`real_online_prefix_not_replayable`。只运行纯编译，不创建 Browser/Agent、不调用模型、不改产品数据库。
+
+进一步缩小至真实 a-0030 的 pre-observation、此前 verified read 与 `PreparedSelections.before_dispatch`：当前 query 为 `nav a#issues-tab`，候选完整且仅 1 项，`uniqueQueryBypass=true`。即使内存中提供匹配规则记录，`selectionRecordedAfterBeforeDispatch=0`；真实 trace 对该动作的 `selection_function` 事实也为 0。对应源码 `selection_tool.py:122-123` 提前返回与 `natural_selection.py:61-65` 强制要求事实不一致。该探针的内存记录只验证提前返回，不补写来源、不冒充真实工具成功记录。后续必须统一唯一控件与集合选择的准入合同，不靠换搜索词、改网站步骤或重开探索碰运气。
+
+## 2026-09-28 需求明确程度修正（实施中）
+
+```text
+Product Alignment:
+- natural-language task: 保留用户明确的起点、字面输入、步骤及顺序；仅澄清尚未授权的重要业务取舍。
+- reusable chain boundary: 同一确认草案到 B-U，不新增计划或执行图。
+- runtime inputs: 同版草案声明的业务输入。
+- dynamic task outputs: 同版草案声明的输出字段；不冻结搜索所得内容。
+- generic platform capability used: Pi 只读工具、来源引用、公共 Question、Markdown 草案、确认事实。
+- replay model calls: 普通节点 0；不改探索或运行循环。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 区分来源事实与待决选择，并保留原始用户要求到准备阶段。
+- existing implementation in repository: createSourceResolutionTools、projectProvidedDraftSources、InterviewCoordinator、syncConfirmedRequirement、browserUseTask。
+- mature candidates and pinned versions: 当前锁定的 AI Connect 0.3.2 / Pi AgentSession 0.1.0 / Zod 4.1.8；不换库。
+- selected implementation: 扩展现有候选提交工具，允许确无待决或明确委托时随同草案确认；原始用户消息作为同版确认事实传递。
+- reused public surface: MainModelTool、现有 authoring parser / Question projector、原事务和 schema。
+- B-A-T-owned adapter and remaining gap: 宿主只核对搜索 ID、候选引用、唯一候选与同版草案；明确程度由访谈模型按完整上下文判断。
+- license/runtime/platform fit: 不新增依赖、后台服务或平台特例。
+- browser/runtime/state ownership conflicts: 不启动第二浏览器；旧轮次/来源保留，新事实随成功轮次提交。
+- replay model calls: 0；没有额外语义审核模型。
+- rejected candidates and evidence: 原工具对唯一候选一律生成 Question，且原始要求未进入 B-U；不能仅修改措辞或按关键词自动选站。
+- focused validation: 明确/模糊/混合/委托的交接回归、引用与确认门、API 类型检查；之后继续原 GitHub 真实任务。
+```
+
+已复现旧门允许以仓库深链替换用户指定首页路径，且首页缺引用时反而拒绝。此为内存诊断，不是 B-U 已执行绕路的证据。真实任务尚停在来源题板；本轮保留原历史，修改后继续同一任务。
+
+实施核查补充：来源 URL 已包含确定的协议与主机，因此其无查询根首页可沿同一 resolutionId 追溯；确认门和计划投影共用 `sourceSupportsEntry`。这不是“同站任意 URL 放行”，未引用路径、查询、子域名和协议改变均拒绝。真实第 3 轮草案已保留完整路径，但被旧 exact-URL 门拒绝，此项修正后才继续原轮次。夹具进一步发现原数据库把所有搜索来源强制关联 Question，现仅为 status=open、唯一且成功搜索带 searchId 的候选允许无题板；确认时才选中。新能力没有另起来源语义判断器或计划模型。
+
+## 2026-09-28 在线生成实施：共用规则与保存屏障已接通
+
+承接下方复用评估，依赖与所有权不变：不增加库、Agent loop、浏览器、选择器、队列、表或调度器。B-A-T 新增部分仅承担前缀/完整准入适配、原 fd3/stdin 检查点确认、现有 job 保存与工作区投影。完整编译继续使用原读取活性/消费者重绑/重复折叠；普通运行仍使用原 LangGraph 路径。
+
+实现入口：`natural_compile_actions.py` 为 prefix/final 共用分类；`capture_snapshot.py` 生成不修改原事实的快照；`author_compilation.py` 由原回调驱动；`compilation_control.py` 与 `hybrid-compilation-checkpoint.ts` 实现单批确认；`authoring-build.ts` 核对版本/来源、物化并保存。TS 共用物化拆至 `hybrid-materializer-{source,nodes}.ts`，完整与前缀没有分别维护节点转换规则。快照公开投影不包含 canonical 来源或原模型 history；正式新任务缺在线最终结果时明确失败，原离线重新编译只供显式操作。
+
+### 实施验证及范围
+
+- `online-compilation.test.ts` 从真实 TaskChainAuthoringService 进入原 Python 请求循环和 fd3/stdin，再回 TS 校验、SQLite、候选/原 TaskChainRuntime。普通执行返回不同于探索夹具的新读取值，模型调用为 0；离线补编译 stub 被调用即失败。浏览器动作/模型来源是夹具，不是真实网站，不能证明真实首次探索完成。另验证重复包只有一次保存/ACK、冲突拒绝、保存失败保留前有效快照、异步验证期间取消不覆盖状态、人工恢复先保存 running 再接受下一包、业务歧义回原确认入口。
+- Python 编译/采集/回调与 ACK 定点测试保护：原始来源不变、派生事实不重复、无动作 LLM 错误允许原生重试、前缀不伪造终态、消费者/重复依赖严格分类、已派发失败不串接假后态、取消/超时不重发动作。TS 前缀/完整身份、来源、QuickJS、数字词法与原最终关闭/显式离线恢复检查通过。
+- 最小 UI 只复用现有卡片/详情与一句状态；`chain-build-projection` 及原只读组件测试共 6 项通过，保护不伪造终点/运行、生成图只读、无草稿时仍有原人工/失败入口。生成片段仅在 preexecuting/compiling 投影，样本/独立验证由正式草稿与本次运行接管，此阶段交接有生产投影验证。API/Workbench package check 通过；真实挂载后的视口/选中保持和刷新尚未测。
+- `hybrid-prefix-budget.test.ts` 实际调用 Python 和宿主：500 读取动作、1000 观察，5,610,341-byte 整包；Python 677.7ms，宿主物化 425.6ms；500 节点/499 边。在该形状下低于 8MB/10 秒余量。Function 预算另有包含逆序样例的两端用例，不把全读取性能外推到极端字段/Function 组合、所有平台或浏览器耗时。
+- `LOCAL-CHANGES.json` 按实际变动逐项更新，来源校验通过，fork 摘要 `4411251ab85b6f6564728ebccbdfaecf1ec912bca21efad7a39dd8db433aadcd`。没有关闭来源校验、扫描 node_modules、改模型路由或相邻项目。
+
+首次失败及对应处置：共享代码抽取时 TS 类型遗漏在类型检查中修正；UUID 测试改用生产 JSON 入口、方法夹具改回原输出 schema；prefix 的计划身份改为完整入口使用的原 canonical 计划，不采用 Zod 补默认值后的副本；跨进程测试发现 ACK/下一检查点同批到达时旧槽未释放，现为发送 ACK 前释放且旧 finally 只清自己的槽。收尾检查修正生成片段遮住验证阶段草稿的投影范围；新增工作台 SSR 夹具首次遗漏生产 Theme，补同一提供者后验证。unittest 类名和 `typecheck` 脚本名输入错误均属发现阶段失败，改用实际类名/`check` 后通过。以上没有靠新增模型重试、放宽来源或自动离线回退取得通过。
+
+下列为已执行定点入口的复现索引，不要求每次重跑全部：
+
+```sh
+# workdir 必须为当前实际 checkout 根目录；不是根级/全量测试。
+npm exec --workspace @browser-capture/api -- tsx --test tests/hybrid-prefix.test.ts
+npm exec --workspace @browser-capture/api -- tsx --test tests/online-compilation.test.ts tests/hybrid-selection.test.ts
+npm exec --workspace @browser-capture/api -- tsx --test tests/hybrid-prefix-budget.test.ts
+npm exec --workspace @browser-capture/api -- tsx --test tests/hybrid-authoring-final-close.test.ts tests/preparation-offline-compilation.test.ts
+npm exec --workspace @browser-capture/api -- tsx --test --test-name-pattern='保留数字词法' tests/hybrid-offline-annotation.test.ts
+npm exec --workspace @browser-capture/workbench -- tsx --test tests/chain-build-projection.test.ts tests/chain-canvas-readonly.test.ts
+npm run check --workspace @browser-capture/api
+npm run check --workspace @browser-capture/workbench
+```
+
+Python 使用受管 `work/upstream-browser-hybrid/.venv/bin/python -m unittest -v`，`PYTHONDONTWRITEBYTECODE=1`、`ANONYMIZED_TELEMETRY=false`、`BROWSER_USE_CLOUD_SYNC=false`；`PYTHONPATH=apps/api/python:vendor/workflow-use/workflows:vendor/workflow-use/workflows/tests`，覆盖 `test_method_source_compile`、`test_natural_prefix`、`test_capture_prefix`、`test_author_compilation`、`test_author_callback_stop`；ACK 测试入口为 `apps/api/tests/test_compilation_control.py`。原 liveness/repeat/readiness 只运行受影响方法，未运行完整目录。
+
+**验收未闭合：** 本轮没有启动产品服务/真实浏览器/模型或真实网站任务；真实新任务从需求到首次复跑、mounted UI、Windows、极端多 Function/字节前缀仍待验证。原 D6 和正式自动转人工等旧缺口不因此消失。后续真实任务必须保留第一次结果和失败，不把同任务修补后的成功计为首次通过。
+
+## 2026-09-28 在线生成文档修订：来源不变，生成快照可更新
+
+开发入口：[边执行边生成节点最小方案](INCREMENTAL_NODE_COMPILATION_20260928.md)。旧文档把“事实不可变”误加成“生成节点全部字段永久冻结”，与现有 `rebind_consumer_readiness`、读取活性裁剪、repeat 折叠及 TS scope/准备动作物化冲突。现已明确采用每步确定性重算有限前缀、整体保存一个可更新快照；prefix 不提前裁掉未来可能被消费的读取，最终完整编译执行原有归一化。不是在全量编译后忽略 gaps，也不是新写另一套编译器。
+
+ADR 0012 原有“只能关闭后编译”同时作限定修订：允许在线纯编译与保存，但最终 source/v3 仍独立留档并核对身份、摘要及关闭事实，之后才进入正式候选与验证。显式离线重新编译保留，不成为在线失败的隐藏后备。架构基准已加对应说明。以下是设计与局部复用证据，不表示新在线入口已实施。
+
+```text
+Reuse Assessment:
+- capability: 在同一 B-U 代表执行期间，将采集前缀转换并保存为现有节点。
+- existing implementation in repository: AuthorCaptureCallbacks/EvidenceCollector、natural_compile、natural_read_liveness、hybrid-materializer/selection、RunnerProcess、job SQLite 仓储。
+- mature candidates and pinned versions: 现有 browser-use 0.13.8 / workflow-use 0.2.11 受管 fork；LangGraph 运行层不变。
+- selected implementation: 原生步骤回调串行等待；共用现有分类和物化，每步重算有界前缀；一份生成快照、一次保存确认。
+- reused public surface: Agent.run(on_step_end)、现有 before_action 接点和 Agent.stop；原有 fd3/stdin、saveJob、节点 schema。
+- B-A-T-owned adapter and remaining gap: 非终结来源快照、prefix/final 准入拆分、保存 ACK 与在线最终结果交接；不重写 Agent、浏览器控制、图调度或选择器。
+- license/runtime/platform fit: 不新增或替换依赖；保留 workflow-use AGPL-3.0 来源及 Python 3.12/TS 进程边界。Windows/macOS 管道接线本轮未作运行验收。
+- browser/runtime/state ownership conflicts: 一个 Agent/Browser；原始事实与未发布投影分开；关闭事实单列；不生成第二执行图/数据库或伪造可运行的部分 TaskChain。
+- replay model calls: 普通节点 0；prefix 纯计算也为 0；既有准备注解保留原有有界时机和审计，不每步重新调用。
+- rejected candidates and evidence: 永久冻结节点与现有消费者重绑冲突；缓存失效引擎增加第二套编译状态；fd4 最佳努力诊断不能承担保存成功确认；仅删除完整编译 gaps 会绕过终态门。
+- focused validation: 下列两个无浏览器/模型探针 exit_code=0；新 prefix 入口、ACK/取消、上界性能、正式首次链路仍待实施验收。
+```
+
+### 两项已执行的局部探针
+
+命令均以实际 checkout 根目录为 workdir；只读取仓库源码/夹具，不写测试文件、不启动浏览器/模型。下列命令为复现记录，本轮不会重复执行。
+
+1. 消费者重绑：相同来源重复计算相同，旧来源及旧草稿副本未改变；节点 `s-a-0001` 的 consumerRef 从 `s-a-0002` 合法变为 `s-a-0004`。exit_code=0。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 ANONYMIZED_TELEMETRY=false \
+PYTHONPATH=vendor/workflow-use/workflows:vendor/workflow-use/workflows/tests \
+work/upstream-browser-hybrid/.venv/bin/python - <<'PY'
+from copy import deepcopy
+from types import SimpleNamespace
+from test_natural_read_liveness import NaturalReadLivenessTests, REGISTRY
+from workflow_use.hybrid.natural_read_liveness import prune_unused_queries, rebind_consumer_readiness
+
+trace, initial, ledger = NaturalReadLivenessTests().fixture()
+original, source_before, outputs = deepcopy(initial), deepcopy(trace), []
+for _ in range(2):
+    segments, rows, _, issues = prune_unused_queries(
+        SimpleNamespace(trace=trace), REGISTRY, deepcopy(initial), deepcopy(ledger))
+    assert not issues
+    assert not rebind_consumer_readiness(trace, segments, rows)
+    outputs.append((segments, rows))
+assert outputs[0] == outputs[1]
+assert trace == source_before and initial == original
+assert initial[0]['id'] == outputs[0][0][0]['id']
+assert initial[0]['postconditions'] != outputs[0][0][0]['postconditions']
+print('PASS: deterministic derivation; source and old draft unchanged; same node ID')
+PY
+```
+
+2. 前缀与完整准入分开：从方法合同夹具去掉终态、只保留首动作/两观察，保持 `completed=false`。现有 `classify_natural_action` 可产出同一个 read-fields 方法；完整 `compile_request` 仍返回 `completed_business_result_required` 且无可执行入口。exit_code=0。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 ANONYMIZED_TELEMETRY=false \
+PYTHONPATH=apps/api/python:vendor/workflow-use/workflows:vendor/workflow-use/workflows/tests \
+work/upstream-browser-hybrid/.venv/bin/python - <<'PY'
+from test_method_source_compile import method_source
+from workflow_use.hybrid.compiler import compile_request
+from workflow_use.hybrid.natural_compile import classify_natural_action
+from workflow_use.hybrid.evidence import digest
+
+request, registry, schema, verified = method_source()
+body = request.trace.model_dump(mode='json', exclude={'digest'})
+body.update(completed=False, finalResultRef=None,
+            actions=body['actions'][:1], observations=body['observations'][:2])
+trace = type(request.trace).model_validate({**body, 'digest': digest(body)})
+prefix = request.model_copy(update={'trace': trace})
+segment, paths, issues = classify_natural_action(
+    prefix, registry, trace.actions[0], trace.observations[0], trace.observations[1], schema)
+assert not issues and segment['operation']['name'] == 'browser.read-fields'
+assert segment['operation']['specification'] == verified.specification.model_dump(mode='json')
+full = compile_request(prefix, registry, output_schema=schema)
+assert 'completed_business_result_required' in [item['reason'] for item in full.gaps]
+assert full.controlGraph['entry'] == ''
+assert trace.completed is False and trace.finalResultRef is None
+print('PASS: partial classification reuses method; final compiler rejects incomplete source')
+PY
+```
+
+第二项第一次导入失败：测试命令的 PYTHONPATH 未包含 `apps/api/python`，抛出 `ModuleNotFoundError: No module named 'browser_use_runner'`，尚未执行断言。只修正测试命令后继续该探针，生产源码未改。上方复现命令保留成功断言，输出文案简化；原回执另明确 browser_calls=0、model_calls=0。
+
+另一次只选取消费者就绪/读取活性/重复方法的八项 unittest 批次已发起，但未取到终态回执；其通过数、失败数和退出码均未确认，不计入证据，也未重新运行该批次。没有运行全量/根级测试。
+
+边界：探针 1 证明派生节点更新合法，探针 2 证明局部分类可复用；二者都没有调用尚未实现的 `compile_natural_prefix`。实际 prefix 组合、Python↔TS ACK、SQLite 持久化、取消/人工等待、最大规模性能、真实首次准备/复跑仍须按开发文档验收，不能由本节推断通过。
+
+## 2026-09-28 逐动作生成：复用现有编译，先验证增量闭合
+
+以下为本日较早方案的历史记录，其中 G0/G1 路线和“仍待决定增量闭合方式”已被上节及修订开发文档替代；不作为当前实施指令。
+
+开发说明及证据入口：[边执行边生成节点最小方案](INCREMENTAL_NODE_COMPILATION_20260928.md)。本轮为源码核查/文档，不是运行验收或选型已冻结。
+
+```text
+Reuse Assessment:
+- capability: B-U 执行中将已采集动作及时转换并保存为既有 TaskChain 节点。
+- existing implementation in repository: AuthorCaptureCallbacks/EvidenceCollector、natural_compile、hybrid-materializer、RunnerProcess、job SQLite 仓储、React Flow 画布。
+- mature candidates and pinned versions: 现有 browser-use 0.13.8 / workflow-use 0.2.11 受管 fork；LangGraph 继续负责正式运行，不替换依赖。
+- selected implementation: 复用原生 Agent hook 与现有分类/物化，增加薄的串行保存交接；G0/G1 通过前不宣称可用。
+- reused public surface: Agent.run(on_step_end)、既有动作前回调、公开 Agent.stop；现有节点合同与仓储。
+- B-A-T-owned adapter and remaining gap: 来源前缀快照、局部闭合、产品保存确认；完整编译的终态依赖仍须先验证拆分。
+- license/runtime/platform fit: 保留 workflow-use AGPL-3.0 来源和受管 Python 3.12/TS 进程边界；Windows/macOS 使用现有启动/管道，不新增依赖或重新选型。本轮未作平台运行验收。
+- browser/runtime/state ownership conflicts: 同一 Agent/Browser；job 只存生成快照，不建调度器或框架检查点库；LangGraph 职责不变。
+- replay model calls: 普通节点 0；准备期既有语义注解独立审计，不新增模型播报或隐式修复。
+- rejected candidates and evidence: 不用 fd4 最佳努力诊断保存节点；不以全量编译忽略 gaps 冒充增量；不另加工作流/事件框架，现有 hook、IPC 和仓储已有基础能力。
+- focused validation: 先 G0 局部转换与终态一致性，再 G1 正式协议/持久化/普通复跑；本轮未执行这些验证。
+```
+
+固定版本源码的 `Agent._execute_step` 在原生 step timeout 之外 await `on_step_end`；新保存确认必须单独有界并可取消。`capture.finish` 有终结行为，`natural_compile` 有完成来源门，终态包含读取重绑/裁剪与重复方法折叠，不能把 hook 可用推论成逐动作节点已经稳定。[B-U 官方 hooks](https://docs.browser-use.com/open-source/customize/hooks)仅佐证扩展点；具体时序以上述锁定版本为准。CodeGraph 工具在本轮会话不可用，采用已知文件定点读取，未初始化或重建索引。
+
 ## 2026-09-28 现有 Chrome 接入与同一任务慢速复跑验证（本次真实样本通过）
 
 最终证据：同发布京东收藏任务在用户完成常用Chrome登录后，真实工作台按3000ms节奏产生execution `3da5ada2-ebcd-458b-83ba-27e627213b00` / run `282e2ce8-a69c-42de-8d73-63bb2983e950`，completed，9节点/9浏览器命令/模型0，实际2条结果；cleanup confirmed、原任务窗口交付active。重启API后的持久化与UI结果一致。采用当前SDK连接的适配在这一真实样本成立；未知iframe归属按拒绝处理、验证码和其他网站未测，未声称浏览器环境是历史风控的唯一原因。下列“进行中”描述为各阶段事实，详见PROGRESS最新记录。

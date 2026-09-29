@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 import { jsonValueSchema, parseTaskValue, stableChainNodeV2Schema, valueSchemaSchema, type StableChainNodeV2,
   type ValueSchema } from "@browser-capture/contracts"
@@ -11,13 +10,15 @@ const ordinal = z.number().int().min(1).max(300)
 export const selectionValidationRequestSchema = z.object({
   source: z.string().min(1), candidates, candidateSchema: valueSchemaSchema,
   maxItems: z.number().int().min(1).max(300),
-  examples: z.array(z.object({ candidates, ordinal }).strict()).min(2).max(4),
+  outputKind: z.enum(["ordinal", "url"]).default("ordinal"),
+  examples: z.array(z.object({ candidates, ordinal }).strict()).max(4).default([]),
 }).strict()
 const mismatchDetails = z.object({ exampleIndex: z.number().int().min(0).max(20),
   actual: z.number().int().refine(Number.isSafeInteger), expected: z.number().int().refine(Number.isSafeInteger) }).strict()
 
 const safeReasons = new Set([
-  "selection_function_candidates_invalid", "selection_function_ordinal_invalid", "selection_function_variation_required",
+  "selection_function_candidates_invalid", "selection_function_ordinal_invalid",
+  "selection_function_url_invalid",
   "function_draft_example_mismatch", "function_draft_input_mismatch", "function_draft_example_input_invalid",
   "function_source_invalid", "function_input_invalid", "function_output_invalid", "function_output_too_large",
   "function_timeout", "function_cancelled",
@@ -30,16 +31,18 @@ export async function validateSelectionRequest(raw: unknown, signal: AbortSignal
   const body = parsed.data
   try {
     signal.throwIfAborted()
-    const selectedOrdinal = await computeSelection(body, signal)
+    const selected = await computeSelection(body, signal)
     await validateSelectionDraft({ id: "selection-validation", label: "选择程序验证", timeoutMs: 1000, signal,
       bindings: { candidates: { source: "input", path: ["candidates"] } },
       draft: { language: "javascript", source: body.source, inputs: { candidates: body.candidateSchema },
-        outputSchema: { type: "integer", minimum: 1, maximum: body.maxItems },
-        examples: [{ candidates: body.candidates, ordinal: selectedOrdinal }, ...body.examples]
+        outputSchema: body.outputKind === "url" ? { type: "string" }
+          : { type: "integer", minimum: 1, maximum: body.maxItems },
+        examples: [{ candidates: body.candidates, ordinal: selected }, ...body.examples]
           .map((sample) => ({ input: { candidates: sample.candidates }, output: sample.ordinal })) },
     })
     signal.throwIfAborted()
-    return { valid: true as const, ordinal: selectedOrdinal }
+    return body.outputKind === "url" ? { valid: true as const, url: selected as string }
+      : { valid: true as const, ordinal: selected as number }
   } catch (error) {
     if (signal.aborted) return { valid: false as const, reason: "bridge_cancelled" }
     const reason = error instanceof Error && safeReasons.has(error.message) ? error.message : "selection_function_validation_failed"
@@ -53,11 +56,18 @@ async function computeSelection(body: z.infer<typeof selectionValidationRequestS
   const node = stableChainNodeV2Schema.parse({ id: "selection-validation", label: "选择程序验证", kind: "function",
     language: "javascript", source: body.source, inputs: { candidates: { source: "input", path: ["candidates"] } },
     timeoutMs: 1000, outputContract: { id: "selection-validation", version: 1, dialect: "bat-value-schema/v1",
-      schema: { type: "integer", minimum: 1, maximum: body.maxItems } }, writes: [],
+      schema: body.outputKind === "url" ? { type: "string" }
+        : { type: "integer", minimum: 1, maximum: body.maxItems } }, writes: [],
   }) as Extract<StableChainNodeV2, { kind: "function" }>
   // WHY：点击前由真实程序计算选择结果，不能要求模型再口算一次原始候选的期望值。
   const result = await executeFunctionNode(node, { candidates: current }, signal)
   if (result.outcome !== "success") throw new Error(result.reason ?? "function_source_invalid")
+  if (body.outputKind === "url") {
+    if (typeof result.output !== "string" || !current.some(candidate => candidate.attribute_href === result.output)) {
+      throw new Error("selection_function_url_invalid")
+    }
+    return result.output
+  }
   const selected = ordinal.max(body.maxItems).safeParse(result.output)
   if (!selected.success || !current.some((candidate) => candidate.ordinal === selected.data)) {
     throw new Error("selection_function_ordinal_invalid")
@@ -67,20 +77,46 @@ async function computeSelection(body: z.infer<typeof selectionValidationRequestS
 
 export async function validateSelectionDraft(input: Parameters<typeof validateAndMaterializeFunctionDraft>[0]) {
   input.signal?.throwIfAborted()
-  const draft = functionDraftSchema.parse(input.draft), observed = draft.examples[0]!
-  const observedCandidates = validateCandidates(draft)
-  if (draft.examples.length < 3 || !draft.examples.some((example) => !isDeepStrictEqual(example.output, observed.output))
-    || !draft.examples.some((example) => Array.isArray(example.input.candidates)
-      && example.input.candidates.length !== observedCandidates.length)) {
-    throw new Error("selection_function_variation_required")
+  const draft = functionDraftSchema.parse(input.draft)
+  // WHY：读取器按 DOM 顺序生成候选；只验证真实输入与提供的样例，不制造逆序伪反例。
+  validateCandidates(draft)
+  // WHY：相同 href 是同一个导航结果，不是新的业务样例。响应式页面可能只保留“页码”或“下一页”之一，
+  // 所以 URL 选择函数不能依赖某个等价展示副本恰好存在；宿主用已有真实候选派生删减反例，不再询问模型。
+  const examples = [...draft.examples, ...equivalentUrlExamples(draft, 20 - draft.examples.length)]
+  return validateAndMaterializeFunctionDraft({ ...input, draft: { ...draft, examples } })
+}
+
+function equivalentUrlExamples(draft: z.infer<typeof functionDraftSchema>, limit: number) {
+  if (draft.outputSchema.type !== "string" || limit <= 0) return []
+  const variants: z.infer<typeof functionDraftSchema>["examples"] = []
+  for (const example of draft.examples) {
+    if (typeof example.output !== "string" || !Array.isArray(example.input.candidates)) continue
+    const rows = example.input.candidates
+    const equivalent = rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)
+      && row.attribute_href === example.output)
+    if (equivalent.length < 2) continue
+    for (const representative of equivalent) {
+      const candidates = rows.filter((row) => !(row && typeof row === "object" && !Array.isArray(row)
+        && row.attribute_href === example.output) || row === representative)
+      variants.push({ input: { ...example.input, candidates }, output: example.output })
+      if (variants.length >= limit) return variants
+    }
   }
-  // WHY：打乱数组包装顺序而保留原ordinal，禁止筛选后下标冒充DOM身份。
-  draft.examples.push({ input: { candidates: observedCandidates.toReversed() }, output: observed.output })
-  return validateAndMaterializeFunctionDraft({ ...input, draft })
+  return variants
 }
 
 function validateCandidates(draft: z.infer<typeof functionDraftSchema>) {
   const schema = draft.inputs.candidates, output = draft.outputSchema
+  if (schema?.type === "array" && output.type === "string") {
+    // WHY：导航选择仍消费同一真实候选；等价链接不等于多义输出，禁止返回未观察的 href。
+    for (const example of draft.examples) {
+      const sample = parseCandidates(schema, schema.maxItems ?? 300, example.input.candidates)
+      if (typeof example.output !== "string" || !sample.some(candidate => candidate.attribute_href === example.output)) {
+        throw new Error("selection_function_url_invalid")
+      }
+    }
+    return
+  }
   if (schema?.type !== "array" || output.type !== "integer" || output.minimum !== 1
     || !Number.isInteger(output.maximum) || output.maximum! < 1 || output.maximum! > 300) {
     throw new Error("selection_function_candidates_invalid")
@@ -92,7 +128,6 @@ function validateCandidates(draft: z.infer<typeof functionDraftSchema>) {
       throw new Error("selection_function_ordinal_invalid")
     }
   }
-  return samples[0]!
 }
 
 function parseCandidates(schema: ValueSchema, maxItems: number, raw: unknown) {

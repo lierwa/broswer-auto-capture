@@ -16,10 +16,11 @@ class LiveDocumentReadError(ValueError):
 
 
 class ObservationRefreshRequired(RuntimeError):
-    """A proposed indexed action was withheld because its observed URL is stale."""
+    """Withhold an unusable proposal; let the native Agent observe and choose again."""
 
-    def __init__(self):
-        super().__init__('observation_refresh_required: page address changed after observation; no action was sent. Re-read the current page before choosing a target')
+    def __init__(self, reason='page address changed after observation'):
+        super().__init__('observation_refresh_required: ' + reason
+                         + '; no action was sent. Re-read the current page before choosing a target')
 
 
 async def live_document_sample(browser):
@@ -42,13 +43,16 @@ async def live_document_sample(browser):
         backend = roots[0].get('backendNodeId') if len(roots) == 1 else None
         stage = 'target_after'
         after = await page.get_target_info()
+        stage = 'target_identity'
+        if not target_id or before.get('targetId') != after.get('targetId') or target_id != after.get('targetId') \
+                or target_id != browser.agent_focus_target_id:
+            raise ValueError('observation_tab_changed')
     except Exception as error:
         raise LiveDocumentReadError(stage, error) from None
     return {'url': after.get('url'), 'targetId': after.get('targetId'),
         'documentDigest': digest({'targetId': target_id, 'htmlBackendNodeId': backend})
         if type(backend) is int else None,
-        'stable': before.get('url') == after.get('url') and before.get('targetId') == after.get('targetId')
-        == target_id == browser.agent_focus_target_id,
+        'stable': before.get('url') == after.get('url'),
         'monotonicMs': time.monotonic_ns() // 1000000}
 
 
@@ -174,10 +178,14 @@ class SourceObservationScope:
         except Exception as error:
             self.record('state_capture', outcome, getattr(summary, 'url', None), before, after,
                         native_step=step, error=error, error_phase=phase)
-            if allow_transition and outcome in ('changed_during_capture', 'snapshot_document_mismatch'):
-                # WHY：动作后的合法导航由现有 snapshot settle 重新读观察；
-                # 模型作出动作选择以后才变化的页面则由 before_action 保持拒绝。
-                raise ObservationUrlChanged() from None
+            if (outcome in ('changed_during_capture', 'snapshot_document_mismatch')
+                    and self.browser.id == session_id and _same_owned_tab(before, after)
+                    and after['targetId'] == self.browser.agent_focus_target_id):
+                # WHY：同一受控 tab 的页面过渡不是来源损坏；不交付混合快照，
+                # 动作后沿用 snapshot settle，模型观察交回原生 step 重试，不增设循环。
+                if allow_transition:
+                    raise ObservationUrlChanged() from None
+                raise ObservationRefreshRequired('page changed during observation') from None
             self.callbacks.abort('observation', error)
 
     async def verify_before_action(self, summary, native_step, selector_index=None, action_name=None):
@@ -203,13 +211,14 @@ class SourceObservationScope:
         if outcome != 'consistent':
             if _can_refresh_read(action_name, selector_index, baseline, current):
                 return await self.refresh_read(summary, native_step, baseline, current)
-            if _same_document_url_changed(baseline, current):
-                # WHY：SPA 可在模型思考期间改 URL；旧索引不可点击，但同一文档可让 Agent 下一轮重观察。
+            if _same_owned_tab(baseline, current):
+                # WHY：同一 tab 的导航可更换文档；旧提议不能派发，交回原生 Agent 重观察。
                 raise ObservationRefreshRequired()
             raise ValueError('observation_changed_after_capture')
         mapping = getattr(getattr(summary, 'dom_state', None), 'selector_map', {}) or {}
         if type(selector_index) is int and selector_index not in mapping and str(selector_index) not in mapping:
-            raise ValueError('observation_target_index_unavailable')
+            # WHY：同文档的无效模型索引是原生可纠错输出，不是来源身份损坏；不派发也不 stop。
+            raise ObservationRefreshRequired('target index is not present in the current browser state')
         return summary
 
     async def refresh_read(self, summary, native_step, baseline, current):
@@ -221,6 +230,8 @@ class SourceObservationScope:
         self.record('before_action_read_refresh', outcome, getattr(summary, 'url', None), baseline, fresh_sample,
                     native_step=native_step)
         if outcome != 'readonly_observation_refreshed':
+            if _same_owned_tab(current, fresh_sample):
+                raise ObservationRefreshRequired('page changed during read refresh')
             raise ValueError('observation_changed_during_capture')
         return refreshed
 
@@ -262,8 +273,13 @@ class SourceObservationScope:
             if observation is None and imported.observations:
                 observation = imported.observations[-1]
             if observation is not None:
-                observation.facts.append(self.collector.value_fact('observation_diagnostic',
-                    {**diagnostic, 'actionRef': action_ref}))
+                fact = self.collector.value_fact('observation_diagnostic', {**diagnostic, 'actionRef': action_ref})
+                # WHY：在线 retain/snapshot 多次投影同一诊断；事实只能保存一次，不能随步数重复膨胀。
+                existing = [item for item in observation.facts if item.id == fact.id]
+                if existing and existing != [fact]:
+                    raise ValueError('observation_diagnostic_conflict')
+                if not existing:
+                    observation.facts.append(fact)
 
 
 def _updated_tab(tab, sample):
@@ -281,13 +297,12 @@ def _can_refresh_read(action_name, selector_index, baseline, current):
         and baseline['documentDigest'] is not None and baseline['documentDigest'] == current['documentDigest'])
 
 
-def _same_document_url_changed(baseline, current):
-    return (baseline['stable'] and current['stable']
+def _same_owned_tab(baseline, current):
+    return (baseline is not None and current is not None
         and isinstance(baseline['url'], str) and isinstance(current['url'], str)
-        and baseline['url'] != current['url']
         and baseline['targetId'] is not None and baseline['targetId'] == current['targetId']
         and baseline['documentDigest'] is not None
-        and baseline['documentDigest'] == current['documentDigest'])
+        and current['documentDigest'] is not None)
 
 
 def _error_diagnostic(error, phase):

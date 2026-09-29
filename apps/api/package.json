@@ -12,8 +12,8 @@
     "accept:requirement-dialogue": "tsx tests/requirement-dialogue-workbench-acceptance.ts"
   },
   "dependencies": {
-    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-e61cfe91.tgz",
-    "@agent-platform/pi-agent-session": "file:../../vendor/agent-platform/agent-platform-pi-agent-session-0.1.0-52e0e9c6.tgz",
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-f0ef768f.tgz",
+    "@agent-platform/pi-agent-session": "file:../../vendor/agent-platform/agent-platform-pi-agent-session-0.1.0-7b0cd258.tgz",
     "@browser-capture/browser": "0.0.0",
     "@browser-capture/contracts": "0.0.0",
     "@browser-capture/runtime": "0.0.0",

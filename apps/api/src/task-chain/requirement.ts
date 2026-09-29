@@ -38,6 +38,8 @@ export function syncConfirmedRequirement(store: ProductStore, repository: TaskCo
     confirmation: { confirmedAt: confirmation.createdAt,
       requestId: stableUuid(taskId, "confirmation", String(draft.version), confirmation.id) },
     confirmationFacts: state.policyVersion >= 1 ? {
+      userMessages: state.messages.filter((message) => message.role === "user" && message.status === "complete")
+        .map(({ id, text }) => ({ id, text })),
       decisions, sources, entries, resultExpectation, unresolvedItemCount: 0,
     } : null,
   })

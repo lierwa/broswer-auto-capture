@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from workflow_use.hybrid.capture import EvidenceCollector
+from workflow_use.hybrid.collection_structure import query_targets_share_collection
 from workflow_use.hybrid.dom_evidence import CollectionReadRequired, capture_selector_structure, unbound_collection_choice
 from workflow_use.hybrid.natural_target_compile import natural_target
 from workflow_use.hybrid.natural_reads import VerifiedNaturalRead, find_elements_read_spec
@@ -44,6 +45,17 @@ def verified_query(selector='section .title a'):
 
 
 class NestedCollectionSelectionTests(unittest.IsolatedAsyncioTestCase):
+    def test_actual_query_membership_is_not_rejected_for_active_or_variant_css(self):
+        summary, targets = nested_summary()
+        targets[0].attributes['class'] += ' selected'
+        targets[2].attributes['class'] += ' visited'
+        self.assertTrue(query_targets_share_collection(targets[1], {10, 20, 30}))
+
+    def test_multiple_targets_in_one_item_cannot_masquerade_as_one_target_per_item(self):
+        _summary, targets = nested_summary()
+        node('a', 99, targets[1].parent_node, 'entry secondary')
+        self.assertFalse(query_targets_share_collection(targets[1], {10, 20, 30, 99}))
+
     async def test_nested_unread_choice_is_withheld_before_native_dispatch(self):
         summary, _targets = nested_summary()
         browser = SimpleNamespace(agent_focus_target_id='tab-1', get_tabs=AsyncMock(return_value=[]))

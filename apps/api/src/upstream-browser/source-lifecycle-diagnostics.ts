@@ -4,6 +4,42 @@ import type { AuthoringProgressEvent } from "@browser-capture/contracts"
 import type { ModelCallReport } from "@browser-capture/runtime"
 import { z } from "zod"
 import { authorResultIssues } from "./author-result-diagnostics.js"
+import { runnerCleanupCodeSchema, type RunnerCleanupReport, type RuntimePrimaryOutcome } from "./cleanup.js"
+
+const hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
+const targetStateSchema = z.object({
+  "aria-expanded": z.boolean().optional(), "aria-checked": z.boolean().optional(),
+  "aria-selected": z.boolean().optional(), "aria-disabled": z.boolean().optional(),
+  checked: z.boolean().optional(), selected: z.boolean().optional(), disabled: z.boolean().optional(),
+}).strict()
+const pageIdentitySchema = z.object({ sessionDigest: hashSchema, targetDigest: hashSchema,
+  documentDigest: hashSchema, urlDigest: hashSchema }).strict()
+const validationTargetSchema = z.object({ sessionDigest: hashSchema, targetDigest: hashSchema,
+  documentDigest: hashSchema, backendDigest: hashSchema }).strict()
+const runtimeCheckSchema = z.object({
+  kind: z.enum(["url", "url_digest", "title", "target_value", "target_text", "target_state",
+    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "read_fields"]),
+  attempts: z.number().int().min(1).max(100), expected: targetStateSchema.optional(), actual: targetStateSchema.optional(),
+}).strict().superRefine((value, context) => {
+  const values = value.expected !== undefined || value.actual !== undefined
+  if (values !== (value.kind === "target_state") || (value.expected === undefined) !== (value.actual === undefined)) {
+    context.addIssue({ code: "custom", message: "only target state may expose fixed boolean values" })
+  }
+})
+const runtimeActionFailureSchema = z.object({ phase: z.literal("runtime_action_failure"), status: z.literal("failed"),
+  actionRef: z.string().regex(/^[A-Za-z0-9._:-]{1,256}$/), actionName: z.enum([
+    "navigate", "go_back", "wait", "click", "input", "scroll", "send_keys",
+    "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for",
+  ]), errorCode: z.string().regex(/^ordinary_postcondition_[a-z_]{1,140}$/), dispatchCount: z.literal(1),
+  check: runtimeCheckSchema, beforePage: pageIdentitySchema.nullable(), afterPage: pageIdentitySchema.nullable(),
+  validationTarget: validationTargetSchema.nullable(), eventTarget: z.object({
+    relation: z.enum(["self", "descendant", "composed"]), trusted: z.boolean(),
+    eventCount: z.number().int().min(1).max(1000),
+    targetKind: z.enum(["element", "shadow_root", "document", "window", "other"]),
+    targetTag: z.string().regex(/^[A-Za-z0-9-]{1,40}$/).nullable(),
+    targetRef: z.string().regex(/^n-[0-9]{1,12}$/).nullable(),
+  }).strict().nullable(),
+}).strict()
 
 const actionNameSchema = z.enum([
   "bat_inspect_dom", "bat_read_fields", "bat_request_human", "bat_scroll_to", "bat_summarize", "bat_validate_selection", "bat_wait_for", "click", "close", "done",
@@ -72,8 +108,24 @@ const modelEventSchema = z.object({
   callId: z.uuid(),
   purpose: z.enum(["agent", "judge", "extract", "semantic_annotation"]),
   status: z.enum(["intended", "completed", "interrupted", "failed"]),
-}).strict()
+  failureCategory: z.literal("ai_event_failure").optional(),
+  failureCode: z.enum(["ai_generation_failed", "ai_model_image_unsupported", "ai_structured_output_invalid",
+    "ai_capability_unavailable", "model_account_model_unavailable"]).optional(),
+}).strict().superRefine((event, context) => {
+  const metadata = event.failureCategory !== undefined || event.failureCode !== undefined
+  if (metadata && event.status !== "failed" || (event.failureCategory === undefined) !== (event.failureCode === undefined)) {
+    context.addIssue({ code: "custom", message: "model failure metadata must be complete" })
+  }
+})
 const modelStatus = { intended: "started", completed: "completed", interrupted: "cancelled", failed: "failed" } as const
+const runtimeOutcomeSchema = z.object({ phase: z.literal("runtime_outcome"), status: z.enum(["completed", "failed"]),
+  primary: z.object({ status: z.enum(["completed", "failed"]),
+    category: z.enum(["none", "runner_protocol", "source_contract", "model", "browser", "runtime", "unknown"]),
+    code: z.string().regex(/^[a-z][a-z0-9_]{1,120}$/).nullable() }).strict(),
+  cleanup: z.object({ status: z.enum(["confirmed", "unconfirmed"]), code: runnerCleanupCodeSchema.nullable(),
+    evidenceDigest: hashSchema, activeResources: z.boolean().nullable() }).strict().nullable(),
+  bridge: z.object({ status: z.enum(["completed", "failed"]), code: z.string().regex(/^[a-z][a-z0-9_]{1,120}$/).nullable() }).strict(),
+}).strict()
 export type SourceLifecycleProgress = Omit<AuthoringProgressEvent, "sequence">
 type ProgressPayload = Omit<SourceLifecycleProgress, "occurredAt">
 
@@ -116,7 +168,13 @@ export class SourceLifecycleDiagnostics {
 
   acceptPythonLine(line: string) {
     try {
-      const event = pythonEventSchema.parse(JSON.parse(line))
+      const raw: unknown = JSON.parse(line)
+      const runtime = runtimeActionFailureSchema.safeParse(raw)
+      if (runtime.success) {
+        this.append({ source: "python", ...runtime.data }, new Date().toISOString())
+        return
+      }
+      const event = pythonEventSchema.parse(raw)
       if (event.phase === "before_action_detail" || event.phase === "author_transport") {
         // WHY：固定故障阶段只属于本地 owner 诊断，不改变用户进度合同或暴露页面值。
         this.append({ source: "python", ...event }, new Date().toISOString())
@@ -127,10 +185,27 @@ export class SourceLifecycleDiagnostics {
   }
 
   recordModel(report: ModelCallReport) {
-    const event = modelEventSchema.safeParse({ callId: report.callId, purpose: report.purpose, status: report.status })
+    const event = modelEventSchema.safeParse({ callId: report.callId, purpose: report.purpose, status: report.status,
+      ...(report.failureCategory ? { failureCategory: report.failureCategory } : {}),
+      ...(report.failureCode ? { failureCode: report.failureCode } : {}) })
     if (!event.success) return
     this.record({ source: "model", phase: "model", status: modelStatus[event.data.status],
-      callId: event.data.callId, purpose: event.data.purpose }, "model")
+      callId: event.data.callId, purpose: event.data.purpose }, "model",
+    event.data.failureCategory ? { failureCategory: event.data.failureCategory,
+      failureCode: event.data.failureCode } : undefined)
+  }
+
+  recordRuntimeOutcome(primary: RuntimePrimaryOutcome<unknown>, cleanup: RunnerCleanupReport | null,
+    bridgeFailure?: unknown) {
+    const failure = primary.status === "failed" ? safeRuntimeFailure(primary.error) : { category: "none" as const, code: null }
+    const event = runtimeOutcomeSchema.safeParse({ phase: "runtime_outcome",
+      status: primary.status === "failed" || cleanup?.status === "unconfirmed" || bridgeFailure ? "failed" : "completed",
+      primary: { status: primary.status, ...failure },
+      cleanup: cleanup ? { status: cleanup.status, code: cleanup.code,
+        evidenceDigest: cleanup.evidenceDigest, activeResources: cleanup.activeResources } : null,
+      bridge: bridgeFailure ? { status: "failed", code: safeRuntimeCode(bridgeFailure) }
+        : { status: "completed", code: null } })
+    if (event.success) this.append({ source: "host", ...event.data }, new Date().toISOString())
   }
 
   recordTransportBoundary(code: "author_request_failed" | "author_response_received"
@@ -148,13 +223,13 @@ export class SourceLifecycleDiagnostics {
     this.descriptor = null
   }
 
-  private record(event: ProgressPayload, diagnosticSource: "python" | "model") {
+  private record(event: ProgressPayload, diagnosticSource: "python" | "model", local?: Record<string, unknown>) {
     const occurredAt = new Date().toISOString(), progress = { ...event, occurredAt } as SourceLifecycleProgress
     try { this.onProgress?.(progress) } catch { /* Progress projection cannot break Browser ownership cleanup. */ }
     // WHY：selector 进入本地 job 供实时诊断，但不复制到追加式日志，避免把任务值扩散为日志内容。
     const { selector: _selector, container: _container, readError: _readError, ...safeEvent } = event
     // WHY：固定错误码可定位方法失败；字段名、选择器及页面值仍不进入追加式日志。
-    this.append({ ...safeEvent, source: diagnosticSource,
+    this.append({ ...safeEvent, source: diagnosticSource, ...local,
       ...(_readError === undefined ? {} : { readError: fixedReadError(_readError) }) }, occurredAt)
   }
 
@@ -170,4 +245,22 @@ export class SourceLifecycleDiagnostics {
       this.descriptor = null
     }
   }
+}
+
+function safeRuntimeFailure(error: unknown) {
+  const code = safeRuntimeCode(error)
+  const category = !code ? "unknown" : code.startsWith("upstream_") || code === "hybrid_runner_failed"
+    ? "runner_protocol" : code.startsWith("hybrid_source_") || code.startsWith("workflow_")
+      ? "source_contract" : /^(ai_|model_account_|provider_)/.test(code) ? "model"
+        : /^(browser_|capture_)/.test(code) ? "browser" : "runtime"
+  return { category: category as "runner_protocol" | "source_contract" | "model" | "browser" | "runtime" | "unknown", code }
+}
+
+function safeRuntimeCode(error: unknown) {
+  const value = error && typeof error === "object" ? error as Record<string, unknown> : {}
+  const reason = typeof value.reason === "string" ? /^[A-Za-z_]+:([a-z][a-z0-9_]{1,120})$/.exec(value.reason)?.[1] : undefined
+  const own = typeof value.code === "string" ? value.code : undefined
+  const message = error instanceof Error ? /^([a-z][a-z0-9_]{1,120})(?::|$)/.exec(error.message)?.[1] : undefined
+  const candidate = [reason, own, message].find((item) => item && /^(?:upstream_|hybrid_|workflow_|model_account_|ai_|provider_|browser_|capture_|ordinary_|read_|target_selection_)/.test(item))
+  return candidate ?? null
 }

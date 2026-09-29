@@ -26,7 +26,11 @@ export const workflowArtifactSchema = z.object({
   rawResult: z.object({ localRef: z.string().min(1), digest: z.string().length(64) }).strict(),
   modelCalls: z.array(z.object({ callId: z.uuid(), purpose: modelCallPurposeSchema.exclude(["explicit_llm"]), model: z.string(),
     intendedAt: z.string().datetime(), status: z.enum(["intended", "completed", "failed", "interrupted"]),
-    reportedInvocations: z.number().int().nonnegative().nullable() }).strict()),
+    reportedInvocations: z.number().int().nonnegative().nullable(),
+    failureCategory: z.literal("ai_event_failure").optional(),
+    failureCode: z.enum(["ai_generation_failed", "ai_model_image_unsupported", "ai_structured_output_invalid",
+      "ai_capability_unavailable", "model_account_model_unavailable"]).optional(),
+  }).strict()),
 }).strict()
 
 export function workflowInputs(schema: ValueSchema, input: JsonValue) {

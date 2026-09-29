@@ -12,6 +12,8 @@ import { taskDraftReferenceSchema, taskDraftSchema } from "./revision.js"
 import { capabilityDescriptorSchema } from "./capability-descriptor.js"
 import { nodeExecutionEventSchema, taskRunModeSchema, taskRunSchema } from "./run.js"
 import { jsonValueSchema, taskOutputSchema } from "./value.js"
+import { stableChainNodeV2Schema } from "./node.js"
+import { chainEdgeV2Schema } from "./chain.js"
 export { taskExecutionBrowserSchema, taskExecutionPacingSchema } from "./product.js"
 
 export const authoringAuditSchema = z.object({
@@ -172,6 +174,12 @@ export const taskAuthoringJobSchema = z.object({
     compiledChain: versionReferenceSchema.optional(),
     compiledChains: z.array(versionReferenceSchema).optional(),
     progress: authoringProgressSchema.optional(),
+    // WHY：准备期唯一可变快照；没有入口、版本或运行权限，canonical 现场只留本地仓储。
+    build: z.object({ authorRequestId: identitySchema, stepId: keySchema,
+      sequence: z.number().int().min(1).max(202), digest: digestSchema, phase: z.enum(["prefix", "final"]),
+      payload: z.string().min(1).max(8_000_000),
+      nodes: z.array(stableChainNodeV2Schema).max(500), edges: z.array(chainEdgeV2Schema).max(5000),
+    }).strict().optional(),
     consumption: z.object({ explorationToolCalls: z.number().int().nonnegative(), explorationSessions: z.number().int().nonnegative(),
       compilationCalls: z.number().int().nonnegative(), providerInvocations: z.number().int().nonnegative().nullable() }).strict(),
   }).strict().optional(),
@@ -268,6 +276,8 @@ export const taskExecutionSummarySchema = z.object({
 export const taskAuthoringActivitySchema = z.object({
   id: identitySchema, status: z.enum(["queued", "running", "waiting_for_human", "failed", "interrupted"]),
   phase: preparationPhaseSchema,
+  build: taskAuthoringJobSchema.shape.authoring.unwrap().shape.build.unwrap()
+    .omit({ payload: true, authorRequestId: true }).optional(),
   sequence: z.number().int().nonnegative(), reason: textSchema.nullable(),
   waitpoint: humanWaitpointSchema.nullable().default(null),
   inputRequest: z.object({ purpose: z.enum(["representative", "verification"]),

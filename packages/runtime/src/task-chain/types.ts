@@ -58,6 +58,9 @@ export type ModelCallReport = Readonly<{
   intendedAt: string
   status: "intended" | "completed" | "failed" | "interrupted"
   reportedInvocations: number | null
+  failureCategory?: "ai_event_failure" | undefined
+  failureCode?: "ai_generation_failed" | "ai_model_image_unsupported" | "ai_structured_output_invalid"
+    | "ai_capability_unavailable" | "model_account_model_unavailable" | undefined
 }>
 
 export interface InvokeChainInvocation {

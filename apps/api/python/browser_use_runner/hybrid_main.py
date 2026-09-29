@@ -4,26 +4,19 @@ import json
 import os
 import signal
 import sys
-import re
 from importlib.metadata import version
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Annotated, Literal
-from uuid import UUID
 from urllib.parse import urlsplit
 
 from browser_use import Browser, BrowserProfile
 import workflow_use
-from pydantic import Field, JsonValue, TypeAdapter
 from workflow_use.hybrid.capability import OrdinaryCapability
-from workflow_use.hybrid.evidence import Contract, digest
-from workflow_use.hybrid.read import ReadSpec, read_fields
+from workflow_use.hybrid.evidence import digest
+from workflow_use.hybrid.postconditions import PostconditionNotMet
+from workflow_use.hybrid.read import read_fields
 from workflow_use.hybrid.rendered_field_text import FieldReadError
-from workflow_use.hybrid.author import AuthorInput, author_step, author_tools_for_result_spec
-from workflow_use.hybrid.__main__ import compilation_response
-from workflow_use.hybrid.request import CompilationRequest, NaturalCompilationRequest
-from workflow_use.hybrid.invokes import VerifiedChild
-from workflow_use.hybrid.registry import ActionRegistry
+from workflow_use.hybrid.author import author_step
 from workflow_use.hybrid.target_preparation import current_document_id
 from workflow_use.hybrid.human_wait import HumanWaitControl
 from browser_use_runner.ai_connect import AIConnectModel
@@ -31,68 +24,22 @@ from browser_use_runner.output_schema import output_model_for
 from browser_use_runner.hybrid_compile import compile_offline
 from browser_use_runner.popup_resume import PopupResumeAdapter
 from browser_use_runner.diagnostic_channel import DiagnosticChannel
-from browser_use_runner.author_transport import write_author_result
 from browser_use_runner.author_request_loop import AuthorRequestLoop
+from browser_use_runner.compilation_control import CompilationAck, CompilationControl
 from browser_use_runner.site_scope import origin, normalize_allowed_site, allowed_domain_patterns, allowed_url
 from browser_use_runner.managed_window import ManagedWindow
+from browser_use_runner.browser_cleanup import close_stage
+from browser_use_runner.read_error_codes import (
+    READ_STAGE_NOTES, SAFE_READ_FAILURE_CODES, read_stage_code, safe_runtime_error_code,
+)
 from browser_use_runner.attached_window import AttachedWindow
 from browser_use_runner.profile_owner import current_profile_owner, recover_profile_owner
-
-
 from browser_use_runner.hybrid_commands import (
     AllowedSite, StartConfig, ProfileStartConfig, StepCommand, ReadCommand, TargetReadinessCommand,
     ReadScope, COMMAND, Envelope, StartRequest, ProfileStartRequest, ProfileOwnerRequest, ProfileRecoverRequest,
     ExecuteRequest, ObserveRequest, HandoffRequest, ManagedWindowRequest, CloseRequest,
     AuthorModel, AuthorRequest, AuthorResumeRequest, CompileRequest, REQUEST,
 )
-
-
-SAFE_ERROR_CODE = re.compile(r'[a-z][a-z_0-9]{1,100}')
-SAFE_READ_FAILURE_CODES = frozenset({
-    'read_container_resolution_failed', 'read_collection_limit', 'read_input_limit',
-    'read_single_object_required', 'read_output_schema_mismatch', 'read_field_projection_failed',
-    'read_field_projection_invalid', 'read_field_value_limit', 'ambiguous_or_missing_read_field',
-    'read_field_not_text', 'read_text_affix_invalid', 'read_number_not_finite',
-    'read_boolean_invalid', 'read_field_native_projection_failed',
-})
-READ_STAGE_NOTES = {
-    'bat_read_scope_pre': 'inner_pre_scope', 'bat_read_scope_post': 'inner_post_scope',
-    'bat_read_collection_snapshot': 'target_snapshot', 'bat_read_collection_query': 'target_query',
-}
-
-
-def read_stage_code(stage, error):
-    # WHY：阶段和异常类都来自固定枚举；第三方异常名、消息与页面内容不能进入 fd3。
-    if isinstance(error, TimeoutError):
-        kind = 'timeout_error'
-    elif isinstance(error, OSError):
-        kind = 'os_error'
-    elif isinstance(error, RuntimeError):
-        kind = 'runtime_error'
-    elif isinstance(error, ValueError):
-        kind = 'value_error'
-    else:
-        kind = 'other_error'
-    return f'hybrid_read_{stage}_{kind}'
-
-
-def safe_runtime_error_code(error):
-    """Expose only stable identifiers raised by B-A-T's managed hybrid adapter.
-
-    Dependency errors and page-derived text remain private even when they happen to resemble an identifier.
-    """
-    message = str(error)
-    if SAFE_ERROR_CODE.fullmatch(message) is None:
-        return ''
-    managed = (Path(workflow_use.__file__).resolve().parent / 'hybrid').resolve()
-    traceback = error.__traceback__
-    while traceback is not None:
-        source = Path(traceback.tb_frame.f_code.co_filename).resolve()
-        if source == managed or managed in source.parents:
-            return message
-        traceback = traceback.tb_next
-    return message if message in SAFE_READ_FAILURE_CODES or re.fullmatch(
-        r'(?:hybrid_|ordinary_|capture_|read_|target_selection_)[a-z_0-9]{1,100}', message) else ''
 
 
 def assert_runtime():
@@ -147,6 +94,7 @@ class Runner:
         self.human_wait = None
         self.author_request_id = None
         self.publish_human_wait = None
+        self.publish_compilation, self.compilation = None, None
 
     async def handle(self, raw):
         request = REQUEST.validate_json(json.dumps(raw, allow_nan=False))
@@ -160,7 +108,7 @@ class Runner:
             return (current_profile_owner(request.ownerId, request.launcherPid) if isinstance(request, ProfileOwnerRequest)
                     else recover_profile_owner(request.profilePath, request.ownerId, request.leaseId, request.runner))
         if isinstance(request, ExecuteRequest):
-            return await self.execute(request.command.model_dump())
+            return await self.execute(request.command.model_dump(), action_ref=request.actionRef)
         if isinstance(request, ObserveRequest):
             return await self.observe()
         if isinstance(request, HandoffRequest):
@@ -183,6 +131,10 @@ class Runner:
             if self.browser is not None:
                 raise ValueError(request.type + '_requires_offline_owner')
             return await compile_offline(request)
+        if isinstance(request, CompilationAck):
+            if self.compilation is None:
+                raise ValueError('hybrid_compilation_not_active')
+            return self.compilation.acknowledge(request)
         if isinstance(request, AuthorRequest):
             if self.browser is None:
                 raise ValueError('hybrid_session_not_started')
@@ -192,14 +144,18 @@ class Runner:
             models = {purpose: AIConnectModel(**request.model.model_dump(), purpose=purpose)
                       for purpose in ('agent', 'judge', 'extract', 'semantic_annotation')}
             previous = self.browser.browser_profile.keep_alive
+            if request.onlineCompilation and self.publish_compilation is None:
+                raise ValueError('hybrid_compilation_channel_required')
             self.browser.browser_profile.keep_alive = True
             self.author_request_id = request.id
+            self.compilation = CompilationControl(request.id, self.publish_compilation) if request.onlineCompilation else None
             self.human_wait = HumanWaitControl(self.browser, lambda url: allowed_url(url, self.allowed_sites),
                 lambda wait: self.publish_human_wait(str(request.id), wait)) if self.publish_human_wait else None
             self.diagnostic({'phase': 'author', 'status': 'started'})
             try:
                 result = await author_step(self.browser, request.source.model_dump(mode='json', by_alias=True), models, output_model_for,
-                                            diagnostic=self.diagnostic, human_wait=self.human_wait)
+                                            diagnostic=self.diagnostic, human_wait=self.human_wait,
+                                            **({'compilation_exchange': self.compilation.exchange} if self.compilation else {}))
             except asyncio.CancelledError:
                 self.diagnostic({'phase': 'author', 'status': 'cancelled'})
                 raise
@@ -210,6 +166,9 @@ class Runner:
                 self.diagnostic({'phase': 'author', 'status': 'completed'})
                 return result
             finally:
+                if self.compilation is not None:
+                    self.compilation.cancel()
+                    self.compilation = None
                 if self.human_wait is not None:
                     self.human_wait.cancel()
                 self.human_wait, self.author_request_id = None, None
@@ -292,7 +251,7 @@ class Runner:
         if code is not None:
             raise RuntimeError(code)
 
-    async def execute(self, raw):
+    async def execute(self, raw, *, action_ref=None):
         if self.browser is None:
             raise ValueError('hybrid_session_not_started')
         command = COMMAND.validate_python(raw)
@@ -314,6 +273,8 @@ class Runner:
             try:
                 output = await self.capability.execute_checked(command.actionName, command.args, command.target, command.postconditions)
             except RuntimeError as error:
+                if isinstance(error, PostconditionNotMet) and isinstance(action_ref, str):
+                    self._emit_action_failure(action_ref, command.actionName, error)
                 # WHY：HTTP 拒绝也可能令原生导航先失败；保留同次主文档证据，不重发动作。
                 if command.actionName == 'navigate' and str(error) == 'ordinary_action_failed':
                     self.assert_document_access(command.args['url'])
@@ -321,7 +282,8 @@ class Runner:
         elif isinstance(command, ReadCommand):
             scope = command.scope.model_dump(exclude_none=True) if command.scope is not None else None
             try:
-                output = await read_fields(self.browser, command.specification, scope=scope)
+                output = await read_fields(self.browser, command.specification, scope=scope,
+                                           required_paths=command.requiredPaths)
             except Exception as error:
                 # WHY：仅读取层固定错误码可穿过 fd3；字段名、页面正文和依赖消息留在 owner 内。
                 if isinstance(error, (FieldReadError, ValueError)) and str(error) in SAFE_READ_FAILURE_CODES:
@@ -355,6 +317,21 @@ class Runner:
                 raise
             raise RuntimeError(read_stage_code('document_access', error)) from error
         return {'output': output, 'browser': browser, 'browserCommands': self.commands, 'modelCalls': 0}
+
+    def _emit_action_failure(self, action_ref, action_name, error):
+        try:
+            detail = error.diagnostic if isinstance(getattr(error, 'diagnostic', None), dict) else {}
+            check = {'kind': detail.get('kind'), 'attempts': detail.get('attempts')}
+            if isinstance(detail.get('expected'), dict) and isinstance(detail.get('actual'), dict):
+                check.update({'expected': detail['expected'], 'actual': detail['actual']})
+            self.diagnostic({'phase': 'runtime_action_failure', 'status': 'failed',
+                'actionRef': action_ref, 'actionName': action_name, 'errorCode': str(error),
+                'dispatchCount': detail.get('dispatchCount'), 'check': check,
+                'beforePage': detail.get('beforePage'), 'afterPage': detail.get('afterPage'),
+                'validationTarget': detail.get('validationTarget'),
+                'eventTarget': detail.get('eventTarget')})
+        except Exception:
+            pass
 
     async def assert_page_scope(self):
         page = await self.browser.get_current_page()
@@ -425,7 +402,8 @@ class Runner:
             if self.managed_window is not None:
                 stages.append(await self.managed_window.close(browser))
             else:
-                stages.append(await close_stage('browser_close', browser, 'cleanup_browser_close_failed'))
+                stages.append(await close_stage('browser_close', browser, 'cleanup_browser_close_failed',
+                                                profile_path=self.profile_path))
         finally:
             if self.popup_resume is not None:
                 self.popup_resume.close()
@@ -437,17 +415,6 @@ class Runner:
             self.allowed_sites = []
             self.managed_window = None
         return {'closed': all(stage['status'] != 'unconfirmed' for stage in stages), 'stages': stages}
-
-
-async def close_stage(name, owner, failure_code):
-    if owner is None:
-        return {'stage': name, 'status': 'not_required', 'code': None}
-    try:
-        await (owner.close() if name == 'capability_close' else owner.kill())
-    except Exception:
-        # WHY: 清理协议只暴露固定阶段码；依赖异常、页面正文、PID 和本机路径不得越过 fd3。
-        return {'stage': name, 'status': 'unconfirmed', 'code': failure_code}
-    return {'stage': name, 'status': 'confirmed', 'code': None}
 
 
 def document_key(url):
@@ -469,6 +436,7 @@ async def main():
     diagnostics = DiagnosticChannel()
     runner = Runner(diagnostics.emit)
     channel = os.fdopen(3, 'w', buffering=1)
+    runner.publish_compilation = lambda event: channel.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + '\n')
     runner.publish_human_wait = lambda identity, wait: channel.write(json.dumps(
         {'id': identity, 'event': 'human_wait', 'wait': wait}, ensure_ascii=False, allow_nan=False) + '\n')
     current = asyncio.current_task()

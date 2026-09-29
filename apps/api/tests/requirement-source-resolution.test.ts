@@ -342,7 +342,7 @@ test("来源 Question 被新一轮取代时撤销对应待决来源，并收敛�
 test("未选搜索结果、被替换来源和草案正文中的错误深链都不能进入确认入口", async () => {
   const state = structuredClone(emptyInterview)
   const first = await modelProposal({ body: rss(
-    { title: "Acme Official", link: "https://acme.example/" },
+    { title: "Acme Official", link: "https://acme.example/old" },
     { title: "Acme Other", link: "https://other.example/page" },
   ), subject: "Acme", query: "Acme official", outcome: "multiple", selected: [0, 1] })
   first.resolution.status = "selected"
@@ -358,7 +358,7 @@ test("未选搜索结果、被替换来源和草案正文中的错误深链都�
   second.resolution.selectedCandidateId = second.resolution.candidates[0]!.id
   recordSourceResolution(state, second.resolution)
   assert.equal(first.resolution.status, "superseded")
-  assert.throws(() => preparationEntryFacts(state, markdown("acme.example", "https://acme.example/")),
+  assert.throws(() => preparationEntryFacts(state, markdown("acme.example", "https://acme.example/old")),
     /entry_reference_invalid/)
   const wrongDeepLink = `${markdown("acme.example", "https://acme.example/new")}\n\n浏览器随后进入 https://acme.example/content/remembered。`
   assert.throws(() => assertRequirementReady(state, wrongDeepLink, true), /draft_url_unverified/)

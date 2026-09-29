@@ -286,6 +286,15 @@ export class TaskPlanExecutor {
   }
   private bump(record: TaskExecution) { record.sequence++; record.updatedAt = new Date().toISOString(); this.save(record) }
   private finish(record: TaskExecution, status: TaskExecution["status"], reason: string, failure: FailureHint | null = null) {
+    const stepStatus: TaskExecutionStep["status"] | null = status === "stale" ? "blocked"
+      : status === "failed" || status === "blocked" || status === "cancelled" || status === "paused" ? status : null
+    const current = stepStatus && record.currentStepId
+      ? record.steps.find((step) => step.stepId === record.currentStepId) : undefined
+    // WHY：execution 的终态与当前 step 是同一次失败事实；不能留下 running 伪现场。
+    if (current?.status === "running" && stepStatus) {
+      current.status = stepStatus
+      current.reason = reason
+    }
     record.status = status; record.reason = reason; record.currentStepId = status === "completed" ? null : record.currentStepId
     record.currentRunId = status === "completed" ? null : record.currentRunId
     record.result = projectExecutionResult(this.repository, record, failure); this.bump(record); return record

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 
 BEFORE_ACTION_STAGES = frozenset({
     'live_current_page', 'live_target_before', 'live_document_session', 'live_document_root',
@@ -12,6 +13,16 @@ AUTHOR_TRANSPORT_STATUSES = {
     'serialize_started': 'started', 'serialize_completed': 'completed', 'serialize_failed': 'failed',
     'write_started': 'started', 'write_completed': 'completed', 'write_failed': 'failed',
 }
+ORDINARY_ACTIONS = frozenset({'navigate', 'go_back', 'wait', 'click', 'input', 'scroll', 'send_keys',
+                              'dropdown_options', 'select_dropdown', 'bat_scroll_to', 'bat_wait_for'})
+POSTCONDITION_KINDS = frozenset({'url', 'url_digest', 'title', 'target_value', 'target_text', 'target_state',
+                                 'target_in_view', 'target_visible', 'scroll_position', 'visible_overlays',
+                                 'media_playback', 'read_fields'})
+TARGET_STATE_KEYS = frozenset({'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
+                               'checked', 'selected', 'disabled'})
+HEX_DIGEST = re.compile(r'^[a-f0-9]{64}$')
+ACTION_REF = re.compile(r'^[A-Za-z0-9._:-]{1,256}$')
+ERROR_CODE = re.compile(r'^ordinary_postcondition_[a-z_]{1,140}$')
 
 
 class DiagnosticChannel:
@@ -27,7 +38,7 @@ class DiagnosticChannel:
     def emit(self, event):
         try:
             keys = set(event)
-            if event.get('phase') in ('before_action_detail', 'author_transport'):
+            if event.get('phase') in ('before_action_detail', 'author_transport', 'runtime_action_failure'):
                 if self.channel is not None and self._fixed_event(event, keys):
                     self.channel.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + '\n')
                 return
@@ -86,6 +97,22 @@ class DiagnosticChannel:
 
     @staticmethod
     def _fixed_event(event, keys):
+        if event.get('phase') == 'runtime_action_failure':
+            expected = {'phase', 'status', 'actionRef', 'actionName', 'errorCode', 'dispatchCount',
+                        'check', 'beforePage', 'afterPage', 'validationTarget', 'eventTarget'}
+            return (keys == expected and event.get('status') == 'failed'
+                    and isinstance(event.get('actionRef'), str) and ACTION_REF.fullmatch(event['actionRef']) is not None
+                    and event.get('actionName') in ORDINARY_ACTIONS
+                    and isinstance(event.get('errorCode'), str) and ERROR_CODE.fullmatch(event['errorCode']) is not None
+                    and event.get('dispatchCount') == 1
+                    and DiagnosticChannel._runtime_check(event.get('check'))
+                    and DiagnosticChannel._identity(event.get('beforePage'), {'sessionDigest', 'targetDigest',
+                                                                              'documentDigest', 'urlDigest'})
+                    and DiagnosticChannel._identity(event.get('afterPage'), {'sessionDigest', 'targetDigest',
+                                                                             'documentDigest', 'urlDigest'})
+                    and DiagnosticChannel._identity(event.get('validationTarget'), {'sessionDigest', 'targetDigest',
+                                                                                    'documentDigest', 'backendDigest'})
+                    and DiagnosticChannel._event_target(event.get('eventTarget')))
         if event.get('phase') == 'author_transport':
             return (keys == {'phase', 'status', 'code'}
                     and AUTHOR_TRANSPORT_STATUSES.get(event.get('code')) == event.get('status'))
@@ -94,6 +121,45 @@ class DiagnosticChannel:
         return (event.get('status') == 'failed' and isinstance(event.get('actionName'), str)
                 and type(event.get('stepNumber')) is int and 0 <= event['stepNumber'] <= 9007199254740991
                 and event.get('stage') in BEFORE_ACTION_STAGES and event.get('errorKind') in ERROR_KINDS)
+
+    @staticmethod
+    def _identity(value, keys):
+        return value is None or (isinstance(value, dict) and set(value) == keys
+                                 and all(isinstance(item, str) and HEX_DIGEST.fullmatch(item) is not None
+                                         for item in value.values()))
+
+    @staticmethod
+    def _runtime_check(value):
+        if not isinstance(value, dict) or value.get('kind') not in POSTCONDITION_KINDS:
+            return False
+        if type(value.get('attempts')) is not int or not 1 <= value['attempts'] <= 100:
+            return False
+        optional = {'expected', 'actual'} & set(value)
+        if set(value) - {'kind', 'attempts', 'expected', 'actual'} or bool(optional) != (value.get('kind') == 'target_state'):
+            return False
+        if optional != {'expected', 'actual'}:
+            return not optional
+        return all(DiagnosticChannel._target_state(value[key]) for key in ('expected', 'actual'))
+
+    @staticmethod
+    def _target_state(value):
+        return (isinstance(value, dict) and not set(value) - TARGET_STATE_KEYS
+                and all(type(item) is bool for item in value.values()))
+
+    @staticmethod
+    def _event_target(value):
+        if value is None:
+            return True
+        if not isinstance(value, dict) or set(value) != {
+                'relation', 'trusted', 'eventCount', 'targetKind', 'targetTag', 'targetRef'}:
+            return False
+        tag, ref = value.get('targetTag'), value.get('targetRef')
+        return (value.get('relation') in {'self', 'descendant', 'composed'}
+                and type(value.get('trusted')) is bool
+                and type(value.get('eventCount')) is int and 1 <= value['eventCount'] <= 1000
+                and value.get('targetKind') in {'element', 'shadow_root', 'document', 'window', 'other'}
+                and (tag is None or isinstance(tag, str) and re.fullmatch(r'[A-Za-z0-9-]{1,40}', tag))
+                and (ref is None or isinstance(ref, str) and re.fullmatch(r'n-[0-9]{1,12}', ref)))
 
     def close(self):
         if self.channel is None:

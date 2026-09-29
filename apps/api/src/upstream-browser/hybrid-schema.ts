@@ -27,7 +27,7 @@ const binding = z.object({ id: z.string(), actionRef: z.string(), argumentPath: 
   kind: z.enum(["runtime_input", "prior_output", "authorized_constant", "sample_evidence"]),
   sourceRef: z.string(), transform: z.null(), proofRefs: z.array(reference) }).strict()
 const naturalBinding = binding.extend({ binding: valueBindingSchema.optional(),
-  derivation: z.enum(["anchor_navigation", "prior_verified_read", "repeat_destination"]).optional() }).strict()
+  derivation: z.enum(["anchor_navigation", "prior_verified_read", "repeat_destination", "selection_function"]).optional() }).strict()
 export const naturalBindingFactValueSchema = z.object({ actionRef: z.string(), argumentPath: z.string(),
   binding: valueBindingSchema, provenance: z.enum(["runtime_input", "native_parameter", "task_literal", "plan_entry_url", "node_output"]),
   taskQuote: z.string().nullable().optional(), sourceReadRef: z.string().nullable().optional() }).strict()
@@ -115,6 +115,7 @@ export const readSpecificationSchema = z.object({ container: z.string().min(1),
   requireComplete: z.boolean().optional(),
   maxItems: z.number().int().min(1).max(300), maxInputBytes: z.number().int().min(1).optional(),
   outputSchema: valueSchemaSchema }).strict()
+export const requiredReadPathsSchema = z.array(z.array(z.union([z.string(), z.number().int().nonnegative()])).min(1))
 const settlePolicySchema = z.object({ maxMs: z.number().int().min(1).max(30000),
   maxAttempts: z.number().int().min(1).max(100), intervalMs: z.number().int().min(10).max(1000) }).strict()
 const factPostconditionSchema = z.object({
@@ -125,6 +126,7 @@ const factPostconditionSchema = z.object({
   ready: z.literal(true).optional(), transition: z.literal(true).optional(),
   clauseRef: z.string().min(1).optional(), read: readSpecificationSchema.optional(),
   scope: targetScopeSchema.optional(), settle: settlePolicySchema.optional(), consumerRef: z.string().min(1).optional(),
+  requiredPaths: requiredReadPathsSchema.optional(),
 }).strict().superRefine((value, context) => {
   const authorityCount = [value.bindingArgument !== undefined, value.equals !== undefined && value.equals !== null,
     value.changed === true, value.unchanged === true,
@@ -137,7 +139,7 @@ const factPostconditionSchema = z.object({
   if (consumer && (!read || !value.consumerRef || !value.settle)) {
     context.addIssue({ code: "custom", message: "consumer_readiness_owner_and_settle_required" })
   }
-  if (!read && (value.scope !== undefined || value.consumerRef !== undefined || consumer)) {
+  if (!read && (value.scope !== undefined || value.consumerRef !== undefined || value.requiredPaths !== undefined || consumer)) {
     context.addIssue({ code: "custom", message: "consumer_readiness_requires_read_projection" })
   }
 })
@@ -198,7 +200,7 @@ export const hybridRepeatMethodSchema = z.object({ id: keySchema, sourceRef: z.s
   proofRefs: z.array(reference).min(1), readSegmentId: keySchema, continuationSegmentId: keySchema,
   advanceSegmentId: keySchema, outputPath: valuePathSchema, readPath: valuePathSchema,
   stableKeyPath: valuePathSchema, sampleActionRefs: z.array(z.string().min(1)).min(5).max(500) }).strict()
-const naturalCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/2"),
+export const naturalCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/2"),
   segments: z.array(z.discriminatedUnion("kind", [naturalDeterministic, naturalSummarySegmentSchema, functionSegmentSchema])).max(500),
   outputAssembly: hybridOutputAssemblySchema.nullable().optional(),
   resultBinding: hybridResultBindingSchema.nullable().optional(),

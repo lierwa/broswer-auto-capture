@@ -7,6 +7,7 @@ import { digestCanonicalJson, validateHybridResponse } from "../src/upstream-bro
 import { naturalPayloadContext } from "../src/upstream-browser/hybrid-natural-payload.js"
 import { functionSegmentSchema } from "../src/upstream-browser/hybrid-schema.js"
 import { materializeSelectionFunction, validateSelectionFunctions, withSelectionValidation } from "../src/upstream-browser/hybrid-selection.js"
+import { assertNaturalBinding } from "../src/upstream-browser/hybrid-natural-materialization.js"
 
 const hash = (value: unknown) => digestCanonicalJson(jsonValueSchema.parse(value))
 const reference = (value: unknown) => ({ ref: `sha256:${hash(value)}`, digest: hash(value) })
@@ -17,16 +18,20 @@ function fixture(source = String.raw`function main({ candidates }) {
   const eligible = candidates.map(row => ({row, match: /^release (\d+)$/.exec(row.text)}))
     .filter(item => item.match).sort((a, b) => Number(b.match[1]) - Number(a.match[1]));
   if (!eligible.length) throw new Error('no_candidate'); return eligible[0].row.ordinal;
-}`) {
+}`, navigation = false) {
   const schema = { type: "array", minItems: 1, maxItems: 10, items: { type: "object",
-    properties: { text: { type: "string" }, ordinal: { type: "integer", minimum: 1, maximum: 10 } },
+    properties: { text: { type: "string" }, ordinal: { type: "integer", minimum: 1, maximum: 10 },
+      ...(navigation ? { attribute_href: { type: "string" } } : {}) },
     required: ["text", "ordinal"], additionalProperties: false } }
   const specification = { container: "a.item", fields: { text: { selector: ":scope", attribute: null, valueType: "string" } },
     maxItems: 10, includeOrdinal: true, outputSchema: schema }
-  const output = rows(["release 4", "preview 9", "release 7"])
+  const output = navigation ? rows(["1", "2", "Next"]).map((row, index) =>
+    ({ ...row, attribute_href: `https://example.test/list?page=${index === 0 ? 1 : 2}` }))
+    : rows(["release 4", "preview 9", "release 7"])
   const read = fact("read", "verified_natural_read", { actionRef: "a-0001", specification, output, stable: true })
   const draft = { language: "javascript", source, inputs: { candidates: schema },
-    outputSchema: { type: "integer", minimum: 1, maximum: 10 }, examples: [
+    outputSchema: navigation ? { type: "string" } : { type: "integer", minimum: 1, maximum: 10 },
+    examples: navigation ? [{ input: { candidates: output }, output: "https://example.test/list?page=2" }] : [
       { input: { candidates: output }, output: 3 },
       { input: { candidates: rows(["release 8", "release 4"]) }, output: 1 },
       { input: { candidates: rows(["preview 12", "release 10", "release 2", "preview 11"]) }, output: 2 },
@@ -42,18 +47,24 @@ function fixture(source = String.raw`function main({ candidates }) {
     resultSpec: { contractVersion: "bat-result-spec/v1", mode: "execution" }, semanticOperations: [] }
   const trace = { source: { historyRef: "test" }, actions: [
     { id: "a-0001", name: "find_elements", status: "succeeded", preObservationRef: "o-1", postObservationRef: "o-2" },
-    { id: "a-0002", name: "click", status: "succeeded", preObservationRef: "o-3", postObservationRef: "o-4" },
-  ], observations: [{ id: "o-2", facts: [read] }, { id: "o-3", facts: [selection, structure] }] }
+    { id: "a-0002", name: navigation ? "navigate" : "click", status: "succeeded",
+      args: navigation ? { url: "https://example.test/list?page=2" } : {}, preObservationRef: "o-3", postObservationRef: "o-4" },
+  ], observations: [{ id: "o-2", url: "https://example.test/", tabId: "tab-1", facts: [read] },
+    { id: "o-3", url: "https://example.test/", tabId: "tab-1", facts: [selection, structure] }] }
   const segment = functionSegmentSchema.parse({ id: selection.id, kind: "function", label: "Choose",
     draft, inputBindings: { candidates: { source: "node", nodeId: "s-a-0001", path: [] } }, proofRefs: selection.sourceRefs })
   const readSegment = { id: "s-a-0001", kind: "deterministic", operation: { name: "browser.read-fields", version: 2,
     specification: { ...specification, maxInputBytes: 128000 } }, bindings: [], target: null, preconditions: [],
     expectedEffect: { kind: "read" }, postconditions: [{ kind: "output_schema", schemaDigest: hash(schema) }],
     outputs: [{ schema, sourceRef: read.id }], proofRefs: read.sourceRefs }
-  const click = { id: "s-a-0002", kind: "deterministic", operation: { name: "browser.workflow-step", version: 2, actionName: "click" },
-    target: { strategy: "structure", scope: { url: "https://example.test/" }, container: { kind: "css", value: "html" },
+  const click = { id: "s-a-0002", kind: "deterministic", operation: { name: "browser.workflow-step", version: 2,
+    actionName: navigation ? "navigate" : "click" },
+    target: navigation ? null : { strategy: "structure", scope: { url: "https://example.test/" }, container: { kind: "css", value: "html" },
       items: { kind: "css", value: "a.item" }, ordinal: 3, withinItem: null,
-      ordinalBinding: { source: "node", nodeId: segment.id, path: [] } }, bindings: [], preconditions: [],
+      ordinalBinding: { source: "node", nodeId: segment.id, path: [] } },
+    bindings: navigation ? [{ id: "b-a-0002-url", actionRef: "a-0002", argumentPath: "url", kind: "prior_output",
+      sourceRef: segment.id, transform: null, derivation: "selection_function", proofRefs: selection.sourceRefs,
+      binding: { source: "node", nodeId: segment.id, path: [] } }] : [], preconditions: [],
     expectedEffect: { kind: "ui_state" }, postconditions: [{ kind: "media_playback", equals: "playing" }],
     outputs: [], proofRefs: selection.sourceRefs }
   const sourcePayloads = [requirement, plan, trace, { type: "null" }, []].map(item => JSON.stringify(item))
@@ -77,6 +88,25 @@ test("自然编译 Function 保留原集合身份并真实验证变长和重排�
     compilation: envelope.compilation, assertFact: payload.assertFact })
   assert.equal(node.kind, "function")
   await validateSelectionFunctions(envelope, request, new AbortController().signal)
+})
+
+test("同一Function可向导航传递动态URL，不能替换来源或参数绑定", async () => {
+  const { envelope, request, segment } = fixture(
+    'function main({candidates}) { const matches = candidates.filter(c => c.attribute_href.endsWith("page=2")); const hrefs = [...new Set(matches.map(c => c.attribute_href))]; if (hrefs.length !== 1) throw new Error("ambiguous"); return hrefs[0]; }', true)
+  const payload = naturalPayloadContext(envelope, request)
+  const context = { request: payload.ordinary, compilation: envelope.compilation, assertFact: payload.assertFact }
+  assert.equal(materializeSelectionFunction(segment, context).outputContract.schema.type, "string")
+  await validateSelectionFunctions(envelope, request, new AbortController().signal)
+  const consumer = envelope.compilation.segments[2]!
+  assert.equal(consumer.kind, "deterministic")
+  if (consumer.kind !== "deterministic") throw new Error("missing navigation")
+  const decision = consumer.bindings[0]!
+  assert.deepEqual(assertNaturalBinding(decision, payload.ordinary.trace, payload),
+    { source: "node", nodeId: segment.id, path: [] })
+  assert.throws(() => assertNaturalBinding({ ...decision, binding: { source: "constant", value: "https://example.test/" } },
+    payload.ordinary.trace, payload), /selection_function_binding_mismatch/)
+  payload.ordinary.trace.observations[0]!.url = "https://example.test/different"
+  assert.throws(() => materializeSelectionFunction(segment, context), /selection_function_binding_mismatch/)
 })
 
 test("样本常量不能发布，失败仍保留来源和明确编译gap", async () => {

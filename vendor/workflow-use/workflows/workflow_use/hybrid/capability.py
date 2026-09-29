@@ -5,6 +5,7 @@ from browser_use.tools.service import Tools
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, stop_before_delay, wait_fixed
 
 from .dialog_event_bridge import DialogEventBridge
+from .evidence import digest
 from .postconditions import (PostconditionNotMet, SettlePolicy, capture_check_baselines, declared_checks,
                              settle_policy, verify_declared, action_result_readiness)
 from .native_event_capture import NativeEventCapture
@@ -52,9 +53,11 @@ class OrdinaryCapability:
         self.targets = TargetResolver(browser)
         self.event_capture = NativeEventCapture(browser)
         self.last_dialog_events = []
+        self.last_event_diagnostic = None
         self.target_settle = SettlePolicy.model_validate(target_settle or TARGET_READY_POLICY)
 
     async def execute_checked(self, action_name, args, target, postconditions, *, native_dialog_policy=None):
+        self.last_event_diagnostic = None
         checks = declared_checks(postconditions, args, target)
         policy = settle_policy(postconditions)
         await capture_check_baselines(self.browser, checks)
@@ -64,6 +67,8 @@ class OrdinaryCapability:
         owner = navigation_action_owner(self.browser, prior_tabs) if consumer_index is not None else None
         prepared = await self.resolve_target(target, action_name=action_name) \
             if action_name in TARGET_ACTIONS and target is not None else None
+        before_page = await safe_page_identity(self.browser)
+        validation_target = safe_validation_target(prepared)
         if owner is not None:
             assert_navigation_owner(self.browser, owner)
         result = await self.execute(action_name, args, target, native_dialog_policy=native_dialog_policy,
@@ -90,6 +95,15 @@ class OrdinaryCapability:
         try:
             await verify_declared(self.browser, checks, policy)
         except PostconditionNotMet as error:
+            # WHY：诊断读取发生在原失败点，且绝不重派动作；诊断自身失败不能替换主错误。
+            after_page = await safe_page_identity(self.browser)
+            try:
+                error.diagnostic = {**(error.diagnostic or {}), 'dispatchCount': 1,
+                                    'beforePage': before_page, 'afterPage': after_page,
+                                    'validationTarget': validation_target,
+                                    'eventTarget': self.last_event_diagnostic}
+            except Exception:
+                pass
             expects_movement = action_name == 'scroll' and any(
                 item.get('kind') == 'scroll_position' and item.get('changed') is True
                 for item in postconditions if isinstance(item, dict))
@@ -101,6 +115,8 @@ class OrdinaryCapability:
             for check in checks:
                 check.parameters.pop('_retainedElement', None)
                 check.parameters.pop('_actionResultOwner', None)
+                check.parameters.pop('_batAttemptCount', None)
+                check.parameters.pop('_batFailureDiagnostic', None)
         return result.model_dump(mode='json')
 
     async def execute(self, action_name: str, args: dict, target: dict | None = None, *, native_dialog_policy=None,
@@ -137,6 +153,7 @@ class OrdinaryCapability:
             if result.error:
                 raise RuntimeError('ordinary_action_failed')
             event_count = verify_event_target(capture, require_trusted=action_name == 'click')
+            self.last_event_diagnostic = safe_event_target(capture)
             metadata = result.metadata if isinstance(result.metadata, dict) else {}
             result.metadata = {**metadata, 'batActionPreparation': {
                 'targetId': prepared.target_id, 'scrolled': prepared.scrolled,
@@ -302,3 +319,57 @@ def retryable_target_error(error):
 def expects_url_change(postconditions):
     return any(isinstance(item, dict) and item.get('kind') in ('url', 'url_digest')
                and item.get('changed') is True for item in postconditions)
+
+
+async def safe_page_identity(browser):
+    """Return only digests of the live identity. Missing diagnostics never affect the action result."""
+    try:
+        page = await browser.get_current_page()
+        info = await page.get_target_info() if page is not None else None
+        target_id = info.get('targetId') if isinstance(info, dict) else None
+        url = await page.get_url() if page is not None else None
+        document_id = await current_document_id(browser, page=page) if page is not None else None
+        if not isinstance(target_id, str) or not target_id or not isinstance(url, str) or not url:
+            return None
+        return {'sessionDigest': digest(getattr(browser, 'id', None)), 'targetDigest': digest(target_id),
+                'documentDigest': digest(document_id), 'urlDigest': digest(url)}
+    except Exception:
+        return None
+
+
+def safe_validation_target(prepared):
+    if prepared is None:
+        return None
+    try:
+        return {'sessionDigest': digest(prepared.session_id), 'targetDigest': digest(prepared.target_id),
+                'documentDigest': digest(prepared.document_id), 'backendDigest': digest(prepared.backend_id)}
+    except Exception:
+        return None
+
+
+def safe_event_target(capture):
+    """Summarize target association without attributes, text, selectors, values, URL or event data."""
+    try:
+        events = capture.get('events') if isinstance(capture, dict) else None
+        accepted = [event for event in events or [] if isinstance(event, dict)
+                    and isinstance(event.get('graph'), dict)
+                    and event['graph'].get('intentRelation') in ('self', 'descendant', 'composed')]
+        if not accepted:
+            return None
+        event = accepted[-1]
+        graph = event['graph']
+        target = graph.get('target') if isinstance(graph.get('target'), dict) else {}
+        ref = target.get('ref') if isinstance(target.get('ref'), str) else None
+        nodes = graph.get('nodes') if isinstance(graph.get('nodes'), list) else []
+        node = next((item for item in nodes if isinstance(item, dict) and item.get('id') == ref), None)
+        tag = node.get('tag') if isinstance(node, dict) and isinstance(node.get('tag'), str) else None
+        kind = target.get('kind') if target.get('kind') in {
+            'element', 'shadow_root', 'document', 'window', 'other'} else 'other'
+        safe_ref = ref if ref is not None and ref.startswith('n-') and ref[2:].isdigit() and len(ref) <= 16 else None
+        safe_tag = tag if tag is not None and tag.replace('-', '').isalnum() and len(tag) <= 40 else None
+        return {'relation': graph['intentRelation'],
+                'trusted': any(item.get('event', {}).get('isTrusted') is True for item in accepted),
+                'eventCount': len(accepted), 'targetKind': kind,
+                'targetTag': safe_tag, 'targetRef': safe_ref}
+    except Exception:
+        return None

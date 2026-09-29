@@ -19,7 +19,8 @@ export function assertActionResultReadiness(context: Context, compilation: Hybri
     if (producer.kind !== "deterministic" || producer.operation.name !== "browser.workflow-step"
       || !["click", "send_keys"].includes(producer.operation.actionName)) continue
     const urls = producer.postconditions.filter((condition): condition is BrowserCondition => condition.kind === "url" || condition.kind === "url_digest")
-    const reads = producer.postconditions.filter((condition): condition is BrowserCondition => condition.kind === "read_fields" && condition.transition === true)
+    const reads = producer.postconditions.filter((condition): condition is BrowserCondition => condition.kind === "read_fields"
+      && (condition.transition === true || condition.ready === true))
     if (!urls.some((condition) => condition.changed === true) || reads.length !== 1
       || urls.some((condition) => condition.equals != null || condition.bindingArgument != null)) continue
     assertReadinessSource(context, compilation, producer, reads[0]!, scopes)
@@ -34,9 +35,11 @@ function assertReadinessSource(context: Context, compilation: HybridCompilation,
     || !isDeepStrictEqual(condition.read, consumer.operation.specification)) fail("consumer_mismatch")
   const producerAction = ownerAction(context, compilation, producer.id)
   const consumerAction = ownerAction(context, compilation, consumer.id)
+  const runtimeScope = scopes.get(consumer.id)
   if (producer.operation.name !== "browser.workflow-step" || producerAction.name !== producer.operation.actionName
     || context.request.trace.actions.indexOf(consumerAction) <= context.request.trace.actions.indexOf(producerAction)
-    || scopes.get(consumer.id)?.runtimeScopeFrom !== producer.id) fail("boundary_unproven")
+    || !readinessPredecessor(context, compilation, producer.id,
+      runtimeScope?.runtimeScopeFrom)) fail("boundary_unproven")
   const before = observation(context, consumerAction.preObservationRef)
   const after = observation(context, consumerAction.postObservationRef)
   const facts = after.facts.filter((fact) => fact.id === condition.clauseRef && fact.kind === "verified_natural_read")
@@ -55,7 +58,7 @@ function assertReadinessSource(context: Context, compilation: HybridCompilation,
     || !fact.sourceRefs.length || fact.sourceRefs.some((ref) => !producer.proofRefs.some((proof) => isDeepStrictEqual(proof, ref)))) {
     fail("read_source_mismatch")
   }
-  assertChangedUrl(context, producer, producerAction)
+  assertChangedUrl(context, producer, producerAction, runtimeScope?.predecessorCompletionObservationRef)
 }
 
 function ownerAction(context: Context, compilation: HybridCompilation, segmentId: string) {
@@ -65,8 +68,32 @@ function ownerAction(context: Context, compilation: HybridCompilation, segmentId
   return action
 }
 
-function assertChangedUrl(context: Context, producer: Segment, action: Request["trace"]["actions"][number]) {
-  const before = observation(context, action.preObservationRef), after = observation(context, action.postObservationRef)
+/** WHY：wait 不改变动作的页面归属，但它仍是运行 scope 的真实直接前驱，不能删掉或冒充原动作。 */
+function readinessPredecessor(context: Context, compilation: HybridCompilation, producerId: string, id?: string) {
+  const visited = new Set<string>()
+  while (id && id !== producerId && !visited.has(id)) {
+    visited.add(id)
+    const segment = compilation.segments.find(item => item.id === id)
+    const incoming = compilation.controlGraph.edges.filter(edge => edge.to === id && edge.outcome === "success")
+    if (segment?.kind !== "deterministic" || segment.operation.name !== "browser.workflow-step"
+      || segment.operation.actionName !== "wait" || incoming.length !== 1) return false
+    const action = ownerAction(context, compilation, id), previous = ownerAction(context, compilation, incoming[0]!.from)
+    if (action.name !== "wait" || context.request.trace.actions.indexOf(action)
+      !== context.request.trace.actions.indexOf(previous) + 1) return false
+    const start = observation(context, previous.postObservationRef)
+    for (const current of [observation(context, action.preObservationRef), observation(context, action.postObservationRef)]) {
+      if (current.tabId !== start.tabId || current.url !== start.url
+        || urlFact(context, current).value !== urlFact(context, start).value) return false
+    }
+    id = incoming[0]!.from
+  }
+  return id === producerId
+}
+
+function assertChangedUrl(context: Context, producer: Segment, action: Request["trace"]["actions"][number],
+  completionObservationRef?: string) {
+  const before = observation(context, action.preObservationRef)
+  const after = observation(context, completionObservationRef ?? action.postObservationRef)
   const previous = urlFact(context, before), current = urlFact(context, after)
   if (before.url === after.url || previous.value === current.value) fail("url_change_unproven")
   for (const condition of producer.postconditions) {

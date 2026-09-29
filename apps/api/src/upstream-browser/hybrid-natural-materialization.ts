@@ -5,6 +5,7 @@ import { hybridNaturalRequestSchema, naturalBindingFactValueSchema, readSpecific
   type HybridCompilation, type HybridSegment } from "./hybrid-schema.js"
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
 import { jsonValueAtPath } from "./hybrid-json-path.js"
+import { assertSelectionValueBinding } from "./hybrid-selection.js"
 
 type NaturalContext = { version: 2; request: z.infer<typeof hybridNaturalRequestSchema>;
   payload: ReturnType<typeof naturalPayloadContext> }
@@ -14,7 +15,8 @@ export function assertNaturalBinding(raw: unknown, trace: z.infer<typeof hybridN
   const decision = z.object({ actionRef: z.string(), argumentPath: z.string(), sourceRef: z.string(),
     binding: valueBindingSchema, proofRefs: z.array(z.object({ ref: z.string(),
       digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
-    derivation: z.enum(["anchor_navigation", "prior_verified_read"]).optional() }).passthrough().parse(raw)
+    derivation: z.enum(["anchor_navigation", "prior_verified_read", "selection_function"]).optional() }).passthrough().parse(raw)
+  if (decision.derivation === "selection_function") return assertSelectionValueBinding(decision, trace, payload.assertFact)
   if (decision.derivation === "anchor_navigation") {
     return assertAnchorNavigationBinding(decision, trace, payload)
   }
@@ -243,4 +245,3 @@ function schemaAtPath(schema: ValueSchema, path: Array<string | number>): ValueS
   }
   return current
 }
-

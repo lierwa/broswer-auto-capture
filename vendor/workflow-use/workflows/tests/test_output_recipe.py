@@ -22,7 +22,7 @@ def put_evidence(_kind, value):
 
 
 class OutputRecipeTest(unittest.TestCase):
-    def test_indexed_consumer_uses_min_items_contract_without_empty_completion(self):
+    def test_indexed_consumer_without_declared_empty_success_keeps_ordinary_failure(self):
         records = {'type': 'array', 'items': {'type': 'object', 'properties': {
             'url': {'type': 'string'},
         }, 'required': ['url'], 'additionalProperties': False}, 'minItems': 1, 'maxItems': 5}
@@ -38,7 +38,9 @@ class OutputRecipeTest(unittest.TestCase):
         records['minItems'] = 0
         branches, gaps = compile_empty_list_branches({'mode': 'execution'}, None, segments)
         self.assertEqual(branches, [])
-        self.assertEqual([item.reason for item in gaps], ['natural_empty_list_control_required'])
+        self.assertEqual(gaps, [])
+        self.assertEqual(compile_empty_list_branches({'mode': 'data', 'edgeCases': []},
+                                                   {'assignments': []}, segments), ([], []))
 
         segments[0]['outputs'][0]['schema'] = {'type': 'array', 'items': {
             'type': 'array', 'items': {'type': 'string'}, 'maxItems': 5,
@@ -46,7 +48,7 @@ class OutputRecipeTest(unittest.TestCase):
         segments[1]['bindings'][0]['binding']['path'] = [0, 0]
         branches, gaps = compile_empty_list_branches({'mode': 'execution'}, None, segments)
         self.assertEqual(branches, [])
-        self.assertEqual([item.reason for item in gaps], ['natural_empty_list_control_required'])
+        self.assertEqual(gaps, [])
 
     def test_result_binding_keeps_verified_sources_and_plan_producer_refs_separate(self):
         schema = {'type': 'object', 'properties': {
