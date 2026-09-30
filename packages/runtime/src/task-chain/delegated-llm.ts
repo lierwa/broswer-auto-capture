@@ -13,6 +13,8 @@ export async function executeDelegatedLlm(
 ): Promise<NodeCapabilityResult> {
   if (!("delegate" in node) || !node.delegate) throw new Error("delegated_llm_config_missing")
   const delegate = node.delegate, llm = state.capabilities.llm!
+  const input = resolveBinding(node.input, state.context)
+  boundExecutionInput(state, node, input, [node.input])
   state.capabilities.accountConsumption?.({ llmCalls: delegate.maxInvocations,
     browserCommands: delegate.maxBrowserCommands })
   state.run.auditComplete = false; state.run.consumed.llmCalls = null
@@ -38,9 +40,6 @@ export async function executeDelegatedLlm(
     await persistRun(state)
   }
   try {
-    const input = resolveBinding(node.input, state.context)
-    boundExecutionInput(state, node, input, [node.input])
-    await persistRun(state)
     const result = llmNodeCapabilityResultSchema.parse(await llm({ binding: state.run.binding, mode: state.run.mode, node,
       input, callId, signal: state.signal, onModelCall }))
     const purposes = new Set(state.run.modelCalls.map((item) => item.purpose))

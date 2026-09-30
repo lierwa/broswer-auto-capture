@@ -265,13 +265,19 @@ export class InterviewCoordinator {
       }
     })
   }
-  async *observe(id: string, after: number, signal: AbortSignal) {
-    // 已提交快照具有单调序号；观察短轮询不持有模型或事务，可跨刷新重新连接。
-    while (!signal.aborted) {
-      const state = this.snapshot(id)
-      if (state.sequence > after) { after = state.sequence; yield { taskId: id, state } }
-      if (!state.active) return
-      try { await delay(200, undefined, { signal }) } catch { return }
+  async *observe(id: string, after: number, signal: AbortSignal, continuous = false) {
+    // WHY：同一持久版本唤醒；运行变化不复制访谈正文，无变化不安排 timer。
+    for await (const _sequence of this.store.workspaceChanges.observe(id, -1, signal)) {
+      let task = this.store.task(id)
+      if (task.sequence > after) {
+        // TRADE-OFF：活跃增量沿用原展示合并窗口，避免每个 token 都读取/传输完整对话。
+        if (after >= 0 && task.activeTurnId) {
+          try { await delay(200, undefined, { signal }) } catch { return }
+          task = this.store.task(id)
+        }
+        const state = this.snapshot(id); after = state.sequence; yield { taskId: id, state }
+      }
+      if (!continuous && !task.activeTurnId) return
     }
   }
   async waitForIdle() {

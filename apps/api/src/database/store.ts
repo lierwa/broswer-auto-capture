@@ -13,16 +13,19 @@ import { validateState } from "./invariants.js"
 import * as schema from "./schema.js"
 import { parseModelSelection, type ModelSelection } from "@agent-platform/ai-connect/client"
 import { automaticTaskTitle } from "./task-title.js"
+import { WorkspaceChanges } from "./workspace-changes.js"
 
 export type ProductDatabase = ReturnType<typeof drizzle<typeof schema>>
 export function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex") }
 export class ProductStore {
   readonly db: ProductDatabase
+  readonly workspaceChanges: WorkspaceChanges
   private closed = false
   private compromised = false
   private constructor(private connection: Database.Database, private release: () => Promise<void>) {
     migrate(connection)
     this.db = drizzle(connection, { schema })
+    this.workspaceChanges = new WorkspaceChanges(connection)
   }
   static async open(directory: string) {
     await mkdir(directory, { recursive: true })
@@ -254,6 +257,7 @@ export class ProductStore {
   }
   async close() {
     if (this.closed) return
+    this.workspaceChanges.close()
     this.closed = true; this.connection.close(); await this.release().catch(() => {})
   }
 }

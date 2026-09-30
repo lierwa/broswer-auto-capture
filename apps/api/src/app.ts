@@ -77,6 +77,7 @@ export async function createApplication(options: AppOptions) {
   routes(app, coordinator, browser, browserProfile, taskChain, deletion, store, ai, options.developmentIdentity)
   await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
   app.addHook("preClose", async () => {
+    store.workspaceChanges.close()
     await browserProfile.shutdown(); await taskChain.close()
     let report: { status: string } | undefined
     // WHY：父连接清理异常也不能跳过其它既有资源的退出；失败结论最后保留给服务 owner。
@@ -182,9 +183,16 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
     const query = executionEventsQuery.parse(request.query)
     return taskChain.executionEvents(query.taskId, query.executionId, query.after)
   })
+  app.get("/api/task-chain/changes", (request, reply) => {
+    const { taskId, after } = eventsQuery.parse(request.query)
+    store.task(taskId)
+    return streamLines(reply, signal => store.workspaceChanges.observe(taskId, after, signal))
+  })
   app.get("/api/task-chain/execution", (request) => {
-    const query = executionEventsQuery.omit({ after: true }).parse(request.query)
-    return taskChain.executionDetail(query.taskId, query.executionId)
+    const query = executionEventsQuery.omit({ after: true }).extend({
+      includeContent: z.enum(["true", "false"]).default("true"),
+    }).parse(request.query)
+    return taskChain.executionDetail(query.taskId, query.executionId, query.includeContent === "true")
   })
   app.get("/api/task-chain/history", (request) => {
     const query = taskHistoryQuery.parse(request.query)
@@ -204,9 +212,9 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
     return reply.code(command.type === "message" || command.type === "retry" ? 202 : 200).send({ taskId: id, state })
   })
   app.get("/api/interview/events", (request, reply) => {
-    const { taskId, after } = eventsQuery.parse(request.query)
+    const { taskId, after, continuous } = eventsQuery.extend({ continuous: z.enum(["true", "false"]).default("false") }).parse(request.query)
     coordinator.snapshot(taskId)
-    return stream(reply, coordinator, taskId, after)
+    return streamLines(reply, signal => coordinator.observe(taskId, after, signal, continuous === "true"))
   })
 }
 const modelSettingsBody = z.object({ selection: z.unknown() }).strict()
@@ -224,11 +232,11 @@ function samePath(left: string, right: string) {
   const normalize = (value: string) => path.resolve(value).replaceAll("\\", "/").toLowerCase()
   return normalize(left) === normalize(right)
 }
-function stream(reply: FastifyReply, coordinator: InterviewCoordinator, id: string, after: number) {
+function streamLines(reply: FastifyReply, observe: (signal: AbortSignal) => AsyncIterable<unknown>) {
   const controller = new AbortController()
   reply.raw.once("close", () => controller.abort())
   async function* lines() {
-    try { for await (const item of coordinator.observe(id, after, controller.signal)) yield `${JSON.stringify(item)}\n` }
+    try { for await (const item of observe(controller.signal)) yield `${JSON.stringify(item)}\n` }
     catch { yield `${JSON.stringify({ error: "状态连接中断，请重新连接恢复。", code: "stream_interrupted" })}\n` }
     finally { controller.abort() }
   }

@@ -65,9 +65,9 @@ export class TaskChainService {
     return workspaceSnapshot(this.store, this.repository, this.product, taskId)
   }
 
-  executionDetail(taskId: string, executionId: string) {
+  executionDetail(taskId: string, executionId: string, includeContent = true) {
     const record = this.repository.execution(taskId, executionId)
-    return executionDetail(this.repository, record, this.frozenEventContent(taskId, record))
+    return executionDetail(this.repository, record, includeContent ? this.frozenEventContent(taskId, record) : null)
   }
 
   async controlBrowserHandoff(taskId: string, raw: unknown) {
@@ -163,7 +163,7 @@ export class TaskChainService {
   dispatch(taskId: string, raw: unknown, includeReceipt = false): TaskWorkspaceSnapshot | TaskChainDispatchResponse {
     const command = taskChainCommandSchema.parse(raw)
     let acceptedExecution: AcceptedTaskExecution | null = null
-    let savedReview: import("@browser-capture/contracts").TaskExecutionReview | undefined
+    let savedReview: import("@browser-capture/contracts").TaskExecutionReviewReceipt | undefined
     this.store.task(taskId)
     if (command.type === "cancel_authoring") this.cancelAuthoring(taskId, command.jobId)
     else if (command.type === "resume_preparation_human") conflict("人工恢复需要等待现场核验，请使用异步命令入口。")

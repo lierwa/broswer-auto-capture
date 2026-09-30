@@ -3,8 +3,8 @@ import test from "node:test"
 import { nodePorts, requiredNodeOutcomes, taskChainSchema, type JsonValue, type LegacyChainNode, type StableChainNodeV2,
   type TaskChain, type TaskDataContract, type TaskRun, type ValueBinding } from "@browser-capture/contracts"
 import { TaskChainRuntime } from "@browser-capture/runtime"
-import { valueRecord } from "../src/task-chain/execution-record.js"
-import { alternateRunId, capabilityEffectChain, itemsContract, loopChain, nullContract, requestFor } from "./task-chain-fixtures.js"
+import { safeRecordedOutput, valueRecord } from "../src/task-chain/execution-record.js"
+import { alternateRunId, capabilityEffectChain, itemsContract, llmChain, loopChain, nullContract, requestFor } from "./task-chain-fixtures.js"
 
 const objectContract: TaskDataContract = { id: "object", version: 1, dialect: "bat-value-schema/v1",
   schema: { type: "object", properties: {}, required: [], additionalProperties: true } }
@@ -28,6 +28,85 @@ function simpleChain(node: StableChainNodeV2, before: StableChainNodeV2[] = [], 
       to: port === "success" || item.kind === "branch" && !["failed"].includes(port) ? actions[index + 1]?.id ?? done.id : failed.id }))) })
 }
 const finished = (run: TaskRun, nodeId: string) => run.events.filter((event) => event.nodeId === nodeId && event.status === "finished")
+function inputFor(run: TaskRun, event: TaskRun["events"][number]) {
+  return run.events.findLast((item) => item.nodeId === event.nodeId && item.status === "started"
+    && item.sequence < event.sequence && item.invocationId === event.invocationId)?.execution?.input
+}
+
+test("安全摘要保留真实空值，拒绝未知输入与未完成末次生产", () => {
+  for (const value of [null, false, 0, ""] as const) {
+    const chain = simpleChain(functionNode({ payload: constant(value) }))
+    const events = [{ sequence: 1, nodeId: "calculate", invocationId: "invocation", status: "started", outcome: null,
+      execution: { input: { status: "recorded", value: { payload: value } } } },
+    { sequence: 2, nodeId: "calculate", invocationId: "invocation", status: "finished", outcome: "success",
+      execution: { output: { status: "recorded", value } } }] as TaskRun["events"]
+    assert.equal(safeRecordedOutput(chain, events, "calculate")?.value, value)
+    const unknown = structuredClone(events)
+    unknown[0]!.execution!.input = { status: "missing" }
+    assert.equal(safeRecordedOutput(chain, unknown, "calculate"), null)
+    assert.equal(safeRecordedOutput(chain, [...events, { ...events[0]!, sequence: 3 }], "calculate"), null)
+  }
+})
+
+// WHY：保护逐次事实而非字段拼接：已经发布的 sequence 永远不能在后续快照被改写。
+test("已发布started不可补写输入，finished不重复实参", async () => {
+  for (const chain of [loopChain(), llmChain()]) {
+    const snapshots = new Map<number, string>()
+    const input = chain.entry === "llm" ? "原始输入" : { items: [{ id: "a", value: "甲" }] }
+    const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, input), capabilities: {
+      browser: async () => ({ outcome: "success", output: null }),
+      llm: async () => ({ outcome: "success", output: "结果", reportedInvocations: 1 }),
+      persist: async (value) => {
+        for (const event of value.events) {
+          const encoded = JSON.stringify(event), previous = snapshots.get(event.sequence)
+          if (previous !== undefined) assert.equal(encoded, previous, `sequence ${event.sequence} changed after publication`)
+          snapshots.set(event.sequence, encoded)
+        }
+      },
+    } })
+    assert.equal(run.status, "completed", run.outcome?.reason)
+    assert.ok(run.events.filter((event) => event.status === "finished").every((event) => !event.execution?.input))
+  }
+})
+
+test("实际脱敏整对象经Function取值改名和变量传递不能洗掉来源", async () => {
+  const secret = "synthetic-renamed-sensitive", source = functionNode({ source: constant({ password: secret }) },
+    "function main(inputs) { return { renamed: inputs.source.password }; }")
+  source.id = "source"; source.writes = [{ variable: "alias", path: [] }]
+  const destination = functionNode({ value: { source: "variable", name: "alias", path: ["renamed"] } })
+  const chain = simpleChain(destination, [source], { alias: objectContract })
+  const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {} })
+  assert.equal(run.status, "completed", run.outcome?.reason)
+  assert.equal(JSON.stringify(run.events).includes(secret), false)
+  assert.equal(finished(run, source.id)[0]?.execution?.output?.status, "redacted")
+  assert.equal(finished(run, destination.id)[0]?.execution?.output?.status, "redacted")
+  assert.deepEqual(run.outputs.result?.kind === "value" ? run.outputs.result.value : null, { value: secret })
+})
+
+test("固定each总数只哈希一次集合且后续引用原输入", async () => {
+  const chain = loopChain(), items = [{ id: "a", value: "甲" }, { id: "b", value: "乙" }, { id: "c", value: "丙" }]
+  const request = requestFor(chain, { items }), original = JSON.stringify, originalClone = structuredClone
+  let itemHashes = 0, collectionCopies = 0
+  JSON.stringify = function (value, ...rest: Parameters<typeof original> extends [unknown, ...infer R] ? R : never) {
+    if (value && typeof value === "object" && !Array.isArray(value) && Object.hasOwn(value, "id") && Object.hasOwn(value, "value")) itemHashes++
+    return original(value, ...rest)
+  } as typeof original
+  globalThis.structuredClone = (value, options) => {
+    if (Array.isArray(value) && value.length === items.length && value.every((item) => item && typeof item === "object" && "id" in item && "value" in item)) collectionCopies++
+    return originalClone(value, options)
+  }
+  let run: TaskRun
+  try {
+    run = await new TaskChainRuntime().execute({ chain, request, capabilities: { browser: async () => ({ outcome: "success", output: null }) } })
+  } finally { JSON.stringify = original; globalThis.structuredClone = originalClone }
+  assert.equal(run.status, "completed", run.outcome?.reason)
+  assert.equal(itemHashes, items.length)
+  assert.equal(collectionCopies, 1, "only the explicit final emit may copy the complete input collection")
+  assert.ok(finished(run, "repeat").every((event) => event.execution?.loop?.total === items.length))
+  const started = run.events.filter((event) => event.nodeId === "repeat" && event.status === "started")
+  assert.deepEqual(started[0]?.execution?.input, { status: "recorded", value: { collection: items } })
+  assert.ok(started.slice(1).every((event) => !event.execution?.input))
+})
 
 test("实际Function具名实参与返回在完成释放checkpoint后留存，不去重同来源参数", async () => {
   const expected = { first: 0, second: 0, no: false, empty: "", none: null }
@@ -38,7 +117,7 @@ test("实际Function具名实参与返回在完成释放checkpoint后留存，�
   } })
   assert.equal(run.status, "completed"); assert.equal(run.checkpoint, null)
   const record = finished(run, "calculate")[0]!.execution!
-  assert.deepEqual(record.input, { status: "recorded", value: expected })
+  assert.deepEqual(inputFor(run, finished(run, "calculate")[0]!), { status: "recorded", value: expected })
   assert.deepEqual(record.output, { status: "recorded", value: expected })
   assert.ok(persisted.some((value) => value.events.at(-1)?.status === "started"
     && value.events.at(-1)?.execution?.input?.status === "recorded"))
@@ -51,7 +130,7 @@ test("Function失败保留真实输入，但不把包装层null当作guest返回
   const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {} })
   const event = finished(run, "calculate")[0]!
   assert.equal(event.outcome, "failed")
-  assert.deepEqual(event.execution?.input, { status: "recorded", value: { value: 0 } })
+  assert.deepEqual(inputFor(run, event), { status: "recorded", value: { value: 0 } })
   assert.deepEqual(event.execution?.output, { status: "missing" })
 })
 
@@ -60,7 +139,7 @@ test("敏感字段局部脱敏、超限显式截断，业务执行值保持原�
   const chain = simpleChain(functionNode({ source: constant(input) }))
   const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {} })
   const record = finished(run, "calculate")[0]!.execution!
-  assert.equal(record.input?.status, "redacted")
+  assert.equal(inputFor(run, finished(run, "calculate")[0]!)?.status, "redacted")
   assert.equal(record.output?.status, "redacted")
   assert.equal(JSON.stringify(run.events).includes("synthetic-sensitive-value"), false)
   assert.deepEqual(run.outputs.result?.kind === "value" ? run.outputs.result.value : null, { source: input })
@@ -78,7 +157,7 @@ test("未知能力原始输出经变量与Function恒等传递也不绕过留存
   } })
   assert.equal(run.status, "completed")
   assert.equal(finished(run, raw.id)[0]!.execution?.output?.status, "redacted")
-  assert.equal(finished(run, fn.id)[0]!.execution?.input?.status, "redacted")
+  assert.equal(inputFor(run, finished(run, fn.id)[0]!)?.status, "redacted")
   assert.equal(finished(run, fn.id)[0]!.execution?.output?.status, "redacted")
   assert.equal(JSON.stringify(run.events).includes("synthetic-raw-page"), false)
 })
@@ -141,7 +220,7 @@ test("有序Branch只留真正求值的case实参，不改变短路顺序", asyn
   const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {} })
   const event = finished(run, branch.id)[0]!
   assert.equal(event.outcome, "first")
-  assert.deepEqual(event.execution?.input, { status: "recorded", value: { "first.left": 0, "first.right": 0 } })
+  assert.deepEqual(inputFor(run, event), { status: "recorded", value: { "first.left": 0, "first.right": 0 } })
 })
 
 test("exists未读到绑定不制造空对象实参，真实空对象与空值仍留存", async () => {
@@ -151,7 +230,7 @@ test("exists未读到绑定不制造空对象实参，真实空对象与空值�
   const chain = taskChainSchema.parse({ ...simpleChain(branch), inputContract: objectContract })
   for (const input of [{}, { value: {} }, { value: null }, { value: false }, { value: 0 }, { value: "" }]) {
     const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, input), capabilities: {} })
-    const record = finished(run, branch.id)[0]!.execution?.input
+    const record = inputFor(run, finished(run, branch.id)[0]!)
     assert.deepEqual(record, Object.hasOwn(input, "value") ? { status: "recorded", value: { "found.value": input.value } } : undefined)
   }
 })

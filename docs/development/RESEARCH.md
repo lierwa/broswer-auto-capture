@@ -3027,3 +3027,32 @@ Reuse Assessment:
 已核实差异：hybrid-runtime.ts:72固定使用产品data目录下browser-profile/default，并非用户日常Chrome Profile；managed_window.py:322自行启动已安装Chrome，参数包含remote-debugging-port=0。MDN Navigator.webdriver文档明确Chrome在此参数为0时暴露webdriver=true（https://developer.mozilla.org/en-US/docs/Web/API/Navigator/webdriver）。此处为代码与浏览器文档依据，未在已关闭的失败窗口补测JS，也不能据此证明京东具体风控规则。
 
 SQLite证据：sample d52195cb于15:15:28Z启动、verification5dc18463于15:18:12Z启动、正式643dabd5于15:21:28Z启动，三次pacing.nodeDelayMs均0。正式browser.headless=false；草稿没有显式browser字段，不能未经核实便称草稿headless。草稿走owned_browser/BrowserProfile启动，正式走ManagedWindow/CDP接管；验证与正式环境不一致是确定的验证缺口。Profile、启动信号和访问节奏均为合理调查方向；具体拦截规则与各因素权重未知，不把推断写成结论。本次仅核对和记录，没有修改指纹参数、接管日常Chrome或增加站点绕过逻辑。
+
+## 2026-09-30 checkpoint 后最小性与性能修复
+
+Product Alignment:
+- natural-language task: 同任务查看浏览器读取或表单提交的真实进度、输入和成果，再携带原结果返回需求对话。
+- reusable chain boundary: 原不可变版本、单 execution/run 事实；通知只是失效序号，不是另一份执行图。
+- runtime inputs: 已有 workspace sequence、运行事件、值绑定和冻结输出合同。
+- dynamic task outputs: 已保存运行成果和用户原话；不编造历史或循环分母。
+- generic platform capability used: 原 SQLite 序列、原生事件/HTTP 流、React 引用复用、既有脱敏记录。
+- replay model calls: 0；不新增模型字段或调用。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 消除空闲工作区轮询并有界合并失效通知，减少重复渲染/审计数据。
+- existing implementation in repository: v18 taskWorkspaceSequences 触发器、唯一持锁 ProductStore、既有 NDJSON 访谈流/增量事件游标、React Flow/Dagre、node execution 脱敏。
+- mature candidates and pinned versions: better-sqlite3 12.10.0 public function、SQLite TEMP trigger、Node 原生 events.once/Readable、React 19.1.1、React Flow 12.11.6；均复用已安装能力，无新依赖。
+- selected implementation: 同连接 TEMP trigger 唤醒，microtask 后读已提交权威序号；每订阅仅一个 once，慢消费者恢复直接读最新；客户端先消费工作区/完整事件/必要详情，再确认序号。
+- reused public surface: https://www.sqlite.org/lang_createtrigger.html （TEMP trigger 连接作用域）；https://github.com/WiseLibs/better-sqlite3/blob/v12.10.0/docs/api.md （function）；https://nodejs.org/api/events.html#eventsonemitter-eventname-options （on 默认无界且背压需 pause/resume）。
+- B-A-T-owned adapter and remaining gap: 已有持久版本到失效通知的薄适配；不保存通知队列，不增加调度/检查点/模型协议。静态 chain/batch 缓存必须由消费入口维持不可变引用。
+- license/runtime/platform fit: 现有依赖和 Node 运行时，无新增库/操作系统绑定。
+- browser/runtime/state ownership conflicts: 不控制浏览器、不启停用户 Chrome、不改永久数据库 schema；store 关闭先 abort 订阅。
+- replay model calls: 0。
+- rejected candidates and evidence: 增大 800ms 间隔仍空闲轮询；events.on 缓冲慢消费者时无界，独立 review 和红测试确认，改 native once；第二份失效持久队列或 scheduler 没有必要。
+- focused validation: 已复现纯 rollback、提交后 rollback、慢消费积压和关闭后观察；once 修复后 4/4。前端接线和 HTTP 生命周期待定点验证；不以旧浏览器成功验收新代码。
+
+设计补充（实施前）：反馈只持久化自身选择和结果摘要，task/execution/需求/版本引用从不可变父 execution 投影，兼容旧记录而不改历史；重连必须读尽原事件分页后再推进捕获的 workspace 版本。需求对话携带受控摘要，不增加 LLM 必填字段。
+
+
+2026-10-01 设计/验证闭环：独立 review 拒绝事件队列、关闭后迭代、分页遗漏、晚回执清空、历史录制值洗白及最后 started 回退旧 finished；均以具体反例修正。来源检查收窄只读节点/事件依赖并导出 safeRecordedOutput，运行与历史摘要共用当前政策，不加模型或持久标记。反馈持久化严格接受自身两字段或旧完整 context，完整回执从不可变父记录派生；已有反馈恢复不重查旧 run、不改原摘要。产品 LLM 调用及模型必填字段新增均为 0；safeCallSummary 自身没有模型调用，只给既有用户发起的需求回流提供已保存安全数据。相关临时真实 HTTP、异步合并、隐私/幂等反例与所属类型检查通过；边界和首败详见 PROGRESS 最新节。

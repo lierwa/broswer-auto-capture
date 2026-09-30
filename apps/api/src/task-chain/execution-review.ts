@@ -1,9 +1,9 @@
-import { taskExecutionSchema, type TaskChainCommand, type ExecutionReviewContext, type TaskExecution, type TaskExecutionReview } from "@browser-capture/contracts"
-import { digestJson, stableUuid } from "@browser-capture/runtime"
+import { taskExecutionSchema, taskExecutionReviewReceiptSchema, type TaskChainCommand, type TaskExecution, type TaskExecutionReview, type TaskRun } from "@browser-capture/contracts"
+import { digestJson, safeRecordedOutput, stableUuid } from "@browser-capture/runtime"
 import { conflict, DomainError } from "../errors.js"
 import type { ProductStore } from "../database/store.js"
 import type { TaskContractRepository } from "./repository.js"
-import { executionCalls } from "./execution-detail.js"
+import { runBelongsToExecution } from "./execution-detail.js"
 
 export function appendExecutionReview(record: TaskExecution, input: {
   requestId: string
@@ -11,7 +11,7 @@ export function appendExecutionReview(record: TaskExecution, input: {
   decision: TaskExecutionReview["decision"]
   feedback: string | null
   selection?: { stepId: string; runId: string | null } | undefined
-}, context?: ExecutionReviewContext) {
+}, context?: TaskExecutionReview["context"]) {
   const existing = record.reviews.find((item) => item.id === stableUuid(input.requestId, "result-review"))
   if (existing) {
     if (existing.decision !== input.decision || existing.feedback !== input.feedback
@@ -71,19 +71,71 @@ export function saveExecutionReview(store: ProductStore, repository: TaskContrac
   command: Extract<TaskChainCommand, { type: "review_execution" }>) {
     const previous = store.operation("task-execution:review", command.requestId, command)
     const record = repository.execution(taskId, command.executionId)
-    if (previous) return record.reviews.find((item) => item.id === previous)
+    const existing = record.reviews.find(item => item.id === (previous ?? stableUuid(command.requestId, "result-review")))
+    if (previous && !existing) conflict("已保存反馈的记录缺失；请保留原说明，核对存储后重试。")
+    if (existing) {
+      // WHY：保存成功但回执/operation 丢失时，不重查调用或改写原摘要；沿原幂等检查恢复。
+      appendExecutionReview(record, command)
+      if (!previous) store.recordOperation("task-execution:review", command.requestId, command, existing.id)
+      return reviewReceipt(record, existing)
+    }
     const selectedStep = command.selection ? record.steps.find((step) => step.stepId === command.selection!.stepId) : null
     if (command.selection && !selectedStep) conflict("所选步骤不属于本次运行。")
-    const selectedCall = command.selection?.runId ? executionCalls(repository, record).find((call) =>
-      call.stepId === command.selection!.stepId && call.run.binding.runId === command.selection!.runId) : null
-    if (command.selection?.runId && !selectedCall) conflict("所选调用尚未保存或不属于本次运行。")
-    const result = selectedCall ? selectedCall.run.outputs : selectedStep ? selectedStep.output : record.output
-    const context = { taskId, executionId: record.id, requirement: record.requirement,
-      release: record.release ?? null, draft: record.draft ?? null, selection: command.selection ?? null,
+    let selectedRun: TaskRun | null = null
+    if (command.selection?.runId && selectedStep) {
+      if (!selectedStep.runIds.includes(command.selection.runId)) conflict("所选调用不属于本次运行。")
+      try { selectedRun = repository.run(taskId, command.selection.runId) }
+      catch (error) {
+        if (error instanceof DomainError && error.code === "run_not_found") conflict("所选调用尚未保存。")
+        throw error
+      }
+      if (selectedRun.binding.runId !== command.selection.runId || !runBelongsToExecution(record, selectedStep, selectedRun)) conflict("所选调用与本次运行不一致。")
+    }
+    const result = selectedRun ? selectedRun.outputs : selectedStep ? selectedStep.output : record.output
+    const context = { selection: command.selection ?? null,
       resultDigest: result === null ? null : digestJson(result) }
     const reviewed = appendExecutionReview(record, command, context)
     const review = reviewed.reviews.find(item => item.id === stableUuid(command.requestId, "result-review"))!
+    if (command.decision === "requirement_revision") {
+      if (selectedRun) review.summary += safeCallSummary(repository, selectedRun, 8_000 - review.summary.length)
+      else if (result !== null) {
+        const note = "\n聚合结果的安全值摘要未留存；原结果引用已保留。"
+        if (review.summary.length + note.length <= 8_000) review.summary += note
+      }
+    }
+    taskExecutionSchema.parse(reviewed)
     repository.saveExecution(reviewed)
     store.recordOperation("task-execution:review", command.requestId, command, review.id)
-    return review
+    return reviewReceipt(record, review)
   }
+
+function reviewReceipt(record: TaskExecution, review: TaskExecutionReview) {
+  return taskExecutionReviewReceiptSchema.parse({ ...review, context: {
+    taskId: record.taskId, executionId: record.id, requirement: record.requirement,
+    release: record.release ?? null, draft: record.draft ?? null,
+    selection: review.context?.selection ?? null, resultDigest: review.context?.resultDigest ?? null,
+  } })
+}
+
+function safeCallSummary(repository: TaskContractRepository, run: TaskRun, remaining: number) {
+  let text = "\n所选调用的安全成果摘要："
+  try {
+    const reference = run.binding.chain
+    const chain = repository.chain(run.binding.taskId, reference.id, reference.version, reference.digest)
+    for (const [name, output] of Object.entries(run.outputs)) {
+      const producers = new Set(chain.nodes.filter(node => node.kind === "emit" ? node.name === name
+        : node.kind === "terminal" && "result" in node && node.result?.name === name).map(node => node.id))
+      // WHY：同值不证明同来源；只能用最后一次实际生产者的安全事实，不回退旧迭代/无关节点。
+      const event = run.events.findLast(item => producers.has(item.nodeId))
+      const safe = event ? safeRecordedOutput(chain, run.events, event.nodeId) : null
+      const actual = output.kind === "value" ? output.value : output.artifact
+      const value = event?.status === "finished" && event.outcome === "success" && safe?.status === "recorded" && Object.hasOwn(safe, "value")
+        && digestJson(safe.value) === digestJson(actual) ? JSON.stringify(safe.value) : "安全摘要未留存"
+      const line = `\n${name}：${value}`
+      const omitted = "\n其余值超出摘要长度；保留原结果引用。"
+      if (text.length + line.length > remaining - omitted.length) { text += omitted; break }
+      text += line
+    }
+  } catch { text += "安全摘要无法读取；保留原结果引用。" }
+  return text.length <= remaining ? text : ""
+}

@@ -6,7 +6,7 @@ export interface BindingContext {
   variables: Record<string, JsonValue>
 }
 
-export function readPath(value: JsonValue, path: (string | number)[]): JsonValue {
+export function readPath(value: JsonValue, path: (string | number)[], copy = true): JsonValue {
   let current: JsonValue = value
   for (const segment of path) {
     if (typeof segment === "number") {
@@ -19,18 +19,18 @@ export function readPath(value: JsonValue, path: (string | number)[]): JsonValue
     }
     current = current[segment]!
   }
-  return structuredClone(current)
+  return copy ? structuredClone(current) : current
 }
 
-export function resolveBinding(binding: ValueBinding, context: BindingContext): JsonValue {
-  if (binding.source === "constant") return structuredClone(binding.value)
-  if (binding.source === "input") return readPath(context.input, binding.path)
+export function resolveBinding(binding: ValueBinding, context: BindingContext, copy = true): JsonValue {
+  if (binding.source === "constant") return copy ? structuredClone(binding.value) : binding.value
+  if (binding.source === "input") return readPath(context.input, binding.path, copy)
   if (binding.source === "node") {
     if (!Object.hasOwn(context.nodeOutputs, binding.nodeId)) throw new Error("binding_node_unavailable")
-    return readPath(context.nodeOutputs[binding.nodeId]!, binding.path)
+    return readPath(context.nodeOutputs[binding.nodeId]!, binding.path, copy)
   }
   if (!Object.hasOwn(context.variables, binding.name)) throw new Error("binding_variable_unavailable")
-  return readPath(context.variables[binding.name]!, binding.path)
+  return readPath(context.variables[binding.name]!, binding.path, copy)
 }
 
 export function resolveBindings(bindings: Record<string, ValueBinding>, context: BindingContext): Record<string, JsonValue> {

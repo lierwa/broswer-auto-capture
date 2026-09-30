@@ -4,7 +4,7 @@ import { Children, createElement, isValidElement, type ReactElement, type ReactN
 import { renderToStaticMarkup } from "react-dom/server"
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react"
 import type { ChainPresentation, TaskChain } from "@browser-capture/contracts"
-import { buildCanvasGraph } from "../src/ChainCanvasGraph.js"
+import { buildCanvasGraph, selectCanvasNodes, shareCanvasGraph } from "../src/ChainCanvasGraph.js"
 import { StageCanvasCard, type StageCanvasNode } from "../src/ChainCanvasNodes.js"
 import { LiveChainCanvas } from "../src/LiveChainCanvas.js"
 import type { LiveChainModel } from "../src/useLiveChain.js"
@@ -32,8 +32,8 @@ test("单动作阶段仍是唯一阶段父节点，真实 nodeId 只存在于内
   assert.equal(overview.nodes.some((node) => node.type === "chain-action"), false)
   const stageNode = overview.nodes.find((node) => node.type === "chain-stage") as StageCanvasNode
   assert.deepEqual(stageNode.position, { x: 21, y: 32 })
-  assert.deepEqual(overview.nodes.find((node) => node.id === "__start")!.position, { x: -171, y: 29 })
-  assert.deepEqual(overview.nodes.find((node) => node.id === "__end:done")!.position, { x: 313, y: 29 })
+  assert.deepEqual(overview.nodes.find((node) => node.id === "__start")!.position, { x: -251, y: 6 })
+  assert.deepEqual(overview.nodes.find((node) => node.id === "__end:done")!.position, { x: 313, y: 6 })
   assert.deepEqual(stageNode.data.actions.map((item) => item.id), ["read"])
   stageNode.data.onInspect("read")
   stageNode.position.x += 100
@@ -111,6 +111,34 @@ test("亮暗画布均透传主题并保留具名缩放与适应视图控件", ()
     const controls = [...html.matchAll(/<button\b[^>]*class="[^"]*react-flow__controls-(zoomin|zoomout|fitview)"[^>]*aria-label="([^"]+)"/g)]
     assert.deepEqual(controls.map((match) => match[1]).sort(), ["fitview", "zoomin", "zoomout"])
     assert.ok(controls.every((match) => match[2]!.trim()), `${theme}: 缩放控件缺少可访问名称`)
+  }
+})
+
+test("终点尺寸在布局时确定，同阶段多个真实终点互不重叠", () => {
+  const graph = buildCanvasGraph({ ...chain, nodes: [...chain.nodes,
+    { id: "failed", kind: "terminal", label: "失败", status: "failed", reason: "目标受阻" }],
+    edges: [...chain.edges, { from: "read", outcome: "failed", to: "failed" }] } as TaskChain,
+  presentation, null, () => {})
+  const terminals = graph.nodes.filter(item => item.type === "chain-terminal" && item.data.terminal === "end")
+    .sort((a, b) => a.position.y - b.position.y)
+  assert.ok(terminals.every(item => item.height === 96 && item.width === 220))
+  assert.ok(terminals[1]!.position.y >= terminals[0]!.position.y + Number(terminals[0]!.height))
+})
+
+test("运行投影相同保留整图引用，仅动作选择只改变所属阶段", () => {
+  const inspect = () => {}, select = () => {}, share = shareCanvasGraph()
+  const first = share(buildCanvasGraph(chain, presentation, null, inspect, select))
+  const same = share(buildCanvasGraph(chain, presentation, null, inspect, select))
+  assert.equal(same.nodes, first.nodes)
+  assert.equal(same.edges, first.edges)
+  const selected = selectCanvasNodes(first.nodes, "read", null, null)
+  for (const item of first.nodes) {
+    const next = selected.find(node => node.id === item.id)!
+    if (item.type === "chain-stage") {
+      assert.notEqual(next, item)
+      assert.equal(next.position, item.position)
+      assert.equal((next as StageCanvasNode).data.actions[0]!.selected, true)
+    } else assert.equal(next, item)
   }
 })
 

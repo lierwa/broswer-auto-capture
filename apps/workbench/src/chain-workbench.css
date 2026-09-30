@@ -83,7 +83,7 @@
 .chain-stage-actions > li[data-tone="success"] .chain-run-icon { color: var(--green-9); }
 .chain-stage-actions > li[data-tone="failure"] .chain-run-icon { color: var(--red-9); }
 .chain-stage-actions > li[data-tone="skipped"], .chain-stage-actions > li[data-tone="unselected"] { opacity: .62; }
-.chain-terminal-card { height: 50px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 7px;
+.chain-terminal-card { height: 96px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 7px;
   border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-panel); color: var(--color-text-muted); font-size: 10px; }
 .chain-terminal-card[data-tone="success"] .chain-run-icon { color: var(--green-9); }
 .chain-terminal-card[data-tone="failure"] .chain-run-icon { color: var(--red-9); }

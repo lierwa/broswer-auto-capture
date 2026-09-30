@@ -8,7 +8,7 @@ import { WorkbenchContext } from "./WorkbenchContext.js"
 import { executionStatus } from "./ExecutionPresentation.js"
 import { preparationActivityLabel, useLiveChain, type LiveChainModel } from "./useLiveChain.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
-import type { TaskExecutionReview } from "@browser-capture/contracts"
+import type { TaskExecutionReviewReceipt } from "@browser-capture/contracts"
 
 export function LiveChain({ connection, active, theme, onInterview, onRequirementView, onRequirementRevision }: {
   connection: TaskChainConnection
@@ -16,7 +16,7 @@ export function LiveChain({ connection, active, theme, onInterview, onRequiremen
   theme: "light" | "dark"
   onInterview(): void
   onRequirementView(version: number): void
-  onRequirementRevision(review: TaskExecutionReview): Promise<boolean>
+  onRequirementRevision(review: TaskExecutionReviewReceipt): Promise<boolean>
 }) {
   const model = useLiveChain(connection, active)
   const [publishOpen, setPublishOpen] = useState(false)

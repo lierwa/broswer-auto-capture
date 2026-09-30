@@ -10,6 +10,63 @@ const snapshot = { contractVersion: CONTRACT_VERSION, taskId, taskSequence: 2, s
   requirement: null, draft: null, release: null, execution: null, activity: null,
   draftReadiness: null }
 
+test("无变化快照保持引用且不通知React订阅者", () => {
+  const connection = new TaskChainConnection(taskId)
+  connection.accept(snapshot)
+  const before = connection.snapshot()
+  let notifications = 0
+  connection.subscribe(() => { notifications++ })
+  connection.accept(structuredClone(snapshot))
+  assert.equal(connection.snapshot(), before)
+  assert.equal(notifications, 0)
+})
+
+test("健康连接空闲不轮询，真实通知只刷新一次，取消释放流", async () => {
+  const controller = new AbortController(), requests: string[] = []
+  let stream!: ReadableStreamDefaultController<Uint8Array>, cancelled = false
+  let version = 2
+  const connection = new TaskChainConnection(taskId, async url => {
+    requests.push(String(url))
+    if (!String(url).includes("/changes")) return Response.json({ ...snapshot, stateSequence: version })
+    return new Response(new ReadableStream({ start(value) { stream = value }, cancel() { cancelled = true } }))
+  })
+  const observing = connection.observe(controller.signal)
+  while (!stream) await new Promise(resolve => setImmediate(resolve))
+  await new Promise(resolve => setTimeout(resolve, 850))
+  assert.equal(requests.length, 2)
+  version = 3; stream.enqueue(new TextEncoder().encode("3\n"))
+  while (connection.snapshot().workspace?.stateSequence !== 3) await new Promise(resolve => setImmediate(resolve))
+  assert.equal(requests.length, 3)
+  controller.abort(); await observing
+  assert.equal(cancelled, true)
+})
+
+test("晚到同次accepted回执保留已消费事实；旧回执不覆盖更新运行", async () => {
+  const executionId = id(90), release = { id: id(91), version: 1, digest: "a".repeat(64) }
+  const accepted = { status: "accepted", taskId, requestId: id(92), executionId,
+    executionSequence: 0, acceptedAt: "2026-09-30T00:00:00.000Z", source: { kind: "release", release },
+    plan: { id: id(93), version: 1, digest: "b".repeat(64) }, chains: [{ stepId: "step", chain: release }] }
+  let finish!: (value: Response) => void, calls = 0
+  const connection = new TaskChainConnection(taskId, async (_url, init) => {
+    if (init?.method === "POST") {
+      if (++calls === 1) return Response.json({ snapshot, acceptedExecution: accepted })
+      return new Promise(resolve => { finish = resolve })
+    }
+    return Response.json({ executionId, executionSequence: 1, status: "completed", after: 0, next: 0, events: [] })
+  })
+  const command = { type: "run_task", requestId: id(92), release, input: null, pacing: { nodeDelayMs: 0 } }
+  await connection.dispatch(command)
+  const pending = connection.dispatch(command)
+  await connection.reloadExecutionEvents()
+  const batch = connection.snapshot().eventBatch
+  finish(Response.json({ snapshot, acceptedExecution: accepted })); await pending
+  assert.equal(connection.snapshot().eventBatch, batch)
+  const stale = connection.dispatch(command)
+  connection.accept({ ...snapshot, stateSequence: 3 })
+  finish(Response.json({ snapshot, acceptedExecution: accepted })); await stale
+  assert.equal(connection.snapshot().executionId, null)
+})
+
 test("最小工作区快照保留已有事实、拒绝跨任务响应并忽略过期响应", async () => {
   const connection = new TaskChainConnection(taskId, async () => new Response("{}", { status: 500 }))
   connection.accept(snapshot)

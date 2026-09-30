@@ -4,7 +4,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { stableChainNodeV2Schema, type ChainNode, type ChainStage, type TaskChain, type TaskExecutionEventBatch } from "@browser-capture/contracts"
 import { branchRows, currentNodeEvent, isNodeUnselected, loopContext } from "../src/chainControlProjection.js"
-import { nodeDurationLabel, stageDurationLabel } from "../src/chainExecutionFacts.js"
+import { nodeDurationLabel, stageDurationLabel, orderedExecutionEvents } from "../src/chainExecutionFacts.js"
 import { eventsForStep, nodeRunTone, overviewChainEdges, stageRunTone } from "../src/chainWorkbenchProjection.js"
 import { ChainInspector } from "../src/ChainInspector.js"
 import { ChainNodeExecution } from "../src/ChainNodeExecution.js"
@@ -167,13 +167,13 @@ test("逐段真实I/O保留JSON空值，不用上一轮值补当前未记录", (
     const finished = { ...event(2, "A", "finished", "success"), event: { ...event(2, "A", "finished", "success").event,
       execution: { output: { status: "recorded" as const, value } } } }
     const currentBatch = batch([started, finished])
-    const html = renderToStaticMarkup(createElement(ChainNodeExecution, { event: finished, batch: currentBatch, nodes: chain.nodes }))
+    const html = renderToStaticMarkup(createElement(ChainNodeExecution, { event: finished, batch: currentBatch, chain }))
     assert.match(html, /chain-readable-value/)
     assert.doesNotMatch(html, /未记录|尚无完成/)
     const next = event(3, "A", "started", null)
     assert.equal(executionSegment(next, batch([started, finished, next])).started?.sequence, 3)
     const missing = renderToStaticMarkup(createElement(ChainNodeExecution, { event: next,
-      batch: batch([started, finished, next]), nodes: chain.nodes }))
+      batch: batch([started, finished, next]), chain }))
     assert.match(missing, /本次输入内容未记录/)
     assert.match(missing, /本次尚无完成输出/)
   }
@@ -244,4 +244,26 @@ test("循环body在暂停或失败后不继续动画；失败终点不会有绿�
   const failed = overviewChainEdges(graph, { stages: [{ ...stage, nodeIds: ["A"], entryNodeId: "A" }] },
     batch([event(1, "A", "finished", "success"), event(2, "failed", "finished", "success")], "failed"))
   assert.equal(failed.find((item) => item.target === "__end:failed")?.tone, "failure")
+})
+
+test("同一不可变batch复用排序与配对，固定集合只引用同run首次实际输入", () => {
+  const each = { ...loop, iteration: { mode: "each", collection: { source: "input", path: [] },
+    itemVariable: "item", stableKeyPath: ["id"] } } as ChainNode
+  const first = { ...event(1, "loop", "started", null), event: { ...event(1, "loop", "started", null).event,
+    execution: { input: { status: "recorded" as const, value: { collection: ["首次实际集合"] } } } } }
+  const next = { ...event(3, "loop", "started", null), event: { ...event(3, "loop", "started", null).event,
+    execution: { input: { status: "recorded" as const, value: { stop: false } } } } }
+  const stored = batch([first, event(2, "loop", "finished", "body"), next])
+  assert.equal(orderedExecutionEvents(stored), orderedExecutionEvents(stored))
+  assert.equal(executionSegment(next, stored).started, next)
+  const fixed = renderToStaticMarkup(createElement(ChainNodeExecution, { event: next, batch: stored,
+    node: each, chain: { nodes: [each], edges: [] } }))
+  assert.match(fixed, /首次固定集合输入/)
+  assert.match(fixed, /首次实际集合/)
+  assert.match(fixed, /<span>false<\/span>/)
+  const dynamic = { ...each, iteration: { ...(each as Extract<ChainNode, { kind: "loop" }>).iteration,
+    collection: { source: "variable", name: "items", path: [] } } } as ChainNode
+  const mutable = renderToStaticMarkup(createElement(ChainNodeExecution, { event: next, batch: stored,
+    node: dynamic, chain: { nodes: [dynamic], edges: [] } }))
+  assert.doesNotMatch(mutable, /首次固定集合输入|首次实际集合/)
 })

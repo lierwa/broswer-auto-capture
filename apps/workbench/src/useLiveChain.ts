@@ -12,7 +12,12 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const [runDialogMode, setRunDialogMode] = useState<"trial" | "run" | null>(null)
   const [contextMode, setContextMode] = useState<WorkbenchContextMode>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-  useChainPolling(connection, active)
+  useEffect(() => {
+    if (!active) return
+    const controller = new AbortController()
+    void connection.observe(controller.signal)
+    return () => controller.abort()
+  }, [active, connection])
 
   const workspace = view.workspace
   const activityRunning = Boolean(workspace?.activity && ["queued", "running", "waiting_for_human"]
@@ -96,21 +101,6 @@ export function canvasGenerationFor(previous: CanvasGeneration, taskId: string, 
     return { taskId, authoringJobId: authoringJobId ?? null }
   }
   return previous
-}
-
-function useChainPolling(connection: TaskChainConnection, active: boolean) {
-  useEffect(() => {
-    if (!active) return
-    const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>
-    const poll = async () => {
-      await connection.reload(controller.signal)
-      await connection.reloadExecutionEvents(controller.signal)
-      await connection.reloadExecutionDetail(controller.signal)
-      if (!controller.signal.aborted) timer = setTimeout(() => { void poll() }, 800)
-    }
-    void poll()
-    return () => { controller.abort(); clearTimeout(timer) }
-  }, [active, connection])
 }
 
 function executionMatchesSurface(execution: NonNullable<ReturnType<TaskChainConnection["snapshot"]>["workspace"]>["execution"],

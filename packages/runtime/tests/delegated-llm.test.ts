@@ -11,8 +11,16 @@ import {
 import { requestFor } from "./task-chain-fixtures.js"
 
 test("委托 llm 节点按每次真实模型调用和浏览器命令结算", async () => {
-  const chain = delegatedChain()
+  const chain = delegatedChain(), published = new Map<number, string>()
   const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, "输入"), capabilities: {
+    persist: async (value) => {
+      for (const event of value.events) {
+        const encoded = JSON.stringify(event), previous = published.get(event.sequence)
+        if (previous !== undefined) assert.equal(encoded, previous, "published node facts are immutable")
+        if (event.nodeId === "workflow" && event.status === "started") assert.equal(event.execution?.input?.status, "redacted")
+        published.set(event.sequence, encoded)
+      }
+    },
     llm: async (invocation) => {
       await completeCall(invocation, "extract")
       await completeCall(invocation, "output_conversion")

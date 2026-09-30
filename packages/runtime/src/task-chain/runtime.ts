@@ -265,11 +265,11 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
   if (node.kind === "loop") return executeLoop(state, node, writeVariable)
   if (node.kind === "browser") {
     if (!state.capabilities.browser) throw new Error("browser_capability_unavailable")
-    await beginEffect(state, "browser", node.id, stableKey, idempotencyKey)
     const target = resolveTarget(node.target, context)
     const arguments_ = resolveBindings(node.arguments, context)
     boundExecutionInput(state, node, arguments_, node.arguments)
-    await persistRun(state)
+    // WHY：首个可消费 started 已携带实际实参；副作用仍须先持久化 planned/started 才派发。
+    await beginEffect(state, "browser", node.id, stableKey, idempotencyKey)
     let result: NodeCapabilityResult
     try { result = nodeCapabilityResultSchema.parse(await state.capabilities.browser({ binding: state.run.binding, node,
       arguments: arguments_, ...(target ? { target } : {}), idempotencyKey, signal: state.signal })) }
@@ -399,15 +399,14 @@ async function executeHuman(state: RuntimeState, node: Extract<ChainNode, { kind
 async function executeLlm(state: RuntimeState, node: Extract<ChainNode, { kind: "llm" }>): Promise<NodeCapabilityResult> {
   if (!state.capabilities.llm) throw new Error("explicit_llm_not_authorized")
   if ("delegate" in node && node.delegate) return executeDelegatedLlm(state, node)
+  const input = resolveBinding(node.input, state.context)
+  boundExecutionInput(state, node, input, [node.input])
   state.capabilities.accountConsumption?.({ llmCalls: 1 })
   const callId = randomUUID(), audit = modelCallAuditSchema.parse({ callId, invocationId: state.run.binding.invocationId,
     nodeId: node.id, purpose: "explicit_llm", model: node.model, intendedAt: now(state).toISOString(), status: "intended", reportedInvocations: null })
   state.run.modelCalls.push(audit); state.run.auditComplete = false; state.run.consumed.llmCalls = null
   await beginEffect(state, "llm", node.id, executionStableKey(state), callId)
   try {
-    const input = resolveBinding(node.input, state.context)
-    boundExecutionInput(state, node, input, [node.input])
-    await persistRun(state)
     const result = llmNodeCapabilityResultSchema.parse(await state.capabilities.llm({ binding: state.run.binding, mode: state.run.mode, node,
       input, callId, signal: state.signal }))
     let v2Failure: string | null = null

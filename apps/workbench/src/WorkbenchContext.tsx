@@ -6,7 +6,7 @@ import { ExecutionContext } from "./ExecutionContext.js"
 import { ChainStartContext, ChainTerminalContext } from "./ChainBoundaryContext.js"
 import { ChainInspector } from "./ChainInspector.js"
 import { ChainNodeExecution } from "./ChainNodeExecution.js"
-import { SavedExecutionResultDialog } from "./SavedResultDialog.js"
+import { SavedResultDialog } from "./SavedResultDialog.js"
 import { eventsForStep } from "./chainWorkbenchProjection.js"
 import { ValueSchemaForm, initialValue } from "./ValueSchemaForm.js"
 import { ExecutionActions, HistoricalBrowserHandoffActions } from "./ExecutionActions.js"
@@ -19,7 +19,7 @@ export function WorkbenchContext({ model, connection, onRequirementView, onRequi
   model: LiveChainModel
   connection: TaskChainConnection
   onRequirementView(version: number): void
-  onRequirementRevision(review: import("@browser-capture/contracts").TaskExecutionReview): Promise<boolean>
+  onRequirementRevision(review: import("@browser-capture/contracts").TaskExecutionReviewReceipt): Promise<boolean>
 }) {
   const { chain, presentation, selectedStage, selectedNode, chainEvents, contextMode } = model
   const [feedback, setFeedback] = useState("")
@@ -176,7 +176,7 @@ function HistoricalExecutionDetail({ execution, connection, onBack }: {
         : execution.mode === "verification" ? "独立复跑检查" : "正式运行"}</dd>
       {execution.cleanup.status !== "confirmed" && <><dt>资源清理</dt><dd>{cleanupStatus(execution.cleanup.status)}</dd></>}</dl>
     <section className="context-result"><h4>本次结果</h4>
-      {result ? <SavedExecutionResultDialog result={result} outputContract={detail?.content?.plan.outputContract ?? null} />
+      {result ? <SavedResultDialog result={result} outputContract={detail?.content?.plan.outputContract ?? null} />
         : <p>{execution.reason}</p>}</section>
     {execution.cleanup.status === "unconfirmed" && <section className="context-alert"><AlertTriangle size={15} />
       <div><strong>资源清理尚未确认</strong><p>{execution.cleanup.code ?? "请查看原执行的清理记录。"}</p></div></section>}
@@ -188,7 +188,7 @@ function HistoricalExecutionDetail({ execution, connection, onBack }: {
             ? `第 ${execution.steps.findIndex((step) => step.stepId === item.stepId) + 1} 步` : "步骤未关联")}</small>
           {item.event.status !== "planned" && <details><summary>这一次动作的实际输入与输出</summary>
             <ChainNodeExecution event={item} batch={eventsForStep(item.stepId, execution.id, events, item.runId)}
-              nodes={detail?.content?.steps.find(step => step.stepId === item.stepId)?.chain.nodes ?? []} /></details>}
+              chain={detail?.content?.steps.find(step => step.stepId === item.stepId)?.chain ?? { nodes: [], edges: [] }} /></details>}
         </li>)}</ol> : <p>这次运行没有保存节点事件。</p>}
     </details>
     <details className="context-technical"><summary>原始记录</summary>

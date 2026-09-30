@@ -9,29 +9,13 @@ import { ChainInspector } from "../src/ChainInspector.js"
 import { ChainNodeExecution } from "../src/ChainNodeExecution.js"
 import { ExecutionResultView } from "../src/ExecutionPresentation.js"
 
-const node = {
-  id: "read",
-  label: "读取当前记录",
-  kind: "capability",
-  capability: { name: "browser.read-fields", version: 2 },
-  input: {},
-  config: {},
-  effect: "read",
-  timeoutMs: 1_000,
-  outputContract: {
-    id: "read-output",
-    version: 1,
-    dialect: "bat-value-schema/v1",
-    schema: { type: "object", properties: {}, required: [], additionalProperties: true },
-  },
-  writes: [],
-} satisfies StableChainNodeV2
+import { inspectorNode as node } from "./fixtures/inspector-node.js"
 
 test("each跳过重复键后的祖先游标展示集合位置，不冒充第几轮", () => {
   const owner = { id: "repeat", label: "处理输入", kind: "loop", iteration: { mode: "each" } } as ChainNode
   const event = { sequence: 1, runId: "run", event: { nodeId: node.id, status: "started", invocationId: "call",
     execution: { loops: [{ nodeId: owner.id, index: 2, stableKey: "second-unique-key" }] } } } as TaskExecutionEvent
-  const html = renderToStaticMarkup(createElement(ChainNodeExecution, { event, batch: null, nodes: [owner] }))
+  const html = renderToStaticMarkup(createElement(ChainNodeExecution, { event, batch: null, chain: { nodes: [owner], edges: [] } }))
   assert.match(html, /集合位置第 3 项/)
   assert.doesNotMatch(html, /第 3 轮/)
 })

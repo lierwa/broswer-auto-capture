@@ -17,6 +17,7 @@ export function executeLoop(state: RuntimeState, node: LoopNode, writeVariable: 
     return { outcome, output: null }
   }
   const frame = state.checkpoint.loops[node.id] ?? { index: 0, completedStableKeys: [], activeStableKey: null }
+  const previous = state.run.events.findLast((event) => event.nodeId === node.id && event.status === "finished")?.execution
   const returnedFromBody = frame.activeStableKey !== null
   if (returnedFromBody) {
     if ("accumulators" in node) appendBodyValues(state, node, writeVariable, records)
@@ -26,8 +27,7 @@ export function executeLoop(state: RuntimeState, node: LoopNode, writeVariable: 
   state.checkpoint.loops[node.id] = frame
   writeVariable(state, node.cursorVariable, frame.index)
   if (returnedFromBody && "stopWhen" in node && node.stopWhen && evaluateRecordedPredicate(state, node, node.stopWhen, "stop", records)) {
-    const total = state.run.events.findLast((event) => event.nodeId === node.id && event.status === "finished")?.execution?.loop?.total
-    return finish("done", "stop_when", total)
+    return finish("done", "stop_when", previous?.loop?.total)
   }
   if (node.iteration.mode === "while") {
     const repeatCondition = "repeatCondition" in node.iteration ? node.iteration.repeatCondition : undefined
@@ -37,10 +37,15 @@ export function executeLoop(state: RuntimeState, node: LoopNode, writeVariable: 
     frame.activeStableKey = String(frame.index)
     return finish("body")
   }
-  const collection = resolveBinding(node.iteration.collection, state.context)
+  const fixed = ["input", "constant"].includes(node.iteration.collection.source)
+  // WHY：循环只读固定输入；能力/Function 仍取得副本，不能为每一项复制整个不可变集合。
+  const collection = resolveBinding(node.iteration.collection, state.context, !fixed)
   if (!Array.isArray(collection)) throw new Error("loop_collection_required")
-  boundExecutionInput(state, node, { ...records.values, collection }, { ...records.bindings, collection: node.iteration.collection })
-  const total = reliableTotal(node, collection)
+  // WHY：固定集合绑定在同 run 内不可变，首次 started 留存后按节点定位；后续只保留本轮判断，不重复序列化整集合。
+  if (!fixed || !previous) boundExecutionInput(state, node, { ...records.values, collection },
+    { ...records.bindings, collection: node.iteration.collection })
+  // WHY：首次无法证明总数也是事实，不在每轮重试哈希；恢复缺少旧事实时才重新核验。
+  const total = fixed && previous ? previous.loop?.total : reliableTotal(node, collection)
   let item: JsonValue | undefined, stableKey = ""
   while (frame.index < collection.length) {
     item = collection[frame.index]!

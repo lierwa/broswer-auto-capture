@@ -1,19 +1,24 @@
 import type { ChainNode, JsonValue, NodeValueRecord, TaskExecutionEvent, TaskExecutionEventBatch } from "@browser-capture/contracts"
-import { executionSegment } from "./chainExecutionFacts.js"
+import { executionSegment, nodeExecutionEvents } from "./chainExecutionFacts.js"
 import { actionInputSources, actionPresentation, namedInputBindings, schemaTypeLabel,
   type PresentationChain } from "./chainNodePresentation.js"
 import { ResultValue } from "./ExecutionPresentation.js"
 
-export function ChainNodeExecution({ event, batch, nodes, node, chain, destinations = [], preparing = false }: {
-  event: TaskExecutionEvent | undefined; batch: TaskExecutionEventBatch | null; nodes: readonly ChainNode[];
-  node?: ChainNode; chain?: PresentationChain; destinations?: string[]; preparing?: boolean
+export function ChainNodeExecution({ event, batch, node, chain, destinations = [], preparing = false }: {
+  event: TaskExecutionEvent | undefined; batch: TaskExecutionEventBatch | null;
+  node?: ChainNode; chain: PresentationChain; destinations?: string[]; preparing?: boolean
 }) {
+  const nodes = chain.nodes
   const segment = executionSegment(event, batch)
   const input = segment.started?.event.execution?.input ?? segment.finished?.event.execution?.input
   const output = segment.finished?.event.execution?.output
   const inputs = node ? namedInputBindings(node, nodes, chain) : []
   const named = input?.status === "recorded" && input.value !== null && typeof input.value === "object"
     && !Array.isArray(input.value) ? input.value : null
+  const fixedCollection = node?.kind === "loop" && node.iteration.mode === "each"
+    && ["input", "constant"].includes(node.iteration.collection.source)
+  const firstInput = fixedCollection ? nodeExecutionEvents(node.id, batch).find(item => item.runId === event?.runId
+    && item.event.status === "started")?.event.execution?.input : undefined
   const frames = event?.event.execution?.loops
   return <div className="chain-node-values"><section><h4>{node?.kind === "function" ? "具名参数" : "输入"}</h4>
     {!preparing && (!named || !inputs.length) && <ExecutionValue record={input}
@@ -28,6 +33,8 @@ export function ChainNodeExecution({ event, batch, nodes, node, chain, destinati
     </li>)}</ul> : node && <p className="chain-value-source">{actionInputSources(node, nodes)}</p>}
     {named && inputs.length > 0 && Object.keys(named).some((key) => !inputs.some((item) => item.name === key))
       && <ReadableValue value={Object.fromEntries(Object.entries(named).filter(([key]) => !inputs.some((item) => item.name === key)))} />}
+    {fixedCollection && firstInput && firstInput !== input && <section><h4>首次固定集合输入</h4>
+      <ExecutionValue record={firstInput} missing="首次集合内容未记录" /></section>}
     </section><section><h4>输出</h4>{!preparing && <ExecutionValue record={output}
       missing={segment.finished ? "本次节点输出未记录" : "本次尚无完成输出"} />}
       <p className="chain-value-source">{destinations.length ? `输出去向：${destinations.join("；")}` : "没有已记录的后续使用动作"}</p>

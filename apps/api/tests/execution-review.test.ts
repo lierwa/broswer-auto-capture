@@ -74,10 +74,82 @@ test("保存反馈后operation写入中断，再有B反馈仍精确重试A及原
   const first = saveExecutionReview(store as never, repository as never, original.taskId, command)!
   assert.equal(first.context?.requirement.version, original.requirement.version)
   assert.equal(first.context?.executionId, original.id)
+  assert.deepEqual(Object.keys(record.reviews[0]!.context!).sort(), ["resultDigest", "selection"])
   operation = null
   record = appendExecutionReview(record, { requestId: randomUUID(), expectedSequence: record.sequence,
     decision: "requirement_revision", feedback: "B其它说明" })
   const retried = saveExecutionReview(store as never, repository as never, original.taskId, command)!
   assert.equal(retried.id, first.id); assert.equal(retried.feedback, "A原说明")
   assert.equal(operation, first.id); assert.equal(record.reviews.length, 2)
+  assert.deepEqual(retried.context, first.context)
+})
+
+test("已有所选调用反馈恢复不重读丢失run，也不重复保存execution", () => {
+  const original = execution(), command = { type: "review_execution" as const, requestId: randomUUID(),
+    executionId: original.id, expectedSequence: original.sequence, decision: "requirement_revision" as const,
+    feedback: "原说明", selection: { stepId: "collect", runId: randomUUID() } }
+  const record = appendExecutionReview(original, command, { selection: command.selection, resultDigest: digest })
+  let writes = 0
+  const store = { operation: () => null, recordOperation() { writes++ } }
+  const repository = { execution: () => record, saveExecution() { assert.fail("不得重复保存") }, run() { assert.fail("不得重读run") } }
+  const receipt = saveExecutionReview(store as never, repository as never, original.taskId, command)
+  assert.equal(receipt.context.requirement.id, original.requirement.id)
+  assert.deepEqual(receipt.context.selection, command.selection)
+  assert.equal(receipt.context.resultDigest, digest)
+  assert.equal(writes, 1)
+})
+
+test("operation存在但反馈缺失时先报不一致，不修改execution", () => {
+  const original = execution(), store = { operation: () => randomUUID(), recordOperation() { assert.fail("不能覆写operation") } }
+  const repository = { execution: () => original, saveExecution() { assert.fail("不能先写execution") } }
+  assert.throws(() => saveExecutionReview(store as never, repository as never, original.taskId, {
+    type: "review_execution", requestId: randomUUID(), executionId: original.id, expectedSequence: original.sequence,
+    decision: "requirement_revision", feedback: "保留原说明",
+  }), /已保存反馈的记录缺失/)
+})
+
+test("回流摘要只消费最后实际输出生产者安全事实，不借无关同值洗掉脱敏", () => {
+  const secret = "renamed-source-must-stay-private"
+  for (const status of ["recorded", "redacted", "missing", "pending", "old_recorded"] as const) {
+    const original = execution(), runId = randomUUID(), invocationId = randomUUID()
+    original.steps[0]!.runIds = [runId]; original.steps[0]!.invocationIds = [invocationId]
+    const output = { kind: "value", contract: { id: "output", version: 1 }, value: secret }
+    const fact = (nodeId: string, safe: unknown) => ({ nodeId, status: "finished", outcome: "success", execution: { output: safe } })
+    const run = { binding: { taskId: original.taskId, authorizationId: original.authorizationId,
+      runId, invocationId, plan: original.plan, chain }, outputs: { final: output }, input: null,
+      status: "completed", outcome: null, sequence: 1, events: [
+        fact("unrelated", { status: "recorded", value: secret }),
+        fact("producer", { status: "recorded", value: secret }),
+        ...(status === "old_recorded" ? [{ nodeId: "alias", status: "finished", outcome: "success", execution: {
+          input: { status: "redacted", reason: "sensitive_fields" }, output: { status: "recorded", value: secret } } }] : []),
+        { nodeId: "producer", status: "started", outcome: null, execution: { input: { status: "recorded", value: secret } } },
+        status === "pending" ? { nodeId: "producer", status: "started", outcome: null, execution: {} }
+          : fact("producer", ["recorded", "old_recorded"].includes(status)
+            ? { status: "recorded", value: secret } : { status, reason: "raw_source" }),
+      ].map((event, index) => ({ ...event, sequence: index + 1, invocationId })) }
+    let saved = original
+    let runReads = 0, chainReads = 0
+    const repository = { execution: () => saved, saveExecution(value: TaskExecution) { saved = value }, run: () => { runReads++; return run },
+      chain: () => { chainReads++; return { nodes: [{ id: "producer", kind: "emit", name: "final", writes: [], output: { kind: "value",
+        value: status === "old_recorded" ? { source: "node", nodeId: "alias", path: [] } : { source: "constant", value: secret } } },
+        { id: "alias", kind: "function", inputs: { payload: { source: "input", path: [] } }, writes: [] }] } } }
+    const store = { operation: () => null, recordOperation() {} }
+    const receipt = saveExecutionReview(store as never, repository as never, original.taskId, {
+      type: "review_execution", requestId: randomUUID(), executionId: original.id,
+      expectedSequence: original.sequence, decision: "requirement_revision", feedback: "结果范围需重看",
+      selection: { stepId: "collect", runId },
+    })
+    if (status === "recorded") assert.match(receipt.summary, new RegExp(secret))
+    else { assert.doesNotMatch(receipt.summary, new RegExp(secret)); assert.match(receipt.summary, /安全摘要未留存/) }
+    assert.equal(runReads, 1)
+    if (status === "recorded") {
+      saved = original
+      const accepted = saveExecutionReview(store as never, repository as never, original.taskId, {
+        type: "review_execution", requestId: randomUUID(), executionId: original.id,
+        expectedSequence: original.sequence, decision: "accepted", feedback: null, selection: { stepId: "collect", runId },
+      })
+      assert.equal(chainReads, 1, "普通验收不读取链路组装回流摘要")
+      assert.doesNotMatch(accepted.summary, new RegExp(secret))
+    }
+  }
 })

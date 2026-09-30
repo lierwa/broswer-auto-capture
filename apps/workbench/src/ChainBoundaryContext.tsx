@@ -3,7 +3,7 @@ import type { ChainNode } from "@browser-capture/contracts"
 import { actionPresentation, bindingSourceLabel } from "./chainNodePresentation.js"
 import { latestExecutionEvents } from "./chainWorkbenchProjection.js"
 import { ResultValue, executionStatus } from "./ExecutionPresentation.js"
-import { SavedResultDialog } from "./SavedResultDialog.js"
+import { SavedResultDialog, callOutputContracts } from "./SavedResultDialog.js"
 import { startFact, terminalFact } from "./chainTerminalFacts.js"
 import type { LiveChainModel } from "./useLiveChain.js"
 
@@ -36,13 +36,14 @@ export function ChainStartContext({ model, onRequirementView }: {
     <section><h4>这一步要完成什么</h4><p>{step?.goal ?? chain.name}</p>
       <p>从“{entry ? actionPresentation(entry).title : "入口未记录"}”开始。</p></section>
     <CallSelection model={model} />
-    <section><h4>使用什么输入</h4>{selectedCall ? selectedCall.run.input === null
-      ? <p>本次调用没有传入额外参数。</p> : <ResultValue value={selectedCall.run.input} />
+    <section><h4>使用什么输入</h4>{selectedCall ? <ResultValue value={selectedCall.run.input} />
       : <><p>{missingCall ? "所选调用记录未能读取，无法确认实际输入。" : state === "not_entered" ? "本次没有进入所选步骤，尚无实际输入记录。"
         : state === "waiting" ? "运行已受理，所选步骤尚未开始。" : "尚未运行。"}</p>
         <p>计划来源：{step ? bindingSourceLabel(step.input, []) : "未记录"}</p></>}</section>
     {!missingCall && state === "not_entered" && execution && <section role="alert"><h4>本次运行停在哪里</h4>
-      <p>{executionStatus(detail?.execution.cleanupResume?.status ?? execution.status)}；所选步骤没有调用记录。</p></section>}
+      <p>{executionStatus(detail?.execution.cleanupResume?.status ?? execution.status)}；所选步骤没有调用记录。</p>
+      <p>{detail?.execution.cleanupResume?.result?.failure?.reason ?? execution.result?.failure?.reason
+        ?? detail?.execution.cleanupResume?.reason ?? detail?.execution.reason ?? "本次结束原因尚未读取。"}</p></section>}
     {!selectedCall && model.view.error && <p role="alert">{model.view.error}</p>}
     {requirement?.confirmationFacts?.sources.length ? <section><h4>已确认的来源</h4>
       {requirement.confirmationFacts.sources.map(source => <p key={source.resolutionId}>{source.label} · {source.domain}</p>)}</section> : null}
@@ -67,7 +68,7 @@ export function ChainTerminalContext({ model, node }: { model: LiveChainModel; n
       : event ? "终点事实待确认。" : "本次尚未到达此终点。"}</p>
     {node.reason !== node.status && <p>{node.reason}</p>}
     <CallSelection model={model} />
-    {reached && call && <SavedResultDialog model={model} scope="call" />}
+    {reached && call && <SavedResultDialog scope="call" result={call.run.outputs} outputContract={callOutputContracts(model.chain)} />}
     {call && <p>所选步骤调用：{executionStatus(call.run.status)}</p>}
     {model.selectedExecution && <Button size="1" variant="soft" onClick={() => model.openContext("execution")}>本次运行与重新说明需求</Button>}
     <details><summary>输出定义与高级信息</summary><pre>{JSON.stringify({ result, browserHandoff: model.plan?.browserHandoff,

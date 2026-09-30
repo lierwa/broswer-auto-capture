@@ -1,12 +1,36 @@
 import type { ChainNode, ChainStage, TaskChain, TaskExecutionEventBatch } from "@browser-capture/contracts"
 import { actionPresentation, bindingSourceLabel, predicateLabel } from "./chainNodePresentation.js"
-import { orderedExecutionEvents } from "./chainExecutionFacts.js"
+import { nodeExecutionEvents } from "./chainExecutionFacts.js"
 
 export type ControlGraph = { nodes: readonly ChainNode[]; edges: readonly TaskChain["edges"][number][] }
 type Loop = Extract<ChainNode, { kind: "loop" }>
 type Branch = Extract<ChainNode, { kind: "branch" | "condition" }>
+type BranchDefinition = { port: string; label: string; target: string }
+const cache = new WeakMap<ControlGraph, ReturnType<typeof indexGraph>>()
+function topology(chain: ControlGraph) {
+  let indexed = cache.get(chain)
+  if (!indexed) { indexed = indexGraph(chain); cache.set(chain, indexed) }
+  return indexed
+}
+function indexGraph(chain: ControlGraph) {
+  const nodes = new Map(chain.nodes.map(node => [node.id, node]))
+  const outgoing = new Map<string, ControlGraph["edges"][number][]>()
+  for (const edge of chain.edges) {
+    const edges = outgoing.get(edge.from) ?? []; edges.push(edge); outgoing.set(edge.from, edges)
+  }
+  return { nodes, outgoing, bodies: new Map<string, Set<string>>(),
+    definitions: new Map<string, ReturnType<typeof defineBranches>>(),
+    exclusions: new WeakMap<ChainStage, Map<string, Map<string, Set<string>>>>(),
+    current: new WeakMap<TaskExecutionEventBatch, Map<string, TaskExecutionEventBatch["events"]>>() }
+}
 
 export function branchDefinitions(node: ChainNode, chain: ControlGraph) {
+  const indexed = topology(chain)
+  let definitions = indexed.definitions.get(node.id)
+  if (!definitions) { definitions = defineBranches(node, chain); indexed.definitions.set(node.id, definitions) }
+  return definitions
+}
+function defineBranches(node: ChainNode, chain: ControlGraph): BranchDefinition[] {
   if (node.kind !== "branch" && node.kind !== "condition") return []
   const definitions = "cases" in node ? [...node.cases.map((item, index) => ({ port: item.id,
     label: `${index ? "else if" : "if"} ${item.label}：${predicateLabel(item.predicate, chain.nodes)}` })),
@@ -14,8 +38,8 @@ export function branchDefinitions(node: ChainNode, chain: ControlGraph) {
     : [{ port: "true", label: `if ${predicateLabel(node.predicate, chain.nodes)}` },
       { port: "false", label: "else：条件不成立" }]
   return definitions.map((definition) => {
-    const edge = chain.edges.find((item) => item.from === node.id && edgePort(item) === definition.port)
-    const target = chain.nodes.find((item) => item.id === edge?.to)
+    const edge = topology(chain).outgoing.get(node.id)?.find(item => edgePort(item) === definition.port)
+    const target = topology(chain).nodes.get(edge?.to ?? "")
     return { ...definition, target: target ? actionPresentation(target).title : "后续动作尚未记录" }
   })
 }
@@ -30,6 +54,12 @@ export function branchRows(node: ChainNode, chain: ControlGraph, batch: TaskExec
 }
 
 export function loopBodyIds(node: Loop, chain: ControlGraph) {
+  const indexed = topology(chain), cached = indexed.bodies.get(node.id)
+  if (cached) return cached
+  const body = defineLoopBody(node, chain)
+  indexed.bodies.set(node.id, body); return body
+}
+function defineLoopBody(node: Loop, chain: ControlGraph) {
   if (!("body" in node)) return new Set<string>()
   const exits = new Set(node.body.exits)
   // WHY：只有声明 body 的出口确实回到当前 loop，才用它划定当前轮；旧链缺定义时不猜列表归属。
@@ -40,20 +70,25 @@ export function loopBodyIds(node: Loop, chain: ControlGraph) {
 }
 
 export function currentNodeEvents(nodeId: string, chain: ControlGraph, batch: TaskExecutionEventBatch | null) {
-  const events = orderedExecutionEvents(batch)
-  let boundary = -1
-  for (const loop of chain.nodes.filter((node): node is Loop => node.kind === "loop")) {
-    if (!loopBodyIds(loop, chain).has(nodeId)) continue
-    const latest = events.findLast((item) => item.event.nodeId === loop.id)
-    if (!latest) continue
-    // WHY：新门控开始即撤下上一轮状态；body 的 finished 只表示本轮已进入，不表示范围完成。
-    const rangeStart = latest.event.status === "finished" && ["done", "limit"].includes(latest.event.outcome ?? "")
-      ? events.findLast((item) => item.event.nodeId === loop.id && item.sequence < latest.sequence
-        && item.event.status === "finished" && item.event.outcome === "body")?.sequence ?? latest.sequence
-      : latest.sequence
-    boundary = Math.max(boundary, rangeStart)
+  if (!batch) return []
+  const indexed = topology(chain)
+  let current = indexed.current.get(batch)
+  if (!current) {
+    const boundaries = new Map<string, number>()
+    for (const loop of chain.nodes.filter((node): node is Loop => node.kind === "loop")) {
+      const events = nodeExecutionEvents(loop.id, batch), latest = events.at(-1)
+      if (!latest) continue
+      // WHY：新门控撤下上一轮；done/limit 保留最后一次真实进入 body 的状态。
+      const boundary = latest.event.status === "finished" && ["done", "limit"].includes(latest.event.outcome ?? "")
+        ? events.findLast(item => item.sequence < latest.sequence && item.event.status === "finished"
+          && item.event.outcome === "body")?.sequence ?? latest.sequence : latest.sequence
+      for (const id of loopBodyIds(loop, chain)) boundaries.set(id, Math.max(boundaries.get(id) ?? -1, boundary))
+    }
+    current = new Map(chain.nodes.map(node => [node.id,
+      nodeExecutionEvents(node.id, batch).filter(item => item.sequence > (boundaries.get(node.id) ?? -1))]))
+    indexed.current.set(batch, current)
   }
-  return events.filter((item) => item.event.nodeId === nodeId && item.sequence > boundary)
+  return current.get(nodeId) ?? []
 }
 
 export function currentNodeEvent(nodeId: string, chain: ControlGraph, batch: TaskExecutionEventBatch | null) {
@@ -63,26 +98,37 @@ export function currentNodeEvent(nodeId: string, chain: ControlGraph, batch: Tas
 export function isNodeUnselected(nodeId: string, stage: ChainStage | undefined,
   chain: ControlGraph, batch: TaskExecutionEventBatch | null) {
   if (!stage || currentNodeEvent(nodeId, chain, batch)) return false
-  const allowed = new Set(stage.nodeIds)
-  for (const branch of chain.nodes.filter((node): node is Branch => allowed.has(node.id)
-    && (node.kind === "branch" || node.kind === "condition"))) {
-    const selected = branchRows(branch, chain, batch).find((row) => row.selection === "selected")?.port
-    if (!selected) continue
-    const paths = branchDefinitions(branch, chain).map((row) => {
-      const edge = chain.edges.find((item) => item.from === branch.id && edgePort(item) === row.port)
-      return { port: row.port, ids: edge ? reachable(edge.to, chain, new Set([branch.id])) : new Set<string>() }
-    })
-    const owners = paths.filter((path) => path.ids.has(nodeId))
-    if (owners.length !== 1 || owners[0]!.port === selected) continue
-    const exclusive = new Set([...owners[0]!.ids].filter((id) => allowed.has(id)
-      && paths.filter((path) => path.ids.has(id)).length === 1))
-    const externalTargets = chain.edges.filter((edge) => exclusive.has(edge.to)
-      && edge.from !== branch.id && !exclusive.has(edge.from)).map((edge) => edge.to)
-    // WHY：外来入口后的整段都不能证明由该分支独占；只剔除入口本身会错灰它的后续动作。
-    const externallyReachable = new Set(externalTargets.flatMap((id) => [...reachable(id, chain, new Set([branch.id]))]))
-    if (!externallyReachable.has(nodeId)) return true
+  for (const [branchId, ports] of stageExclusions(stage, chain)) {
+    const event = currentNodeEvent(branchId, chain, batch)?.event
+    if (event?.status !== "finished") continue
+    for (const [port, ids] of ports) if (port !== event.outcome && ports.has(event.outcome ?? "") && ids.has(nodeId)) return true
   }
   return false
+}
+
+/** WHY：独占路径和外来入口只由版本图决定，与节点事件和选中状态无关。 */
+function stageExclusions(stage: ChainStage, chain: ControlGraph) {
+  const indexed = topology(chain), cached = indexed.exclusions.get(stage)
+  if (cached) return cached
+  const allowed = new Set(stage.nodeIds), rules = new Map<string, Map<string, Set<string>>>()
+  for (const branch of chain.nodes.filter((node): node is Branch => allowed.has(node.id)
+    && (node.kind === "branch" || node.kind === "condition"))) {
+    const paths = branchDefinitions(branch, chain).map(row => {
+      const edge = indexed.outgoing.get(branch.id)?.find(item => edgePort(item) === row.port)
+      return { port: row.port, ids: edge ? reachable(edge.to, chain, new Set([branch.id])) : new Set<string>() }
+    })
+    const ports = new Map<string, Set<string>>()
+    for (const path of paths) {
+      const exclusive = new Set([...path.ids].filter(id => allowed.has(id)
+        && paths.filter(other => other.ids.has(id)).length === 1))
+      const external = chain.edges.filter(edge => exclusive.has(edge.to)
+        && edge.from !== branch.id && !exclusive.has(edge.from)).map(edge => edge.to)
+      const reachableOutside = new Set(external.flatMap(id => [...reachable(id, chain, new Set([branch.id]))]))
+      ports.set(path.port, new Set([...exclusive].filter(id => !reachableOutside.has(id))))
+    }
+    rules.set(branch.id, ports)
+  }
+  indexed.exclusions.set(stage, rules); return rules
 }
 
 export function loopContext(node: Loop, chain: ControlGraph, batch: TaskExecutionEventBatch | null) {
@@ -110,11 +156,11 @@ function reachable(entry: string, chain: ControlGraph, stop: Set<string>, exits 
   while (pending.length) {
     const id = pending.pop()!
     if (result.has(id) || stop.has(id)) continue
-    const node = chain.nodes.find((item) => item.id === id)
+    const node = topology(chain).nodes.get(id)
     if (!node || node.kind === "terminal") continue
     result.add(id)
     if (exits.has(id)) continue
-    pending.push(...chain.edges.filter((edge) => edge.from === id).map((edge) => edge.to))
+    pending.push(...(topology(chain).outgoing.get(id) ?? []).map(edge => edge.to))
   }
   return result
 }

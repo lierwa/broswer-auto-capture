@@ -1,17 +1,17 @@
 import { useState } from "react"
 import { Button, TextArea } from "@radix-ui/themes"
-import type { TaskChainCommand, TaskExecutionReview } from "@browser-capture/contracts"
+import type { TaskChainCommand, TaskExecutionReviewReceipt } from "@browser-capture/contracts"
 import { ExecutionActions } from "./ExecutionActions.js"
 import { StatusIcon, executionStatus, cleanupStatus, formatTime } from "./ExecutionPresentation.js"
 import { CallSelection } from "./ChainBoundaryContext.js"
-import { SavedResultDialog } from "./SavedResultDialog.js"
+import { SavedResultDialog, callOutputContracts } from "./SavedResultDialog.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 import type { LiveChainModel } from "./useLiveChain.js"
 
 type ReviewCommand = Extract<TaskChainCommand, { type: "review_execution" }>
 export function ExecutionContext({ model, connection, feedback, setFeedback, onClose, onRequirementRevision }: {
   model: LiveChainModel; connection: TaskChainConnection; feedback: string; setFeedback(value: string): void
-  onClose(): void; onRequirementRevision(review: TaskExecutionReview): Promise<boolean>
+  onClose(): void; onRequirementRevision(review: TaskExecutionReviewReceipt): Promise<boolean>
 }) {
   const execution = model.detail?.execution ?? model.selectedExecution
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -27,6 +27,7 @@ export function ExecutionContext({ model, connection, feedback, setFeedback, onC
         runId: model.selectedRunId ?? model.selectedCall?.run.binding.runId ?? null } } : {}) }
     if (await connection.submitReview(command, onRequirementRevision)) setReviewOpen(false)
   }
+  const result = model.detail?.execution.cleanupResume?.result ?? execution?.result ?? null
   const businessStatus = model.detail?.execution.cleanupResume?.status ?? execution?.status
   const canReview = ["completed", "partial", "failed", "blocked", "cancelled"].includes(businessStatus ?? "")
   const entered = model.detail ? model.detail.execution.steps.some(step => step.runIds.length > 0) : null
@@ -36,8 +37,9 @@ export function ExecutionContext({ model, connection, feedback, setFeedback, onC
       <div className="context-status" data-tone={businessStatus}><StatusIcon status={businessStatus ?? execution.status} />
         <div><strong>{executionStatus(businessStatus ?? execution.status)}</strong><small>{formatTime(execution.updatedAt)}</small></div></div>
       {entered === false && canReview && <p>本次在步骤开始前结束，没有执行动作或返回成果。</p>}
-      {entered !== false && <SavedResultDialog model={model} />}<CallSelection model={model} />
-      {model.selectedCall && <SavedResultDialog model={model} scope="call" />}
+      {entered === false && canReview && <p role="alert">{result?.failure?.reason ?? model.detail?.execution.cleanupResume?.reason ?? model.detail?.execution.reason}</p>}
+      {entered !== false && <SavedResultDialog result={result} outputContract={model.plan?.outputContract ?? null} />}<CallSelection model={model} />
+      {model.selectedCall && <SavedResultDialog result={model.selectedCall.run.outputs} scope="call" outputContract={callOutputContracts(model.chain)} />}
       {model.view.detailBusy && !model.detail && <p role="status">正在读取本次调用…</p>}
       {model.view.detailError && <p role="alert">{model.view.detailError}</p>}
       {execution.status === "cleanup_required" && <p>业务结论已保留；资源清理{cleanupStatus(execution.cleanup.status)}。</p>}

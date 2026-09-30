@@ -17,6 +17,30 @@ test("迟到快照及其他任务响应不能覆盖当前任务或取消终态",
   assert.equal(connection.snapshot().state.active, false)
 })
 
+test("空闲访谈只保留一条状态流，无定期请求或相同状态通知", async () => {
+  const requests: string[] = []
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  const connection = new InterviewConnection("task-a", async url => {
+    requests.push(String(url))
+    if (!String(url).includes("/events")) return Response.json(state(2))
+    return new Response(new ReadableStream({ start(value) { stream = value } }))
+  })
+  const stop = connection.start()
+  try {
+    while (!stream) await new Promise(resolve => setImmediate(resolve))
+    const before = connection.snapshot()
+    let notifications = 0; connection.subscribe(() => { notifications++ })
+    connection.accept(result(2))
+    await new Promise(resolve => setTimeout(resolve, 1250))
+    assert.equal(requests.length, 2)
+    assert.equal(connection.snapshot(), before)
+    assert.equal(notifications, 0)
+    stream.enqueue(new TextEncoder().encode(JSON.stringify(result(3)) + "\n"))
+    while (connection.snapshot().state.sequence !== 3) await new Promise(resolve => setImmediate(resolve))
+    assert.equal(notifications, 1)
+  } finally { stop() }
+})
+
 test("POST 响应丢失后保留原命令幂等键，读取事实并显式重发", async () => {
   const bodies: unknown[] = []
   const fetcher: typeof fetch = async (_input, options) => {

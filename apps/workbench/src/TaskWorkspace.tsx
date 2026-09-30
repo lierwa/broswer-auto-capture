@@ -8,7 +8,7 @@ import { LiveChain } from "./LiveChain.js"
 import { TaskChainConnection } from "./taskChainConnection.js"
 import { requirementRevisionMessage } from "./resultReview.js"
 import type { TaskSummary } from "./taskContract.js"
-import type { TaskExecutionReview } from "@browser-capture/contracts"
+import type { TaskExecutionReviewReceipt } from "@browser-capture/contracts"
 import type { useModelSettings } from "./useModelSettings.js"
 
 type WorkspaceView = "interview" | "canvas"
@@ -39,7 +39,7 @@ export function TaskWorkspace({ task, visible, theme, otherRunning, modelSetting
   function openDraft(value: number) {
     setVersion(value); setActiveTab("interview")
   }
-  async function reopenRequirement(review: TaskExecutionReview) {
+  async function reopenRequirement(review: TaskExecutionReviewReceipt) {
     if (!review.context || review.context.taskId !== task.id || !review.feedback) return false
     // WHY：已保存 review ID 是唯一提交身份；响应丢失后沿 InterviewConnection 原命令重发。
     if (interview.pending?.type === "message" && interview.pending.requestId === review.id) {

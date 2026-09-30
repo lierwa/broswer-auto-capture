@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { emptyInterview, interviewCommandSchema, interviewStateSchema, type InterviewCommand, type InterviewState } from "./interviewContract.js"
+import { jsonLines, reconnect } from "./stateStream.js"
 
 const envelope = z.object({ taskId: z.string(), state: interviewStateSchema })
 const errorEnvelope = z.object({ error: z.string() })
@@ -13,11 +14,14 @@ export class InterviewConnection {
   constructor(readonly taskId: string, private fetcher: typeof fetch = (...args) => fetch(...args)) { this.endpoint = `/api/interview?taskId=${encodeURIComponent(taskId)}` }
   snapshot = () => this.view
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
-  private update(value: Partial<View>) { this.view = { ...this.view, ...value }; for (const listener of this.listeners) listener() }
+  private update(value: Partial<View>) {
+    if (Object.entries(value).every(([key, next]) => Object.is(this.view[key as keyof View], next))) return
+    this.view = { ...this.view, ...value }; for (const listener of this.listeners) listener()
+  }
   accept(input: unknown) {
     const { taskId, state } = envelope.parse(input)
     // WHY：轮次 revision 不覆盖同轮增量，sequence 防止取消响应、流和刷新快照相互倒退。
-    if (taskId !== this.taskId || (this.view.ready && state.sequence < this.view.state.sequence)) return
+    if (taskId !== this.taskId || (this.view.ready && state.sequence <= this.view.state.sequence)) return
     this.update({ state, ready: true })
   }
   async reload(signal?: AbortSignal) {
@@ -35,30 +39,21 @@ export class InterviewConnection {
   }
   stop() { this.lifetime?.abort(); this.lifetime = undefined }
   private async observe(signal: AbortSignal) {
+    let failures = 0
     while (!signal.aborted) {
       try {
         await this.reload(signal)
         if (!this.view.pending) this.update({ error: "" })
-        if (this.view.state.active) await this.stream(signal)
-      } catch { if (!signal.aborted) this.update({ error: "状态连接中断，正在重新连接；服务端保留本轮记录。" }) }
-      if (!signal.aborted) await pause(signal)
-    }
-  }
-  private async stream(signal: AbortSignal) {
-    const response = await this.fetcher(`/api/interview/events?taskId=${encodeURIComponent(this.taskId)}&after=${this.view.state.sequence}`, { signal })
-    if (!response.ok || !response.body) throw new Error("无法连接状态流")
-    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
-    let buffer = ""
-    try {
-      for (;;) {
-        const chunk = await reader.read()
-        buffer += chunk.value ?? ""
-        const lines = buffer.split("\n"); buffer = lines.pop() ?? ""
-        for (const line of lines.filter(Boolean)) if (!signal.aborted) this.accept(JSON.parse(line))
-        if (chunk.done) break
+        const response = await this.fetcher(`/api/interview/events?taskId=${encodeURIComponent(this.taskId)}&after=${this.view.state.sequence}&continuous=true`, { signal })
+        for await (const item of jsonLines(response, signal)) { this.accept(item); failures = 0 }
+        if (!signal.aborted) throw new Error("状态流中断")
+      } catch {
+        if (!signal.aborted) {
+          this.update({ error: "状态连接中断，正在重新连接；服务端保留本轮记录。" })
+          await reconnect(signal, failures++)
+        }
       }
-      if (buffer.trim()) throw new Error("状态流未完整接收")
-    } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
+    }
   }
   async dispatch(command: InterviewCommand) {
     if (this.view.busy && command.type !== "cancel") return false
@@ -81,12 +76,4 @@ export class InterviewConnection {
   }
   retrySubmission = async () => { if (this.view.pending) await this.dispatch(this.view.pending) }
   dismissSubmission = () => this.update({ pending: null, error: "" })
-}
-
-function pause(signal: AbortSignal) {
-  return new Promise<void>((resolve) => {
-    const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve() }
-    const timer = setTimeout(done, 1200)
-    signal.addEventListener("abort", done, { once: true })
-  })
 }

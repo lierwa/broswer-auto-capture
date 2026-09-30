@@ -1,10 +1,11 @@
 import type {
-  ChainNode, ChainPresentation, ChainStage, TaskChain, TaskExecutionEvent, TaskExecutionEventBatch,
+  ChainNode, ChainPresentation, ChainStage, TaskChain, TaskExecutionEventBatch,
 } from "@browser-capture/contracts"
 import { currentNodeEvent, isNodeUnselected, loopBodyIds, type ControlGraph } from "./chainControlProjection.js"
-import { orderedExecutionEvents } from "./chainExecutionFacts.js"
+import { latestExecutionEvents, orderedExecutionEvents } from "./chainExecutionFacts.js"
 
 type StagePresentation = Pick<ChainPresentation, "stages">
+const toneCache = new WeakMap<ControlGraph, WeakMap<TaskExecutionEventBatch, Map<string, ChainRunTone>>>()
 
 export type ChainRunTone = "idle" | "queued" | "running" | "success" | "waiting" | "failure" | "skipped" | "ended" | "unselected"
 export type ProjectedChainEdge = { id: string; source: string; target: string; port: string; label: string; tone: ChainRunTone }
@@ -18,13 +19,21 @@ export function eventsForStep(stepId: string, executionId: string | null, batch:
   return { ...batch, events: runId ? stepEvents.filter((item) => item.runId === runId) : [] }
 }
 
-export function latestExecutionEvents(batch: TaskExecutionEventBatch | null) {
-  const latest = new Map<string, TaskExecutionEvent>()
-  for (const item of orderedExecutionEvents(batch)) latest.set(item.event.nodeId, item)
-  return latest
-}
+export { latestExecutionEvents } from "./chainExecutionFacts.js"
 
 export function nodeRunTone(nodeId: string, batch: TaskExecutionEventBatch | null, stage?: ChainStage,
+  chain?: ControlGraph): ChainRunTone {
+  if (!chain || !batch) return computeNodeRunTone(nodeId, batch, stage, chain)
+  let batches = toneCache.get(chain)
+  if (!batches) { batches = new WeakMap(); toneCache.set(chain, batches) }
+  let tones = batches.get(batch)
+  if (!tones) { tones = new Map(); batches.set(batch, tones) }
+  const key = JSON.stringify([stage?.id, nodeId])
+  let tone = tones.get(key)
+  if (!tone) { tone = computeNodeRunTone(nodeId, batch, stage, chain); tones.set(key, tone) }
+  return tone
+}
+function computeNodeRunTone(nodeId: string, batch: TaskExecutionEventBatch | null, stage?: ChainStage,
   chain?: ControlGraph): ChainRunTone {
   const event = chain ? currentNodeEvent(nodeId, chain, batch)?.event : latestExecutionEvents(batch).get(nodeId)?.event
   if (!event) return chain && isNodeUnselected(nodeId, stage, chain, batch) ? "unselected" : "idle"

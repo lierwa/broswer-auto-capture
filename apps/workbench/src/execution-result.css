@@ -13,7 +13,7 @@
 .chain-call-selection { display: grid; gap: 7px; margin: 14px 0; }
 .chain-call-selection > small { color: var(--gray-11); }
 .chain-workbench .react-flow__node-chain-terminal { width: 220px; }
-.chain-terminal-card { min-height: 96px; height: auto; border-radius: 8px; padding: 8px; position: relative; overflow: visible; }
+.chain-terminal-card { height: 96px; box-sizing: border-box; border-radius: 8px; padding: 8px; position: relative; overflow: visible; }
 .chain-terminal-select { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 8px;
   width: 100%; min-height: 78px; padding: 0; color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; }
 .chain-terminal-select > span { display: grid; gap: 5px; overflow-wrap: anywhere; }
@@ -25,3 +25,5 @@
   .saved-result-dialog { width: calc(100vw - 24px); }
   .saved-result-body .context-value-record > div { grid-template-columns: 1fr; gap: 5px; }
 }
+
+.chain-terminal-select > span > small:first-of-type { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

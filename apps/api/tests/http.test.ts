@@ -1,8 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
+import { get, type IncomingMessage } from "node:http"
+import { createInterface } from "node:readline"
 import { createApplication } from "../src/app.js"
-import { openFixture, authoredInterview, draft, projectRoot } from "./helpers.js"
+import { openFixture, authoredInterview, deferred, draft, projectRoot } from "./helpers.js"
 import { testAIModel } from "./fixtures/ai-model.js"
 
 async function fixture(run: (value: Awaited<ReturnType<typeof createApplication>>) => Promise<void>) {
@@ -102,3 +104,88 @@ test("正式 API 重启后继续同一任务，并保留问题、决策、草稿
     await rm(original.directory, { recursive: true, force: true })
   }
 })
+
+async function openHttpStream(url: string) {
+  const response = await new Promise<IncomingMessage>((resolve, reject) => {
+    get(url, resolve).once("error", reject)
+  })
+  assert.equal(response.statusCode, 200)
+  assert.match(String(response.headers["content-type"]), /application\/x-ndjson/)
+  const lines = createInterface({ input: response }), reader = lines[Symbol.asyncIterator]()
+  return { response, reader, close: () => { lines.close(); response.destroy() } }
+}
+
+function trackStreamRelease(store: Awaited<ReturnType<typeof createApplication>>["store"]) {
+  const observe = store.workspaceChanges.observe.bind(store.workspaceChanges)
+  const releases: Array<ReturnType<typeof deferred>> = []
+  // WHY：只观测真实迭代器的 finally；路由、SQLite 通知、HTTP 生命周期仍走生产实现。
+  store.workspaceChanges.observe = async function* (...args) {
+    const released = deferred(); releases.push(released)
+    try { yield* observe(...args) } finally { released.resolve() }
+  }
+  return releases
+}
+
+async function within<T>(promise: Promise<T>) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const limit = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error("HTTP stream did not settle")), 1500)
+    timer.unref()
+  })
+  try { return await Promise.race([promise, limit]) } finally { clearTimeout(timer) }
+}
+
+test("HTTP通知回归：暂停后追最新、重连补进展、客户端取消及服务关闭释放开放流", async () => fixture(async ({ app, coordinator, store, taskChain }) => {
+  const taskId = coordinator.taskAction({ type: "create", requestId: randomUUID() })
+  const releases = trackStreamRelease(store)
+  const address = await app.listen({ port: 0, host: "127.0.0.1" })
+  const endpoint = `${address}/api/task-chain/changes?taskId=${taskId}`
+  const streams: Array<Awaited<ReturnType<typeof openHttpStream>>> = []
+  try {
+    const first = await within(openHttpStream(`${endpoint}&after=-1`)); streams.push(first)
+    const baseline = JSON.parse((await within(first.reader.next())).value!) as number
+    assert.equal(baseline, taskChain.repository.workspaceSequence(taskId))
+    first.response.pause()
+    for (let index = 0; index < 6; index++) {
+      store.mutate(taskId, () => {})
+      await new Promise<void>(resolve => setImmediate(resolve))
+    }
+    const latest = taskChain.repository.workspaceSequence(taskId)
+    first.response.resume()
+    let consumed = baseline
+    while (consumed < latest) {
+      const item = await within(first.reader.next())
+      assert.equal(item.done, false)
+      const sequence = JSON.parse(item.value!) as number
+      assert.ok(sequence > consumed); consumed = sequence
+    }
+    assert.equal(consumed, latest)
+    const cancelled = releases[0]!.promise
+    first.close(); await within(cancelled)
+    store.mutate(taskId, () => {}); store.mutate(taskId, () => {})
+    const resumed = await within(openHttpStream(`${endpoint}&after=${consumed}`)); streams.push(resumed)
+    assert.equal(JSON.parse((await within(resumed.reader.next())).value!), taskChain.repository.workspaceSequence(taskId))
+    await within(app.close())
+    await within(releases[1]!.promise)
+    assert.equal((await within(resumed.reader.next())).done, true)
+  } finally { for (const stream of streams) stream.close() }
+  // TRADE-OFF：短暂停读验证真实 HTTP 追进展；不声称已填满 OS socket 缓冲或测出内存上界。
+}))
+
+test("HTTP通知回归：continuous访谈从idle消费新提交并在取消后释放，无模型调用", async () => fixture(async ({ app, coordinator, store }) => {
+  const taskId = coordinator.taskAction({ type: "create", requestId: randomUUID() })
+  const releases = trackStreamRelease(store)
+  const address = await app.listen({ port: 0, host: "127.0.0.1" })
+  const stream = await within(openHttpStream(`${address}/api/interview/events?taskId=${taskId}&after=-1&continuous=true`))
+  try {
+    const initial = JSON.parse((await within(stream.reader.next())).value!)
+    assert.equal(initial.taskId, taskId); assert.equal(initial.state.active, false)
+    store.mutate(taskId, () => {})
+    const changed = JSON.parse((await within(stream.reader.next())).value!)
+    assert.equal(changed.taskId, taskId)
+    assert.equal(changed.state.sequence, store.task(taskId).sequence)
+    assert.ok(changed.state.sequence > initial.state.sequence)
+    assert.deepEqual(changed.state.messages, []); assert.deepEqual(changed.state.audits, [])
+    stream.close(); await within(releases[0]!.promise)
+  } finally { stream.close() }
+}))

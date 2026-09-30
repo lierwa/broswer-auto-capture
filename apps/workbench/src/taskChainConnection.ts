@@ -10,7 +10,7 @@ import {
   type TaskChainCommand,
   type TaskExecutionEventBatch,
   type TaskExecutionDetail,
-  type TaskExecutionReview,
+  type TaskExecutionReviewReceipt,
   type TaskWorkspaceDiagnostics,
   type TaskWorkspaceHistoryPage,
   type TaskWorkspaceSnapshot,
@@ -18,6 +18,8 @@ import {
 import {
   browserProfileStateSchema,
 } from "@browser-capture/contracts/browser-profile"
+import { z } from "zod"
+import { jsonLines, reconnect } from "./stateStream.js"
 
 class TaskChainRequestError extends Error {
   constructor(message: string, readonly code: string | null) { super(message) }
@@ -25,7 +27,7 @@ class TaskChainRequestError extends Error {
 
 type HistoryKind = TaskWorkspaceHistoryPage["kind"]
 type ReviewCommand = Extract<TaskChainCommand, { type: "review_execution" }>
-type ReviewIntent = { command: ReviewCommand; saved: TaskExecutionReview | null; busy: boolean; error: string }
+type ReviewIntent = { command: ReviewCommand; saved: TaskExecutionReviewReceipt | null; busy: boolean; error: string }
 type ConnectionView = {
   workspace: TaskWorkspaceSnapshot | null
   error: string
@@ -38,7 +40,7 @@ type ConnectionView = {
   executionDetail: TaskExecutionDetail | null
   detailBusy: boolean
   detailError: string
-  savedReview: TaskExecutionReview | null
+  savedReview: TaskExecutionReviewReceipt | null
   reviewIntents: Record<string, ReviewIntent>
   history: Partial<Record<HistoryKind, TaskWorkspaceHistoryPage>>
   historyBusy: HistoryKind | null
@@ -55,6 +57,7 @@ export class TaskChainConnection {
   }
   private readonly listeners = new Set<() => void>()
   private diagnosticsRefreshPending = false
+  private detailSequence = -1
   private readonly endpoint: string
 
   constructor(readonly taskId: string, private readonly fetcher: typeof fetch = (...args) => fetch(...args)) {
@@ -65,6 +68,7 @@ export class TaskChainConnection {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
 
   private update(value: Partial<ConnectionView>) {
+    if (Object.entries(value).every(([key, next]) => Object.is(this.view[key as keyof ConnectionView], next))) return
     this.view = { ...this.view, ...value }
     for (const listener of this.listeners) listener()
   }
@@ -77,7 +81,7 @@ export class TaskChainConnection {
   }
 
   // WHY：请求身份属于同任务连接；关闭面板、切换节点或响应丢失都不能重新保存同一反馈。
-  async submitReview(raw: ReviewCommand, send: (review: TaskExecutionReview) => Promise<boolean>) {
+  async submitReview(raw: ReviewCommand, send: (review: TaskExecutionReviewReceipt) => Promise<boolean>) {
     const command = this.view.reviewIntents[raw.executionId]?.command ?? raw
     const prior = this.view.reviewIntents[command.executionId]
     if (prior?.busy || this.view.busy) return false
@@ -117,8 +121,10 @@ export class TaskChainConnection {
   accept(raw: unknown) {
     const workspace = taskWorkspaceSnapshotSchema.parse(raw)
     if (workspace.taskId !== this.taskId) throw new Error("任务链路归属不匹配")
-    if (this.view.workspace && workspace.stateSequence < this.view.workspace.stateSequence) return
+    if (this.view.workspace && workspace.stateSequence <= this.view.workspace.stateSequence) return
+    preserveWorkspaceReferences(workspace, this.view.workspace)
     const executionId = workspace.execution && executionMatchesWorkspace(workspace) ? workspace.execution.id : null
+    if (executionId !== this.view.executionId) this.detailSequence = -1
     this.update({ workspace, executionId,
       ...(executionId !== this.view.executionId ? { eventBatch: null, acceptedExecution: null, executionDetail: null } : {}) })
   }
@@ -131,23 +137,60 @@ export class TaskChainConnection {
       if (!signal?.aborted) {
         this.accept(value)
         if (!this.view.pending) this.update({ error: "", errorCode: null })
+        return true
       }
     } catch {
       if (!signal?.aborted) this.update({ error: "无法读取任务工作区；已加载的草稿和运行状态仍保留。", errorCode: null })
     }
+    return false
+  }
+
+  async observe(signal: AbortSignal) {
+    let consumed = -1, failures = 0
+    while (!signal.aborted) {
+      try {
+        consumed = await this.refresh(signal)
+        const response = await this.fetcher(`/api/task-chain/changes?taskId=${encodeURIComponent(this.taskId)}&after=${consumed}`, { signal })
+        for await (const item of jsonLines(response, signal)) {
+          const sequence = z.number().int().nonnegative().parse(item)
+          if (sequence > consumed) consumed = await this.refresh(signal)
+          failures = 0
+        }
+        if (!signal.aborted) throw new Error("状态流中断")
+      } catch {
+        if (!signal.aborted) {
+          this.update({ error: "状态连接中断，正在重新连接；已加载的运行事实保留。", errorCode: null })
+          // WHY：仅故障重连退避；健康连接和已完成任务没有周期请求。
+          await reconnect(signal, failures++)
+        }
+      }
+    }
+  }
+
+  private async refresh(signal: AbortSignal) {
+    if (!await this.reload(signal) || signal.aborted) throw new Error("工作区未读取")
+    // WHY：POST 可在后续读取期间 accept 更高版本；只确认本次实际完整消费的版本。
+    const sequence = this.view.workspace!.stateSequence
+    if (this.view.executionId) {
+      if (!await this.reloadExecutionEvents(signal)) throw new Error("运行事件未读取")
+      if ((!this.view.executionDetail || this.detailSequence !== sequence)
+        && !await this.reloadExecutionDetail(signal, sequence)) throw new Error("调用未读取")
+    }
+    return sequence
   }
 
   async reloadExecutionEvents(signal?: AbortSignal) {
     const executionId = this.view.executionId
-    if (!executionId) return
-    const eventBatch = await this.readExecutionEvents(executionId, this.view.eventBatch, signal)
-    if (eventBatch && !signal?.aborted && this.view.executionId === executionId) this.update({ eventBatch })
+    if (!executionId) return true
+    const eventBatch = await this.readCompleteExecutionEvents(executionId, this.view.eventBatch, signal)
+    if (!eventBatch || signal?.aborted || this.view.executionId !== executionId) return false
+    this.update({ eventBatch }); return true
   }
 
-  async readExecutionDetail(executionId: string, signal?: AbortSignal) {
+  async readExecutionDetail(executionId: string, signal?: AbortSignal, includeContent = true) {
     try {
       const response = await this.fetcher(`/api/task-chain/execution?taskId=${encodeURIComponent(this.taskId)}`
-        + `&executionId=${encodeURIComponent(executionId)}`, { signal: signal ?? null })
+        + `&executionId=${encodeURIComponent(executionId)}&includeContent=${includeContent}`, { signal: signal ?? null })
       if (!response.ok) throw new Error()
       const detail = taskExecutionDetailSchema.parse(await response.json())
       if (detail.execution.taskId !== this.taskId || detail.execution.id !== executionId) throw new Error()
@@ -155,15 +198,19 @@ export class TaskChainConnection {
     } catch { return null }
   }
 
-  async reloadExecutionDetail(signal?: AbortSignal) {
+  async reloadExecutionDetail(signal?: AbortSignal, sequence = this.view.workspace?.stateSequence ?? -1) {
     const executionId = this.view.executionId
-    if (!executionId || this.view.detailBusy) return
-    this.update({ detailBusy: true })
+    if (!executionId || this.view.detailBusy) return false
+    if (!this.view.executionDetail) this.update({ detailBusy: true })
     try {
-      const detail = await this.readExecutionDetail(executionId, signal)
-      if (!signal?.aborted && this.view.executionId === executionId) this.update({
+      const detail = await this.readExecutionDetail(executionId, signal, false)
+      if (signal?.aborted || this.view.executionId !== executionId) return false
+      if (detail) this.detailSequence = sequence
+      this.update({
         ...(detail ? { executionDetail: detail } : {}), detailError: detail ? "" : "本次调用详情暂时无法读取。",
+        detailBusy: false,
       })
+      return Boolean(detail)
     } finally { this.update({ detailBusy: false }) }
   }
 
@@ -177,8 +224,11 @@ export class TaskChainConnection {
       if (next.executionId !== executionId || next.events.some((event) => event.executionId !== executionId)) throw new Error()
       if (signal?.aborted) return null
       const priorEvents = previous?.executionId === executionId ? previous.events : []
-      const events = [...priorEvents, ...next.events].filter((event, index, all) =>
-        all.findIndex((candidate) => candidate.sequence === event.sequence) === index)
+      if (previous?.executionId === executionId && !next.events.length && next.next === previous.next
+        && next.executionSequence === previous.executionSequence && next.status === previous.status) return previous
+      const seen = new Set(priorEvents.map(event => event.sequence))
+      const events = [...priorEvents]
+      for (const event of next.events) if (!seen.has(event.sequence)) { seen.add(event.sequence); events.push(event) }
       return { ...next, after: 0, events }
     } catch {
       if (!signal?.aborted) this.update({ error: "运行事件暂时中断；将从上次序列继续。", errorCode: null })
@@ -188,7 +238,11 @@ export class TaskChainConnection {
 
   async readHistoricalExecutionEvents(executionId: string, signal?: AbortSignal) {
     // WHY：历史事件只返回给按需详情；不能写入当前画布的 eventBatch 或改变 executionId。
-    let batch: TaskExecutionEventBatch | null = null
+    return this.readCompleteExecutionEvents(executionId, null, signal)
+  }
+
+  private async readCompleteExecutionEvents(executionId: string, batch: TaskExecutionEventBatch | null, signal?: AbortSignal) {
+    // WHY：通知可合并，尾部可能已完成；沿既有游标读尽，不能等待下一次写入才补后页。
     while (!signal?.aborted) {
       const next = await this.readExecutionEvents(executionId, batch, signal)
       if (!next) return null
@@ -262,10 +316,13 @@ export class TaskChainConnection {
       }
       const result = taskChainDispatchResponseSchema.parse(value)
       this.accept(result.snapshot)
+      const accepted = result.snapshot.stateSequence >= (this.view.workspace?.stateSequence ?? -1) ? result.acceptedExecution : null
+      const changed = accepted && accepted.executionId !== this.view.executionId
+      if (changed) this.detailSequence = -1
       this.update({ pending: null, error: "", errorCode: null,
         ...(result.savedReview ? { savedReview: result.savedReview } : {}),
-        ...(result.acceptedExecution ? { acceptedExecution: result.acceptedExecution,
-          executionId: result.acceptedExecution.executionId, eventBatch: null, executionDetail: null } : {}) })
+        ...(accepted ? { acceptedExecution: accepted, executionId: accepted.executionId } : {}),
+        ...(changed ? { eventBatch: null, executionDetail: null } : {}) })
       return true
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : "操作未完成，请刷新后重试。",
@@ -324,6 +381,27 @@ export class TaskChainConnection {
   }
 
   dismiss = () => this.update({ pending: null, error: "", errorCode: null })
+}
+
+function preserveWorkspaceReferences(next: TaskWorkspaceSnapshot, previous: TaskWorkspaceSnapshot | null) {
+  if (!previous) return
+  if (next.requirement && previous.requirement && next.requirement.id === previous.requirement.id
+    && next.requirement.version === previous.requirement.version && next.requirement.revision === previous.requirement.revision) {
+    next.requirement = previous.requirement
+  }
+  if (next.release && previous.release && next.release.reference.id === previous.release.reference.id
+    && next.release.reference.version === previous.release.reference.version && next.release.reference.digest === previous.release.reference.digest) {
+    next.release = previous.release
+  }
+  if (next.draft && previous.draft && next.draft.id === previous.draft.id
+    && next.draft.revision === previous.draft.revision && next.draft.checksum === previous.draft.checksum) {
+    // WHY：相同内容仍可能增加试跑验证记录；只复用冻结内容，保留新 envelope。
+    next.draft.content = previous.draft.content
+  }
+  if (next.execution && previous.execution && next.execution.id === previous.execution.id
+    && next.execution.sequence === previous.execution.sequence) next.execution = previous.execution
+  if (next.activity && previous.activity && next.activity.id === previous.activity.id
+    && next.activity.sequence === previous.activity.sequence) next.activity = previous.activity
 }
 
 function executionMatchesWorkspace(workspace: TaskWorkspaceSnapshot) {

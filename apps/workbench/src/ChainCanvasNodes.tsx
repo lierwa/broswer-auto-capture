@@ -31,7 +31,7 @@ export type TerminalCanvasData = Record<string, unknown> & {
   durationLabel?: string | undefined
   summary?: string
   statusLabel?: string
-  onInspect?: () => void
+  onInspect?: (id: string) => void
 }
 export type StageCanvasNode = Node<StageCanvasData, "chain-stage">
 export type TerminalCanvasNode = Node<TerminalCanvasData, "chain-terminal">
@@ -77,12 +77,12 @@ export function StageCanvasCard({ id, data }: NodeProps<StageCanvasNode>) {
   </article>
 }
 
-export function TerminalCanvasCard({ data }: NodeProps<TerminalCanvasNode>) {
+export function TerminalCanvasCard({ id, data }: NodeProps<TerminalCanvasNode>) {
   const horizontal = data.direction === "LR"
   return <div className="chain-terminal-card" data-terminal={data.terminal} data-tone={data.tone}>
     {data.terminal === "end" && <Handle type="target" position={horizontal ? Position.Left : Position.Top} />}
-    <button className="nodrag chain-terminal-select" type="button" aria-label={`查看${data.label}`}
-      onClick={(event) => { event.stopPropagation(); data.onInspect?.() }}>
+    <button className="nodrag chain-terminal-select" type="button" title={data.summary} aria-label={`查看${data.label}`}
+      onClick={(event) => { event.stopPropagation(); data.onInspect?.(data.terminal === "end" ? id.slice("__end:".length) : id) }}>
       <RunIcon tone={data.tone} /><span><strong>{data.label}</strong>
         {data.summary && <small>{data.summary}</small>}
         {data.statusLabel && <small>{data.statusLabel}</small>}</span>

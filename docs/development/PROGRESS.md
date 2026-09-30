@@ -1,5 +1,18 @@
 # 开发进度
 
+## 2026-10-01 checkpoint 后集中修复（代码与定点验证）
+
+- 修复前完整 checkpoint 已按用户要求提交：`e7ed54e44e3c560665cc3ff5101daea521800b24`。原 HEAD 为 `2a8d2cdeb2b2b7ea3cfe49930511a1e9d5081683`；没有分支/worktree、回退、推送或第二次提交。新补丁留在当前工作区。
+- 两次 review 的已确认问题已处理：started 首次发布即有真实输入、finished 不复制输入；脱敏/截断来源沿节点和变量传播；固定 each 集合只首次散列/留存，未知总数不写分母；前置失败与真实 null 可读；普通详情显示真实读取/后置/调用合同；终点尺寸先参与唯一布局；成果弹窗只一份，并按各实际 emit 合同展示。
+- 健康链路 800ms 和访谈 1200ms 刷新已删除。SQLite 唯一连接 TEMP trigger 复用原持久版本；pure rollback 不通知，慢消费只唤醒最新版本，取消/关闭释放。完整事件分页消费后确认捕获版本；晚到同次 POST 不清事实。原活跃访谈展示节奏改成仅实际变化后的单次 200ms 合并；100 个异步增量只读一次完整 snapshot，无变化不再读。
+- React：同版本不通知订阅者；冻结内容引用复用，draft 验证 envelope 仍更新；节点/连线结构共享，选择与构图分离；同不可变 chain/batch 建拓扑与事件索引。只证明减少重复计算/引用替换，未测真实 Profiler 或帧耗时。
+- 反馈只存 selection/resultDigest，父任务/执行/需求/版本从不可变 execution 投影；旧完整 context 兼容且不回写。operation 丢失仍恢复同反馈，operation/review 不一致先拒绝。safeCallSummary 为普通代码，仅用户主动回流时复用已核验的所选调用；一次读取运行记录，不再扫描全部调用或重复读取。三个内部参数不属于模型字段。只有最后实际生产者 finished 成功、当前来源政策可证明安全且值摘要一致时带值。旧洗白事实、末次未完成、缺失输入、脱敏/截断/聚合来源未证明时只保留引用，不用模型补；摘要进入既有访谈上下文，会增加输入内容，不增加调用次数。最终消费路径核查发现普通 accepted 也组装成果摘要，已收紧为 requirement_revision 才处理；链路读取次数反例先红后绿，同项安全反例及 API 类型检查通过。
+- LLM 核查：相对上述两个基线均没有新增产品 LLM 调用入口或模型必填字段；显式 llm/delegate 调用次数入口不变，只调整实参首次落盘顺序。开发子 agent review 与测试替身不计作产品真实模型执行；本修复阶段没有真实模型或浏览器运行。
+- 证据：UI 6 文件 56/56，通过后局部修改仅定点 6/6、4/4；连接两文件 16/16，新增 healthy/晚回执 2/2、idle 1/1；回执接口变化定点 3/3。数据库通知 4/4，保留任务名 error 的 uncaught 首败并修复后 1/1。真实临时 HTTP 接口 2/2（暂停追最新/重连/取消/app.close、continuous idle 新提交）；未填满 OS socket，不虚报 OS 背压。活跃访谈合并/旧 finite 2/2。反馈 5/5，末次/旧来源洗白先红后绿，额外 operation mismatch 和隐私传播 4/4，安全 null/false/0/空串及未知输入 1/1。多 emit 合同先红后绿 1/1。开始/普通合同详情迁移到所属独立测试，<500 行。
+- 验证修正保留：Workbench 类型检查首败（summary/full 事实层级、React unknown 条件、可空 presentation）已修正；一次 SSR 因根 tsx 未指定 Workbench JSX tsconfig 首败，指定 TSX_TSCONFIG_PATH 后对应单例通过；一份隐私正例夹具缺真实 started 输入，补正确配对后通过。不是产品通过后覆盖首败。最终 API/Workbench/runtime/contracts 包检查均通过，git diff --check 通过；没有根级或全量测试。
+- **未验收/剩余边界：** 本补丁没有新真实浏览器复跑、Chrome 重启后免 Allow 或实机 React Profiler 验收。旧同连接成功不能替代新改动。只读 health 确认现用 API PID16753 仍未加载 /changes；没有为加载补丁断开保留的日常 Chrome 控制连接或交付页面。旧任务列表 1500ms 与旧 BrowserStatus 2000ms 刷新在本轮基线前已存在且未改，不能声称整个系统零轮询。工作区每次真实变更仍读取完整冻结内容；本轮只省略 live detail 中的重复 content，不声称所有静态内容只下载一次。
+
+
 ### 2026-09-30 解锁后实际验收：日常 Chrome 连接复用和新逐次事实通过
 
 - **部分通过。** 用户解锁后已从原任务 `a81d8a80-50ae-48aa-a06c-558ccf08f76a`、原 Release V5 开始真实运行，并实际处理 Chrome 原生 Allow；没有创建任务、私有 Profile、分支/worktree，没有提交或推送。下节锁屏结论是当时快照，不再代表当前验收状态。

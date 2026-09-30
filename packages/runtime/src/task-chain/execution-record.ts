@@ -1,6 +1,6 @@
 import {
   NODE_EXECUTION_RECORD_BYTES, NODE_VALUE_RECORD_BYTES, nodeBindings,
-  type ChainNode, type JsonValue, type NodeExecutionRecord, type NodeLoopRecord, type NodeValueRecord, type ValueBinding,
+  type ChainNode, type JsonValue, type NodeExecutionRecord, type NodeLoopRecord, type NodeValueRecord, type ValueBinding, type TaskChain, type TaskRun,
 } from "@browser-capture/contracts"
 import type { RuntimeState } from "./runtime.js"
 
@@ -27,18 +27,26 @@ function outputBindings(node: ChainNode): ValueBinding[] {
   return nodeBindings(node)
 }
 
-function nodePolluted(state: RuntimeState, nodeId: string, seen: Set<string>): boolean {
+type PrivacyState = { compiled: { nodes: ReadonlyMap<string, ChainNode> }; run: Pick<TaskRun, "events"> }
+
+function nodePolluted(state: PrivacyState, nodeId: string, seen: Set<string>): boolean {
   if (seen.has(`node:${nodeId}`)) return false
   const node = state.compiled.nodes.get(nodeId)
   if (!node || rawOutput(node)) return true
-  const previous = state.run.events.findLast((event) => event.nodeId === nodeId && event.status === "finished")?.execution?.output
-  if (previous?.reason === "raw_source" || previous?.reason === "unsupported_capability") return true
+  const finished = state.run.events.findLast((event) => event.nodeId === nodeId && event.status === "finished")
+  const input = finished?.execution?.input ?? state.run.events.findLast(event => event.nodeId === nodeId
+    && event.status === "started" && (!finished || event.sequence < finished.sequence)
+    && (!finished || event.invocationId === finished.invocationId))?.execution?.input
+  const previous = finished?.execution?.output
+  // WHY：来源曾实际脱敏或截断时，改名/函数取值不能把未知内容洗回可留存值。
+  // WHY：旧 finished 可能复制脱敏 input 却误标 output；新一轮 started 不能洗掉上一轮来源。
+  if (finished && input?.status !== "recorded" || previous && ["redacted", "truncated"].includes(previous.status)) return true
   const next = new Set(seen).add(`node:${nodeId}`)
   return outputBindings(node).some((binding) => bindingPolluted(state, binding, next))
 }
 
 function variableBindings(node: ChainNode, name: string): ValueBinding[] {
-  const bindings = node.writes.some((write) => write.variable === name) ? outputBindings(node) : []
+  const bindings: ValueBinding[] = []
   if (node.kind === "loop" && node.iteration.mode === "each" && node.iteration.itemVariable === name) {
     bindings.push(node.iteration.collection)
   }
@@ -51,16 +59,24 @@ function variableBindings(node: ChainNode, name: string): ValueBinding[] {
   return bindings
 }
 
-export function bindingPolluted(state: RuntimeState, binding: ValueBinding, seen = new Set<string>()): boolean {
+export function bindingPolluted(state: PrivacyState, binding: ValueBinding, seen = new Set<string>()): boolean {
   if (binding.source !== "constant" && binding.path.some((part) => sensitiveKey.test(String(part)) || rawPageKey.test(String(part)))) return true
   if (binding.source === "node") return nodePolluted(state, binding.nodeId, seen)
   if (binding.source !== "variable" || seen.has(`variable:${binding.name}`)) return false
   const next = new Set(seen).add(`variable:${binding.name}`)
   // WHY：同名变量可有多个合法写入者；恢复后不猜最后一个 writer，任一原始来源都保守脱敏。
   return [...state.compiled.nodes.values()].some((node) =>
-    node.writes.some((write) => write.variable === binding.name && (rawOutput(node)
+    node.writes.some((write) => write.variable === binding.name && (nodePolluted(state, node.id, next)
       || write.path.some((part) => sensitiveKey.test(String(part)) || rawPageKey.test(String(part)))))
     || variableBindings(node, binding.name).some((source) => bindingPolluted(state, source, next)))
+}
+
+/** WHY：读取历史摘要也复用当前来源政策；状态标签不能替代最后实际生产者与来源证据。 */
+export function safeRecordedOutput(chain: Pick<TaskChain, "nodes">, events: TaskRun["events"], nodeId: string) {
+  const event = events.findLast(item => item.nodeId === nodeId), output = event?.execution?.output
+  if (event?.status !== "finished" || event.outcome !== "success" || output?.status !== "recorded" || !Object.hasOwn(output, "value")) return null
+  const state: PrivacyState = { compiled: { nodes: new Map(chain.nodes.map(node => [node.id, node])) }, run: { events } }
+  return nodePolluted(state, nodeId, new Set()) ? null : output
 }
 
 type Scrubbed = { value: JsonValue; redacted: boolean; limited: boolean }
@@ -157,11 +173,14 @@ export function executionRecordForEvent(state: RuntimeState, node: ChainNode, st
   const loops = loopStamps(state, node)
   if (status === "started") return boundedRecord(loops.length ? { loops } : {})
   const previous = startedEvent(state, node)?.execution
+  const { input, ...facts } = previous ?? {}
   const resumedObservation = state.resumingNodeId === node.id && state.resumeObservation !== null
   const forbidden = resumedObservation ? "raw_source" as const
     : rawOutput(node) ? node.kind === "capability" ? "unsupported_capability" as const : "raw_source" as const
-    : outputBindings(node).some((binding) => bindingPolluted(state, binding)) ? "raw_source" as const : undefined
-  return boundedRecord({ ...previous, ...(loops.length ? { loops } : {}), output: output === undefined
+    : input && ["redacted", "truncated"].includes(input.status)
+      || outputBindings(node).some((binding) => bindingPolluted(state, binding)) ? "raw_source" as const : undefined
+  // WHY：started 是该次调用实参的唯一事实；finished 只增加返回/循环结果，不复制实参。
+  return boundedRecord({ ...facts, ...(loops.length ? { loops } : {}), output: output === undefined
     ? { status: "missing" } : valueRecord(output, forbidden) })
 }
 

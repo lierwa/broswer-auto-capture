@@ -154,9 +154,11 @@ export const taskExecutionReviewSchema = z.object({
   decision: z.enum(["accepted", "requirement_revision"]),
   feedback: z.string().trim().min(1).max(2_000).nullable(),
   summary: z.string().trim().min(1).max(8_000),
-  context: executionReviewContextSchema.optional(),
+  // WHY：父 execution 已固定任务/需求/版本；新反馈只存自身选择，旧完整记录仍可读。
+  context: z.union([executionReviewContextSchema.pick({ selection: true, resultDigest: true }), executionReviewContextSchema]).optional(),
   createdAt: z.string().datetime(),
 }).strict()
+export const taskExecutionReviewReceiptSchema = taskExecutionReviewSchema.extend({ context: executionReviewContextSchema })
 
 export const planCandidateIssueSchema = z.object({
   path: z.array(z.union([z.string(), z.number().int().nonnegative()])),
@@ -333,7 +335,7 @@ export const acceptedTaskExecutionSchema = z.object({
 
 export const taskChainDispatchResponseSchema = z.object({
   snapshot: taskWorkspaceSnapshotSchema, acceptedExecution: acceptedTaskExecutionSchema.nullable(),
-  savedReview: taskExecutionReviewSchema.optional(),
+  savedReview: taskExecutionReviewReceiptSchema.optional(),
 }).strict()
 
 export const taskReleaseHistoryPageSchema = z.object({
@@ -406,6 +408,7 @@ export type ExecutionCleanup = z.infer<typeof executionCleanupSchema>
 export type TaskExecutionBrowserHandoff = z.infer<typeof taskExecutionBrowserHandoffSchema>
 export type TaskExecutionResult = z.infer<typeof taskExecutionResultSchema>
 export type TaskExecutionReview = z.infer<typeof taskExecutionReviewSchema>
+export type TaskExecutionReviewReceipt = z.infer<typeof taskExecutionReviewReceiptSchema>
 export type TaskExecutionDetail = z.infer<typeof taskExecutionDetailSchema>
 export type ExecutionReviewContext = z.infer<typeof executionReviewContextSchema>
 export type TaskExecutionFailureEvidence = z.infer<typeof taskExecutionFailureEvidenceSchema>
