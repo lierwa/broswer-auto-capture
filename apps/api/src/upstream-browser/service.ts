@@ -9,7 +9,6 @@ import { Readable } from "node:stream"
 import type { AI, ModelSelection } from "@agent-platform/ai-connect/server"
 import type { JsonValue, ValueSchema } from "@browser-capture/contracts"
 import type { ModelCallReport, TaskChainCapabilities } from "@browser-capture/runtime"
-import { withHybridCapabilities } from "./hybrid-runtime.js"
 import type { ModelAudit } from "./model-bridge.js"
 import { runnerAuthorRequestSchema, runnerAuthorResultSchema, runnerCloseRequestSchema,
   runnerReplayRequestSchema, runnerReplayResultSchema, runnerResponseSchema, runnerStartRequestSchema,
@@ -18,17 +17,17 @@ import { hybridProfileStartRequestSchema, hybridStartRequestSchema, hybridHandof
   hybridManagedWindowRequestSchema, hybridManagedWindowResultSchema, hybridWindowLeaseSchema,
   profileOwnerRequestSchema, profileRecoverRequestSchema,
   type HybridRunnerRequest } from "./hybrid-protocol.js"
-import { withHybridAuthoring, recompileHybridSource, type HybridAuthoringProgress,
+import { recompileHybridSource, type HybridAuthoringProgress,
   type HybridAuthorSession } from "./hybrid-exploration.js"
 import { cleanupReport, pythonCleanupResultSchema, type RunnerCleanupReport,
   type RunnerCleanupCode, type RunnerCleanupStage } from "./cleanup.js"
-import { verifyForkSource } from "../../../../vendor/workflow-use/verify-source.mjs"
 import { browserAllowedSites } from "./site-scope.js"
 import { runnerOwnershipSchema, type RunnerOwnership } from "./runner-ownership.js"
 import { authoringHumanEventSchema, authoringHumanResumeResultSchema, hybridAuthorResumeRequestSchema,
   type AuthoringHumanHandlers } from "./hybrid-author-human.js"
 import { compilationCheckpointSchema, receiveCompilation, type CompilationHandler,
   type CompilationPending } from "./hybrid-compilation-checkpoint.js"
+import { dailyChromeConnection, resolveDailyChromeEndpoint } from "./daily-chrome-connection.js"
 
 export type UpstreamAuthorResult = ReturnType<typeof runnerAuthorResultSchema.parse> & { modelCalls: ModelCallReport[] }
 export type UpstreamReplayResult = ReturnType<typeof runnerReplayResultSchema.parse> & { modelCalls: ModelCallReport[] }
@@ -39,11 +38,13 @@ export interface UpstreamBrowserSession {
     outputSchema: ValueSchema; artifactKey: string; onModelCall?(report: ModelCallReport): Promise<void> }): Promise<UpstreamReplayResult>
 }
 export interface UpstreamBrowserRuntime {
+  close?(): Promise<RunnerCleanupReport>
   sourceDigest?(): Promise<string>
   recompile?(input: Omit<Parameters<typeof recompileHybridSource>[0], "root" | "directory" | "subject">): ReturnType<typeof recompileHybridSource>
   withSession<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string },
     work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T>
   withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
+    connectionOwnerId?: string; closeAfterOperation?: boolean;
     headless?: boolean; managedWindow?: { ownerId: string; resume: boolean };
     handoffPurpose?: () => "delivery" | "human_wait" | null;
     onHandoff?: (purpose: "delivery" | "human_wait", lease: ReturnType<typeof hybridWindowLeaseSchema.parse>) => void;
@@ -51,6 +52,7 @@ export interface UpstreamBrowserRuntime {
     onCleanup?: (report: RunnerCleanupReport) => void },
     work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T>
   withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
+    connectionOwnerId?: string;
     onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
     work: (session: HybridAuthorSession) => Promise<T>): Promise<T>
   managedWindowAction?(input: { action: "inspect" | "focus" | "end" | "verify_closed"; ownerId: string; leaseId: string }):
@@ -63,53 +65,7 @@ export class UpstreamProtocolError extends Error {
   }
 }
 
-/** WHY：Python 只拥有上游 Browser/Agent/Workflow；B-A-T 通过独立 fd3 协议保留取消、审计和产物边界。 */
-export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
-  constructor(private readonly options: { root: string; directory: string; subject: ReturnType<AI["forSubject"]> }) {}
-
-  sourceDigest() { return verifyForkSource(this.options.root) }
-
-  recompile(input: Omit<Parameters<typeof recompileHybridSource>[0], "root" | "directory" | "subject">) {
-    return recompileHybridSource({ ...input, ...this.options })
-  }
-
-  withAuthoring<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
-    onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
-    work: (session: HybridAuthorSession) => Promise<T>): Promise<T> {
-    return withHybridAuthoring({ ...input, root: this.options.root, directory: this.options.directory,
-      subject: this.options.subject }, work)
-  }
-
-  withCapabilities<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
-    headless?: boolean; managedWindow?: { ownerId: string; resume: boolean };
-    handoffPurpose?: () => "delivery" | "human_wait" | null;
-    onHandoff?: (purpose: "delivery" | "human_wait", lease: ReturnType<typeof hybridWindowLeaseSchema.parse>) => void;
-    onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
-    onCleanup?: (report: RunnerCleanupReport) => void },
-    work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T> {
-    return withHybridCapabilities({ root: this.options.root, directory: this.options.directory, ownerId: input.ownerId,
-      signal: input.signal, allowedOrigins: input.allowedOrigins,
-      ...(input.headless !== undefined ? { headless: input.headless } : {}),
-      ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}),
-      ...(input.handoffPurpose ? { handoffPurpose: input.handoffPurpose } : {}),
-      ...(input.onHandoff ? { onHandoff: input.onHandoff } : {}),
-      ...(input.onHandoffFailure ? { onHandoffFailure: input.onHandoffFailure } : {}),
-      ...(input.onCleanup ? { onCleanup: input.onCleanup } : {}),
-      canRestoreByNavigation: input.canRestoreByNavigation ?? false }, work)
-  }
-
-  managedWindowAction(input: { action: "inspect" | "focus" | "end" | "verify_closed"; ownerId: string; leaseId: string }) {
-    const runner = new RunnerProcess(this.options.root, new AbortController().signal)
-    return runner.managedWindowAction({ ...input,
-      profilePath: path.join(this.options.directory, "browser-profile", "default") })
-  }
-
-  async withSession<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string },
-    work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T> {
-    retireWorkflowV1()
-    throw new Error("legacy_workflow_use_v1_retired")
-  }
-}
+export { PythonUpstreamBrowserRuntime } from "./python-runtime.js"
 
 export class RunnerProcess {
   private child: ChildProcess | null = null
@@ -122,10 +78,12 @@ export class RunnerProcess {
   private termination: Promise<void> | null = null
   private cleanup: Promise<RunnerCleanupReport> | null = null
   private managedWindow: { ownerId: string; profilePath: string } | null = null
+  private hybridConnectionOwner: string | undefined
   constructor(private readonly root: string, private readonly signal: AbortSignal,
     private readonly onDiagnostic?: (line: string) => void,
     private readonly lifecycle: { runnerScript?: string; closeTimeoutMs?: number; childCloseTimeoutMs?: number;
-      removeTemporaryDirectory?: typeof rm; runnerEnvironment?: Record<string, string> } = {}) {}
+      removeTemporaryDirectory?: typeof rm; runnerEnvironment?: Record<string, string>;
+      resolveBrowserEndpoint?: typeof resolveDailyChromeEndpoint } = {}) {}
 
   envValue(name: string) { const value = process.env[name]?.trim(); return value || undefined }
   envBoolean(name: string, fallback: boolean) {
@@ -138,17 +96,18 @@ export class RunnerProcess {
   }
 
   async startHybrid(config: Omit<ReturnType<typeof hybridStartRequestSchema.parse>["config"], "allowedSites">) {
-    const endpoint = this.envValue("BAT_UPSTREAM_BROWSER_CDP_URL")
-    // WHY：显式本机连接复用用户浏览器；所有权只覆盖任务窗口，不能沿用独占进程清理。
-    const connection = endpoint ? { ...config, managedWindow: undefined,
-      existingBrowser: { cdpUrl: endpoint, ownerId: config.managedWindow?.ownerId ?? randomUUID(),
-        resume: config.managedWindow?.resume ?? false } } : config
+    const connection = await dailyChromeConnection(config, this.envValue("BAT_UPSTREAM_BROWSER_CDP_URL"),
+      this.lifecycle.resolveBrowserEndpoint ?? resolveDailyChromeEndpoint)
     const windowOwner = connection.existingBrowser ?? connection.managedWindow
     this.managedWindow = windowOwner ? { ownerId: windowOwner.ownerId,
       profilePath: config.profilePath } : null
     const request = hybridStartRequestSchema.parse({ id: randomUUID(), type: "hybrid_start",
       config: { ...connection, allowedSites: browserAllowedSites(config.allowedOrigins) } })
-    await this.launch("main.py")
+    if (this.cleanup) throw new Error("upstream_runner_already_closed")
+    if (!config.connectionOwnerId || this.hybridConnectionOwner !== config.connectionOwnerId) {
+      await this.launch("main.py")
+      this.hybridConnectionOwner = config.connectionOwnerId
+    }
     await this.request(request)
   }
 

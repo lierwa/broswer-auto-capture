@@ -227,10 +227,37 @@ class NaturalReadLivenessTests(unittest.TestCase):
         self.assertEqual(retained[0]['postconditions'][0]['kind'], 'scroll_position')
         self.assertEqual(retained[0]['postconditions'][0]['clauseRef'], 'scroll-after')
 
+    def test_only_proven_readiness_query_survives_without_a_value_binding(self):
+        trace, segments, ledger = self.fixture()
+        segments[0]['postconditions'] = segments[0]['postconditions'][1:]
+        segments[-1]['bindings'] = []
+        retained, coverage, consumed, gaps = prune_unused_queries(
+            SimpleNamespace(trace=trace), REGISTRY, segments, ledger)
+
+        self.assertEqual(gaps, [])
+        self.assertEqual(consumed, {'a-0002'})
+        self.assertEqual([segment['id'] for segment in retained],
+                         ['s-a-0001', 's-a-0002', 's-a-0005'])
+        self.assertEqual(rebind_consumer_readiness(trace, retained, coverage), [])
+        self.assertEqual(retained[0]['postconditions'][0]['consumerRef'], 's-a-0002')
+
+    def test_forged_readiness_reference_cannot_keep_a_query_live(self):
+        trace, segments, ledger = self.fixture()
+        segments[0]['postconditions'][1]['clauseRef'] = 'forged-read'
+        segments[-1]['bindings'] = []
+        retained, _coverage, consumed, gaps = prune_unused_queries(
+            SimpleNamespace(trace=trace), REGISTRY, segments, ledger)
+
+        self.assertEqual(gaps, [])
+        self.assertEqual(consumed, set())
+        self.assertEqual([segment['id'] for segment in retained], ['s-a-0001', 's-a-0005'])
+
     def test_lost_only_consumer_proof_returns_gap_without_invalid_segment(self):
         trace, segments, ledger = self.fixture()
         segments[0]['postconditions'] = segments[0]['postconditions'][1:]
         segments[-1]['bindings'] = []
+        # The proven read is genuinely absent, not merely unused as an action value.
+        segments.pop(1)
         ledger.insert(0, ActionCoverage(actionRef='a-0001', disposition='compiled',
                                        ownerSegmentId='s-a-0001', evidenceRefs=[REF]))
         retained, coverage, _consumed, gaps = prune_unused_queries(

@@ -33,16 +33,16 @@ from .visible_wait_compile import compile_visible_wait, failed_visible_wait_cove
 
 ADMITTED = frozenset({'navigate', 'go_back', 'wait', 'scroll', 'send_keys', *TARGET_ACTIONS})
 NATURAL_EFFECT_KINDS = {
-    'click': ('media_playback', 'target_state', 'visible_overlays'),
+    'click': ('media_playback', 'target_state', 'visible_overlays', 'focused_element'),
     'input': ('target_state',),
     'select_dropdown': ('target_state',),
     'dropdown_options': ('target_state',),
     'scroll': ('scroll_position',),
-    'send_keys': ('visible_overlays',),
+    'send_keys': ('visible_overlays', 'focused_element'),
     'wait': ('media_playback',),
 }
 TARGET_STATE_KEYS = frozenset({'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
-                               'checked', 'selected', 'disabled'})
+                               'checked', 'selected', 'disabled', 'focused'})
 EMPTY_OVERLAYS = digest([])
 
 def compile_natural_request(request, registry, compilation_type, linear_graph, source_gaps=(), *, output_schema=None):
@@ -289,7 +289,16 @@ def natural_effect_condition(action, pre, post):
     limitation = None
     for kind in NATURAL_EFFECT_KINDS.get(action.name, ()):
         before, after = fact_value(pre, kind), fact_value(post, kind)
+        # WHY：点击目标已经聚焦仍有明确物理后态；不要求焦点必须变化，且不能以 false
+        # 或单纯 trusted dispatch 为完成证据。旧来源不含 focused，仍走原有规则。
+        if (kind == 'target_state' and after is not None and deterministic_target_state(after.value)
+                and json.loads(after.value).get('focused') is True):
+            return ([{'kind': kind, 'equals': after.value, 'clauseRef': after.id,
+                      'settle': NATURAL_SETTLE}], after.sourceRefs, []), None
         if before is not None and after is not None and before.value != after.value:
+            if kind == 'focused_element':
+                return ([{'kind': kind, 'changed': True, 'clauseRef': after.id,
+                          'settle': NATURAL_SETTLE}], after.sourceRefs, []), None
             if kind == 'media_playback' and after.value == 'playing':
                 condition = {'kind': kind, 'equals': 'playing', 'clauseRef': after.id,
                              'settle': NATURAL_SETTLE}

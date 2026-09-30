@@ -4,7 +4,8 @@ import test from "node:test"
 import { capabilityDescriptorSchema, chainPresentationSchema, taskDraftSchema, CONTRACT_VERSION,
   chainNodeSchema, parseTaskValue, requiredStableNodeOutcomes, stableChainNodeSchema,
   resultSpecSchema, taskChainSchema, taskDataContractSchema, taskPlanExecutionIssues, taskPlanSchema, taskPlanStepSchema, taskRequirementSchema,
-  taskInputRequiresVariation, valueBindingSchema, type ChainNode, type StableChainNode } from "@browser-capture/contracts"
+  taskInputRequiresVariation, taskAuthoringActivitySchema, taskAuthoringJobSchema, valueBindingSchema,
+  type ChainNode, type StableChainNode } from "@browser-capture/contracts"
 import { budget, condition, dataContract, digest, extractionFixture, ids, inputBinding, nodeBase, nodeBinding,
   nullContract, playbackFixture, reference } from "./task-chain-fixtures.js"
 
@@ -86,6 +87,25 @@ test("新链只用六类稳定节点，站点动作通过通用能力配置表�
   assert.deepEqual(new Set(nodes.map((node) => node.kind)), new Set(["capability", "llm", "branch", "loop", "invoke", "terminal"]))
   for (const node of nodes) assert.equal(stableChainNodeSchema.safeParse(node).success, true)
   assert.equal(stableChainNodeSchema.safeParse({ ...nodes[0], kind: "open_comment_popup" }).success, false)
+})
+
+test("准备 build 持久合同兼容缺失 presentation，公开 activity 强制归一化 presentation", () => {
+  const node = { id: "read", label: "读取当前页面", kind: "capability" as const,
+    outputContract: nullContract, writes: [], capability: { name: "browser.read-fields", version: 1 },
+    input: {}, config: {}, effect: "read" as const, timeoutMs: 1_000 }
+  const persisted = { authorRequestId: ids.request, stepId: "perform", sequence: 1, digest: "a".repeat(64),
+    phase: "prefix" as const, payload: "{}", nodes: [node], edges: [] }
+  const presentation = { stages: [{ id: "ungrouped-actions", title: "未分组动作", summary: "生成中",
+    nodeIds: [node.id], entryNodeId: node.id, exits: [] }],
+  overviewLayout: [{ stageId: "ungrouped-actions", x: 0, y: 0 }],
+  focusLayouts: [{ stageId: "ungrouped-actions", nodes: [{ nodeId: node.id, x: 0, y: 0 }] }] }
+  const persistedSchema = taskAuthoringJobSchema.shape.authoring.unwrap().shape.build.unwrap()
+  assert.equal(persistedSchema.safeParse(persisted).success, true)
+  assert.equal(persistedSchema.safeParse({ ...persisted, presentation }).success, true)
+  const { authorRequestId: _authorRequestId, payload: _payload, ...publicBuild } = persisted
+  const publicSchema = taskAuthoringActivitySchema.shape.build.unwrap()
+  assert.equal(publicSchema.safeParse(publicBuild).success, false)
+  assert.equal(publicSchema.safeParse({ ...publicBuild, presentation }).success, true)
 })
 
 test("图身份、出口、binding 和 verified 证据拒绝伪造或缺失", () => {

@@ -6,6 +6,7 @@ import { cleanupReport, RUNNER_CLEANUP_STAGES, RuntimeCleanupRequiredError,
 import { withHybridAuthoring } from "../src/upstream-browser/hybrid-exploration.js"
 import { hybridAuthorSourceSchema } from "../src/upstream-browser/hybrid-protocol.js"
 import { naturalSourceFixture } from "./helpers/natural-source.js"
+import type { RunnerProcess } from "../src/upstream-browser/service.js"
 
 const hash = "1".repeat(64)
 const source = hybridAuthorSourceSchema.parse({ task: "Open the confirmed page", input: null,
@@ -32,11 +33,12 @@ function report(confirmed: boolean) {
 
 function harness(confirmed = true) {
   const events: string[] = []
+  const starts: Parameters<RunnerProcess["startHybrid"]>[0][] = []
   let closed = false, closeCount = 0
   let settled: Promise<ReturnType<typeof report>> | undefined
   const runner = {
     envBoolean: (_name: string, fallback: boolean) => fallback,
-    startHybrid: async () => { events.push("start") },
+    startHybrid: async (config: Parameters<RunnerProcess["startHybrid"]>[0]) => { starts.push(config); events.push("start") },
     startCompiler: async () => { events.push("compiler") },
     request: async () => { assert.equal(closed, false); events.push("response"); return rawResult },
     close: () => settled ??= Promise.resolve().then(() => {
@@ -52,8 +54,14 @@ function harness(confirmed = true) {
   const input = { root: process.cwd(), directory: "", ownerId: "synthetic-owner",
     signal: new AbortController().signal, allowedOrigins: ["https://example.test"],
     selection: { modelId: "test" }, subject: {} } as Parameters<typeof withHybridAuthoring>[0]
-  return { events, runner, dependencies, input, get closed() { return closed }, get closeCount() { return closeCount } }
+  return { events, starts, runner, dependencies, input, get closed() { return closed }, get closeCount() { return closeCount } }
 }
+
+test("preparation passes its product owner to the daily Chrome task window", async () => {
+  const h = harness()
+  await withHybridAuthoring(h.input, async () => null, h.dependencies)
+  assert.deepEqual(h.starts[0]?.managedWindow, { ownerId: h.input.ownerId, resume: false })
+})
 
 test("final B-U source is saved before its Browser owner closes without compilation", async () => {
   const h = harness()

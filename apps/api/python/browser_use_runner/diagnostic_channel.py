@@ -4,6 +4,8 @@ import json
 import os
 import re
 
+from browser_use_runner.startup_diagnostics import valid_startup_event
+
 BEFORE_ACTION_STAGES = frozenset({
     'live_current_page', 'live_target_before', 'live_document_session', 'live_document_root',
     'live_target_after', 'live_document_other', 'observation_title', 'observation_url',
@@ -17,9 +19,9 @@ ORDINARY_ACTIONS = frozenset({'navigate', 'go_back', 'wait', 'click', 'input', '
                               'dropdown_options', 'select_dropdown', 'bat_scroll_to', 'bat_wait_for'})
 POSTCONDITION_KINDS = frozenset({'url', 'url_digest', 'title', 'target_value', 'target_text', 'target_state',
                                  'target_in_view', 'target_visible', 'scroll_position', 'visible_overlays',
-                                 'media_playback', 'read_fields'})
+                                 'media_playback', 'focused_element', 'read_fields'})
 TARGET_STATE_KEYS = frozenset({'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
-                               'checked', 'selected', 'disabled'})
+                               'checked', 'selected', 'disabled', 'focused'})
 HEX_DIGEST = re.compile(r'^[a-f0-9]{64}$')
 ACTION_REF = re.compile(r'^[A-Za-z0-9._:-]{1,256}$')
 ERROR_CODE = re.compile(r'^ordinary_postcondition_[a-z_]{1,140}$')
@@ -38,7 +40,7 @@ class DiagnosticChannel:
     def emit(self, event):
         try:
             keys = set(event)
-            if event.get('phase') in ('before_action_detail', 'author_transport', 'runtime_action_failure'):
+            if event.get('phase') in ('before_action_detail', 'author_transport', 'runtime_action_failure', 'attached_startup'):
                 if self.channel is not None and self._fixed_event(event, keys):
                     self.channel.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + '\n')
                 return
@@ -97,6 +99,8 @@ class DiagnosticChannel:
 
     @staticmethod
     def _fixed_event(event, keys):
+        if event.get('phase') == 'attached_startup':
+            return valid_startup_event(event)
         if event.get('phase') == 'runtime_action_failure':
             expected = {'phase', 'status', 'actionRef', 'actionName', 'errorCode', 'dispatchCount',
                         'check', 'beforePage', 'afterPage', 'validationTarget', 'eventTarget'}

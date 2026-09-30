@@ -75,7 +75,7 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
     await runner.startHybrid({ allowedOrigins: input.allowedOrigins,
       profilePath: path.join(input.directory, "browser-profile", "default"),
       headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
-      ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}) })
+      managedWindow: input.managedWindow ?? { ownerId: input.ownerId, resume: false } })
     const admit = (capabilities: TaskChainCapabilities) => {
       // WHY：先从宿主总账授权，再计入实际派发；失败也保留消耗，预算拒绝不算已派发命令。
       capabilities.accountConsumption?.({ browserCommands: 1 })

@@ -55,10 +55,13 @@ export type RunnerCleanupStage = z.infer<typeof runnerCleanupStageSchema>
 export type RunnerCleanupCode = z.infer<typeof runnerCleanupCodeSchema>
 export type PythonCleanupResult = z.infer<typeof pythonCleanupResultSchema>
 
+export const retainedConnectionSchema = z.object({ ownerId: z.uuid(), scope: z.literal("task") }).strict()
+
 const runnerCleanupReportFactsSchema = z.object({
   status: z.enum(["confirmed", "unconfirmed"]), code: runnerCleanupCodeSchema.nullable(),
   stages: z.array(runnerCleanupStageSchema).length(RUNNER_CLEANUP_STAGES.length),
   activeResources: z.boolean().nullable(),
+  retainedConnection: retainedConnectionSchema.optional(),
 }).strict()
 export const runnerCleanupReportSchema = runnerCleanupReportFactsSchema.extend({
   evidenceDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -67,19 +70,26 @@ export const runnerCleanupReportSchema = runnerCleanupReportFactsSchema.extend({
   if (digestJson(facts) !== evidenceDigest) {
     context.addIssue({ code: "custom", path: ["evidenceDigest"], message: "cleanup evidence digest mismatch" })
   }
+  if (value.retainedConnection && (value.status !== "confirmed" || value.activeResources !== false
+    || ["child_exit", "process_tree", "temporary_directory"].some(name =>
+      value.stages.find(stage => stage.stage === name)?.status !== "not_required"))) {
+    context.addIssue({ code: "custom", message: "retained parent requires confirmed operation release" })
+  }
 })
 export const executionCleanupAuditSchema = z.object({
   id: z.uuid(), taskId: z.string().min(1), executionId: z.uuid(), ownerId: z.string().min(1),
   attempt: z.number().int().positive(), source: z.enum(["runner", "owner_verification"]),
   status: z.enum(["confirmed", "unconfirmed"]), code: z.string().min(1).max(160).nullable(),
   activeResources: z.boolean().nullable(), evidenceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  retainedConnection: retainedConnectionSchema.optional(),
   stages: z.array(runnerCleanupStageSchema).max(RUNNER_CLEANUP_STAGES.length), createdAt: z.string().datetime(),
 }).strict()
 
 export type RunnerCleanupReport = z.infer<typeof runnerCleanupReportSchema>
 export type ExecutionCleanupAudit = z.infer<typeof executionCleanupAuditSchema>
 
-export function cleanupReport(stages: RunnerCleanupStage[], activeResources: boolean | null): RunnerCleanupReport {
+export function cleanupReport(stages: RunnerCleanupStage[], activeResources: boolean | null,
+  retainedConnection?: z.infer<typeof retainedConnectionSchema>): RunnerCleanupReport {
   const parsed = z.array(runnerCleanupStageSchema).length(RUNNER_CLEANUP_STAGES.length).superRefine((value, context) => {
     const names = value.map((stage) => stage.stage)
     if (new Set(names).size !== RUNNER_CLEANUP_STAGES.length
@@ -89,7 +99,8 @@ export function cleanupReport(stages: RunnerCleanupStage[], activeResources: boo
   }).parse(stages)
   const failed = parsed.find((stage) => stage.status === "unconfirmed")
   const facts = { status: failed ? "unconfirmed" as const : "confirmed" as const,
-    code: failed?.code ?? null, stages: parsed, activeResources }
+    code: failed?.code ?? null, stages: parsed, activeResources,
+    ...(retainedConnection ? { retainedConnection } : {}) }
   return runnerCleanupReportSchema.parse({ ...facts, evidenceDigest: digestJson(facts) })
 }
 

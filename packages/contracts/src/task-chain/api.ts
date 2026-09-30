@@ -14,6 +14,7 @@ import { nodeExecutionEventSchema, taskRunModeSchema, taskRunSchema } from "./ru
 import { jsonValueSchema, taskOutputSchema } from "./value.js"
 import { stableChainNodeV2Schema } from "./node.js"
 import { chainEdgeV2Schema } from "./chain.js"
+import { chainPresentationContentSchema } from "./presentation.js"
 export { taskExecutionBrowserSchema, taskExecutionPacingSchema } from "./product.js"
 
 export const authoringAuditSchema = z.object({
@@ -179,6 +180,7 @@ export const taskAuthoringJobSchema = z.object({
       sequence: z.number().int().min(1).max(202), digest: digestSchema, phase: z.enum(["prefix", "final"]),
       payload: z.string().min(1).max(8_000_000),
       nodes: z.array(stableChainNodeV2Schema).max(500), edges: z.array(chainEdgeV2Schema).max(5000),
+      presentation: chainPresentationContentSchema.optional(),
     }).strict().optional(),
     consumption: z.object({ explorationToolCalls: z.number().int().nonnegative(), explorationSessions: z.number().int().nonnegative(),
       compilationCalls: z.number().int().nonnegative(), providerInvocations: z.number().int().nonnegative().nullable() }).strict(),
@@ -277,7 +279,8 @@ export const taskAuthoringActivitySchema = z.object({
   id: identitySchema, status: z.enum(["queued", "running", "waiting_for_human", "failed", "interrupted"]),
   phase: preparationPhaseSchema,
   build: taskAuthoringJobSchema.shape.authoring.unwrap().shape.build.unwrap()
-    .omit({ payload: true, authorRequestId: true }).optional(),
+    .omit({ payload: true, authorRequestId: true })
+    .extend({ presentation: chainPresentationContentSchema }).optional(),
   sequence: z.number().int().nonnegative(), reason: textSchema.nullable(),
   waitpoint: humanWaitpointSchema.nullable().default(null),
   inputRequest: z.object({ purpose: z.enum(["representative", "verification"]),

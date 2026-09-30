@@ -34,11 +34,14 @@ class StartConfig(Contract):
     allowedSites: list[AllowedSite] = Field(min_length=1, max_length=32)
     managedWindow: ManagedWindowConfig | None = None
     existingBrowser: ExistingBrowserConfig | None = None
+    connectionOwnerId: UUID | None = None
 
     @model_validator(mode='after')
     def exclusive_window_owner(self):
         if self.managedWindow is not None and self.existingBrowser is not None:
             raise ValueError('hybrid_window_owner_modes_exclusive')
+        if self.connectionOwnerId is not None and (self.existingBrowser is None or self.existingBrowser.resume):
+            raise ValueError('hybrid_attached_window_connection_requires_new_operation')
         return self
 
 
@@ -134,6 +137,11 @@ class CloseRequest(Envelope):
     type: Literal['close']
 
 
+class ReleaseRequest(Envelope):
+    type: Literal['hybrid_release']
+    connectionOwnerId: UUID
+
+
 class AuthorModel(Contract):
     model: str
     endpoint: str
@@ -167,4 +175,4 @@ class AnnotateRequest(CompileRequest):
     model: AuthorModel
 
 
-REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | CloseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest | AnnotateRequest, Field(discriminator='type')])
+REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | CloseRequest | ReleaseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest | AnnotateRequest, Field(discriminator='type')])

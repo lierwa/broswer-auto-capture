@@ -28,7 +28,8 @@ def compile_natural_prefix(request, registry, source_gaps=(), *, output_schema=N
     issues.extend(expired_dependencies(request.trace, dependencies, ledger))
     issues.extend(validate_consumer_readiness(segments))
     issues.extend(validate_coverage(request.trace, ledger, {item['id'] for item in segments},
-        registry=registry, result_spec=request.plan.resultSpec, output_schema=output_schema))
+        registry=registry, result_spec=request.plan.resultSpec, output_schema=output_schema,
+        compiled_segments=segments))
     issues = sorted({item.id: item for item in issues}.values(), key=lambda item: item.id)
     body = dict(mediaType='application/vnd.bat.hybrid-compilation+json;version=1',
         compilerVersion=request.compilerVersion, mode='prefix',

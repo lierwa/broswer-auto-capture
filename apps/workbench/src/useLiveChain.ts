@@ -9,7 +9,7 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const [stepId, setStepId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null)
-  const [focusStageId, setFocusStageId] = useState<string | null>(null)
+  const [expandedStageId, setExpandedStageId] = useState<string | null>(null)
   const [runDialogMode, setRunDialogMode] = useState<"trial" | "run" | null>(null)
   const [contextMode, setContextMode] = useState<WorkbenchContextMode>(null)
   useChainPolling(connection, active)
@@ -19,12 +19,20 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
     .includes(workspace.activity.status))
   // WHY：停止的生成片段保留在准备记录中，不能遮住已有可运行链路。
   const build = activityRunning || !workspace?.draft && !workspace?.release ? workspace?.activity?.build : undefined
+  const [canvasGeneration, setCanvasGeneration] = useState<CanvasGeneration>({
+    taskId: workspace?.taskId ?? "task", authoringJobId: null,
+  })
+  const nextCanvasGeneration = canvasGenerationFor(canvasGeneration, workspace?.taskId ?? "task",
+    build ? workspace?.activity?.id : undefined)
+  // WHY：新准备的首个 build 需要首次定位；同批 prefix/final/草稿/运行不能随快照重新定位。
+  if (nextCanvasGeneration !== canvasGeneration) setCanvasGeneration(nextCanvasGeneration)
   const source = build ? undefined : workspace?.draft?.content ?? workspace?.release?.value.content
   const plan = source?.plan
   const steps = source?.steps ?? []
   const step = steps.find((item) => item.stepId === stepId) ?? steps[0]
   const chain = step?.chain
   const presentation = step?.presentation
+  const canvasPresentation = build?.presentation ?? presentation
   const draft = workspace?.draft ?? null
   const release = workspace?.release ?? null
   const selectedExecution = !build && workspace?.execution && executionMatchesSurface(workspace.execution, draft, release)
@@ -35,9 +43,9 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const chainEvents = useMemo(() => step ? eventsForStep(step.stepId, visibleExecutionId, view.eventBatch) : null,
     [step?.stepId, visibleExecutionId, view.eventBatch])
   const selectedNode = (build?.nodes ?? chain?.nodes)?.find((node) => node.id === selectedNodeId) ?? null
-  const selectedStage = presentation?.stages.find((stage) => stage.id === selectedStageId)
-    ?? presentation?.stages.find((stage) => selectedNode && stage.nodeIds.includes(selectedNode.id)) ?? null
-  const focusStage = presentation?.stages.find((stage) => stage.id === focusStageId) ?? null
+  const selectedStage = canvasPresentation?.stages.find((stage) => stage.id === selectedStageId)
+    ?? canvasPresentation?.stages.find((stage) => selectedNode && stage.nodeIds.includes(selectedNode.id)) ?? null
+  const expandedStage = canvasPresentation?.stages.find((stage) => stage.id === expandedStageId) ?? null
   const executionRunning = Boolean(selectedExecution && ["queued", "running", "waiting_for_human", "paused", "cleanup_required"]
     .includes(selectedExecution.status))
 
@@ -46,7 +54,7 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
     else if (step && step.stepId !== stepId) setStepId(step.stepId)
   }, [step?.stepId, stepId])
   useEffect(() => {
-    setFocusStageId(null); setSelectedNodeId(null); setSelectedStageId(null)
+    setExpandedStageId(null); setSelectedNodeId(null); setSelectedStageId(null)
   }, [chain?.id, chain?.version, build?.stepId, build ? workspace?.activity?.id : undefined])
   useEffect(() => {
     if (active && workspace?.activity && (["failed", "interrupted"].includes(workspace.activity.status)
@@ -61,14 +69,24 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const closeContext = () => { setSelectedNodeId(null); setSelectedStageId(null); setContextMode(null) }
 
   return {
-    view, workspace, source, plan, steps, step, chain, displayChain: chain, presentation, draft, release, build,
-    canvasKey: build ? `build:${workspace!.activity!.id}:${build.stepId}` : `${chain?.id}:${chain?.version}`,
-    selectedExecution, acceptedExecutionId, chainEvents, selectedNode, selectedStage, focusStage,
-    runDialogMode, selectedNodeId, selectedStageId, focusStageId,
-    contextMode, executionRunning, activityRunning, setStepId, setRunDialogMode, setFocusStageId,
+    view, workspace, source, plan, steps, step, chain, displayChain: chain, presentation, canvasPresentation, draft, release, build,
+    // WHY：准备批次身份保留到其草稿、复验、发布和运行；build sequence 不参与画布身份。
+    canvasKey: `${nextCanvasGeneration.taskId}:${nextCanvasGeneration.authoringJobId ?? "existing"}:${build?.stepId ?? step?.stepId ?? "chain"}`,
+    selectedExecution, acceptedExecutionId, chainEvents, selectedNode, selectedStage, expandedStage,
+    runDialogMode, selectedNodeId, selectedStageId, expandedStageId,
+    contextMode, executionRunning, activityRunning, setStepId, setRunDialogMode, setExpandedStageId,
     setSelectedStageId, setSelectedNodeId, setContextMode,
     openContext, closeContext,
   }
+}
+
+type CanvasGeneration = { taskId: string; authoringJobId: string | null }
+
+export function canvasGenerationFor(previous: CanvasGeneration, taskId: string, authoringJobId?: string): CanvasGeneration {
+  if (previous.taskId !== taskId || authoringJobId && previous.authoringJobId !== authoringJobId) {
+    return { taskId, authoringJobId: authoringJobId ?? null }
+  }
+  return previous
 }
 
 function useChainPolling(connection: TaskChainConnection, active: boolean) {

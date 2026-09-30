@@ -357,7 +357,7 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
         facts = []
         if element is not None:
             try:
-                facts.append(self.fact('target_state', await read_target_state(element)))
+                facts.append(self.fact('target_state', await read_target_state(element, include_focus=True)))
             except Exception as error:
                 if diagnose:
                     facts.append(self.value_fact('target_observation_diagnostic', target_observation_diagnostic(self.pending['actionId'], 'state', error)))
@@ -365,6 +365,8 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
                  ['visible_overlays'] if name == 'send_keys' else
                  ['media_playback', 'visible_overlays'] if name == 'click' else
                  ['media_playback'] if name == 'wait' else [])
+        if name in ('click', 'send_keys', 'wait'):
+            kinds.append('focused_element')
         for kind in kinds:
             try:
                 page = await self.browser.get_current_page()

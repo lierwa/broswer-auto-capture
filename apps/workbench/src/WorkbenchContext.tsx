@@ -5,7 +5,7 @@ import { parseTaskValue, type JsonValue, type TaskExecution, type TaskExecutionE
 import { ChainInspector } from "./ChainInspector.js"
 import { ValueSchemaForm, initialValue } from "./ValueSchemaForm.js"
 import { ExecutionActions, HistoricalBrowserHandoffActions } from "./ExecutionActions.js"
-import { StatusIcon, ResultValue, executionStatus, cleanupStatus,
+import { ExecutionResultView, StatusIcon, executionStatus, cleanupStatus,
   historicalEventStatus, formatTime } from "./ExecutionPresentation.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 import { preparationActivityLabel, type LiveChainModel } from "./useLiveChain.js"
@@ -18,8 +18,9 @@ export function WorkbenchContext({ model, connection, onRequirementRevision }: {
   const { chain, presentation, selectedStage, selectedNode, chainEvents, contextMode } = model
   const [feedback, setFeedback] = useState("")
   useEffect(() => setFeedback(""), [model.selectedExecution?.id])
-  if (model.build && selectedNode) return <ChainInspector chain={model.build} preparing stage={null}
-    node={selectedNode} batch={null} onClose={model.closeContext} />
+  if (model.build && (selectedNode || selectedStage)) return <ChainInspector chain={model.build}
+    presentation={model.build.presentation} preparing preparationPhase={model.build.phase}
+    stage={selectedStage} node={selectedNode} batch={null} onClose={model.closeContext} />
   if (chain && presentation && (selectedNode || selectedStage)) return <ChainInspector chain={chain}
     presentation={presentation} stage={selectedStage} node={selectedNode} batch={chainEvents}
     onClose={model.closeContext} />
@@ -65,12 +66,9 @@ function ExecutionContext({ model, connection, feedback, setFeedback, onClose, o
       <div className="context-status" data-tone={execution.status}><StatusIcon status={execution.status} />
         <div><strong>{execution.result?.summary ?? executionStatus(execution.status)}</strong>
           <small>{formatTime(execution.updatedAt)}</small></div></div>
-      {execution.result?.payload.mode === "data" && execution.result.payload.output && <section className="context-result"><h4>业务结果</h4>
-        {execution.result.payload.output?.kind === "value"
-          ? <ResultValue value={execution.result.payload.output.value} />
-          : <p>结果已保存为本地产物。</p>}</section>}
-      {execution.result?.failure && <section className="context-alert"><AlertTriangle size={15} />
-        <div><strong>动作未完成</strong><p>{execution.result.failure.reason}</p></div></section>}
+      {/* selectedExecution 已由精确 draft/release surface 过滤；只在这里使用该 surface 的 plan 合同。 */}
+      {execution.result && <section className="context-result"><ExecutionResultView result={execution.result}
+        outputContract={model.plan?.outputContract ?? null} /></section>}
       {["failed", "blocked"].includes(execution.status) && <p>当前没有链路修订入口；本次失败记录已保留。</p>}
       <ExecutionActions execution={execution} connection={connection} />
       {["completed", "partial", "failed", "blocked"].includes(execution.status) && <section className="context-feedback">
@@ -218,15 +216,7 @@ function HistoricalExecutionDetail({ execution, connection, onBack }: {
         : execution.mode === "verification" ? "独立复跑检查" : "正式运行"}</dd>
       {execution.cleanup.status !== "confirmed" && <><dt>资源清理</dt><dd>{cleanupStatus(execution.cleanup.status)}</dd></>}</dl>
     <section className="context-result"><h4>本次结果</h4>
-      {result?.payload.mode === "data" ? result.payload.output?.kind === "value"
-        ? <ResultValue value={result.payload.output.value} />
-        : result.payload.output?.kind === "artifact" ? <p>结果保存为 {result.payload.output.artifact.mediaType} 产物。</p>
-          : <p>本次运行没有返回结构化数据。</p>
-        : result?.payload.mode === "execution" ? <p>完成 {result.payload.completedSteps} / {result.payload.totalSteps} 个步骤；
-          保存 {result.payload.evidence.length} 份证据产物。</p>
-          : <p>{execution.reason}</p>}</section>
-    {result?.failure && <section className="context-alert"><AlertTriangle size={15} /><div>
-      <strong>失败原因</strong><p>{result.failure.reason}</p></div></section>}
+      {result ? <ExecutionResultView result={result} outputContract={null} /> : <p>{execution.reason}</p>}</section>
     {execution.cleanup.status === "unconfirmed" && <section className="context-alert"><AlertTriangle size={15} />
       <div><strong>资源清理尚未确认</strong><p>{execution.cleanup.code ?? "请查看原执行的清理记录。"}</p></div></section>}
     <details className="context-technical"><summary>本次节点事件 · {loading ? "读取中" : events?.events.length ?? 0} 条</summary>

@@ -17,6 +17,8 @@ from pydantic import Field
 from workflow_use.hybrid.evidence import Contract
 
 from browser_use_runner.target_scope import TargetScope
+from browser_use_runner.startup_diagnostics import startup_causes
+from browser_use_runner.attached_startup_budget import AttachedStartupBudget
 
 
 class AttachedLease(Contract):
@@ -73,7 +75,7 @@ def _cleanup_error(stage, error):
 
 
 class AttachedWindow:
-    def __init__(self, profile_path, owner_id, cdp_url=None):
+    def __init__(self, profile_path, owner_id, cdp_url=None, *, diagnostic=None):
         path = Path(profile_path)
         if not path.is_absolute():
             raise ValueError('hybrid_profile_path_absolute_required')
@@ -86,6 +88,16 @@ class AttachedWindow:
         self.transferred = False
         self.creation_attempted = False
         self.cleanup_stage = 'lease_load'
+        self.diagnostic = diagnostic or (lambda _event: None)
+        self.retain_connection, self.last_browser = False, None
+
+    def _startup_event(self, stage, status, error=None):
+        try:
+            self.diagnostic({'phase': 'attached_startup', 'status': status, 'stage': stage,
+                             **({'causes': startup_causes(error)} if error is not None else {})})
+        except Exception:
+            # WHY：诊断不可改变连接、失败传播或资源所有权；仍由原启动与清理路径负责结果。
+            pass
 
     @staticmethod
     def lease_path(profile_path):
@@ -152,12 +164,18 @@ class AttachedWindow:
             raise
 
     async def _prepare_targets(self, client):
-        lease = self._load(self.owner_id)
-        if lease.status == 'starting' and lease.targetId is None:
-            await self._create(lease, client)
-        if lease.targetId not in await self._existing(lease, client):
-            raise ValueError('hybrid_attached_window_target_missing')
-        return lease.ownedTargets
+        self._startup_event('task_target_prepare', 'started')
+        try:
+            lease = self._load(self.owner_id)
+            if lease.status == 'starting' and lease.targetId is None:
+                await self._create(lease, client)
+            if lease.targetId not in await self._existing(lease, client):
+                raise ValueError('hybrid_attached_window_target_missing')
+            self._startup_event('task_target_prepare', 'completed')
+            return lease.ownedTargets
+        except BaseException as error:
+            self._startup_event('task_target_prepare', 'failed', error)
+            raise
 
     async def _existing(self, lease, client):
         response = await client.send.Target.getTargets()
@@ -252,18 +270,33 @@ class AttachedWindow:
         return Browser(browser_profile=profile, cdp_url=lease.cdpUrl, is_local=False,
                        **({'id': lease.sessionId} if lease.sessionId else {}))
 
-    async def start(self, *, resume, allowed_domains):
-        lease = self._load(self.owner_id) if resume else self._reserve()
-        if resume and lease.status != 'handoff':
-            raise ValueError('hybrid_managed_window_resume_unavailable')
+    async def start(self, *, resume, allowed_domains, retain_connection=False):
+        self.retain_connection = retain_connection
+        self._startup_event('reserve', 'started')
+        try:
+            lease = self._load(self.owner_id) if resume else self._reserve()
+            if resume and lease.status != 'handoff':
+                raise ValueError('hybrid_managed_window_resume_unavailable')
+        except BaseException as error:
+            self._startup_event('reserve', 'failed', error)
+            raise
+        self._startup_event('reserve', 'completed')
         self.transferred = resume
         browser = None
+        stage = 'sdk_connect'
+        self._startup_event(stage, 'started')
         try:
             browser = self._browser(lease, allowed_domains)
+            self.last_browser = browser
             # WHY：SDK 已连通但尚未枚举目标时建页/验证，整个执行只使用它的原有 CDP 连接。
-            self.scope = TargetScope(browser, lease.ownedTargets, self._record_owned, self._prepare_targets)
+            self.scope = TargetScope(browser, lease.ownedTargets, self._record_owned, self._prepare_targets,
+                                     prevent_reconnect=retain_connection)
             self.scope.install()
-            await browser.start()
+            with AttachedStartupBudget(browser, lease.cdpUrl):
+                await browser.start()
+            self._startup_event(stage, 'completed')
+            stage = 'task_target_focus'
+            self._startup_event(stage, 'started')
             lease = self._load(self.owner_id)
             await browser.get_or_create_cdp_session(lease.targetId, focus=True)
             self.scope.require_focus()
@@ -271,8 +304,10 @@ class AttachedWindow:
             lease.sessionId, lease.status = browser.id, 'running'
             self._save(lease)
             self.acquired, self.transferred = True, False
+            self._startup_event(stage, 'completed')
             return browser
-        except BaseException:
+        except BaseException as error:
+            self._startup_event(stage, 'failed', error)
             if resume:
                 await self._stop(browser)
             else:
@@ -286,9 +321,40 @@ class AttachedWindow:
                     self.scope.disable_storage_sync()
                 await browser.stop()
         finally:
-            if self.scope is not None:
+            if self.scope is not None and (browser is None or getattr(browser, '_cdp_client_root', None) is None):
                 self.scope.close()
                 self.scope = None
+
+    async def start_connected(self, browser, scope):
+        self.retain_connection, self.last_browser, self.scope = True, browser, scope
+        stage = 'reserve'
+        self._startup_event(stage, 'started')
+        try:
+            lease = self._reserve()
+            self._startup_event(stage, 'completed')
+            stage = 'task_target_prepare'
+            self._startup_event(stage, 'started')
+            scope.begin_operation([], self._record_owned, self._prepare_targets)
+            await self._create(lease, browser.cdp_client)
+            scope.owned.update(lease.ownedTargets)
+            # WHY：autoAttach 可先于 createTarget 回执，先拒绝未知页；保存 owner 后显式再 attach。
+            await browser.cdp_client.send.Target.attachToTarget(params={'targetId': lease.targetId, 'flatten': True})
+            if lease.targetId not in await self._existing(lease, browser.cdp_client):
+                raise ValueError('hybrid_attached_window_target_missing')
+            self._startup_event(stage, 'completed')
+            stage = 'task_target_focus'
+            self._startup_event(stage, 'started')
+            await browser.get_or_create_cdp_session(lease.targetId, focus=True)
+            scope.require_focus()
+            scope.clear_operation_state()
+            lease.sessionId, lease.status = browser.id, 'running'
+            self._save(lease)
+            self._startup_event(stage, 'completed')
+            return browser
+        except BaseException as error:
+            self._startup_event(stage, 'failed', error)
+            await asyncio.shield(self.release(browser))
+            raise
 
     async def handoff(self, browser):
         try:
@@ -318,6 +384,9 @@ class AttachedWindow:
         self.cleanup_stage = 'lease_load'
         lease = self._load(self.owner_id)
         client = browser._cdp_client_root if browser is not None else None
+        if self.creation_attempted and not lease.ownedTargets:
+            # WHY：createTarget 被取消但回执丢失时不能猜目标，更不能把未知新页伪报已清理。
+            raise ValueError('hybrid_attached_window_create_unconfirmed')
         if not self.creation_attempted and not lease.ownedTargets:
             lease.status = 'ended'
             self._save(lease)
@@ -328,7 +397,21 @@ class AttachedWindow:
                 self.scope.prepare_close()
             await self._end_connected(lease, client)
         else:
+            if self.retain_connection:
+                raise ValueError('hybrid_attached_window_connection_lost')
             await self.end(self.owner_id, allow_controlled=True)
+
+    async def release(self, browser):
+        if self.transferred or not self.acquired:
+            return {'stage': 'browser_close', 'status': 'not_required', 'code': None}
+        try:
+            await self._close_owned(browser)
+            if self.retain_connection and self.scope is not None:
+                await self.scope.release_operation()
+        except Exception as error:
+            _cleanup_error(self.cleanup_stage, error)
+            return {'stage': 'browser_close', 'status': 'unconfirmed', 'code': 'cleanup_browser_close_failed'}
+        return {'stage': 'browser_close', 'status': 'confirmed', 'code': None}
 
     async def close(self, browser):
         if self.transferred or not self.acquired:

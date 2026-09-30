@@ -7,11 +7,13 @@ import { hybridVerifiedChildSchema } from "./hybrid-invoke.js"
 import { runnerOwnershipSchema } from "./runner-ownership.js"
 import { hybridAuthorResumeRequestSchema } from "./hybrid-author-human.js"
 import { compilationAckSchema } from "./hybrid-compilation-checkpoint.js"
+import { pythonCleanupResultSchema } from "./cleanup.js"
 
 const id = z.uuid()
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
 export const hybridStartRequestSchema = z.object({ id, type: z.literal("hybrid_start"), config: z.object({
   headless: z.boolean(), profilePath: z.string().min(1),
+  connectionOwnerId: id.optional(),
   allowedOrigins: z.array(z.string().url()).min(1).max(32),
   allowedSites: z.array(z.object({ scheme: z.enum(["http", "https"]), domain: z.string().min(1).max(253),
     port: z.number().int().min(1).max(65_535).nullable(), includeSubdomains: z.boolean() }).strict()).min(1).max(32),
@@ -25,7 +27,9 @@ export const hybridStartRequestSchema = z.object({ id, type: z.literal("hybrid_s
     }, "existing_browser_local_endpoint_required"),
   }).strict().optional(),
 }).strict().refine((value) => !(value.managedWindow && value.existingBrowser),
-  "browser_connection_owner_conflict") }).strict()
+  "browser_connection_owner_conflict").refine(value => !value.connectionOwnerId
+    || Boolean(value.existingBrowser && !value.existingBrowser.resume),
+  "hybrid_attached_window_connection_requires_new_operation") }).strict()
 export const hybridProfileStartRequestSchema = z.object({ id, type: z.literal("profile_start"), config: z.object({
   profilePath: z.string().min(1), headless: z.boolean().default(false), ownerId: id,
 }).strict() }).strict()
@@ -46,6 +50,14 @@ export const hybridCommandSchema = z.discriminatedUnion("name", [
 export const hybridExecuteRequestSchema = z.object({ id, type: z.literal("hybrid_execute"),
   actionRef: z.string().min(1).max(256).optional(), command: hybridCommandSchema }).strict()
 export const hybridObserveRequestSchema = z.object({ id, type: z.literal("hybrid_observe") }).strict()
+export const hybridReleaseRequestSchema = z.object({ id, type: z.literal("hybrid_release"), connectionOwnerId: id }).strict()
+export const hybridReleaseResultSchema = pythonCleanupResultSchema.safeExtend({
+  retainedConnectionOwnerId: id.nullable(),
+}).superRefine((value, context) => {
+  if (!value.closed && value.retainedConnectionOwnerId !== null) {
+    context.addIssue({ code: "custom", message: "unconfirmed resources cannot retain connection" })
+  }
+})
 export const hybridHandoffRequestSchema = z.object({ id, type: z.literal("hybrid_handoff") }).strict()
 export const hybridManagedWindowRequestSchema = z.object({ id, type: z.literal("hybrid_managed_window"),
   action: z.enum(["focus", "inspect", "end", "verify_closed"]), profilePath: z.string().min(1), ownerId: id, leaseId: id }).strict()
@@ -63,6 +75,7 @@ export type HybridRunnerRequest = z.infer<typeof hybridStartRequestSchema> | z.i
   | z.infer<typeof profileOwnerRequestSchema> | z.infer<typeof profileRecoverRequestSchema>
   | z.infer<typeof hybridExecuteRequestSchema>
   | z.infer<typeof hybridObserveRequestSchema> | z.infer<typeof hybridHandoffRequestSchema>
+  | z.infer<typeof hybridReleaseRequestSchema>
   | z.infer<typeof hybridManagedWindowRequestSchema> | z.infer<typeof hybridAuthorRequestSchema> | z.infer<typeof hybridCompileRequestSchema>
   | z.infer<typeof hybridAnnotateRequestSchema>
   | z.infer<typeof hybridAuthorResumeRequestSchema>

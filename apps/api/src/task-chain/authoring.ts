@@ -20,7 +20,7 @@ import { projectPreparationPlan } from "./preparation-plan-projection.js"
 import { reusableHybridSources } from "./hybrid-source-reuse.js"
 import { plannedProgression } from "./authoring-progression.js"
 import { authoringFailureMessage, failureLayer, RequirementClarificationRequired } from "./authoring-failure.js"
-import { createStepChainPresentation } from "./presentation.js"
+import { createChainPresentation, createStepChainPresentation } from "./presentation.js"
 import { AuthoringBuild } from "./authoring-build.js"
 
 export { authoringFailureMessage } from "./authoring-failure.js"
@@ -150,15 +150,25 @@ export class TaskChainAuthoring {
         modelCalls: [...source.result.modelCalls, ...compiled.modelCalls] } })
     }
     const candidates = compiledSources.map(({ step, stepInput, result }) => ({ step, stepInput,
+      sealedPresentation: "presentation" in result ? result.presentation : undefined,
+      sealedChainDigest: "chainDigest" in result ? result.chainDigest : undefined,
       ...createHybridArtifact({ requirement, plan, step, stepInput, request: result.request, response: result.response,
         forkSourceDigest: result.forkSourceDigest, modelCalls: result.modelCalls, model: model.selection.modelId,
         resolveChild: (reference) => this.repository.chain(plan.taskId, reference.id, reference.version, reference.digest),
         version: this.repository.nextChainVersion(plan.taskId, step.chain.id),
         source: { history: result.history, sourceSuccess: true, closed: true } }) }))
     const compiled: TaskChain[] = [], presentations: ChainPresentation[] = [], samples: Record<string, JsonValue> = {}, artifacts: JsonValue[] = []
-    for (const { artifact, chain, step, stepInput } of candidates) {
+    for (const { artifact, chain, step, stepInput, sealedPresentation, sealedChainDigest } of candidates) {
+      if ((sealedPresentation === undefined) !== (sealedChainDigest === undefined)) {
+        throw new Error("hybrid_final_presentation_incomplete")
+      }
+      if (sealedChainDigest && sealedChainDigest !== executableChainDigest(chain)) {
+        throw new Error("hybrid_final_chain_mismatch")
+      }
+      const presentation = sealedPresentation
+        ? createChainPresentation(chain, sealedPresentation) : createStepChainPresentation(chain, step)
       const reference = this.repository.saveArtifact(plan.taskId, job.id, hybridArtifactMediaType, z.json().parse(artifact))
-      presentations.push(createStepChainPresentation(chain, step))
+      presentations.push(presentation)
       compiled.push(chain); samples[chain.stepId] = stepInput
       artifacts.push(z.json().parse({ stepId: chain.stepId, artifact: reference }))
     }
@@ -187,6 +197,7 @@ export class TaskChainAuthoring {
       const allowedOrigins = collectOrigins([plan.entryUrls ?? []])
       if (!allowedOrigins.length) throw new Error("preexecution_entry_unresolved")
       await this.upstream.withAuthoring!({ selection: model.selection, signal, ownerId: job.browserRunId,
+      connectionOwnerId: job.taskId,
       allowedOrigins,
       onHumanWait: (wait, resume) => this.waitForHuman(job, wait, resume, signal),
       onProgress: (event) => this.recordProgress(job, event) }, async (session) => {

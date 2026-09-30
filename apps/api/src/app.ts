@@ -30,6 +30,7 @@ export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?
   developmentIdentity?: { pid: number; root: string; stop?: () => void } }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
+  let upstream: UpstreamBrowserRuntime | undefined
   try { await importLegacy(store, options.directory); store.recoverInterrupted() }
   catch (error) { await store.close(); throw error }
   let ai: AI
@@ -48,7 +49,7 @@ export async function createApplication(options: AppOptions) {
   catch (error) { ai.close(); await store.close(); throw error }
   let taskChain: TaskChainService
   try {
-    const upstream = options.upstreamBrowserRuntime ?? new PythonUpstreamBrowserRuntime({ root: options.root,
+    upstream = options.upstreamBrowserRuntime ?? new PythonUpstreamBrowserRuntime({ root: options.root,
       directory: options.directory, subject: ai.forSubject(SHARED_AI_SUBJECT) })
     taskChain = new TaskChainService(store, browser, aiModel, upstream, options.taskChainCapabilities)
   }
@@ -75,7 +76,14 @@ export async function createApplication(options: AppOptions) {
   })
   routes(app, coordinator, browser, browserProfile, taskChain, deletion, store, ai, options.developmentIdentity)
   await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
-  app.addHook("preClose", async () => { await browserProfile.shutdown(); await taskChain.close(); await browser.close(); await coordinator.close() })
+  app.addHook("preClose", async () => {
+    await browserProfile.shutdown(); await taskChain.close()
+    let report: { status: string } | undefined
+    // WHY：父连接清理异常也不能跳过其它既有资源的退出；失败结论最后保留给服务 owner。
+    try { report = await upstream?.close?.() }
+    finally { await browser.close(); await coordinator.close() }
+    if (report?.status === "unconfirmed") throw new Error("hybrid_task_connection_cleanup_required")
+  })
   app.addHook("onClose", async () => { ai.close(); await store.close() })
   try {
     if (options.serveUi) {

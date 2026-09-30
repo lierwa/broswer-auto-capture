@@ -248,6 +248,7 @@ export class TaskRuntimeHost {
         || !node.capability.name.startsWith("browser.") || node.capability.name === "browser.read-fields"
         || z.object({ actionName: z.literal("navigate") }).passthrough().safeParse(node.config).success))
       return this.upstream.withCapabilities<T>({ signal: input.signal, ownerId: input.browserRunId,
+        connectionOwnerId: input.taskId, closeAfterOperation: input.purpose === "replay",
         allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation,
         ...(input.browser ? { headless: input.browser.headless } : {}),
         ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}),

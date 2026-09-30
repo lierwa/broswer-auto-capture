@@ -20,6 +20,7 @@ import {
 } from "@agent-platform/ai-connect-react/chat";
 import { currentDraft, type InterviewMessage, type InterviewState, type SourceResolution } from "./interviewContract.js";
 import { projectInterviewSearchActivity, projectInterviewSearchEntries } from "./interviewSearchTimeline.js";
+import { InterviewTurnFailure } from "./InterviewTurnFailure.js";
 
 type TimelineSubmit = Parameters<InteractiveTimelineProps["commands"]["submit"]>[0];
 type QuestionSurface = NonNullable<InteractiveTimelineValue["presentedSurface"]>;
@@ -160,6 +161,10 @@ function assistantContentEntries(
 ): ConversationEntry<InteractiveTimelineItem>[] {
   if (message.role !== "assistant") return [];
   const content: Array<{ id: string; node: ReactNode }> = [];
+  if (message.status === "failed") content.push({ id: "failure", node: (
+    <InterviewTurnFailure latest={index === input.state.messages.length - 1}
+      blocked={input.blocked} onRetry={input.onRetry} />
+  ) });
   if (message.draftVersion) content.push({ id: "artifacts", node: (
     <TurnArtifacts item={message} state={input.state} onDraft={input.onDraft} />
   ) });

@@ -1,6 +1,9 @@
 import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
-import type { JsonValue, TaskAuthoringJob, TaskPlan, TaskPlanStep, TaskRequirement } from "@browser-capture/contracts"
+import type {
+  ChainPresentationContent, JsonValue, TaskAuthoringJob, TaskChain, TaskPlan, TaskPlanStep, TaskRequirement,
+} from "@browser-capture/contracts"
+import { executableChainDigest } from "@browser-capture/runtime"
 import { assertNaturalSourceIdentity } from "../upstream-browser/hybrid-artifact.js"
 import { naturalSourceContext, validateHybridRequestSources } from "../upstream-browser/hybrid-natural-payload.js"
 import { validateHybridPrefixResponse } from "../upstream-browser/hybrid-prefix-schema.js"
@@ -11,14 +14,17 @@ import { parseCompilationCheckpoint, type CompilationCheckpoint } from "../upstr
 import type { HybridSourceResult } from "../upstream-browser/hybrid-captured-source.js"
 import type { TaskContractRepository } from "./repository.js"
 import { RequirementClarificationRequired } from "./authoring-failure.js"
+import { createPreparationPresentation, createStepChainPresentation } from "./presentation.js"
 
 type Context = { repository: TaskContractRepository; job: TaskAuthoringJob; plan: TaskPlan;
-  requirement: TaskRequirement; step: TaskPlanStep; input: JsonValue; model: string; signal: AbortSignal }
+  requirement: TaskRequirement; step: TaskPlanStep; input: JsonValue; model: string; signal: AbortSignal;
+  preparationPresentation?: typeof createPreparationPresentation }
 
 /** One step owns the current snapshot. A next step starts only after finish() retained its result. */
 export class AuthoringBuild {
   private identity: string | undefined
-  private finished: { canonicalRequest: string; response: ReturnType<typeof validateHybridResponse> } | undefined
+  private finished: { canonicalRequest: string; response: ReturnType<typeof validateHybridResponse>;
+    presentation: ChainPresentationContent; chainDigest: string } | undefined
   constructor(private readonly context: Context) {}
 
   async accept(event: CompilationCheckpoint, signal: AbortSignal) {
@@ -46,7 +52,7 @@ export class AuthoringBuild {
         .map(gap => ({ code: gap.reason, clauseRefs: gap.clauseRefs }))
       if (ambiguities.length) throw new RequirementClarificationRequired(ambiguities)
       const materialize = { response: payload.response, request: source.request, plan, step, model }
-      let graph
+      let graph, finalChain: TaskChain | undefined
       if (payload.phase === "prefix") graph = await materializeHybridPrefix(materialize, signal)
       else {
         if (!source.ordinary.trace.completed) throw new Error("hybrid_completed_source_required")
@@ -55,15 +61,22 @@ export class AuthoringBuild {
           version: repository.nextChainVersion(plan.taskId, step.chain.id),
           resolveChild: reference => repository.chain(plan.taskId, reference.id, reference.version, reference.digest) })
         if (!("nodeModel" in chain) || chain.nodeModel !== "stable/v2") throw new Error("hybrid_compilation_node_model_invalid")
+        finalChain = chain
         graph = { nodes: chain.nodes, edges: chain.edges }
       }
+      const presentation = payload.phase === "prefix"
+        ? preparationPresentation(this.context.preparationPresentation ?? createPreparationPresentation,
+          { step, nodes: graph.nodes, edges: graph.edges, ...(previous?.presentation
+            ? { previous: previous.presentation } : {}) })
+        : chainPresentationContent(createStepChainPresentation(finalChain!, step))
       // WHY：异步校验后重新读取活动事实；不可用开始校验时的旧 job 覆盖取消/人工等待。
       const current = this.active(signal)
       if (!isDeepStrictEqual(current.authoring!.build, job.authoring?.build)) {
         throw new Error("hybrid_compilation_snapshot_changed")
       }
       const build = { authorRequestId: event.id, stepId: step.id, sequence: event.sequence,
-        digest: event.digest, phase: payload.phase, payload: event.payload, ...graph }
+        digest: event.digest, phase: payload.phase, payload: event.payload, ...graph,
+        ...(presentation ? { presentation } : {}) }
       current.authoring!.build = build
       current.authoring!.stage = payload.phase === "final" ? "compiling" : "exploring"
       current.authoring!.level = payload.phase === "final" ? "E1" : "E0"
@@ -79,7 +92,8 @@ export class AuthoringBuild {
       Object.assign(job, current)
       this.identity = event.id
       if (payload.phase === "final") this.finished = { canonicalRequest: payload.canonicalRequest,
-        response: validateHybridResponse(payload.response) }
+        response: validateHybridResponse(payload.response), presentation: structuredClone(presentation!),
+        chainDigest: executableChainDigest(finalChain!) }
     } catch (error) {
       // 合法 raw 回执留在受控 artifact；绝不以非法包覆盖上一份有效节点。
       const reason = error instanceof Error && /^(hybrid_|selection_function_|function_)[a-z_0-9]+$/.test(error.message)
@@ -97,7 +111,8 @@ export class AuthoringBuild {
     if (!this.finished || this.finished.canonicalRequest !== source.canonicalRequest || source.sourceGaps.length) {
       throw new Error("hybrid_online_final_compilation_required")
     }
-    return { response: this.finished.response, forkSourceDigest: source.forkSourceDigest, modelCalls: [] }
+    return { response: this.finished.response, forkSourceDigest: source.forkSourceDigest, modelCalls: [],
+      presentation: structuredClone(this.finished.presentation), chainDigest: this.finished.chainDigest }
   }
 
   private previous(event: CompilationCheckpoint) {
@@ -126,6 +141,18 @@ export class AuthoringBuild {
     }
     return current
   }
+}
+
+function preparationPresentation(project: typeof createPreparationPresentation,
+  input: Parameters<typeof createPreparationPresentation>[0]) {
+  // WHY：presentation 只解释已合法的编译事实；展示投影异常不能反向拒绝 prefix 或中断原 ACK。
+  try { return project(input) }
+  catch { return undefined }
+}
+
+function chainPresentationContent(presentation: ReturnType<typeof createStepChainPresentation>) {
+  return { stages: presentation.stages, overviewLayout: presentation.overviewLayout,
+    focusLayouts: presentation.focusLayouts }
 }
 
 function saveBuildRecord<T>(write: () => T): T {

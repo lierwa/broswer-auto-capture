@@ -33,11 +33,12 @@ from browser_use_runner.read_error_codes import (
     READ_STAGE_NOTES, SAFE_READ_FAILURE_CODES, read_stage_code, safe_runtime_error_code,
 )
 from browser_use_runner.attached_window import AttachedWindow
+from browser_use_runner.connected_task_scope import ConnectedTaskScope
 from browser_use_runner.profile_owner import current_profile_owner, recover_profile_owner
 from browser_use_runner.hybrid_commands import (
     AllowedSite, StartConfig, ProfileStartConfig, StepCommand, ReadCommand, TargetReadinessCommand,
     ReadScope, COMMAND, Envelope, StartRequest, ProfileStartRequest, ProfileOwnerRequest, ProfileRecoverRequest,
-    ExecuteRequest, ObserveRequest, HandoffRequest, ManagedWindowRequest, CloseRequest,
+    ExecuteRequest, ObserveRequest, HandoffRequest, ManagedWindowRequest, CloseRequest, ReleaseRequest,
     AuthorModel, AuthorRequest, AuthorResumeRequest, CompileRequest, REQUEST,
 )
 
@@ -95,11 +96,22 @@ class Runner:
         self.author_request_id = None
         self.publish_human_wait = None
         self.publish_compilation, self.compilation = None, None
+        self.connection = None
+
+    def validate_release(self, raw):
+        request = REQUEST.validate_json(json.dumps(raw, allow_nan=False))
+        if not isinstance(request, ReleaseRequest) or self.connection is None:
+            raise ValueError('hybrid_attached_window_connection_not_started')
+        self.connection.require_owner(request.connectionOwnerId)
 
     async def handle(self, raw):
         request = REQUEST.validate_json(json.dumps(raw, allow_nan=False))
         if isinstance(request, StartRequest):
             return await self.start(request.config.model_dump())
+        if isinstance(request, ReleaseRequest):
+            if self.connection is None:
+                raise ValueError('hybrid_attached_window_connection_not_started')
+            return await self.connection.release(self, request.connectionOwnerId)
         if isinstance(request, ProfileStartRequest):
             return await self.start_profile(request.config.model_dump())
         if isinstance(request, (ProfileOwnerRequest, ProfileRecoverRequest)):
@@ -192,13 +204,20 @@ class Runner:
         # WHY：browser-use 复用公开 URL glob 在派发前拦截；本运行器仍在动作前后独立核验结构化站点边界。
         domains = allowed_domain_patterns(self.allowed_sites)
         window_config = config.existingBrowser or config.managedWindow
-        if window_config is not None:
+        if config.connectionOwnerId is not None or self.connection is not None:
+            if config.connectionOwnerId is None:
+                raise ValueError('hybrid_attached_window_connection_owner_required')
+            if self.connection is None:
+                self.connection = ConnectedTaskScope(config)
+            self.managed_window, self.browser = await self.connection.start(config, domains, self.diagnostic)
+        elif window_config is not None:
             if config.headless:
                 raise ValueError('hybrid_managed_window_requires_visible')
             attached = config.existingBrowser is not None or (window_config.resume
                        and AttachedWindow.has_lease(self.profile_path, window_config.ownerId))
             self.managed_window = (AttachedWindow(self.profile_path, window_config.ownerId,
-                                   config.existingBrowser.cdpUrl if config.existingBrowser else None)
+                                   config.existingBrowser.cdpUrl if config.existingBrowser else None,
+                                   diagnostic=self.diagnostic)
                                    if attached else ManagedWindow(self.profile_path, window_config.ownerId))
             self.browser = await self.managed_window.start(resume=window_config.resume, allowed_domains=domains)
         else:
@@ -234,6 +253,12 @@ class Runner:
         return {'mode': 'profile/v1', 'modelCalls': 0}
 
     def record_document_response(self, event, _session_id):
+        if self.connection is not None and (self.browser is None or self.managed_window is None):
+            return
+        if isinstance(self.managed_window, AttachedWindow):
+            manager, scope = self.browser.session_manager, self.managed_window.scope
+            if manager is None or scope is None or manager.get_target_id_from_session_id(_session_id) not in scope.owned:
+                return
         response = event.get('response') if event.get('type') == 'Document' else None
         if not isinstance(response, dict) or not isinstance(response.get('url'), str):
             return
@@ -254,6 +279,8 @@ class Runner:
     async def execute(self, raw, *, action_ref=None):
         if self.browser is None:
             raise ValueError('hybrid_session_not_started')
+        if self.connection is not None:
+            self.connection.scope.ensure_connection()
         command = COMMAND.validate_python(raw)
         if isinstance(command, StepCommand) and command.actionName == 'navigate':
             if not allowed_url(command.args.get('url', ''), self.allowed_sites):
@@ -341,6 +368,8 @@ class Runner:
     async def observe(self):
         if self.browser is None:
             raise ValueError('hybrid_session_not_started')
+        if self.connection is not None:
+            self.connection.scope.ensure_connection()
         for attempt in range(4):
             try:
                 return await self._observe_once()
@@ -395,6 +424,8 @@ class Runner:
         return await self.close()
 
     async def _close(self):
+        if self.connection is not None:
+            return await self.connection.close(self)
         stages = []
         capability, browser = self.capability, self.browser
         try:

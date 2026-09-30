@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 from workflow_use.hybrid.capability import OrdinaryCapability
 from workflow_use.hybrid.causal import waits_owned_by_next_target
-from workflow_use.hybrid.evidence import EvidenceRef, digest
+from workflow_use.hybrid.evidence import ActionCoverage, EvidenceRef, digest
+from workflow_use.hybrid.coverage import validate_coverage
 from workflow_use.hybrid.natural_compile import consumer_readiness_by_action, natural_postconditions
 from workflow_use.hybrid.natural_reads import compile_verified_read
 from workflow_use.hybrid.postconditions import (
@@ -170,7 +171,8 @@ class CompilerReadinessTests(unittest.TestCase):
         wait = SimpleNamespace(
             id='a-wait', name='wait', status='succeeded', effect='none', args={'seconds': 2},
             resultRef=REF, preObservationRef='o-before', postObservationRef='o-after')
-        click = SimpleNamespace(id='a-click', name='click', status='succeeded', effect='external_write')
+        click = SimpleNamespace(id='a-click', name='click', status='succeeded', effect='external_write',
+                                postObservationRef='o-after')
         observations = [observation('o-before', 0, 'https://example.test/issues'),
                         observation('o-after', 1, 'https://example.test/issues')]
         request = SimpleNamespace(trace=SimpleNamespace(actions=[wait, click], observations=observations))
@@ -185,6 +187,29 @@ class CompilerReadinessTests(unittest.TestCase):
         self.assertEqual(supported['a-wait'].exclusionRule,
                          'fixed_wait_before_bounded_target_resolution/v1')
         self.assertTrue(owner['proofRefs'])
+
+        ledger = [supported['a-wait'], ActionCoverage(actionRef=click.id,
+            disposition='compiled', ownerSegmentId=owner['id'], evidenceRefs=[REF])]
+        self.assertEqual(validate_coverage(request.trace, ledger, {owner['id']},
+            registry=registry, compiled_segments=[owner]), [])
+
+        for mutation in ('owner', 'boundary', 'evidence', 'target', 'effect'):
+            with self.subTest(mutation=mutation):
+                changed_trace, changed_ledger, changed_owner = (
+                    deepcopy(request.trace), deepcopy(ledger), deepcopy(owner))
+                if mutation == 'owner':
+                    changed_ledger[0].ownerSegmentId = 's-other'
+                elif mutation == 'boundary':
+                    changed_trace.observations[-1].url += '/different'
+                elif mutation == 'evidence':
+                    changed_ledger[0].evidenceRefs = []
+                elif mutation == 'target':
+                    changed_owner['target'] = None
+                else:
+                    changed_trace.actions[0].effect = 'external_write'
+                self.assertTrue(validate_coverage(changed_trace, changed_ledger,
+                    {owner['id'], 's-other'}, registry=registry,
+                    compiled_segments=[changed_owner]))
 
 
 class RuntimeReadinessTests(unittest.IsolatedAsyncioTestCase):

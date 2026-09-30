@@ -2,6 +2,8 @@ import type {
   ChainPresentation, ChainStage, TaskChain, TaskExecutionEvent, TaskExecutionEventBatch,
 } from "@browser-capture/contracts"
 
+type StagePresentation = Pick<ChainPresentation, "stages">
+
 export type ChainRunTone = "idle" | "queued" | "running" | "success" | "waiting" | "failure" | "skipped" | "ended"
 export type ProjectedChainEdge = { id: string; source: string; target: string; port: string; tone: ChainRunTone }
 
@@ -47,7 +49,7 @@ function stageExitEvent(stage: ChainStage, batch: TaskExecutionEventBatch | null
     && exit.sourcePort === latest.event.outcome) ? latest : null
 }
 
-export function overviewChainEdges(chain: TaskChain, presentation: ChainPresentation,
+export function overviewChainEdges(chain: TaskChain, presentation: StagePresentation,
   batch: TaskExecutionEventBatch | null): ProjectedChainEdge[] {
   const stageByNode = new Map(presentation.stages.flatMap((stage) => stage.nodeIds.map((nodeId) => [nodeId, stage.id] as const)))
   const entryStage = stageByNode.get(chain.entry), edges: ProjectedChainEdge[] = []
@@ -61,43 +63,6 @@ export function overviewChainEdges(chain: TaskChain, presentation: ChainPresenta
       tone: targetEdgeTone(edge.from, edge.to, port, batch) })
   }
   return collapseOverviewEdges(edges)
-}
-
-/** WHY：折叠阶段和展开动作只是同一执行图的可见身份映射；边仍来自原 TaskChain，不能另造子图控制流。 */
-export function visibleChainEdges(chain: TaskChain, presentation: ChainPresentation, expanded: ChainStage | null,
-  batch: TaskExecutionEventBatch | null): ProjectedChainEdge[] {
-  const visibleByNode = new Map(presentation.stages.flatMap((stage) => stage.nodeIds.map((nodeId) => [nodeId,
-    stage.nodeIds.length === 1 || stage.id === expanded?.id ? nodeId : stage.id] as const)))
-  const entry = visibleByNode.get(chain.entry), edges: ProjectedChainEdge[] = []
-  if (entry) edges.push({ id: `visible:start:${entry}`, source: "__start", target: entry,
-    port: "", tone: targetEdgeTone(null, chain.entry, "start", batch) })
-  for (const edge of chain.edges) {
-    const source = visibleByNode.get(edge.from)
-    if (!source) continue
-    const target = visibleByNode.get(edge.to) ?? terminalCanvasId(edge.to)
-    if (source === target) continue
-    const port = "port" in edge ? edge.port : edge.outcome
-    edges.push({ id: `visible:${edge.from}:${port}:${edge.to}`, source, target, port,
-      tone: targetEdgeTone(edge.from, edge.to, port, batch) })
-  }
-  return collapseOverviewEdges(edges)
-}
-
-export function focusChainEdges(chain: TaskChain, stage: ChainStage,
-  batch: TaskExecutionEventBatch | null): ProjectedChainEdge[] {
-  const nodeIds = new Set(stage.nodeIds), edges: ProjectedChainEdge[] = [{ id: `focus:entry:${stage.id}`,
-    source: "__stage_entry", target: stage.entryNodeId, port: "",
-    tone: targetEdgeTone(null, stage.entryNodeId, "entry", batch) }]
-  for (const edge of chain.edges) {
-    if (!nodeIds.has(edge.from)) continue
-    const port = "port" in edge ? edge.port : edge.outcome
-    const exit = stage.exits.find((item) => item.sourceNodeId === edge.from && item.sourcePort === port)
-    if (nodeIds.has(edge.to)) edges.push({ id: `focus:${edge.from}:${port}:${edge.to}`, source: edge.from,
-      target: edge.to, port, tone: targetEdgeTone(edge.from, edge.to, port, batch) })
-    else if (exit) edges.push({ id: `focus:${edge.from}:${port}:${exit.id}`, source: edge.from,
-      target: `__stage_exit:${exit.id}`, port, tone: targetEdgeTone(edge.from, edge.to, port, batch) })
-  }
-  return uniqueEdges(edges)
 }
 
 export function terminalCanvasId(nodeId: string) { return `__end:${nodeId}` }
@@ -151,8 +116,4 @@ function strongestTone(tones: ChainRunTone[]) {
 
 function inactiveTone(batch: TaskExecutionEventBatch | null): ChainRunTone {
   return batch && ["paused", "waiting_for_human"].includes(batch.status) ? "waiting" : "ended"
-}
-
-function uniqueEdges(edges: ProjectedChainEdge[]) {
-  return edges.filter((edge, index) => edges.findIndex((candidate) => candidate.id === edge.id) === index)
 }

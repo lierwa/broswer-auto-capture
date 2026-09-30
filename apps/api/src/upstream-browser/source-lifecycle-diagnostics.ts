@@ -4,13 +4,14 @@ import type { AuthoringProgressEvent } from "@browser-capture/contracts"
 import type { ModelCallReport } from "@browser-capture/runtime"
 import { z } from "zod"
 import { authorResultIssues } from "./author-result-diagnostics.js"
-import { runnerCleanupCodeSchema, type RunnerCleanupReport, type RuntimePrimaryOutcome } from "./cleanup.js"
+import { runnerCleanupCodeSchema, retainedConnectionSchema, type RunnerCleanupReport, type RuntimePrimaryOutcome } from "./cleanup.js"
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
 const targetStateSchema = z.object({
   "aria-expanded": z.boolean().optional(), "aria-checked": z.boolean().optional(),
   "aria-selected": z.boolean().optional(), "aria-disabled": z.boolean().optional(),
   checked: z.boolean().optional(), selected: z.boolean().optional(), disabled: z.boolean().optional(),
+  focused: z.boolean().optional(),
 }).strict()
 const pageIdentitySchema = z.object({ sessionDigest: hashSchema, targetDigest: hashSchema,
   documentDigest: hashSchema, urlDigest: hashSchema }).strict()
@@ -18,7 +19,7 @@ const validationTargetSchema = z.object({ sessionDigest: hashSchema, targetDiges
   documentDigest: hashSchema, backendDigest: hashSchema }).strict()
 const runtimeCheckSchema = z.object({
   kind: z.enum(["url", "url_digest", "title", "target_value", "target_text", "target_state",
-    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "read_fields"]),
+    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "focused_element", "read_fields"]),
   attempts: z.number().int().min(1).max(100), expected: targetStateSchema.optional(), actual: targetStateSchema.optional(),
 }).strict().superRefine((value, context) => {
   const values = value.expected !== undefined || value.actual !== undefined
@@ -40,6 +41,25 @@ const runtimeActionFailureSchema = z.object({ phase: z.literal("runtime_action_f
     targetRef: z.string().regex(/^n-[0-9]{1,12}$/).nullable(),
   }).strict().nullable(),
 }).strict()
+
+const attachedStartupSchema = z.object({
+  phase: z.literal("attached_startup"), status: z.enum(["started", "completed", "failed"]),
+  stage: z.enum(["reserve", "sdk_connect", "task_target_prepare", "task_target_focus"]),
+  causes: z.array(z.object({
+    errorKind: z.enum(["timeout_error", "os_error", "runtime_error", "value_error", "cancelled_error", "other_error"]),
+    code: z.enum(["external_error", "hybrid_attached_window_endpoint_invalid", "hybrid_attached_window_endpoint_required",
+      "hybrid_attached_window_lease_missing", "hybrid_attached_window_owner_mismatch", "hybrid_attached_window_profile_changed",
+      "hybrid_attached_window_endpoint_changed", "hybrid_attached_window_busy", "hybrid_attached_window_target_missing",
+      "hybrid_attached_window_sdk_mismatch", "hybrid_attached_window_scope_busy", "hybrid_attached_window_cdp_unavailable",
+      "hybrid_attached_window_storage_state_disallowed", "hybrid_managed_window_resume_unavailable"]),
+    locations: z.array(z.object({ source: z.enum(["bat_attached_window", "bat_target_scope", "sdk_browser_session",
+      "sdk_session_manager", "sdk_cdp_client"]), line: z.number().int().min(1).max(1000000) }).strict()).max(3),
+  }).strict()).min(1).max(4).optional(),
+}).strict().superRefine((event, context) => {
+  if ((event.status === "failed") !== (event.causes !== undefined)) {
+    context.addIssue({ code: "custom", message: "startup causes belong only to failed stages" })
+  }
+})
 
 const actionNameSchema = z.enum([
   "bat_inspect_dom", "bat_read_fields", "bat_request_human", "bat_scroll_to", "bat_summarize", "bat_validate_selection", "bat_wait_for", "click", "close", "done",
@@ -123,7 +143,8 @@ const runtimeOutcomeSchema = z.object({ phase: z.literal("runtime_outcome"), sta
     category: z.enum(["none", "runner_protocol", "source_contract", "model", "browser", "runtime", "unknown"]),
     code: z.string().regex(/^[a-z][a-z0-9_]{1,120}$/).nullable() }).strict(),
   cleanup: z.object({ status: z.enum(["confirmed", "unconfirmed"]), code: runnerCleanupCodeSchema.nullable(),
-    evidenceDigest: hashSchema, activeResources: z.boolean().nullable() }).strict().nullable(),
+    evidenceDigest: hashSchema, activeResources: z.boolean().nullable(),
+    retainedConnection: retainedConnectionSchema.optional() }).strict().nullable(),
   bridge: z.object({ status: z.enum(["completed", "failed"]), code: z.string().regex(/^[a-z][a-z0-9_]{1,120}$/).nullable() }).strict(),
 }).strict()
 export type SourceLifecycleProgress = Omit<AuthoringProgressEvent, "sequence">
@@ -174,6 +195,12 @@ export class SourceLifecycleDiagnostics {
         this.append({ source: "python", ...runtime.data }, new Date().toISOString())
         return
       }
+      const startup = attachedStartupSchema.safeParse(raw)
+      if (startup.success) {
+        // WHY：连接阶段与链路节点结果分离；只持久化固定码和可信源码位置，不公开 SDK 消息。
+        this.append({ source: "python", ...startup.data }, new Date().toISOString())
+        return
+      }
       const event = pythonEventSchema.parse(raw)
       if (event.phase === "before_action_detail" || event.phase === "author_transport") {
         // WHY：固定故障阶段只属于本地 owner 诊断，不改变用户进度合同或暴露页面值。
@@ -202,7 +229,8 @@ export class SourceLifecycleDiagnostics {
       status: primary.status === "failed" || cleanup?.status === "unconfirmed" || bridgeFailure ? "failed" : "completed",
       primary: { status: primary.status, ...failure },
       cleanup: cleanup ? { status: cleanup.status, code: cleanup.code,
-        evidenceDigest: cleanup.evidenceDigest, activeResources: cleanup.activeResources } : null,
+        evidenceDigest: cleanup.evidenceDigest, activeResources: cleanup.activeResources,
+        ...(cleanup.retainedConnection ? { retainedConnection: cleanup.retainedConnection } : {}) } : null,
       bridge: bridgeFailure ? { status: "failed", code: safeRuntimeCode(bridgeFailure) }
         : { status: "completed", code: null } })
     if (event.success) this.append({ source: "host", ...event.data }, new Date().toISOString())

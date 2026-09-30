@@ -1,6 +1,7 @@
 """Coverage is checked independently from classification so a classifier cannot hide an action."""
 
 import re
+from types import SimpleNamespace
 
 from .action_dispatch import NOT_DISPATCHED_RULE, not_dispatched_coverage
 from .dom_evidence import DomQueryEvidence
@@ -269,10 +270,11 @@ def native_dom_lookup_exclusion(registry, action, pre, post, row, consumed_query
 
 
 def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segment_ids: set[str], *, registry=None,
-                      result_spec=None, output_schema=None, consumed_query_ids=None):
+                      result_spec=None, output_schema=None, consumed_query_ids=None, compiled_segments=()):
     issues = []
     actions = {action.id: action for action in trace.actions}
     observations = {observation.id: observation for observation in trace.observations}
+    fixed_waits = _fixed_target_waits(trace, registry, compiled_segments)
     seen = set()
     for row in ledger:
         action = actions.get(row.actionRef)
@@ -322,7 +324,8 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
                 issues.append(gap('incomplete_action_coverage', [action.id], 'invalid_exclusion', 'reject_trace'))
         if row.disposition == 'supporting':
             from .natural_repeat import validate_repeat_coverage
-            if (not validate_repeat_coverage(trace, row) and (action.name != 'wait' or action.effect != 'none' or action.status != 'succeeded'
+            fixed_target_wait = fixed_waits.get(row.actionRef) == row
+            if (not validate_repeat_coverage(trace, row) and not fixed_target_wait and (action.name != 'wait' or action.effect != 'none' or action.status != 'succeeded'
                     or row.exclusionRule not in ('unchanged_wait_after_proven_effect/v1', 'bounded_postcondition_wait/v1')
                     or not row.evidenceRefs)):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'unproven_supporting_action', 'reject_trace'))
@@ -337,6 +340,15 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
     for action_id in actions.keys() - seen:
         issues.append(gap('incomplete_action_coverage', [action_id], 'unassigned_action', 'reject_trace'))
     return sorted(issues, key=lambda item: item.id)
+
+
+def _fixed_target_waits(trace, registry, segments):
+    if registry is None or not segments:
+        return {}
+    from .causal import waits_owned_by_next_target
+    # WHY：复用同一来源证明，不仅凭规则名放行；独立校验不可改变已编译 proofRefs。
+    owners = [{**segment, 'proofRefs': list(segment.get('proofRefs', []))} for segment in segments]
+    return waits_owned_by_next_target(SimpleNamespace(trace=trace), registry, owners)
 
 
 def failed_bat_field_read_probe(registry, action, row):

@@ -89,10 +89,13 @@
   --color-background: var(--bac-sand-2);
 }
 
-/* WHY：即使共享 Composer 外框样式未加载，键盘焦点也必须保持可见。 */
+/* WHY：焦点只由共享 Composer 外框表达，textarea 内框会被裁切成底部多余横线。 */
 .ai-connect [data-interactive-timeline-composer-textarea]:focus-visible {
-  outline: 2px solid var(--bac-amber-8);
-  outline-offset: -2px;
+  outline: none;
+}
+.ai-connect [data-interactive-timeline-composer-shell]:has([data-interactive-timeline-composer-textarea]:focus-visible) {
+  border-color: var(--bac-amber-8);
+  box-shadow: 0 0 0 1px var(--bac-amber-8);
 }
 
 .ai-connect[data-ai-connect-dialog-overlay="true"] {

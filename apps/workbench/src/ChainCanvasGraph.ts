@@ -1,96 +1,144 @@
 import { MarkerType, type Edge } from "@xyflow/react"
 import type { ChainPresentation, ChainStage, TaskChain, TaskExecutionEventBatch, TaskWorkspaceSnapshot } from "@browser-capture/contracts"
-import type { ActionCanvasNode, StageCanvasNode, TerminalCanvasNode } from "./ChainCanvasNodes.js"
+import { toneLabel, type StageCanvasNode, type StageRouteRow, type TerminalCanvasNode } from "./ChainCanvasNodes.js"
 import { actionPresentation, terminalPresentation } from "./chainNodePresentation.js"
-import { edgePortLabel, nodeRunTone, stageRunTone, visibleChainEdges,
+import { edgePortLabel, nodeRunTone, overviewChainEdges, stageRunTone,
   terminalCanvasId, type ChainRunTone, type ProjectedChainEdge } from "./chainWorkbenchProjection.js"
 import { layoutChainGraph, type ChainLayoutDirection } from "./chainLayout.js"
 
-type FlowNode = StageCanvasNode | ActionCanvasNode | TerminalCanvasNode
+type FlowNode = StageCanvasNode | TerminalCanvasNode
+type Build = NonNullable<NonNullable<TaskWorkspaceSnapshot["activity"]>["build"]>
+type Presentation = Pick<ChainPresentation, "stages" | "overviewLayout" | "focusLayouts">
+type GraphNode = TaskChain["nodes"][number] | Build["nodes"][number]
+type GraphEdge = TaskChain["edges"][number] | Build["edges"][number]
 
 /** WHY：生成片段只有已校验节点和真实边，没有伪入口、终点或 TaskRun 成功态。 */
-export function buildPreparationGraph(build: NonNullable<NonNullable<TaskWorkspaceSnapshot["activity"]>["build"]>,
-  onInspect: (id: string) => void) {
-  const nodes: ActionCanvasNode[] = build.nodes.map(node => ({ id: node.id, type: "chain-action",
-    position: { x: 0, y: 0 }, width: 240, height: 112,
-    data: { title: actionPresentation(node).title, tone: "idle", direction: "LR", onInspect } }))
-  const edges = build.edges.map(edge => flowEdge({ id: `${edge.from}:${edge.port}:${edge.to}`,
-    source: edge.from, target: edge.to, port: edge.port, tone: "idle" }))
-  return { nodes: layoutChainGraph(nodes, edges, "LR"), edges }
-}
-
-export function buildCanvasGraph(chain: TaskChain, presentation: ChainPresentation, focus: ChainStage | null,
-  batch: TaskExecutionEventBatch | null, onEnter: (id: string) => void, onInspect: (id: string) => void) {
+export function buildPreparationGraph(build: Build, onInspect: (id: string) => void,
+  expanded: ChainStage | null = null, onToggle: (id: string) => void = () => {},
+  onSelect: (id: string) => void = () => {}) {
   const direction: ChainLayoutDirection = "LR"
-  const projected = visibleChainEdges(chain, presentation, focus, batch)
+  const projected = preparationStageEdges(build)
   const edges = projected.map(flowEdge)
-  const raw = visibleNodes(chain, presentation, focus, direction, batch, onEnter, onInspect)
-  // WHY：画布布局只服务阅读，统一自动排布；拖拽与缩放不写回草稿或影响发布校验。
-  if (!focus) return { nodes: layoutChainGraph(raw, edges, direction), edges }
-  // WHY：展开只在原阶段位置排布内部真实节点；其余阶段沿折叠图保持原位，避免视口未重置但内容整体跳动。
-  const collapsedProjected = visibleChainEdges(chain, presentation, null, batch)
-  const collapsedEdges = collapsedProjected.map(flowEdge)
-  const collapsed = layoutChainGraph(visibleNodes(chain, presentation, null, direction, batch, onEnter, onInspect),
-    collapsedEdges, direction)
-  return { nodes: expandAtStagePosition(raw, edges, collapsed, focus), edges }
+  const raw = build.presentation.stages.map((stage) => stageNode(stage, build.nodes, build.edges,
+    direction, null, expanded?.id === stage.id, build.phase === "prefix" ? "生成中" : "已生成",
+    onToggle, onInspect, onSelect))
+  return { nodes: layoutPresentedGraph(raw, edges, build.presentation, direction), edges }
 }
 
-function expandAtStagePosition(raw: FlowNode[], edges: Edge[], collapsed: FlowNode[], stage: ChainStage) {
-  const ids = new Set(stage.nodeIds), internal = raw.filter((node) => ids.has(node.id))
-  const internalEdges = edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target))
-  const laidOut = layoutChainGraph(internal, internalEdges, "LR")
-  const anchor = collapsed.find((node) => node.id === stage.id)
-  if (!anchor || !laidOut.length) return layoutChainGraph(raw, edges, "LR")
-  const bounds = laidOut.reduce((value, node) => ({
-    left: Math.min(value.left, node.position.x), top: Math.min(value.top, node.position.y),
-    right: Math.max(value.right, node.position.x + Number(node.width ?? 240)),
-    bottom: Math.max(value.bottom, node.position.y + Number(node.height ?? 112)),
-  }), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
-  const anchorWidth = Number(anchor.width ?? 300), expandedWidth = bounds.right - bounds.left
-  const anchorCenterY = anchor.position.y + Number(anchor.height ?? 148) / 2
-  // WHY：内部动作从被替换阶段的左边缘展开；新增宽度只推开右侧列，保留上游和并列分支的阅读锚点。
-  const offset = { x: anchor.position.x - bounds.left,
-    y: anchorCenterY - (bounds.top + bounds.bottom) / 2 }
-  const internalPositions = new Map(laidOut.map((node) => [node.id,
-    { x: node.position.x + offset.x, y: node.position.y + offset.y }]))
-  const downstreamShift = Math.max(0, expandedWidth - anchorWidth)
-  const collapsedPositions = new Map(collapsed.map((node) => [node.id, {
-    x: node.position.x > anchor.position.x ? node.position.x + downstreamShift : node.position.x,
-    y: node.position.y,
-  }]))
-  return raw.map((node) => ({ ...node, position: internalPositions.get(node.id)
-    ?? collapsedPositions.get(node.id) ?? node.position }))
-}
-
-function visibleNodes(chain: TaskChain, presentation: ChainPresentation, focus: ChainStage | null,
-  direction: ChainLayoutDirection, batch: TaskExecutionEventBatch | null,
-  onEnter: (id: string) => void, onInspect: (id: string) => void): FlowNode[] {
-  const positions = new Map(presentation.overviewLayout.map((item) => [item.stageId, item]))
-  const visible: FlowNode[] = presentation.stages.flatMap((stage): FlowNode[] => {
-    if (stage.nodeIds.length > 1 && stage.id !== focus?.id) return [{ id: stage.id, type: "chain-stage" as const,
-      position: positions.get(stage.id) ?? { x: 0, y: 0 }, width: 300, height: 148,
-      data: { title: stage.title, summary: stage.summary, tone: stageRunTone(stage, batch), direction, onEnter } }]
-    const focusPositions = new Map(presentation.focusLayouts.find((item) => item.stageId === stage.id)?.nodes
-      .map((item) => [item.nodeId, item]) ?? [])
-    return stage.nodeIds.map((id) => {
-      const node = chain.nodes.find((item) => item.id === id)!
-      const info = actionPresentation(node)
-      return { id, type: "chain-action" as const, position: focusPositions.get(id) ?? { x: 0, y: 0 }, width: 240, height: 112,
-        data: { title: info.title, tone: nodeRunTone(id, batch, stage), direction, onInspect } }
-    })
-  })
-  const values = [...positions.values()], xs = values.map((item) => item.x), ys = values.map((item) => item.y)
-  const start = direction === "LR" ? { x: Math.min(0, ...xs) - 150, y: Math.min(0, ...ys) }
-    : { x: Math.min(0, ...xs), y: Math.min(0, ...ys) - 100 }
-  const end = direction === "LR" ? { x: Math.max(0, ...xs) + 300, y: Math.max(0, ...ys) }
-    : { x: Math.max(0, ...xs), y: Math.max(0, ...ys) + 220 }
-  const targets = new Set(visibleChainEdges(chain, presentation, focus, batch).map((edge) => edge.target))
+export function buildCanvasGraph(chain: TaskChain, presentation: Presentation, expanded: ChainStage | null,
+  batch: TaskExecutionEventBatch | null, onEnter: (id: string) => void, onInspect: (id: string) => void,
+  onSelect: (id: string) => void = () => {}) {
+  const direction: ChainLayoutDirection = "LR"
+  const projected = overviewChainEdges(chain, presentation, batch)
+  const edges = projected.map(flowEdge)
+  const stages: FlowNode[] = presentation.stages.map((stage) => stageNode(stage, chain.nodes, chain.edges,
+    direction, batch, expanded?.id === stage.id, toneLabel(stageRunTone(stage, batch)),
+    onEnter, onInspect, onSelect))
+  const targets = new Set(projected.map((edge) => edge.target))
   const terminals = chain.nodes.filter((node) => targets.has(terminalCanvasId(node.id))).map((node, index) => {
     const terminal = terminalPresentation(node)
     return terminalNode(terminalCanvasId(node.id), terminal.label, "end", direction,
-      { x: end.x, y: end.y + index * 72 }, nodeRunTone(node.id, batch))
+      { x: 0, y: index * 72 }, nodeRunTone(node.id, batch))
   })
-  return [terminalNode("__start", "开始", "start", direction, start), ...visible, ...terminals]
+  // WHY：开始/结束只属于完整链；阶段展开只增加父节点内部 DOM，React Flow 身份始终是同一批阶段。
+  const raw = [terminalNode("__start", "开始", "start", direction, { x: 0, y: 0 }), ...stages, ...terminals]
+  return { nodes: layoutPresentedGraph(raw, edges, presentation, direction), edges }
+}
+
+function layoutPresentedGraph(nodes: FlowNode[], edges: Edge[], presentation: Presentation,
+  direction: ChainLayoutDirection): FlowNode[] {
+  const positions = new Map(presentation.overviewLayout.map((item) => [item.stageId, item]))
+  const stages = nodes.filter((node): node is StageCanvasNode => node.type === "chain-stage")
+  // WHY：正常公开 presentation 的布局完整且不可变；只给缺布局的旧受控夹具保留 Dagre 后备。
+  if (stages.some((stage) => !positions.has(stage.id))) return layoutChainGraph(nodes, edges, direction)
+  const placed = nodes.map((node) => node.type === "chain-stage"
+    ? { ...node, position: { x: positions.get(node.id)!.x, y: positions.get(node.id)!.y } } : node)
+  if (direction !== "LR") return placeVerticalTerminals(placed, edges)
+  const byId = new Map(placed.filter((node): node is StageCanvasNode => node.type === "chain-stage")
+    .map((node) => [node.id, node]))
+  const fallback = [...byId.values()].sort((left, right) => right.position.x - left.position.x)[0]
+  const terminals = placed.filter((node): node is TerminalCanvasNode => node.type === "chain-terminal")
+  return placed.map((node) => {
+    if (node.type !== "chain-terminal") return node
+    const link = edges.find((edge) => node.data.terminal === "start" ? edge.source === node.id : edge.target === node.id)
+    const anchor = byId.get(node.data.terminal === "start" ? link?.target ?? "" : link?.source ?? "") ?? fallback
+    if (!anchor) return node
+    const peerIndex = terminals.slice(0, terminals.indexOf(node)).filter((peer) => {
+      if (peer.data.terminal !== node.data.terminal) return false
+      const peerLink = edges.find((edge) => peer.data.terminal === "start" ? edge.source === peer.id : edge.target === peer.id)
+      return (peer.data.terminal === "start" ? peerLink?.target : peerLink?.source) === anchor.id
+    }).length
+    const y = anchor.position.y + 22 - Number(node.height ?? 50) / 2 + peerIndex * 62
+    const x = node.data.terminal === "start"
+      ? anchor.position.x - Number(node.width ?? 140) - 52
+      : anchor.position.x + Number(anchor.width ?? 240) + 52
+    return { ...node, position: { x, y } }
+  })
+}
+
+function placeVerticalTerminals(nodes: FlowNode[], edges: Edge[]): FlowNode[] {
+  const stages = new Map(nodes.filter((node): node is StageCanvasNode => node.type === "chain-stage")
+    .map((node) => [node.id, node]))
+  return nodes.map((node) => {
+    if (node.type !== "chain-terminal") return node
+    const link = edges.find((edge) => node.data.terminal === "start" ? edge.source === node.id : edge.target === node.id)
+    const anchor = stages.get(node.data.terminal === "start" ? link?.target ?? "" : link?.source ?? "")
+    if (!anchor) return node
+    return { ...node, position: {
+      x: anchor.position.x + (Number(anchor.width ?? 240) - Number(node.width ?? 140)) / 2,
+      y: node.data.terminal === "start" ? anchor.position.y - Number(node.height ?? 50) - 52
+        : anchor.position.y + Number(anchor.height ?? 79) + 52,
+    } }
+  })
+}
+
+function stageNode(stage: ChainStage, nodes: GraphNode[], edges: GraphEdge[], direction: ChainLayoutDirection,
+  batch: TaskExecutionEventBatch | null, expanded: boolean, statusLabel: string,
+  onToggle: (id: string) => void, onInspect: (id: string) => void,
+  onSelect: (id: string) => void): StageCanvasNode {
+  const actions = stage.nodeIds.map((id) => {
+    const node = nodes.find((item) => item.id === id)!
+    const info = actionPresentation(node)
+    return { id, title: info.title, type: info.type, tone: batch ? nodeRunTone(id, batch, stage) : "idle" as const }
+  })
+  const routes = stageRoutes(stage, nodes, edges)
+  return { id: stage.id, type: "chain-stage", position: { x: 0, y: 0 }, width: 240,
+    height: 47 + actions.length * 32 + (expanded ? 9 + routes.length * 28 : 0),
+    data: { title: stage.title, summary: stage.summary, tone: batch ? stageRunTone(stage, batch) : "idle",
+      direction, actions, routes, expanded, statusLabel, onToggle, onInspect, onSelect } }
+}
+
+function stageRoutes(stage: ChainStage, nodes: GraphNode[], edges: GraphEdge[]): StageRouteRow[] {
+  const inStage = new Set(stage.nodeIds)
+  const outgoing = edges.filter((edge) => inStage.has(edge.from))
+  const complex = stage.nodeIds.length > 1 || outgoing.length > 1
+    || outgoing.some((edge) => !["success", "completed"].includes(edgePort(edge)))
+  if (!complex) return []
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  return outgoing.map((edge) => {
+    const source = byId.get(edge.from), target = byId.get(edge.to)
+    const targetTitle = target ? target.kind === "terminal" ? terminalPresentation(target).label
+      : actionPresentation(target).title : edge.to
+    const port = edgePort(edge)
+    return { id: `${edge.from}:${port}:${edge.to}`, sourceNodeId: edge.from, targetNodeId: edge.to,
+      sourceTitle: source ? actionPresentation(source).title : edge.from,
+      port, portLabel: edgePortLabel(port), targetTitle }
+  })
+}
+
+function preparationStageEdges(build: Build): ProjectedChainEdge[] {
+  const stageByNode = new Map(build.presentation.stages.flatMap((stage) => stage.nodeIds
+    .map((nodeId) => [nodeId, stage.id] as const)))
+  const edges = build.edges.flatMap((edge): ProjectedChainEdge[] => {
+    const source = stageByNode.get(edge.from), target = stageByNode.get(edge.to)
+    if (!source || !target || source === target) return []
+    return [{ id: `preparation:${source}:${edge.port}:${target}`, source, target, port: edge.port, tone: "idle" }]
+  })
+  return edges.filter((edge, index) => edges.findIndex((item) => item.id === edge.id) === index)
+}
+
+function edgePort(edge: GraphEdge) {
+  return "port" in edge ? edge.port : edge.outcome
 }
 
 function terminalNode(id: string, label: string, terminal: "start" | "end", direction: ChainLayoutDirection,

@@ -117,7 +117,8 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
   try {
     await runner.startHybrid({ allowedOrigins: input.allowedOrigins,
       profilePath: path.join(input.directory, "browser-profile", "default"),
-      headless: runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false) })
+      headless: runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
+      managedWindow: { ownerId: input.ownerId, resume: false } })
     const value = await work({ author: async (source, options) => {
       const offset = reports.length
       let compilationError: unknown

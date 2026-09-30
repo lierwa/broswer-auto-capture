@@ -1,10 +1,10 @@
 """Real target/read binding with a controlled model: no generated schemas or retry loop."""
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from workflow_use.hybrid.author_compilation import AuthorCompilation
-from workflow_use.hybrid.selection_annotation import SelectionProgram, annotate_selections
+from workflow_use.hybrid.selection_annotation import SelectionProgram, annotate_selections, validate_selection_source
 from workflow_use.hybrid.evidence import digest
 from workflow_use.hybrid.natural_selection import bind_selection_function
 from workflow_use.hybrid.natural_binding_compile import natural_bindings
@@ -15,6 +15,28 @@ SOURCE = 'function main({candidates}) { return candidates[0].ordinal; }'
 
 
 class SelectionAnnotationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_program_keeps_safe_validator_reason_without_guest_data(self):
+        model = SimpleNamespace(endpoint='http://127.0.0.1:1', token='fixture')
+        read = SimpleNamespace(output=[{'ordinal': 1}],
+                               specification=SimpleNamespace(outputSchema={'type': 'array'}, maxItems=1))
+        for reason, expected in (
+            ('function_source_invalid', 'selection_annotation_program_invalid:function_source_invalid'),
+            ('selection_function_url_invalid',
+             'selection_annotation_program_invalid:selection_function_url_invalid'),
+            ('function_input_invalid', 'selection_annotation_program_invalid:function_input_invalid'),
+            ('guest error with private page content', 'selection_annotation_program_invalid')):
+            with self.subTest(reason=reason):
+                response = SimpleNamespace(status=200,
+                    json=AsyncMock(return_value={'valid': False, 'reason': reason, 'detail': 'private data'}))
+                client = MagicMock()
+                client.post.return_value.__aenter__ = AsyncMock(return_value=response)
+                session = MagicMock()
+                session.__aenter__ = AsyncMock(return_value=client)
+                with patch('workflow_use.hybrid.selection_annotation.aiohttp.ClientSession',
+                           return_value=session):
+                    self.assertEqual(await validate_selection_source(model, SOURCE, read, 1), expected)
+                self.assertEqual(client.post.call_count, 1)
+
     async def test_duplicate_destination_uses_one_program_and_original_navigation(self):
         prepared, trace, segment = fixture(3)
         action = trace.actions[-1]

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import type { ChainPresentation, TaskChain, TaskExecutionEventBatch } from "@browser-capture/contracts"
-import { edgePortLabel, eventsForStep, focusChainEdges, nodeRunTone, overviewChainEdges,
+import { edgePortLabel, eventsForStep, nodeRunTone, overviewChainEdges,
   stageRunTone } from "../src/chainWorkbenchProjection.js"
 import { actionPresentation, terminalPresentation } from "../src/chainNodePresentation.js"
 import { buildCanvasGraph } from "../src/ChainCanvasGraph.js"
@@ -15,7 +15,9 @@ const chain = { entry: "first", nodes: [{ id: "first" }, { id: "second" }, { id:
   edges: [{ from: "first", outcome: "success", to: "second" },
     { from: "first", outcome: "failed", to: "second" },
     { from: "second", outcome: "success", to: "terminal" }] } as unknown as TaskChain
-const presentation = { stages: [stageOne, stageTwo], overviewLayout: [], focusLayouts: [] } as unknown as ChainPresentation
+const presentation = { stages: [stageOne, stageTwo], overviewLayout: [
+  { stageId: stageOne.id, x: 83, y: 47 }, { stageId: stageTwo.id, x: 431, y: 213 },
+], focusLayouts: [] } as unknown as ChainPresentation
 const executionId = "00000000-0000-4000-8000-000000000021"
 const batch = { executionId, executionSequence: 2, status: "running", after: 0, next: 4, events: [
   executionEvent(1, "first", "started", null), executionEvent(2, "first", "finished", "success"),
@@ -28,17 +30,23 @@ test("完成终态与阶段出口只按本次事件上色，运行中不能提�
     { id: "terminal", kind: "terminal", label: "完成", status: "completed", reason: "完成" }] } as TaskChain
   const graph = (events: TaskExecutionEventBatch, focus = false) => buildCanvasGraph(visibleChain, presentation,
     focus ? stageOne : null, events, () => {}, () => {})
+  const idle = buildCanvasGraph(visibleChain, presentation, null, null, () => {}, () => {})
+  assert.equal(graph(batch).nodes.some((node) => node.type === "chain-action"), false)
+  assert.deepEqual(graph(batch).nodes.map((node) => [node.id, node.position]),
+    idle.nodes.map((node) => [node.id, node.position]), "运行状态不能改变布局位置")
+  assert.deepEqual(graph(batch).nodes.filter((node) => node.type === "chain-stage").map((node) => node.position),
+    [{ x: 83, y: 47 }, { x: 431, y: 213 }])
   assert.equal(graph(batch).nodes.find((node) => node.id === "__end:terminal")?.data.tone, "idle")
   const ended = { ...batch, status: "completed", events: [...batch.events,
     executionEvent(4, "second", "finished", "success"), executionEvent(5, "terminal", "finished", "success")] } as TaskExecutionEventBatch
   assert.equal(graph(ended).nodes.find((node) => node.id === "__end:terminal")?.data.tone, "success")
-  assert.deepEqual(graph(batch, true).edges.filter((edge) => edge.source === "first")
+  assert.deepEqual(graph(batch, true).edges.filter((edge) => edge.source === "stage-one")
     .map((edge) => [edge.target, edge.className]), [
-      ["second", "chain-edge chain-edge-running"], ["second", "chain-edge chain-edge-idle"],
+      ["stage-two", "chain-edge chain-edge-running"], ["stage-two", "chain-edge chain-edge-idle"],
     ])
 })
 
-test("阶段总览和聚焦子图只投影绑定 execution 的真实节点与连线状态", () => {
+test("阶段总览只投影绑定 execution 的真实阶段边与状态", () => {
   assert.equal(nodeRunTone("first", batch), "success")
   assert.equal(nodeRunTone("second", batch), "running")
   assert.equal(stageRunTone(stageOne, batch), "success")
@@ -46,10 +54,6 @@ test("阶段总览和聚焦子图只投影绑定 execution 的真实节点与连
   assert.deepEqual(overviewChainEdges(chain, presentation, batch).map((edge) => [edge.source, edge.target, edge.tone]), [
     ["__start", "stage-one", "success"], ["stage-one", "stage-two", "running"],
     ["stage-one", "stage-two", "idle"], ["stage-two", "__end:terminal", "idle"],
-  ])
-  assert.deepEqual(focusChainEdges(chain, stageOne, batch).map((edge) => [edge.source, edge.target, edge.tone]), [
-    ["__stage_entry", "first", "success"], ["first", "__stage_exit:next", "running"],
-    ["first", "__stage_exit:fallback", "idle"],
   ])
   assert.deepEqual(overviewChainEdges(chain, presentation, batch).slice(1, 3).map((edge) => edge.port), ["success", "failed"])
 })

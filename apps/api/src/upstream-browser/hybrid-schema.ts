@@ -120,7 +120,7 @@ const settlePolicySchema = z.object({ maxMs: z.number().int().min(1).max(30000),
   maxAttempts: z.number().int().min(1).max(100), intervalMs: z.number().int().min(10).max(1000) }).strict()
 const factPostconditionSchema = z.object({
   kind: z.enum(["url", "url_digest", "title", "target_value", "target_text", "target_state",
-    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "read_fields"]),
+    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "focused_element", "read_fields"]),
   bindingArgument: z.string().min(1).optional(), equals: jsonValueSchema.optional(),
   changed: z.literal(true).optional(), unchanged: z.literal(true).optional(),
   ready: z.literal(true).optional(), transition: z.literal(true).optional(),

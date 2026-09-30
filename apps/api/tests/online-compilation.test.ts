@@ -5,8 +5,10 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
-import { taskAuthoringJobSchema, type TaskAuthoringJob, type ValueSchema } from "@browser-capture/contracts"
-import { digestJson, TaskChainRuntime } from "@browser-capture/runtime"
+import {
+  taskAuthoringActivitySchema, taskAuthoringJobSchema, type TaskAuthoringJob, type ValueSchema,
+} from "@browser-capture/contracts"
+import { digestJson, executableChainDigest, TaskChainRuntime } from "@browser-capture/runtime"
 import { extractionFixture } from "../../../packages/contracts/tests/task-chain-fixtures.js"
 import { requestFor } from "../../../packages/runtime/tests/task-chain-fixtures.js"
 import { ProductStore } from "../src/database/store.js"
@@ -116,6 +118,14 @@ test("原生回调到跨进程 ACK、SQLite、正式候选和普通执行器，�
     assert.equal(h.repository.job(h.job.taskId, h.job.id).authoring!.build!.phase, "final")
     assert.equal(result.chains.length, 1)
     const chain = result.chains[0]!, output = [{ title: "live" }]
+    const finalBuild = h.repository.job(h.job.taskId, h.job.id).authoring!.build!
+    assert.ok(finalBuild.presentation)
+    assert.equal(result.presentations[0]!.chain.digest, executableChainDigest(chain))
+    assert.deepEqual(finalBuild.presentation, {
+      stages: result.presentations[0]!.stages,
+      overviewLayout: result.presentations[0]!.overviewLayout,
+      focusLayouts: result.presentations[0]!.focusLayouts,
+    })
     let calls = 0
     const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {
       browserCommandCount: () => calls,
@@ -125,6 +135,7 @@ test("原生回调到跨进程 ACK、SQLite、正式候选和普通执行器，�
     assert.equal(calls, 1); assert.deepEqual(run.modelCalls, [])
     assert.equal(JSON.stringify(run.outputs).includes('"live"'), true)
     await checkSaveBoundary(h)
+    await checkProjectionFailureBoundary(h)
     await checkDuplicateBarrier(h.events[0]!, h.signal)
     // 新接收器不能接管旧 request；持久化取消后连同一批重投也不得 ACK。
     const current = h.repository.job(h.job.taskId, h.job.id)
@@ -132,6 +143,20 @@ test("原生回调到跨进程 ACK、SQLite、正式候选和普通执行器，�
     const build = new AuthoringBuild({ ...h, job: h.job, input: null, model: "controlled" })
     await assert.rejects(build.accept(h.events[0]!, h.signal), /not_active/)
     assert.equal(h.repository.job(h.job.taskId, h.job.id).status, "interrupted")
+  } finally { await h.close() }
+})
+
+test("final build 与候选 chain digest 漂移时在草稿前失败", async () => {
+  const h = await harness()
+  try {
+    const nextChainVersion = h.repository.nextChainVersion.bind(h.repository)
+    let calls = 0
+    h.repository.nextChainVersion = (...args) => calls++ === 0 ? nextChainVersion(...args) : nextChainVersion(...args) + 1
+    await assert.rejects(h.authoring.task(h.job, h.requirement, h.plan, null, h.signal), /hybrid_final_chain_mismatch/)
+    const failed = h.repository.job(h.job.taskId, h.job.id)
+    assert.equal(failed.authoring!.build!.phase, "final")
+    assert.ok(failed.authoring!.build!.presentation)
+    assert.equal(h.repository.draft(h.job.taskId), null)
   } finally { await h.close() }
 })
 
@@ -171,6 +196,9 @@ async function checkSaveBoundary(h: Awaited<ReturnType<typeof harness>>) {
   const activity = projectActivity({ ...saved, type: "prepare",
     preparation: { phase: "preexecuting", inputRequest: null } as NonNullable<TaskAuthoringJob["preparation"]> })
   assert.equal(activity!.build!.nodes.length, 1)
+  assert.ok(activity!.build!.presentation)
+  assert.deepEqual(activity!.build!.presentation, saved.authoring!.build!.presentation)
+  assert.doesNotThrow(() => taskAuthoringActivitySchema.parse(activity))
   assert.equal("payload" in activity!.build!, false)
   assert.equal("entry" in activity!.build!, false)
   for (const phase of ["validating_sample", "awaiting_verification_input", "validating_verification", "ready"] as const) {
@@ -178,6 +206,27 @@ async function checkSaveBoundary(h: Awaited<ReturnType<typeof harness>>) {
       preparation: { phase, inputRequest: null } as NonNullable<TaskAuthoringJob["preparation"]> })!.build, undefined)
   }
   assert.deepEqual(h.repository.job(job.taskId, job.id).authoring!.build, saved.authoring!.build)
+}
+
+async function checkProjectionFailureBoundary(h: Awaited<ReturnType<typeof harness>>) {
+  const job = structuredClone(h.job)
+  job.id = randomUUID(); job.status = "running"; delete job.authoring!.build
+  h.repository.saveJob(job)
+  const build = new AuthoringBuild({ ...h, job, input: null, model: "controlled",
+    preparationPresentation: () => { throw new Error("controlled_presentation_failure") } })
+  let acknowledgements = 0
+  await receiveCompilation(h.events[0]!, { onCompilation: (event, signal) => build.accept(event, signal) },
+    h.signal, async () => { acknowledgements++ })
+  const saved = h.repository.job(job.taskId, job.id)
+  assert.equal(acknowledgements, 1)
+  assert.equal(saved.authoring!.build!.sequence, h.events[0]!.sequence)
+  assert.equal(saved.authoring!.build!.nodes.length, 1)
+  assert.equal(saved.authoring!.build!.presentation, undefined)
+  const activity = projectActivity({ ...saved, type: "prepare",
+    preparation: { phase: "preexecuting", inputRequest: null } as NonNullable<TaskAuthoringJob["preparation"]> })
+  assert.equal(activity!.build!.presentation.stages.length, 1)
+  assert.equal(activity!.build!.presentation.stages[0]!.title, "未分组动作")
+  assert.doesNotThrow(() => taskAuthoringActivitySchema.parse(activity))
 }
 
 async function checkDuplicateBarrier(event: CompilationCheckpoint, signal: AbortSignal) {

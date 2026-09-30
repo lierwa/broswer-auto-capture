@@ -14,6 +14,10 @@
   ],
   "added": [
     {
+      "path": "workflows/tests/test_natural_focus_effect.py",
+      "sha256": "33570c1bce773b3d256ed20cd08c1a926ea4e9450b58c8d2eb212899cd2e1863"
+    },
+    {
       "path": "verify-source.d.mts",
       "sha256": "4064193a2f19c518aea8ed5ba012c898b984e1cd192e1d88eee49711178b82d6"
     },
@@ -27,7 +31,11 @@
     },
     {
       "path": "workflows/tests/test_consumer_readiness.py",
-      "sha256": "ea6e1072249eeb08583799c0797db5a2611be2f4f7f003ff0341262b2df3a268"
+      "sha256": "4aad6df30e93c12d6f84074485d8d6b3d9c6e53520afca88157fabe8fd860ac5"
+    },
+    {
+      "path": "workflows/tests/test_dynamic_ready_scope.py",
+      "sha256": "4465dcb367570d1e515db6cf725ec9729f0b8bf4d8c5aff140237dde7278f48e"
     },
     {
       "path": "workflows/tests/test_execution_dynamic_selection.py",
@@ -123,7 +131,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/capture.py",
-      "sha256": "62f6d9b7667ddd6d3bd38d6727da835ff8dae7b3af98599dc277bfcd335465dd"
+      "sha256": "fd468bb6a7989aef53823dd0b737bfc8f14dea34d40a03a71e3b72eef3949ed8"
     },
     {
       "path": "workflows/workflow_use/hybrid/capture_values.py",
@@ -147,7 +155,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/coverage.py",
-      "sha256": "d3464f03e6f531a1c2724e3f9760a3e2a9329b3b1c35b430bbfae86b10748e5d"
+      "sha256": "bbcf718b4373dd1a3423b8292b37157a58cc87ecde54de89c4274090a80422d9"
     },
     {
       "path": "workflows/workflow_use/hybrid/dialog_event_bridge.py",
@@ -207,15 +215,15 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/natural_compile.py",
-      "sha256": "4e9b275e31f66ca8aa011a1fe2087f3c832b257dfd8c7591266fdb029b0fc964"
+      "sha256": "2e19325b7d05dcc88a095c8d6538e6358d85ba1d9464bb1b1e36538a6e2560a0"
     },
     {
       "path": "workflows/workflow_use/hybrid/natural_compile_result.py",
-      "sha256": "945dc54190a20e2c112886c981f62b34848aa92f52eddfb516020a2cf66e2067"
+      "sha256": "7c6ab75034c1b18c19fc7b060a877ef5fa24c2d0babf456af9707e1f091ae15a"
     },
     {
       "path": "workflows/workflow_use/hybrid/natural_effects.py",
-      "sha256": "90cf1c67fb79aae5fcc5dbcf89dce616a3026d2684cf721a0f953fbda51057f1"
+      "sha256": "4c91b737262bc8815087a35dedb697668289a343378d17855273f1d968226758"
     },
     {
       "path": "workflows/workflow_use/hybrid/natural_facts.py",
@@ -263,7 +271,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/postconditions.py",
-      "sha256": "f348a27fdb2d1a02ad82a46ccb8e1203115596fa43721c444689c6ad091fb3d0"
+      "sha256": "ca785e9caf63c2814377113e952be2aca405e1007db8f83e2ae3dc40426df61c"
     },
     {
       "path": "workflows/workflow_use/hybrid/physical_input.py",
@@ -375,7 +383,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/selection_annotation.py",
-      "sha256": "fbb30a112b0e606675697452965bfe9caf6d451fd373487298572997d46d0893"
+      "sha256": "84addfa915233de390900260ca7125674feac8d4c310d9c8c5df72be9a72467f"
     },
     {
       "path": "workflows/tests/test_author_completion.py",
@@ -411,15 +419,15 @@
     },
     {
       "path": "workflows/tests/test_selection_annotation.py",
-      "sha256": "477156f2b4643c6a4a1b5c764009c5d3c3e64514cad8e2bc6983afa99713f09b"
+      "sha256": "501363d2c643435080049dc9709386bcc69cdceab3517506e0f30e6ffc550277"
     },
     {
       "path": "workflows/workflow_use/hybrid/natural_read_liveness.py",
-      "sha256": "52d54f6451571fbf2d199096df5e7f7a42a006ea5feb1174f559b834cd477065"
+      "sha256": "abd332c20df86c0ca758be7b143a0a18851a181fb49845bf2e6944beeb8fdf96"
     },
     {
       "path": "workflows/tests/test_natural_read_liveness.py",
-      "sha256": "5917b2872fa6f1d828b7382f35dd4c290d048e67858932c66cca915caa8ad73a"
+      "sha256": "21997b4610b0ef9772d135bd74a02a8e9e656f663ba3c51266e4e23b1b22b873"
     },
     {
       "path": "workflows/tests/test_author_observation_detail.py",
@@ -643,7 +651,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/natural_prefix.py",
-      "sha256": "102abebb091ef79b56e290f2ef533bf930f7f3a775d37892fd40f2f1091b0390"
+      "sha256": "1182f8bc5d7a9e270a3330ac242823021b0b201231a1103ef0dd73736cf9e2b0"
     },
     {
       "path": "workflows/workflow_use/hybrid/natural_prefix_dependency.py",

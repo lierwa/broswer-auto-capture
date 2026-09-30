@@ -1,4 +1,8 @@
-import type { JsonValue } from "@browser-capture/contracts"
+import {
+  parseTaskValue,
+  type ArtifactReference, type JsonValue, type TaskDataContract, type TaskExecutionResult,
+  type TaskOutput, type ValueSchema,
+} from "@browser-capture/contracts"
 import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react"
 
 export function StatusIcon({ status }: { status: string }) {
@@ -13,6 +17,86 @@ export function ResultValue({ value }: { value: JsonValue | null }) {
   if (typeof value === "object") return <dl className="context-value-record">{Object.entries(value).map(([key, item]) =>
     <div key={key}><dt>{key}</dt><dd><ResultValue value={item} /></dd></div>)}</dl>
   return <span>{String(value)}</span>
+}
+
+export function ExecutionResultView({ result, outputContract }: {
+  result: TaskExecutionResult
+  outputContract: TaskDataContract | null
+}) {
+  return <><ResultPayload result={result} outputContract={outputContract} />
+    {result.failure && <section className="context-alert"><AlertTriangle size={15} /><div>
+      <strong>失败原因</strong><p>{result.failure.reason}</p></div></section>}</>
+}
+
+function ResultPayload({ result, outputContract }: {
+  result: TaskExecutionResult
+  outputContract: TaskDataContract | null
+}) {
+  if (result.payload.mode === "execution") return <div className="context-result-content" data-result-mode="execution">
+    <h4>完成回执</h4>
+    <p>完成 {result.payload.completedSteps} / {result.payload.totalSteps} 个步骤；
+      保存 {result.payload.evidence.length} 份证据产物。</p>
+    {result.payload.evidence.length > 0 && <ArtifactList artifacts={result.payload.evidence} />}
+  </div>
+  const output = result.payload.output
+  if (!output) return <p>本次运行没有结构化结果。</p>
+  if (!outputContract) return <UnverifiedOutput output={output} reason="本次历史运行未能精确绑定输出合同，未按当前字段合同解读。" />
+  if (output.contract.id !== outputContract.id || output.contract.version !== outputContract.version) {
+    return <UnverifiedOutput output={output} reason="结果合同与当前任务版本不一致，未按当前字段合同解读。" />
+  }
+  if (output.kind === "artifact") return <div className="context-artifact-result"><h4>产物兼容信息</h4>
+    <ArtifactList artifacts={[output.artifact]} /></div>
+  try {
+    const value = parseTaskValue(outputContract, output.value)
+    return <SchemaValue schema={outputContract.schema} value={value} root />
+  } catch {
+    return <UnverifiedOutput output={output} reason="结果值不符合已绑定输出合同，未按正式结果解读。" />
+  }
+}
+
+function SchemaValue({ schema, value, root = false }: { schema: ValueSchema; value: JsonValue; root?: boolean }) {
+  if (schema.type === "array") {
+    if (!Array.isArray(value)) return <UnrenderableValue value={value} />
+    return <div className="context-record-list">{root && <><h4>记录列表</h4><p>{value.length} 条记录</p></>}
+      <ol className="context-value-list">{value.map((item, index) => <li key={index}>
+        <SchemaValue schema={schema.items} value={item} />
+      </li>)}</ol>
+    </div>
+  }
+  if (schema.type !== "object") return root ? <div className="context-scalar-result"><h4>兼容结果</h4>
+    <ResultValue value={value} /></div> : <ResultValue value={value} />
+  if (!value || typeof value !== "object" || Array.isArray(value)) return <UnrenderableValue value={value} />
+  const fields = [...Object.keys(schema.properties),
+    ...Object.keys(value).filter((key) => !Object.hasOwn(schema.properties, key))]
+  return <div className="context-record">{root && <h4>单条记录</h4>}
+    <dl className="context-value-record">{fields.map((key) => <div key={key}><dt>{key}</dt>
+      <dd>{Object.hasOwn(value, key) ? <FieldValue schema={schema.properties[key]} value={value[key]!} /> : "未提供"}</dd></div>)}</dl>
+  </div>
+}
+
+function FieldValue({ schema, value }: { schema: ValueSchema | undefined; value: JsonValue }) {
+  if (schema?.type === "string" && typeof value === "string" && value.length > 100) return <p>{value}</p>
+  return schema ? <SchemaValue schema={schema} value={value} /> : <ResultValue value={value} />
+}
+
+function UnrenderableValue({ value }: { value: JsonValue }) {
+  return <><p>结果值与已绑定合同的展示形状不一致。</p>
+    <details className="context-technical"><summary>原始结果</summary><pre>{JSON.stringify(value, null, 2)}</pre></details></>
+}
+
+function UnverifiedOutput({ output, reason }: {
+  output: TaskOutput; reason: string
+}) {
+  return <><p>{reason}</p><details className="context-technical"><summary>原始结果</summary>
+    <pre>{JSON.stringify(output, null, 2)}</pre></details></>
+}
+
+function ArtifactList({ artifacts }: { artifacts: ArtifactReference[] }) {
+  return <ol className="context-value-list">{artifacts.map((artifact) => <li key={artifact.artifactId}>
+    <dl className="context-value-record"><div><dt>媒体类型</dt><dd>{artifact.mediaType}</dd></div>
+      <div><dt>产物 ID</dt><dd>{artifact.artifactId}</dd></div>
+      <div><dt>摘要</dt><dd>{artifact.digest}</dd></div></dl>
+  </li>)}</ol>
 }
 
 export function executionStatus(status: string) {

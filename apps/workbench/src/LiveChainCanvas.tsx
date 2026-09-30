@@ -1,15 +1,14 @@
 import { useMemo } from "react"
 import { Button } from "@radix-ui/themes"
-import { ChevronLeft } from "lucide-react"
+import { ChevronUp } from "lucide-react"
 import { Background, Controls, MiniMap, ReactFlow, type Edge, type NodeTypes } from "@xyflow/react"
-import { ActionCanvasCard, StageCanvasCard, TerminalCanvasCard, type ActionCanvasNode, type StageCanvasNode, type TerminalCanvasNode } from "./ChainCanvasNodes.js"
+import { StageCanvasCard, TerminalCanvasCard, type StageCanvasNode, type TerminalCanvasNode } from "./ChainCanvasNodes.js"
 import { buildCanvasGraph, buildPreparationGraph } from "./ChainCanvasGraph.js"
 import type { LiveChainModel } from "./useLiveChain.js"
 
-type FlowNode = StageCanvasNode | ActionCanvasNode | TerminalCanvasNode
-const nodeTypes = { "chain-stage": StageCanvasCard, "chain-action": ActionCanvasCard,
-  "chain-terminal": TerminalCanvasCard } satisfies NodeTypes
-const nodeDescription = "画布只读。按 Tab 前往展开动作或动作标题按钮，再按 Enter 或空格查看。"
+type FlowNode = StageCanvasNode | TerminalCanvasNode
+const nodeTypes = { "chain-stage": StageCanvasCard, "chain-terminal": TerminalCanvasCard } satisfies NodeTypes
+const nodeDescription = "画布只读。按 Tab 前往阶段、动作或路径按钮，再按 Enter 或空格查看。"
 const ariaLabelConfig = {
   "node.a11yDescription.default": nodeDescription,
   "node.a11yDescription.keyboardDisabled": nodeDescription,
@@ -20,17 +19,21 @@ const ariaLabelConfig = {
 }
 
 export function LiveChainCanvas({ model, active, theme }: { model: LiveChainModel; active: boolean; theme: "light" | "dark" }) {
-  const { displayChain, presentation, focusStage, chainEvents, setSelectedStageId,
-    setFocusStageId, setSelectedNodeId, selectedNodeId, selectedStageId } = model
+  const { displayChain, canvasPresentation: presentation, expandedStage, chainEvents, setSelectedStageId,
+    setExpandedStageId, setSelectedNodeId, selectedNodeId, selectedStageId } = model
   const graph = useMemo(() => model.build ? buildPreparationGraph(model.build,
-    id => { model.setContextMode(null); setSelectedStageId(null); setSelectedNodeId(id) })
-    : displayChain && presentation ? buildCanvasGraph(displayChain, presentation, focusStage,
-    chainEvents, (id) => { setFocusStageId(id); setSelectedStageId(null); setSelectedNodeId(null) },
-    (id) => { model.setContextMode(null); setSelectedStageId(null); setSelectedNodeId(id) })
+    id => { model.setContextMode(null); setSelectedStageId(null); setSelectedNodeId(id) }, expandedStage,
+    id => setExpandedStageId(expandedStage?.id === id ? null : id),
+    id => { model.setContextMode(null); setSelectedNodeId(null); setSelectedStageId(id) })
+    : displayChain && presentation ? buildCanvasGraph(displayChain, presentation, expandedStage,
+    chainEvents, (id) => { setExpandedStageId(expandedStage?.id === id ? null : id); setSelectedStageId(null); setSelectedNodeId(null) },
+    (id) => { model.setContextMode(null); setSelectedStageId(null); setSelectedNodeId(id) },
+    (id) => { model.setContextMode(null); setSelectedNodeId(null); setSelectedStageId(id) })
     : { nodes: [] as FlowNode[], edges: [] as Edge[] },
-  [model.build, displayChain, focusStage, presentation, chainEvents])
+  [model.build, displayChain, expandedStage, presentation, chainEvents])
   if (!model.build && (!displayChain || !presentation)) return null
-  return <div className="canvas-shell"><div className="flow-canvas chain-stage-canvas" aria-label={focusStage ? `任务链路，已展开${focusStage.title}` : "链路阶段总览"}>
+  return <div className="canvas-shell"><div className="flow-canvas chain-stage-canvas"
+    aria-label={expandedStage ? `任务链路，已在原阶段展开${expandedStage.title}的路径` : "链路阶段图"}>
             {active && <ReactFlow<FlowNode, Edge> key={model.canvasKey}
               nodes={graph.nodes.map((item) => ({ ...item, selected: item.id === selectedNodeId || item.id === selectedStageId }))}
               edges={graph.edges} nodeTypes={nodeTypes} colorMode={theme}
@@ -38,9 +41,9 @@ export function LiveChainCanvas({ model, active, theme }: { model: LiveChainMode
               nodesDraggable={false} nodesConnectable={false} deleteKeyCode={null} ariaLabelConfig={ariaLabelConfig}
               onNodeClick={(_, item) => { model.setContextMode(null); if (item.type === "chain-stage") {
                 setSelectedNodeId(null); setSelectedStageId(item.id)
-              } else if (item.type === "chain-action") { setSelectedStageId(null); setSelectedNodeId(item.id) } }}
-              onEdgeClick={(_, edge) => { if ((model.build?.nodes ?? displayChain?.nodes)?.some((item) => item.id === edge.source)) {
-                setSelectedStageId(null); setSelectedNodeId(edge.source)
+              } }}
+              onEdgeClick={(_, edge) => { if (presentation?.stages.some((item) => item.id === edge.source)) {
+                setSelectedNodeId(null); setSelectedStageId(edge.source)
               } }}
               >
               <Background gap={24} /><Controls showInteractive={false} /><MiniMap pannable zoomable /></ReactFlow>}
@@ -48,9 +51,9 @@ export function LiveChainCanvas({ model, active, theme }: { model: LiveChainMode
 }
 
 export function LiveChainCanvasToolbar({ model }: { model: LiveChainModel }) {
-  const { focusStage, presentation, setFocusStageId, setSelectedNodeId } = model
-  if (!presentation) return null
-  return <div className="canvas-mode-controls"><div>{focusStage && <Button size="1" variant="ghost" onClick={() => {
-          setFocusStageId(null); setSelectedNodeId(null) }}><ChevronLeft size={14} />收起阶段</Button>}
-          <strong>{focusStage?.title ?? "任务链路"}</strong></div></div>
+  const { expandedStage, canvasPresentation, setExpandedStageId, setSelectedNodeId } = model
+  if (!canvasPresentation) return null
+  return <div className="canvas-mode-controls"><div>{expandedStage && <Button size="1" variant="ghost" onClick={() => {
+          setExpandedStageId(null); setSelectedNodeId(null) }}><ChevronUp size={14} />收起路径</Button>}
+          <strong>{expandedStage?.title ?? "任务链路"}</strong></div></div>
 }

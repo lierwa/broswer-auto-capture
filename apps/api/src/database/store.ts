@@ -12,6 +12,7 @@ import { migrate } from "./migrate.js"
 import { validateState } from "./invariants.js"
 import * as schema from "./schema.js"
 import { parseModelSelection, type ModelSelection } from "@agent-platform/ai-connect/client"
+import { automaticTaskTitle } from "./task-title.js"
 
 export type ProductDatabase = ReturnType<typeof drizzle<typeof schema>>
 export function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex") }
@@ -70,7 +71,7 @@ export class ProductStore {
       const status: TaskSummary["status"] = state.active ? "running" : state.confirmedVersion ? "confirmed"
         : ["failed", "cancelled"].includes(state.messages.at(-1)?.status ?? "") ? "failed" : currentDraft(state) ? "draft" : state.messages.length ? "answer" : "new"
       const title = state.drafts.at(-1)?.title ?? state.messages.find((message) => message.role === "user")?.text
-      return { ...task, title: task.renamed ? task.title : title?.slice(0, 80) || task.title, status, revision: state.revision }
+      return { ...task, title: task.renamed ? task.title : automaticTaskTitle(title, task.title), status, revision: state.revision }
     }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }
   operation(scope: string, requestId: string, input: unknown) {

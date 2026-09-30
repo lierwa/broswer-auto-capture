@@ -8,6 +8,7 @@ import type { ProductStore } from "../database/store.js"
 import type { TaskContractRepository } from "./repository.js"
 import type { TaskProductService } from "./product.js"
 import { syncConfirmedRequirement } from "./requirement.js"
+import { ungroupedPreparationPresentation } from "./presentation.js"
 
 export function workspaceSnapshot(store: ProductStore, repository: TaskContractRepository,
   product: TaskProductService, taskId: string) {
@@ -113,7 +114,8 @@ export function projectActivity(job: TaskAuthoringJob | null) {
   const build = ["preexecuting", "compiling"].includes(phase) ? job.authoring?.build : undefined
   return { id: job.id, status: job.status, phase, sequence: job.sequence, reason: job.reason,
     ...(build ? { build: { stepId: build.stepId, sequence: build.sequence, digest: build.digest,
-      phase: build.phase, nodes: build.nodes, edges: build.edges } } : {}),
+      phase: build.phase, nodes: build.nodes, edges: build.edges,
+      presentation: build.presentation ?? ungroupedPreparationPresentation(build.nodes, build.edges) } } : {}),
     inputRequest: job.preparation.inputRequest, waitpoint: job.waitpoint, updatedAt: job.updatedAt }
 }
 

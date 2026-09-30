@@ -3,8 +3,9 @@
 .task-layout[data-sidebar="true"] { grid-template-columns: 264px minmax(0, 1fr); }
 .task-layout .workspace { max-width: none; width: 100%; padding: 0 24px 24px; display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .task-layout .topbar { min-height: 70px; flex-shrink: 0; padding: 12px 0; }
-.task-title-group { display: flex; align-items: center; min-width: 0; gap: 12px; }
-.task-title-group h1 { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-title-group { display: flex; align-items: center; min-width: 0; flex: 1; gap: 12px; }
+.task-title-group h1 { min-width: 0; max-width: 32rem; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-title-group > button { flex-shrink: 0; }
 .task-title-group > .rt-Badge { flex-shrink: 0; }
 .task-navigation { border-right: 1px solid var(--color-border); background: var(--color-rail); min-height: 0; }
 .task-sidebar-content { height: 100%; display: flex; flex-direction: column; padding: max(20px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom)); gap: 17px; min-height: 0; }

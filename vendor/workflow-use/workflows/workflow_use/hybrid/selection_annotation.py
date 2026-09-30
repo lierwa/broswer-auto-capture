@@ -9,6 +9,14 @@ from .evidence import Contract, EvidenceRef, ObservationFact, digest, gap
 from .natural_selection import selection_read, selection_schema, selection_value
 from .natural_target_compile import natural_target
 
+SAFE_VALIDATION_REASONS = frozenset({
+    'selection_function_request_invalid', 'selection_function_candidates_invalid',
+    'selection_function_ordinal_invalid', 'selection_function_url_invalid',
+    'function_draft_example_mismatch', 'function_draft_input_mismatch', 'function_draft_example_input_invalid',
+    'function_source_invalid', 'function_input_invalid', 'function_output_invalid', 'function_output_too_large',
+    'function_timeout', 'function_cancelled', 'bridge_cancelled', 'selection_function_validation_failed',
+})
+
 
 class SelectionProgram(Contract):
     source: str | None = Field(description='Pure JavaScript function main({candidates}), or null if unsupported.',
@@ -88,7 +96,11 @@ async def validate_selection_source(model, source, read, expected):
                 if response.status != 200:
                     return 'selection_validation_unavailable'
         if checked.get('valid') is not True:
-            return 'selection_annotation_program_invalid'
+            # WHY：保留宿主固定错误码才能区分源码、输入、输出与沙箱错误；不持久化 guest
+            # 消息、原始页面内容或任意 detail，也不据此启动模型重试。
+            reason = checked.get('reason')
+            suffix = ':' + reason if isinstance(reason, str) and reason in SAFE_VALIDATION_REASONS else ''
+            return 'selection_annotation_program_invalid' + suffix
         actual = checked.get('url' if isinstance(expected, str) else 'ordinal')
         if type(actual) is not type(expected) or actual != expected:
             return 'selection_annotation_observed_choice_mismatch'

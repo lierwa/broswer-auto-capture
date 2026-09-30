@@ -132,14 +132,13 @@ async function openUi(url: string) {
 
 async function verifyView(taskId: string) {
   const scope = `.task-workspace[data-task-id="${taskId}"]`
-  const tabsToStage = await tabTo(`${scope} .chain-stage-card footer button`)
-  await key("Enter"); await waitDom(page!, `document.querySelector(${JSON.stringify(`${scope} .chain-action-card`)})`)
-  const tabsToAction = await tabTo(`${scope} .chain-action-card h3 button`)
+  const tabsToStage = await tabTo(`${scope} .chain-stage-title`)
+  const tabsToAction = await tabTo(`${scope} .chain-stage-actions button`)
   const label = await evaluate(page!, "document.activeElement.getAttribute('aria-label')")
   await key("Enter"); await waitDom(page!, `document.querySelector(${JSON.stringify(`${scope} aside[aria-label="动作说明"]`)})`)
   await screenshot(page!, path.join(directory, "keyboard-detail.png"))
   await click(`${scope} button[aria-label="关闭检查器"]`)
-  await tabTo(`${scope} .chain-action-card h3 button`); await key(" ")
+  await tabTo(`${scope} .chain-stage-actions button`); await key(" ")
   await waitDom(page!, `document.querySelector(${JSON.stringify(`${scope} aside[aria-label="动作说明"]`)})`)
   const nodeCount = await evaluate(page!, `document.querySelectorAll(${JSON.stringify(`${scope} .react-flow__node`)}).length`)
   await key("Delete")
@@ -156,8 +155,8 @@ async function verifyView(taskId: string) {
     await waitDom(page!, `document.querySelector('.app-shell').dataset.theme === '${target}'`)
     themes.push(await evaluate(page!, `({theme:document.querySelector('.app-shell').dataset.theme,
       flow:document.querySelector(${JSON.stringify(`${scope} .react-flow`)}).className,
-      color:getComputedStyle(document.querySelector(${JSON.stringify(`${scope} .chain-action-card`)})).color,
-      background:getComputedStyle(document.querySelector(${JSON.stringify(`${scope} .chain-action-card`)})).backgroundColor})`))
+      color:getComputedStyle(document.querySelector(${JSON.stringify(`${scope} .chain-stage-card`)})).color,
+      background:getComputedStyle(document.querySelector(${JSON.stringify(`${scope} .chain-stage-card`)})).backgroundColor})`))
     await screenshot(page!, path.join(directory, `theme-${target}.png`))
   }
   assert.notDeepEqual(themes[0], themes[1])

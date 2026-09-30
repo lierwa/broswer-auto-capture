@@ -3,11 +3,15 @@ import { randomUUID } from "node:crypto"
 import test from "node:test"
 import {
   CONTRACT_VERSION, requiredStableNodeOutcomes, stableTaskChainSchema, stableTaskChainV2Schema,
-  type ChainPresentationContent, type StableChainNode, type TaskChain, type TaskDataContract,
+  type ChainEdgeV2, type ChainPresentationContent, type StableChainNode, type StableChainNodeV2,
+  type TaskChain, type TaskDataContract,
 } from "@browser-capture/contracts"
 import { executableChainDigest } from "@browser-capture/runtime"
 import { CAPABILITY_DESCRIPTOR_REGISTRY_VERSION, capabilityDescriptors } from "../src/task-chain/capability-descriptors.js"
-import { createChainPresentation, createStepChainPresentation } from "../src/task-chain/presentation.js"
+import {
+  createChainPresentation, createPreparationPresentation, createStepChainPresentation,
+  ungroupedPreparationPresentation,
+} from "../src/task-chain/presentation.js"
 
 test("阶段图服务端校验覆盖节点、入口、出口和布局", () => {
   const chain = fixtureChain(randomUUID()), presentation = createChainPresentation(chain)
@@ -62,6 +66,46 @@ test("展示分组不会把带写副作用的同名能力隐藏进动作阶段",
   for (const id of ["candidate-read", "output-transform"]) {
     assert.deepEqual(presentation.stages.find((stage) => stage.nodeIds.includes(id))?.nodeIds, [id])
   }
+})
+
+test("准备投影只覆盖当前真实节点和边，并在增量快照中保持已有阶段身份与坐标", () => {
+  const chain = groupedFixtureChain(randomUUID()), step = { id: chain.stepId,
+    title: "读取指定记录", goal: "输入条件、选择候选并读取字段。" }
+  const executable = chain.nodes.filter((node): node is StableChainNodeV2 => node.kind !== "terminal")
+  const firstNodes = executable.slice(0, 3), firstIds = new Set(firstNodes.map((node) => node.id))
+  const firstEdges = chain.edges.filter((edge): edge is ChainEdgeV2 => "port" in edge
+    && firstIds.has(edge.from) && firstIds.has(edge.to))
+  const first = createPreparationPresentation({ step, nodes: firstNodes, edges: firstEdges })
+  assert.deepEqual(first.stages.flatMap((stage) => stage.nodeIds), ["input", "keys", "results-ready"])
+  assert.equal(first.stages.every((stage) => /^stage-[a-f0-9]{16}$/.test(stage.id)), true)
+  assert.deepEqual(Object.keys(first).sort(), ["focusLayouts", "overviewLayout", "stages"])
+
+  const nextNodes = executable.slice(0, 4), nextIds = new Set(nextNodes.map((node) => node.id))
+  const nextEdges = chain.edges.filter((edge): edge is ChainEdgeV2 => "port" in edge
+    && nextIds.has(edge.from) && nextIds.has(edge.to))
+  const next = createPreparationPresentation({ step, nodes: nextNodes, edges: nextEdges, previous: first })
+  const firstStage = first.stages.find((stage) => stage.nodeIds.includes("input"))!
+  const nextStage = next.stages.find((stage) => stage.nodeIds.includes("input"))!
+  assert.equal(nextStage.id, firstStage.id)
+  assert.deepEqual(next.overviewLayout.find((item) => item.stageId === nextStage.id),
+    first.overviewLayout.find((item) => item.stageId === firstStage.id))
+  assert.deepEqual(new Set(next.stages.flatMap((stage) => stage.nodeIds)), new Set(nextNodes.map((node) => node.id)))
+  assert.equal(next.stages.flatMap((stage) => stage.exits).every((exit) => nextEdges.some((edge) =>
+    edge.from === exit.sourceNodeId && edge.port === exit.sourcePort)), true)
+})
+
+test("缺失准备展示统一降级为单个未分组动作阶段，不伪造入口或终点", () => {
+  const chain = groupedFixtureChain(randomUUID())
+  const nodes = chain.nodes.filter((node): node is StableChainNodeV2 => node.kind !== "terminal").slice(0, 4)
+  const ids = new Set(nodes.map((node) => node.id))
+  const edges = chain.edges.filter((edge): edge is ChainEdgeV2 => "port" in edge
+    && ids.has(edge.from) && ids.has(edge.to))
+  const fallback = ungroupedPreparationPresentation(nodes, edges)
+  assert.equal(fallback.stages.length, 1)
+  assert.equal(fallback.stages[0]!.title, "未分组动作")
+  assert.deepEqual(fallback.stages[0]!.nodeIds, nodes.map((node) => node.id))
+  assert.equal("chain" in fallback, false)
+  assert.equal(nodes.some((node) => node.kind === "terminal"), false)
 })
 
 test("展示版本保留精确的 descriptor registry 标识", () => {

@@ -1,4 +1,5 @@
 """Instance-scoped target ownership around the pinned Browser-Use session manager."""
+import asyncio
 import inspect
 from importlib.metadata import version
 
@@ -10,7 +11,7 @@ from browser_use_runner.popup_resume import PopupResumeAdapter
 class TargetScope:
     _active = None
 
-    def __init__(self, browser, targets, on_owned, prepare_targets=None):
+    def __init__(self, browser, targets, on_owned, prepare_targets=None, *, prevent_reconnect=False):
         self.browser = browser
         self.owned = set(targets)
         self.on_owned = on_owned
@@ -21,6 +22,7 @@ class TargetScope:
         self.storage_watchdogs = set()
         self.original_start = None
         self.start_wrapper = None
+        self.prevent_reconnect, self.connection_lost = prevent_reconnect, False
 
     def install(self):
         if version('browser-use') != '0.13.8' or version('cdp-use') != '1.4.5':
@@ -40,6 +42,11 @@ class TargetScope:
         self.start_wrapper = start_monitoring
         SessionManager.start_monitoring = start_monitoring
         TargetScope._active = self
+        if self.prevent_reconnect:
+            async def reject_reconnect(*_args, **_kwargs):
+                # WHY：借用已有授权连接不等于授权 SDK 另开连接；掉线后固定拒绝，不重连或重放。
+                self.connection_lost = True
+            self._replace(self.browser, '_auto_reconnect', reject_reconnect)
 
     def _replace(self, owner, name, replacement):
         original = getattr(owner, name)
@@ -138,11 +145,47 @@ class TargetScope:
         self.storage_watchdogs.add(id(watchdog))
 
     def require_focus(self):
+        self.ensure_connection()
         target_id = self.browser.agent_focus_target_id
         manager = self.browser.session_manager
         if target_id not in self.owned or manager is None or manager.get_target(target_id) is None:
             raise ValueError('hybrid_attached_window_target_missing')
         return target_id
+
+    def ensure_connection(self):
+        if self.prevent_reconnect and (self.connection_lost or not self.browser.is_cdp_connected):
+            raise ValueError('hybrid_attached_window_connection_lost')
+
+    def begin_operation(self, targets, on_owned, prepare_targets):
+        self.ensure_connection()
+        manager = self.browser.session_manager
+        if self.owned or manager is None or manager.get_all_target_ids():
+            raise ValueError('hybrid_attached_window_connection_cleanup_required')
+        self.owned.update(targets)
+        self.on_owned, self.prepare_targets = on_owned, prepare_targets
+
+    async def release_operation(self):
+        self.ensure_connection()
+        # WHY：closeTarget ACK 可早于 detach；只等待 SDK 原事件池释放，不重发浏览器动作。
+        try:
+            async with asyncio.timeout(3):
+                while self.browser.session_manager.get_all_target_ids():
+                    await asyncio.sleep(0.05)
+        except TimeoutError as error:
+            raise ValueError('hybrid_attached_window_connection_cleanup_required') from error
+        self.owned.clear()
+        self.prepare_targets = None
+        self.on_owned = lambda _target_id: None
+        self.clear_operation_state()
+
+    def clear_operation_state(self):
+        if self.browser._dom_watchdog is not None:
+            self.browser._dom_watchdog.clear_cache()
+        # WHY：同一 SDK 连接借给下一独立运行时，不能继承上一运行的 DOM、选择器或下载产物。
+        self.browser._cached_browser_state_summary = None
+        self.browser._cached_selector_map.clear()
+        self.browser._cached_selector_indices.clear()
+        self.browser._downloaded_files.clear()
 
     def prepare_close(self):
         # WHY：关闭最后一个任务标签时，不让 SDK 恢复焦点或补建 about:blank；同一连接完成清理。

@@ -6,7 +6,6 @@ import {
 } from "@agent-platform/ai-connect-react";
 import { InteractiveTimeline as SharedChatTimeline } from "@agent-platform/ai-connect-react/chat";
 import {
-  interviewErrorMessage,
   interviewMessageTimes,
   interviewQuestionRegistry,
   projectInterviewTimeline,
@@ -53,7 +52,6 @@ export function ChatTimeline({
   const { state, ready, error } = interview;
   const modelReady = modelSettings.ready;
   const [draft, setDraft] = useState("");
-  const latest = state.messages.at(-1);
   const latestDraft = currentDraft(state);
   const controlsBlocked =
     Boolean(blockedReason) || interview.busy || Boolean(interview.pending);
@@ -62,7 +60,7 @@ export function ChatTimeline({
     () =>
       projectInterviewTimeline({
         state,
-        blocked: controlsBlocked || readOnly || !modelReady,
+        blocked: controlsBlocked || readOnly || !modelReady || !ready,
         onDraft,
         onPlan,
         onRetry: interview.retry,
@@ -73,12 +71,12 @@ export function ChatTimeline({
       controlsBlocked,
       readOnly,
       modelReady,
+      ready,
       onDraft,
       interview.retry,
       onPlan,
     ],
   );
-  const errorMessage = interviewErrorMessage(latest);
 
   return (
     <section className="interview-workspace" aria-label="持续需求对话">
@@ -144,7 +142,8 @@ export function ChatTimeline({
         resetKey={taskId}
         className={`interview-thread${messageTimesIncomplete ? " interview-thread--time-incomplete" : ""}`}
         partClassNames={{ content: "thread-column", composer: "thread-bottom" }}
-        value={timeline}
+        // WHY：失败重试已作为同轮 content 组合，禁用共享壳的孤立 retry footer；状态事实仍由原投影提供。
+        value={{ ...timeline, canRetry: false }}
         commands={{
           send: async (text) => {
             if (!ready || controlsBlocked || readOnly || !text.trim()) return;
@@ -166,7 +165,6 @@ export function ChatTimeline({
         composition={{
           questions: interviewQuestionRegistry,
           cards: interviewAgentUI.cards,
-          ...(errorMessage ? { errorMessage } : {}),
           composerDraft: { value: draft, onChange: setDraft },
           theme: {
             assistantName: "需求助手",

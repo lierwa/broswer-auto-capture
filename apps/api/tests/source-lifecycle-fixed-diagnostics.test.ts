@@ -53,6 +53,36 @@ test("fixed Python fault stages persist without altering public authoring progre
   }
 })
 
+test("attached startup persists fixed stages and bounded safe causes without public progress or SDK values", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "bat-source-diagnostic-"))
+  const progress: unknown[] = []
+  const diagnostics = new SourceLifecycleDiagnostics(directory, "2b5bc1c4-7b42-4573-8f7d-80b0428a8082",
+    (event) => progress.push(event))
+  const cause = { errorKind: "runtime_error", code: "external_error", locations: [] }
+  const failed = { phase: "attached_startup", status: "failed", stage: "sdk_connect", causes: [cause,
+    { errorKind: "timeout_error", code: "external_error", locations: [{ source: "sdk_browser_session", line: 20 }] }] }
+  try {
+    diagnostics.acceptPythonLine(JSON.stringify({ phase: "attached_startup", status: "started", stage: "reserve" }))
+    diagnostics.acceptPythonLine(JSON.stringify({ phase: "attached_startup", status: "completed", stage: "reserve" }))
+    diagnostics.acceptPythonLine(JSON.stringify(failed))
+    for (const invalid of [{ ...failed, raw: "private SDK message" }, { ...failed, stage: "private" },
+      { ...failed, causes: [{ ...cause, code: "hybrid_attached_window_private" }] },
+      { ...failed, causes: [{ ...cause, errorKind: "private" }] }, { ...failed, causes: Array(5).fill(cause) },
+      { ...failed, causes: [{ ...cause, locations: [{ source: "private", line: 20 }] }] },
+      { ...failed, causes: [{ ...cause, locations: [{ source: "sdk_browser_session", line: 20, path: "/private" }] }] },
+      { ...failed, status: "completed" }]) diagnostics.acceptPythonLine(JSON.stringify(invalid))
+    const saved = readFileSync(diagnostics.file, "utf8")
+    const records = saved.trim().split("\n").map((line) => JSON.parse(line))
+    assert.equal(records.length, 3)
+    assert.deepEqual(records[2].causes, failed.causes)
+    assert.equal(progress.length, 0)
+    assert.ok(!saved.includes("private"))
+  } finally {
+    diagnostics.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 test("ordinary action failure persists one bounded original-attempt diagnostic and rejects private extras", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "bat-source-diagnostic-"))
   const diagnostics = new SourceLifecycleDiagnostics(directory, "c3d41fbd-947b-45f1-871d-17f9652166a8")
@@ -78,6 +108,16 @@ test("ordinary action failure persists one bounded original-attempt diagnostic a
     assert.equal(records[0].dispatchCount, 1)
     assert.deepEqual(records[0].check.actual, { "aria-expanded": false, disabled: false })
     assert.ok(!saved.includes("private"))
+    diagnostics.acceptPythonLine(JSON.stringify({ ...event, check: { ...event.check,
+      expected: { focused: true }, actual: { focused: false } } }))
+    diagnostics.acceptPythonLine(JSON.stringify({ ...event,
+      check: { kind: "focused_element", attempts: 1 } }))
+    diagnostics.acceptPythonLine(JSON.stringify({ ...event, check: { ...event.check,
+      expected: { focused: "private page text" }, actual: { focused: false } } }))
+    const focusRecords = readFileSync(diagnostics.file, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    assert.equal(focusRecords.length, 3)
+    assert.deepEqual(focusRecords[1].check.actual, { focused: false })
+    assert.deepEqual(focusRecords[2].check, { kind: "focused_element", attempts: 1 })
   } finally {
     diagnostics.close()
     rmSync(directory, { recursive: true, force: true })

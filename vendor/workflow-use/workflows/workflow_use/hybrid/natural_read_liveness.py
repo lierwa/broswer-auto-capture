@@ -1,4 +1,4 @@
-"""Keep only replay reads whose values feed a real action or final result."""
+"""Keep replay reads used by values or indispensable, source-proven effect readiness."""
 
 from .action_dispatch import NOT_DISPATCHED_RULE, not_dispatched_coverage
 from .coverage import native_dom_lookup_observation_coverage, unused_verified_dom_read_coverage
@@ -64,6 +64,8 @@ def _node_refs(value):
 def prune_unused_queries(request, registry, segments, ledger, *, repeat_lookup_ids=frozenset()):
     """Retire only a proven, pure find_elements read with no value consumer."""
     consumed = consumed_query_ids(request.trace, segments)
+    consumed.update(_required_readiness_queries(request.trace, segments, ledger,
+                                               consumed | set(repeat_lookup_ids)))
     actions = {item.id: item for item in request.trace.actions}
     observations = {item.id: item for item in request.trace.observations}
     coverage = {item.actionRef: item for item in ledger}
@@ -90,17 +92,45 @@ def prune_unused_queries(request, registry, segments, ledger, *, repeat_lookup_i
     return retained, updated, consumed, issues
 
 
+def _proven_not_dispatched_ids(trace, ledger):
+    actions = {item.id: item for item in trace.actions}
+    return {row.actionRef for row in ledger
+            if row.disposition == 'agent_internal' and row.exclusionRule == NOT_DISPATCHED_RULE
+            and actions.get(row.actionRef) is not None
+            and row == not_dispatched_coverage(trace, actions[row.actionRef])}
+
+
+def _required_readiness_queries(trace, segments, ledger, consumed):
+    available = {segment['id'] for segment in segments
+                 if segment.get('operation', {}).get('name') == 'browser.read-fields'}
+    original = consumer_readiness_by_action(trace)
+    alternative = consumer_readiness_by_action(trace, allowed_consumer_ids=consumed,
+        proven_not_dispatched_ids=_proven_not_dispatched_ids(trace, ledger))
+    required = set()
+    for segment in segments:
+        action_id = segment['id'].removeprefix('s-')
+        if segment.get('operation', {}).get('name') != 'browser.workflow-step' or action_id in alternative:
+            continue
+        conditions = segment.get('postconditions', [])
+        if any(item.get('consumerRef') is None and isinstance(item.get('clauseRef'), str)
+               for item in conditions):
+            continue
+        previous = [item for item in conditions if item.get('consumerRef') is not None]
+        proof = original.get(action_id)
+        # WHY：就绪读是动作效果的执行依赖，不是历史 proofRef。只有原事实精确证明、且没有
+        # 可独立物理后态或已保留替代读时才保留；伪 consumerRef/跨派发读取不能复活探查。
+        if (len(previous) == 1 and proof is not None and previous[0] == proof['condition']
+                and previous[0]['consumerRef'] in available):
+            required.add(previous[0]['consumerRef'].removeprefix('s-'))
+    return required
+
+
 def rebind_consumer_readiness(trace, segments, ledger):
     """Tie delayed effects to the first retained consumer across only proven non-dispatches."""
     actions = {item.id: item for item in trace.actions}
     allowed = {item['id'].removeprefix('s-') for item in segments
                if item.get('operation', {}).get('name') == 'browser.read-fields'}
-    harmless = set()
-    for row in ledger:
-        action = actions.get(row.actionRef)
-        if (row.disposition == 'agent_internal' and row.exclusionRule == NOT_DISPATCHED_RULE
-                and action is not None and row == not_dispatched_coverage(trace, action)):
-            harmless.add(row.actionRef)
+    harmless = _proven_not_dispatched_ids(trace, ledger)
     previous_readiness = consumer_readiness_by_action(trace)
     readiness = consumer_readiness_by_action(
         trace, allowed_consumer_ids=allowed, proven_not_dispatched_ids=harmless)

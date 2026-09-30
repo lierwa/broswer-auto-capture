@@ -44,7 +44,7 @@ class PostconditionNotMet(RuntimeError):
 _CHECK_KINDS = frozenset({
     'url', 'url_digest', 'title', 'target_value', 'target_text', 'target_state',
     'target_in_view', 'target_visible', 'scroll_position', 'visible_overlays',
-    'media_playback', 'read_fields',
+    'media_playback', 'focused_element', 'read_fields',
 })
 _FIELD_READ_CODES = frozenset({
     'read_container_resolution_failed', 'read_collection_limit', 'read_single_object_required',
@@ -57,7 +57,7 @@ _CHECK_REASONS = _FIELD_READ_CODES | _VALUE_READ_CODES | frozenset({
     'baseline_missing', 'fact_mismatch', 'projection_not_ready', 'projection_not_stable', 'check_error',
 })
 _PAGE_FACT_KINDS = frozenset({'url', 'url_digest', 'title', 'scroll_position',
-                              'visible_overlays', 'media_playback'})
+                              'visible_overlays', 'media_playback', 'focused_element'})
 _ATTEMPT_PAGE = ContextVar('bat_postcondition_attempt_page', default=None)
 
 
@@ -73,7 +73,7 @@ def _safe_check_error(error):
 class Postcondition(Contract):
     kind: Literal['url', 'url_digest', 'title', 'target_value', 'target_text', 'target_state',
                   'target_in_view', 'target_visible', 'scroll_position', 'visible_overlays',
-                  'media_playback', 'read_fields']
+                  'media_playback', 'focused_element', 'read_fields']
     bindingArgument: str | None = None
     equals: JsonValue = None
     clauseRef: str | None = None
@@ -173,7 +173,7 @@ def _runtime_read_scope(condition, conditions, args):
 
 
 def action_result_readiness(action_name, raw):
-    """Select an existing transition consumer; never create or erase a postcondition."""
+    """Select one existing ready/transition consumer; never create or erase a postcondition."""
     if action_name not in {'click', 'send_keys'}:
         return None
     conditions = [Postcondition.model_validate(item) for item in raw]
@@ -182,13 +182,14 @@ def action_result_readiness(action_name, raw):
             or any(item.equals is not None or item.bindingArgument is not None for item in urls)):
         return None
     candidates = [index for index, item in enumerate(conditions)
-                  if item.kind == 'read_fields' and item.transition is True]
+                  if item.kind == 'read_fields' and (item.transition is True or item.ready is True)]
     if len(candidates) != 1:
         return None
     candidate = conditions[candidates[0]]
     complete = (candidate.read is not None and candidate.scope is not None and candidate.settle is not None
                 and isinstance(candidate.consumerRef, str) and bool(candidate.consumerRef))
-    # WHY：实际动作结果只参数化唯一消费者的读取作用域；固定 URL 条件仍是独立授权与验证。
+    # WHY：ready 与 transition 都属于本动作消费者；样本 URL 不是动态选择的输出身份。
+    # 只参数化唯一消费者的读取作用域；固定 URL 条件仍是独立授权与验证。
     return candidates[0] if complete else None
 
 
@@ -385,7 +386,7 @@ def _safe_target_state(value):
     except (TypeError, ValueError):
         return None
     allowed = {'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
-               'checked', 'selected', 'disabled'}
+               'checked', 'selected', 'disabled', 'focused'}
     if (not isinstance(parsed, dict) or set(parsed) - allowed
             or any(type(item) is not bool for item in parsed.values())):
         return None
@@ -406,7 +407,8 @@ async def read_check_value(parameters, browser):
                              scope=parameters.get('_runtimeReadScope', parameters.get('scope')),
                              page=_ATTEMPT_PAGE.get(), required_paths=parameters.get('requiredPaths', ())) if parameters['kind'] == 'read_fields' else (
            await read_fact(parameters['kind'], parameters['target'], browser,
-                           parameters.get('_retainedElement')))
+                           parameters.get('_retainedElement'),
+                           include_focus='focused' in (_safe_target_state(parameters.get('expected')) or {})))
 
 
 def transition_baseline_unavailable(error):
@@ -418,7 +420,7 @@ def transition_baseline_unavailable(error):
     return str(error) in {'page_unavailable', 'read_single_object_required', 'target_scope_mismatch'}
 
 
-async def read_fact(kind, target, browser, retained_element=None):
+async def read_fact(kind, target, browser, retained_element=None, *, include_focus=False):
     if kind.startswith('target_'):
         if kind == 'target_visible':
             return await read_visible_target(browser, target)
@@ -426,7 +428,7 @@ async def read_fact(kind, target, browser, retained_element=None):
         # 后续动作不会复用该元素，仍须重新解析并通过遮挡/命中检查。
         element = retained_element or await TargetResolver(browser).resolve_element(target)
         if kind == 'target_state':
-            return await read_target_state(element)
+            return await read_target_state(element, include_focus=include_focus)
         if kind == 'target_value':
             return await read_target_value(element)
         if kind == 'target_in_view':
@@ -438,7 +440,7 @@ async def read_fact(kind, target, browser, retained_element=None):
         page = await browser.get_current_page()
     if page is None:
         raise ValueError('page_unavailable')
-    if kind in ('scroll_position', 'visible_overlays', 'media_playback'):
+    if kind in ('scroll_position', 'visible_overlays', 'media_playback', 'focused_element'):
         return await read_page_effect(kind, page)
     if kind in ('url', 'url_digest'):
         actual = await page.get_url()

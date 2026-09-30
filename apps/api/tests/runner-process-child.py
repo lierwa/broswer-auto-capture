@@ -20,10 +20,18 @@ def cleanup_result(mode):
 
 def main():
     mode = os.environ.get('BAT_TEST_RUNNER_MODE', 'normal')
+    connection_owner = None
     channel = os.fdopen(3, 'w', buffering=1)
     try:
         for line in sys.stdin:
             request = json.loads(line)
+            if request.get('type') == 'hybrid_start':
+                connection_owner = request['config'].get('connectionOwnerId')
+            if request.get('type') == 'hybrid_release':
+                result = cleanup_result(mode)
+                result['retainedConnectionOwnerId'] = connection_owner if result['closed'] else None
+                channel.write(json.dumps({'id': request['id'], 'ok': True, 'result': result}) + '\n')
+                continue
             if request.get('type') == 'close':
                 if mode == 'timeout':
                     time.sleep(60)

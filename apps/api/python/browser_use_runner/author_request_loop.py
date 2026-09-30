@@ -41,12 +41,25 @@ class AuthorRequestLoop:
         finally:
             self.author = None
 
+    async def release_allowed(self, request):
+        if request.get('type') != 'hybrid_release':
+            return True
+        try:
+            self.runner.validate_release(request)
+        except Exception:
+            # WHY：先校验 parent，再取消作者；错 owner/损坏 envelope 不获得本任务停止权限。
+            await self.respond(request)
+            return False
+        return True
+
     async def run(self):
         try:
             while line := await asyncio.to_thread(sys.stdin.readline):
                 request = json.loads(line)
                 active = self.author is not None and not self.author.done()
-                if active and request.get('type') == 'close':
+                if active and not await self.release_allowed(request):
+                    continue
+                if active and request.get('type') in ('close', 'hybrid_release'):
                     await self.cancel_author()
                 elif active and request.get('type') not in ('hybrid_author_resume', 'hybrid_compilation_ack'):
                     self.write(request, {'id': request.get('id'), 'ok': False, 'code': 'hybrid_runner_failed',

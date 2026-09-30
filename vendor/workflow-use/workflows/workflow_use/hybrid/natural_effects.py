@@ -33,9 +33,11 @@ MEDIA_PLAYBACK_SCRIPT = """() => Array.from(document.querySelectorAll('video,aud
   && !node.paused && !node.ended && node.readyState >= 2) ? 'playing' : 'not_playing'"""
 
 
-async def read_target_state(element) -> str:
+async def read_target_state(element, *, include_focus=False) -> str:
     """Read only fixed boolean control state from a callback-owned or freshly resolved Element."""
-    value = _object(await element.evaluate(TARGET_STATE_SCRIPT), 'target_state_unavailable')
+    script = TARGET_STATE_SCRIPT.replace('return output;',
+        "output.focused = this.matches(':focus-within'); return output;") if include_focus else TARGET_STATE_SCRIPT
+    value = _object(await element.evaluate(script), 'target_state_unavailable')
     connected = value.pop('connected', None)
     if type(connected) is not bool:
         raise ValueError('target_state_unavailable')
@@ -43,6 +45,10 @@ async def read_target_state(element) -> str:
         raise ValueError('target_state_detached')
     allowed = {'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
                'checked', 'selected', 'disabled'}
+    if include_focus:
+        allowed.add('focused')
+        if type(value.get('focused')) is not bool:
+            raise ValueError('target_state_unavailable')
     if set(value) - allowed or any(type(item) is not bool for item in value.values()):
         raise ValueError('target_state_unavailable')
     return _canonical(value)
@@ -59,6 +65,8 @@ async def read_target_value(element):
 
 
 async def read_page_effect(kind, page) -> str:
+    if kind == 'focused_element':
+        return await focused_element_digest(page)
     if kind == 'scroll_position':
         value = _object(await page.evaluate(SCROLL_POSITION_SCRIPT), 'scroll_position_unavailable')
         if set(value) != {'x', 'y'} or any(not _coordinate(value[key]) for key in ('x', 'y')):
@@ -72,6 +80,27 @@ async def read_page_effect(kind, page) -> str:
             raise ValueError('media_playback_unavailable')
         return value
     raise ValueError('unsupported_natural_effect_fact')
+
+
+async def focused_element_digest(page) -> str:
+    before = await page.get_target_info()
+    target_id = _value(before, 'targetId')
+    if not isinstance(target_id, str) or not target_id:
+        raise ValueError('focused_element_identity_unavailable')
+    elements = await page.get_elements_by_css_selector(':focus')
+    if len(elements) > 16:
+        raise ValueError('focused_element_identity_unavailable')
+    identities = set()
+    for element in elements:
+        backend = _value(await element.get_basic_info(), 'backendNodeId')
+        if type(backend) is not int:
+            raise ValueError('focused_element_identity_unavailable')
+        identities.add(backend)
+    after = await page.get_target_info()
+    if _value(after, 'targetId') != target_id:
+        raise ValueError('focused_element_identity_changed')
+    # WHY：只证明本次页面的焦点变化，不能把样本 backend ID 当作跨运行身份或语义目标。
+    return digest(sorted(identities))
 
 
 async def visible_overlay_digest(page) -> str:

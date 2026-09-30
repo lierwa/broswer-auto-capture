@@ -1,7 +1,7 @@
 import {
   CONTRACT_VERSION, chainEdgePort, chainNodeDisplayTitle, chainPresentationContentSchema, chainPresentationSchema, nodeBindings,
-  predicateBindings, type ChainNode, type ChainPresentation,
-  type ChainPresentationContent, type TaskChain, type TaskPlan,
+  predicateBindings, type ChainEdge, type ChainEdgeV2, type ChainNode, type ChainPresentation,
+  type ChainPresentationContent, type StableChainNodeV2, type TaskChain, type TaskPlan,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "@browser-capture/runtime"
 import { DomainError } from "../errors.js"
@@ -25,7 +25,35 @@ export function createStepChainPresentation(chain: TaskChain,
   step: Pick<TaskPlan["steps"][number], "id" | "title" | "goal">) {
   if (chain.stepId !== step.id) invalid("presentation_plan_step_mismatch")
   // WHY：阶段只来自冻结控制流和节点证据；业务词不足时宁可显示真实动作，也不从 URL 或 Function 源码臆测。
-  return createChainPresentation(chain, groupedPresentationContent(chain, step))
+  return createChainPresentation(chain, groupedPresentationContent(chain, step, undefined, true))
+}
+
+export type PreparationPresentationInput = {
+  step: Pick<TaskPlan["steps"][number], "id" | "title" | "goal">
+  nodes: StableChainNodeV2[]
+  edges: ChainEdgeV2[]
+  previous?: ChainPresentationContent
+}
+
+export function createPreparationPresentation(input: PreparationPresentationInput) {
+  const graph: PresentationGraph = { nodes: input.nodes, edges: input.edges }
+  const previous = input.previous ? validatePreviousPreparation(input.previous, input.nodes) : undefined
+  return validatePreparationPresentation(graph, groupedPresentationContent(graph, input.step, previous, false))
+}
+
+export function ungroupedPreparationPresentation(nodes: StableChainNodeV2[], edges: ChainEdgeV2[]) {
+  const executable = nodes.filter((node) => node.kind !== "terminal")
+  if (!executable.length) return { stages: [], overviewLayout: [], focusLayouts: [] }
+  const nodeIds = executable.map((node) => node.id), inStage = new Set(nodeIds)
+  const exits = edges.filter((edge) => inStage.has(edge.from) && !inStage.has(edge.to)).map((edge) => ({
+    id: stageExitId(edge), label: edge.port, sourceNodeId: edge.from, sourcePort: edge.port,
+  }))
+  return chainPresentationContentSchema.parse({ stages: [{ id: "ungrouped-actions", title: "未分组动作",
+    summary: "当前生成节点尚未形成可用阶段展示。", nodeIds, entryNodeId: nodeIds[0]!, exits }],
+  overviewLayout: [{ stageId: "ungrouped-actions", x: 0, y: 0 }],
+  focusLayouts: [{ stageId: "ungrouped-actions", nodes: nodeIds.map((nodeId, index) => ({
+    nodeId, x: index * 300, y: 0,
+  })) }] })
 }
 
 export function presentationForRevision(chain: TaskChain, current: ChainPresentation) {
@@ -58,8 +86,13 @@ export function validateChainPresentation(chain: TaskChain, raw: unknown) {
   return presentation
 }
 
-function validateStage(chain: TaskChain, stage: ChainPresentation["stages"][number], stageByNode: Map<string, string>) {
-  if (stageByNode.get(chain.entry) === stage.id && stage.entryNodeId !== chain.entry) invalid("presentation_chain_entry")
+type PresentationGraph = { nodes: ChainNode[]; edges: ChainEdge[]; entry?: string;
+  completion?: TaskChain["completion"] }
+
+function validateStage(chain: PresentationGraph, stage: ChainPresentation["stages"][number], stageByNode: Map<string, string>) {
+  if (chain.entry && stageByNode.get(chain.entry) === stage.id && stage.entryNodeId !== chain.entry) {
+    invalid("presentation_chain_entry")
+  }
   const reachable = new Set([stage.entryNodeId])
   let changed = true
   while (changed) {
@@ -83,7 +116,7 @@ function validateStage(chain: TaskChain, stage: ChainPresentation["stages"][numb
   }
 }
 
-function validateLayouts(presentation: ChainPresentation) {
+function validateLayouts(presentation: Pick<ChainPresentationContent, "stages" | "overviewLayout" | "focusLayouts">) {
   const stageIds = presentation.stages.map((stage) => stage.id)
   if (!sameIdentity(stageIds, presentation.overviewLayout.map((item) => item.stageId))
     || !sameIdentity(stageIds, presentation.focusLayouts.map((item) => item.stageId))) {
@@ -93,6 +126,31 @@ function validateLayouts(presentation: ChainPresentation) {
     const stage = presentation.stages.find((item) => item.id === layout.stageId)!
     if (!sameIdentity(stage.nodeIds, layout.nodes.map((item) => item.nodeId))) invalid("presentation_layout_node_mismatch")
   }
+}
+
+function validatePreviousPreparation(raw: ChainPresentationContent, nodes: StableChainNodeV2[]) {
+  const previous = chainPresentationContentSchema.parse(raw), known = new Set(nodes.map((node) => node.id))
+  const assigned = previous.stages.flatMap((stage) => stage.nodeIds)
+  if (new Set(assigned).size !== assigned.length || assigned.some((nodeId) => !known.has(nodeId))) {
+    throw new Error("preparation_presentation_previous_mismatch")
+  }
+  validateLayouts(previous)
+  return previous
+}
+
+function validatePreparationPresentation(graph: PresentationGraph, raw: ChainPresentationContent) {
+  const presentation = chainPresentationContentSchema.parse(raw)
+  const executable = graph.nodes.filter((node) => node.kind !== "terminal"), known = new Map(graph.nodes.map((node) => [node.id, node]))
+  const assignments = presentation.stages.flatMap((stage) => stage.nodeIds.map((nodeId) => [nodeId, stage.id] as const))
+  if (assignments.length !== executable.length || new Set(assignments.map(([nodeId]) => nodeId)).size !== assignments.length
+    || executable.some((node) => !assignments.some(([nodeId]) => nodeId === node.id))
+    || assignments.some(([nodeId]) => known.get(nodeId)?.kind === "terminal" || !known.has(nodeId))) {
+    throw new Error("preparation_presentation_stage_coverage")
+  }
+  const stageByNode = new Map(assignments)
+  for (const stage of presentation.stages) validateStage(graph, stage, stageByNode)
+  validateLayouts(presentation)
+  return presentation
 }
 
 function defaultPresentationContent(chain: TaskChain): ChainPresentationContent {
@@ -110,17 +168,19 @@ function defaultPresentationContent(chain: TaskChain): ChainPresentationContent 
     })) }] }
 }
 
-function groupedPresentationContent(chain: TaskChain,
-  step: Pick<TaskPlan["steps"][number], "title" | "goal">): ChainPresentationContent {
+function groupedPresentationContent(chain: PresentationGraph,
+  step: Pick<TaskPlan["steps"][number], "title" | "goal">,
+  previous?: ChainPresentationContent, final = false): ChainPresentationContent {
   const executable = controlFlowNodes(chain)
   if (!executable.length) return { stages: [], overviewLayout: [], focusLayouts: [] }
-  const groups = deterministicStageGroups(chain, executable)
+  const groups = deterministicStageGroups(chain, executable, final)
   const stageByNode = new Map<string, string>()
-  const reservedIds = new Set(chain.nodes.map((node) => node.id))
-  const stages: ChainPresentationContent["stages"] = groups.map((nodes, index) => {
-    let suffix = index + 1, id = `stage-${index + 1}`
-    while (reservedIds.has(id)) id = `stage-${index + 1}-${++suffix}`
-    reservedIds.add(id)
+  const usedIds = new Set<string>()
+  const stages: ChainPresentationContent["stages"] = groups.map((nodes) => {
+    const retained = retainedStage(nodes, previous)
+    const id = retained?.id ?? stableStageId(nodes, usedIds)
+    if (usedIds.has(id)) throw new Error("preparation_presentation_stage_identity")
+    usedIds.add(id)
     for (const node of nodes) stageByNode.set(node.id, id)
     const titles = nodes.map(chainNodeDisplayTitle)
     const title = stageTitle(nodes, titles, step)
@@ -131,16 +191,40 @@ function groupedPresentationContent(chain: TaskChain,
   for (const stage of stages) {
     const inStage = new Set(stage.nodeIds)
     stage.exits = chain.edges.filter((edge) => inStage.has(edge.from) && stageByNode.get(edge.to) !== stage.id)
-      .map((edge, index) => ({ id: `exit-${index + 1}`, label: chainEdgePort(edge),
+      .map((edge) => ({ id: stageExitId(edge), label: chainEdgePort(edge),
         sourceNodeId: edge.from, sourcePort: chainEdgePort(edge) }))
   }
-  return { stages, overviewLayout: stages.map((stage, index) => ({ stageId: stage.id, x: index * 340, y: 0 })),
-    focusLayouts: stages.map((stage) => ({ stageId: stage.id, nodes: stage.nodeIds.map((nodeId, index) => ({
-      nodeId, x: index * 300, y: 0,
-    })) })) }
+  return { stages, overviewLayout: stages.map((stage, index) => previous?.overviewLayout
+      .find((item) => item.stageId === stage.id) ?? { stageId: stage.id, x: index * 340, y: 0 }),
+    focusLayouts: stages.map((stage) => {
+      const retained = previous?.focusLayouts.find((item) => item.stageId === stage.id)
+      return { stageId: stage.id, nodes: stage.nodeIds.map((nodeId, index) => retained?.nodes
+        .find((item) => item.nodeId === nodeId) ?? { nodeId, x: index * 300, y: 0 }) }
+    }) }
 }
 
-function deterministicStageGroups(chain: TaskChain, nodes: ChainNode[]) {
+function retainedStage(nodes: ChainNode[], previous?: ChainPresentationContent) {
+  if (!previous) return undefined
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const candidates = previous.stages.filter((stage) => stage.nodeIds.every((nodeId) => nodeIds.has(nodeId)))
+  return candidates.length === 1 ? candidates[0] : undefined
+}
+
+function stableStageId(nodes: ChainNode[], used: Set<string>) {
+  const anchor = nodes.find(isBrowserAction) ?? nodes[0]!
+  const digest = digestJson(anchor.id)
+  for (const length of [16, 24, 32, 40, 48, 56]) {
+    const candidate = `stage-${digest.slice(0, length)}`
+    if (!used.has(candidate)) return candidate
+  }
+  throw new Error("preparation_presentation_stage_identity")
+}
+
+function stageExitId(edge: ChainEdge) {
+  return `exit-${digestJson({ from: edge.from, port: chainEdgePort(edge), to: edge.to }).slice(0, 16)}`
+}
+
+function deterministicStageGroups(chain: PresentationGraph, nodes: ChainNode[], final: boolean) {
   const byId = new Map(nodes.map((node) => [node.id, node]))
   const order = new Map(nodes.map((node, index) => [node.id, index]))
   const consumers = new Map<string, string[]>()
@@ -159,7 +243,7 @@ function deterministicStageGroups(chain: TaskChain, nodes: ChainNode[]) {
     }
   }
   for (const node of chain.nodes) for (const binding of nodeBindings(node)) recordConsumer(binding, node.id)
-  for (const condition of chain.completion) for (const binding of predicateBindings(condition.predicate)) {
+  for (const condition of chain.completion ?? []) for (const binding of predicateBindings(condition.predicate)) {
     recordConsumer(binding, `completion-${condition.id}`)
   }
   let groups = nodes.map((node) => [node])
@@ -193,7 +277,7 @@ function deterministicStageGroups(chain: TaskChain, nodes: ChainNode[]) {
       && reachableWithinChain(chain, action.id, read.id)) merge([action.id, read.id])
   }
   // 从 completed terminal 的正式输出/证据反向追踪；展示标题绝不能反过来决定业务分组。
-  for (const terminal of chain.nodes.filter((node) => node.kind === "terminal" && node.status === "completed")) {
+  for (const terminal of final ? chain.nodes.filter((node) => node.kind === "terminal" && node.status === "completed") : []) {
     for (const binding of nodeBindings(terminal)) {
       if (binding.source !== "node") continue
       const tail = outputTail(binding.nodeId, terminal.id, byId, consumers)
@@ -220,11 +304,12 @@ function exclusiveSupport(consumerId: string, nodes: Map<string, ChainNode>, con
   return [...found]
 }
 
-function stageCandidateEntry(chain: TaskChain, nodes: ChainNode[]) {
+function stageCandidateEntry(chain: PresentationGraph, nodes: ChainNode[]) {
   const ids = new Set(nodes.map((node) => node.id))
-  const externalTargets = chain.edges.filter((edge) => !ids.has(edge.from) && ids.has(edge.to)).map((edge) => edge.to)
-  const entry = ids.has(chain.entry) ? chain.entry : externalTargets[0]
-  if (!entry || externalTargets.some((target) => target !== entry)) return null
+  const externalTargets = [...new Set(chain.edges.filter((edge) => !ids.has(edge.from) && ids.has(edge.to)).map((edge) => edge.to))]
+  const entry = chain.entry && ids.has(chain.entry) ? chain.entry
+    : externalTargets.length === 1 ? externalTargets[0] : externalTargets.length === 0 ? nodes[0]?.id : undefined
+  if (!entry) return null
   const reachable = new Set([entry])
   let changed = true
   while (changed) {
@@ -236,7 +321,7 @@ function stageCandidateEntry(chain: TaskChain, nodes: ChainNode[]) {
   return nodes.every((node) => reachable.has(node.id)) ? entry : null
 }
 
-function validStageCandidate(chain: TaskChain, nodes: ChainNode[]) {
+function validStageCandidate(chain: PresentationGraph, nodes: ChainNode[]) {
   return stageCandidateEntry(chain, nodes) !== null
 }
 
@@ -297,8 +382,9 @@ function readinessConsumers(node: ChainNode) {
     ? [condition.consumerRef] : [])
 }
 
-function controlFlowNodes(chain: TaskChain) {
+function controlFlowNodes(chain: PresentationGraph) {
   const executable = new Map(chain.nodes.filter((node) => node.kind !== "terminal").map((node) => [node.id, node]))
+  if (!chain.entry) return [...executable.values()]
   const ordered: ChainNode[] = [], visited = new Set<string>(), pending = [chain.entry]
   while (pending.length) {
     const id = pending.shift()!
@@ -315,7 +401,7 @@ function controlFlowNodes(chain: TaskChain) {
   return ordered
 }
 
-function reachableWithinChain(chain: TaskChain, from: string, to: string) {
+function reachableWithinChain(chain: PresentationGraph, from: string, to: string) {
   const pending = [from], seen = new Set<string>()
   while (pending.length) {
     const current = pending.shift()!

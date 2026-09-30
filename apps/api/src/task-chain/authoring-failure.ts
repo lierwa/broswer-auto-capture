@@ -11,6 +11,7 @@ export function failureLayer(error: unknown, stage: string): string {
     return failureLayer(error.primary.error, stage)
   }
   const message = error instanceof Error ? error.message : "unknown"
+  if (/^hybrid_existing_browser_/.test(message)) return "日常 Chrome 连接"
   if (message === "hybrid_source_protocol_invalid") return "来源结果交接"
   if (/hybrid_compilation_(ack|save)/.test(message)) return "在线节点保存"
   if (/^hybrid_(compilation_|prefix_|online_final_)/.test(message)) return "在线节点编译"
@@ -36,6 +37,18 @@ export function authoringFailureMessage(error: unknown): string {
     if (primary) return authoringFailureMessage(primary)
   }
   const message = error instanceof Error ? error.message : "authoring_failed"
+  if (message === "hybrid_existing_browser_endpoint_required") {
+    return "未找到日常 Chrome 的原生连接；请保持 Chrome 打开，并在 chrome://inspect/#remote-debugging 开启远程调试。本轮未启动其他浏览器。"
+  }
+  if (message === "hybrid_existing_browser_endpoint_invalid") {
+    return "日常 Chrome 的原生连接信息无效；本轮已在启动前停止，没有切换浏览器。"
+  }
+  if (message === "hybrid_existing_browser_headless_unsupported") {
+    return "当前隐藏窗口配置与日常 Chrome 连接冲突；本轮已停止，没有切换浏览器。"
+  }
+  if (message === "hybrid_existing_browser_owner_required") {
+    return "本次任务缺少日常 Chrome 窗口身份，这是系统接线问题；本轮已停止，未操作用户标签页。"
+  }
   if (message === "hybrid_source_protocol_invalid") {
     return "代表执行的结果交接未通过协议校验；本轮已停止，需要修复该问题后继续。"
   }
@@ -85,7 +98,7 @@ export function authoringFailureMessage(error: unknown): string {
     return "浏览器任务结束时没有完成安全收尾，系统已停止并且没有发布这条链路；请重新准备。"
   }
   if (/captcha|login|authentication|verification/i.test(message)) {
-    return "网站要求登录或人工验证；请先在专用浏览器中处理账号状态，再重新准备。"
+    return "网站要求登录或人工验证；请先在日常 Chrome 的任务窗口中处理账号状态，再继续当前任务。"
   }
   if (/model_account|ai_|provider/i.test(message)) return "模型服务没有完成这次准备，请检查模型账号设置后重试。"
   if (/timeout/i.test(message)) return "网站响应超时，系统已停止并且没有发布不完整链路；请稍后重新准备。"

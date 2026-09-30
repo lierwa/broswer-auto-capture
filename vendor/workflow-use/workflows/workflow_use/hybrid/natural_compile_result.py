@@ -39,7 +39,7 @@ def finalize_natural_compilation(request, registry, compilation_type, linear_gra
     issues.extend(validate_coverage(
         request.trace, ledger, {segment['id'] for segment in segments}, registry=registry,
         result_spec=request.plan.resultSpec, output_schema=output_schema,
-        consumed_query_ids=consumed))
+        consumed_query_ids=consumed, compiled_segments=segments))
     issues = sorted({item.id: item for item in issues}.values(), key=lambda item: item.id)
     graph = linear_graph(segments) if not issues else {'entry': '', 'edges': [], 'terminals': []}
     if not issues:

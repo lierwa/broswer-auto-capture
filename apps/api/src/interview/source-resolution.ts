@@ -206,7 +206,7 @@ export function recordSourceResolution(state: InterviewState, value: SourceResol
 
 export function recordUserProvidedSources(state: InterviewState, text: string, revision: number) {
   const seen = new Set<string>()
-  for (const raw of text.match(/https?:\/\/[^\s<>"')，。；]+/gu) ?? []) {
+  for (const raw of text.match(/https?:\/\/[^\s<>"')`，。；]+/gu) ?? []) {
     let url: URL
     try { url = new URL(raw) } catch { continue }
     const candidate = candidateFromUrl(url)
@@ -295,7 +295,8 @@ function draftEntryUrls(markdown: string) {
 }
 
 function markdownUrls(markdown: string) {
-  return [...markdown.matchAll(/https?:\/\/[^\s<>"'，。；]+/gu)].map((match) => {
+  // WHY：反引号是 Markdown 代码边界，不是 URL 字节；保留真实 %60 路径与严格来源匹配。
+  return [...markdown.matchAll(/https?:\/\/[^\s<>"'`，。；]+/gu)].map((match) => {
     const raw = match[0].replace(/[),.;\]，。；）]+$/u, "")
     try { return new URL(raw).href } catch { throw new Error("interview_draft_url_invalid") }
   })

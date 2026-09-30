@@ -154,6 +154,7 @@ export class TaskPlanExecutor {
       id: stableUuid(record.id, "cleanup-audit", String(record.cleanup.attempt)), taskId: record.taskId,
       executionId: record.id, ownerId, attempt: record.cleanup.attempt, source: "runner",
       status: report.status, code: report.code, activeResources: report.activeResources,
+      ...(report.retainedConnection ? { retainedConnection: report.retainedConnection } : {}),
       evidenceDigest: report.evidenceDigest, stages: report.stages, createdAt: new Date().toISOString(),
     }))
   }
