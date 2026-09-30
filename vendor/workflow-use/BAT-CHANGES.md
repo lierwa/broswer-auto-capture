@@ -17,11 +17,19 @@
 
 本地生产变更包括：
 
+- 2026-09-30 保存来源修复：保留没有替代证明的真实 consumer-readiness 执行读；已有独立
+  物理后态或另一个已保留读取时仍裁剪冗余探查。coverage 复用原 fixed-wait 分类器独立核验
+  目标 owner、动作顺序、同 tab/URL 和回执，不仅凭新规则名放行。QuickJS 失败保留宿主固定码，
+  不存 guest 异常正文或新增模型重试。焦点效果复用 Page/Element 固定公开读取，只保留摘要和
+  布尔值；旧 target_state 读取不含 focused，新条件才按声明启用，不改旧发布链的比较。
+
 - 动作结果读取复用 `execute_checked`、导航协调、StepVerifier 与 Tenacity：仅有明确 URL
-  变化、唯一完整 transition 消费者且无固定/输入绑定 URL 条件的 click/send_keys，才把该
+  变化、唯一完整 ready 或 transition 消费者且无固定/输入绑定 URL 条件的 click/send_keys，才把该
   消费者的临时读取作用域绑定本次动作结果页面。原 tab 或唯一新增 tab 必须属于同 session；
   同轮页面事实与字段读取固定同一 Page 并核验 target/document/URL，跨轮身份变化清空稳定摘要。
   动作仍只派发一次，原链路条件、来源与站点权限不变；没有新增公开协议字段。
+  2026-09-30 补齐执行端遗漏的 ready 分支，与既有 TS 来源准入保持一致；列表数据变化时
+  不再用探索样本 URL 拒绝合法的实际导航。固定 URL、多个消费者和页面归属变化仍拒绝。
 
 - 准备探查沿既有读取活性与覆盖审计分类：完整 `find_elements` 若无执行绑定、选择、重复或输出
   消费者，且原生派发/回执、查询与同文档前后事实均可独立验证，则保留为准备审计。

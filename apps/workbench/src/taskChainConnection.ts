@@ -2,12 +2,15 @@ import {
   taskChainCommandSchema,
   taskChainDispatchResponseSchema,
   taskExecutionEventBatchSchema,
+  taskExecutionDetailSchema,
   taskWorkspaceDiagnosticsSchema,
   taskWorkspaceHistoryPageSchema,
   taskWorkspaceSnapshotSchema,
   type AcceptedTaskExecution,
   type TaskChainCommand,
   type TaskExecutionEventBatch,
+  type TaskExecutionDetail,
+  type TaskExecutionReview,
   type TaskWorkspaceDiagnostics,
   type TaskWorkspaceHistoryPage,
   type TaskWorkspaceSnapshot,
@@ -21,6 +24,8 @@ class TaskChainRequestError extends Error {
 }
 
 type HistoryKind = TaskWorkspaceHistoryPage["kind"]
+type ReviewCommand = Extract<TaskChainCommand, { type: "review_execution" }>
+type ReviewIntent = { command: ReviewCommand; saved: TaskExecutionReview | null; busy: boolean; error: string }
 type ConnectionView = {
   workspace: TaskWorkspaceSnapshot | null
   error: string
@@ -30,6 +35,11 @@ type ConnectionView = {
   acceptedExecution: AcceptedTaskExecution | null
   executionId: string | null
   eventBatch: TaskExecutionEventBatch | null
+  executionDetail: TaskExecutionDetail | null
+  detailBusy: boolean
+  detailError: string
+  savedReview: TaskExecutionReview | null
+  reviewIntents: Record<string, ReviewIntent>
   history: Partial<Record<HistoryKind, TaskWorkspaceHistoryPage>>
   historyBusy: HistoryKind | null
   diagnostics: TaskWorkspaceDiagnostics | null
@@ -40,6 +50,7 @@ export class TaskChainConnection {
   private view: ConnectionView = {
     workspace: null, error: "", errorCode: null, pending: null, busy: false,
     acceptedExecution: null, executionId: null, eventBatch: null,
+    executionDetail: null, detailBusy: false, detailError: "", savedReview: null, reviewIntents: {},
     history: {}, historyBusy: null, diagnostics: null, diagnosticsBusy: false,
   }
   private readonly listeners = new Set<() => void>()
@@ -58,13 +69,58 @@ export class TaskChainConnection {
     for (const listener of this.listeners) listener()
   }
 
+  private updateReview(executionId: string, intent: ReviewIntent | null) {
+    const reviewIntents = { ...this.view.reviewIntents }
+    if (intent) reviewIntents[executionId] = intent
+    else delete reviewIntents[executionId]
+    this.update({ reviewIntents })
+  }
+
+  // WHY：请求身份属于同任务连接；关闭面板、切换节点或响应丢失都不能重新保存同一反馈。
+  async submitReview(raw: ReviewCommand, send: (review: TaskExecutionReview) => Promise<boolean>) {
+    const command = this.view.reviewIntents[raw.executionId]?.command ?? raw
+    const prior = this.view.reviewIntents[command.executionId]
+    if (prior?.busy || this.view.busy) return false
+    let intent: ReviewIntent = { command, saved: prior?.saved ?? null, busy: true, error: "" }
+    this.updateReview(command.executionId, intent)
+    try {
+      if (!intent.saved) {
+        if (!await this.dispatch(command)) return false
+        const saved = this.view.savedReview
+        if (!saved || saved.context?.executionId !== command.executionId || saved.decision !== command.decision
+          || saved.feedback !== command.feedback || JSON.stringify(saved.context.selection) !== JSON.stringify(command.selection ?? null)) {
+          throw new Error("本次反馈回执未返回，请重试同一提交。")
+        }
+        intent = { ...intent, saved }; this.updateReview(command.executionId, intent)
+      }
+      const saved = intent.saved
+      if (!saved) throw new Error("反馈回执未返回，请重试同一提交。")
+      if (saved.decision === "requirement_revision" && !await send(saved)) {
+        throw new Error("说明尚未提交到需求对话。原文字和已保存反馈保留；请重试，或先处理需求对话中的已有请求。")
+      }
+      this.updateReview(command.executionId, null)
+      return true
+    } catch (error) {
+      intent = { ...intent, error: error instanceof Error ? error.message : "提交未完成，请重试。" }
+      return false
+    } finally {
+      if (this.view.reviewIntents[command.executionId]) this.updateReview(command.executionId, { ...intent, busy: false })
+    }
+  }
+
+  resetStaleReview(executionId: string) {
+    const intent = this.view.reviewIntents[executionId]
+    if (this.view.errorCode !== "execution_review_stale" || intent?.busy || intent?.saved) return
+    this.updateReview(executionId, null); this.dismiss()
+  }
+
   accept(raw: unknown) {
     const workspace = taskWorkspaceSnapshotSchema.parse(raw)
     if (workspace.taskId !== this.taskId) throw new Error("任务链路归属不匹配")
     if (this.view.workspace && workspace.stateSequence < this.view.workspace.stateSequence) return
     const executionId = workspace.execution && executionMatchesWorkspace(workspace) ? workspace.execution.id : null
     this.update({ workspace, executionId,
-      ...(executionId !== this.view.executionId ? { eventBatch: null, acceptedExecution: null } : {}) })
+      ...(executionId !== this.view.executionId ? { eventBatch: null, acceptedExecution: null, executionDetail: null } : {}) })
   }
 
   async reload(signal?: AbortSignal) {
@@ -86,6 +142,29 @@ export class TaskChainConnection {
     if (!executionId) return
     const eventBatch = await this.readExecutionEvents(executionId, this.view.eventBatch, signal)
     if (eventBatch && !signal?.aborted && this.view.executionId === executionId) this.update({ eventBatch })
+  }
+
+  async readExecutionDetail(executionId: string, signal?: AbortSignal) {
+    try {
+      const response = await this.fetcher(`/api/task-chain/execution?taskId=${encodeURIComponent(this.taskId)}`
+        + `&executionId=${encodeURIComponent(executionId)}`, { signal: signal ?? null })
+      if (!response.ok) throw new Error()
+      const detail = taskExecutionDetailSchema.parse(await response.json())
+      if (detail.execution.taskId !== this.taskId || detail.execution.id !== executionId) throw new Error()
+      return signal?.aborted ? null : detail
+    } catch { return null }
+  }
+
+  async reloadExecutionDetail(signal?: AbortSignal) {
+    const executionId = this.view.executionId
+    if (!executionId || this.view.detailBusy) return
+    this.update({ detailBusy: true })
+    try {
+      const detail = await this.readExecutionDetail(executionId, signal)
+      if (!signal?.aborted && this.view.executionId === executionId) this.update({
+        ...(detail ? { executionDetail: detail } : {}), detailError: detail ? "" : "本次调用详情暂时无法读取。",
+      })
+    } finally { this.update({ detailBusy: false }) }
   }
 
   async readExecutionEvents(executionId: string, previous: TaskExecutionEventBatch | null = null, signal?: AbortSignal) {
@@ -171,7 +250,8 @@ export class TaskChainConnection {
   async dispatch(raw: unknown) {
     if (this.view.busy) return false
     const command = taskChainCommandSchema.parse(raw)
-    this.update({ busy: true, pending: command, error: "", errorCode: null })
+    this.update({ busy: true, pending: command, error: "", errorCode: null,
+      ...(command.type === "review_execution" ? { savedReview: null } : {}) })
     try {
       const response = await this.fetcher(this.endpoint, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(command) })
@@ -183,8 +263,9 @@ export class TaskChainConnection {
       const result = taskChainDispatchResponseSchema.parse(value)
       this.accept(result.snapshot)
       this.update({ pending: null, error: "", errorCode: null,
+        ...(result.savedReview ? { savedReview: result.savedReview } : {}),
         ...(result.acceptedExecution ? { acceptedExecution: result.acceptedExecution,
-          executionId: result.acceptedExecution.executionId, eventBatch: null } : {}) })
+          executionId: result.acceptedExecution.executionId, eventBatch: null, executionDetail: null } : {}) })
       return true
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : "操作未完成，请刷新后重试。",

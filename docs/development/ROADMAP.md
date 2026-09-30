@@ -1,5 +1,45 @@
 # 开发路线
 
+## 2026-09-30 独立交接实施（本轮授权）
+
+1. 已有事实展示：去路径展开、子行选中和 Handle、具名 Function 定义、右侧配对耗时、当前次条件/循环投影。
+2. 运行事实：查真实生产保存消费链路，独立对冲 review 后增加最小可选逐次 I/O/循环事实；旧数据不补造。
+3. 需求与成果：开始绑定精确需求与实际调用输入，终点绑定同次调用，宽成果区与精确同任务回流；失败保留文字并幂等重试。
+4. 新候选编译：消除证实的恒等输出组装，保留跨来源/改名/计算操作；不修改旧发布图。
+5. 最小所属验证与独立增量审查，记录展示、事实留存和真实交付分别通过或未测；真实浏览器只使用现有对应任务与日常 Chrome。
+
+本轮禁止新分支/worktree、提交/推送、根级全量测试、伪造历史数据、新建验收任务、私有 Profile 或关闭用户浏览器。
+
+解锁后结算：1–3 代码与所属验证完成，原任务本轮成功调用实际保存 20 started/20 finished、11 对可记录 I/O 与 9 对脱敏 I/O；开始/精确需求、Function 实参返回、完整成果已现场核对。连续两次连接 operation 第二次没有 SDK connect/原生确认，SDK 父连接保留。4 的新 19 节点候选已通过同源整图编译、非输出语义及真实读取值消费验证；删 merge 曾漏 requiredPaths 的回归已补回并由两个先红反例保护，旧发布不动。5 的首个连上后 target mismatch 失败根因未知；新候选整链浏览器/发布、真实反馈 LLM 发送、文件/应保留页面交付和永久免授权仍未验收，不能用本轮 V5 成功代替这些能力。详细事实见 PROGRESS 最新节。
+
+最终展示增量亦完成：合法分支出口按真实 source/cases 消歧，同文案的分支/循环边保留源身份；旧同名数据动作按真实 operation/mode 区分；while 用轮、each 用项，未知总数无分母。所属反例、typecheck 与独立只读对冲通过；无新公共/LLM 字段，条件循环真实浏览器现场不借 V5 验收。
+
+## 2026-09-30 当前执行顺序：支线修复后回原主线
+
+当前原主线已闭环：同草稿独立复验 `e3dd159d`、本地 Release V5、正式 execution `01987d57` 均完成，实际 #9057 标题/正文输出；两次各 20 transitions / 23 browserCommands / 0 llmCalls。复验到正式运行沿同一日常 Chrome 连接，无第二次 SDK connect；正式结束资源清理确认、控制进程退出，Chrome PID657 不变。历史未定因错误、跨站/Windows/跨任务验证不归本次完成结论，证据见 PROGRESS 顶部。
+
+1. 原需求对话已通过：来源误解析、简短标题、Composer 单层焦点及错误/具名重试布局完成；同任务 revision 7 重试 succeeded，四次失败历史保留。
+2. 原主线：原 `4cff3311` 来源的 a33 必需读取和 a6 coverage 已修，正式零模型来源重编译/选择绑定校验通过；焦点采集与安全函数错误码补齐，但主线全链尚未通过。
+3. 原生端点与准备 owner、同任务父连接/独立页/真实释放审计、三层首连等待及 ready 作用域遗漏均已补。原 final 与样本事实保留，独立复验及 V5 正式运行通过；未重新探索或变更 candidate 图。旧启动/动态 scope 失败仍为历史失败，不用后续成功改写。
+
+下方“新准备仍执行”属于当时快照；该 job 已在最终编译失败，P4 仍未完成。
+
+## 2026-09-30 当前状态：P0-P3 与 prefix/V4 UI 已验证，P4 新准备 final 尚未完成
+
+用户已授权继续真实验收。参数化新任务 `3adde418-bc7f-4029-a75c-49b624bf8082` 的正式 job `ede1384b-0e40-4fb2-8aa4-6c43888a45e0` 证明单阶段 prefix 的真实嵌套、稳定 stageId/坐标和无假开始/结束；探索已完成且 cleanup confirmed，但 `a-0023` 的运行时输入选择绑定不足使 final 编译拒绝。正式 UI 离线 job `c46c94a8-b23a-4c78-818f-d0369bfefb1c` 复现同一缺口；该任务没有 final/draft/validation/release。
+
+当前展示代码上的 V4 正式 execution `b3c37d38-dca4-4d9b-89eb-6f1a81848225` 已完成 19 transitions / 22 browserCommands / 0 llmCalls，输出与 cleanup 均确认；8 阶段父节点、内部动作、检查器和合同驱动单记录结果已由真实 UI 核验。新准备继承旧视口的问题已按 authoring job 的首次载入边界修正，后续 sequence 和运行状态不改变画布身份，所属 6 项回归和 Workbench 类型检查通过。
+
+剩余门仍是同一新 candidate 的 prefix→final→草稿→样本→独立复验→本地发布→正式运行展示一致性。2026-09-30 已从正式 UI 对既有确认的无输入需求创建新 job `4cff3311-c8fc-4fc7-8d49-46ea8db41570`，当前两阶段 prefix 稳定，尚未到 final。继续观察此新准备终态并据事实结算 P4；若被编译或 B-U 缺口阻塞，保留来源和原因，不在 presentation 改动中修改编译准入或模型行为。参数化选择能力另作为通用编译缺口记录，不写网站特例，不改旧 release。
+
+## 2026-09-29 P0-P3 完成时的历史记录（后续已执行真实验收）
+
+[准备期阶段嵌套画布、节点详情与结果展示开发方案](PREPARATION_STAGE_NESTED_WORKBENCH_20260929.md) 已按 P0 → P3 实施：flat build 反例先红；API 在原 build 保存屏障投影 prefix presentation、封存 final presentation/digest 并提供只读降级；准备与正式画布统一为阶段父节点和内部动作列表；节点详情和结果区域按现有运行事实与输出合同呈现。聚焦测试、三个 workspace 类型检查及 Workbench production build 均已通过，未运行根级/全量测试。
+
+剩余唯一门为 P4 正式 Workbench 新任务验收：从真实 UI 创建新任务，观察 prefix 增量阶段和 final 身份/布局连续性，再完成样本、不同输入复验、发布及一次普通执行器运行，并核对结果、模型调用和 cleanup。只读前检确认当前 SQLite 无活动 job/execution/browser/cleanup，产品 browser owner 为 closed；但既有开发服务仍在运行。未经新增授权，不启动、停止或重载服务，不创建任务或占用真实浏览器，因此当前不得标为产品验收通过。
+
+保护边界继续有效：不改 B-U Agent loop、prefix/final 编译语义、TaskChain 节点/边/digest、LangGraph/运行器、模型路由、样本/复验准入、历史运行和 cleanup。现有 V4 真实完成记录继续成立，本次静态实现不会重开或改写它。
+
 ## 2026-09-29 当前阶段：V4 主链通过，收敛剩余通用边界与工作台反馈
 
 当前 GitHub 代表任务不再阻塞：新准备 `31290e49-0ed3-4ce7-80d3-844764eff7e3` 已完成，样本与独立复验通过，Release V4 已发布；发布后正式 execution `52d8ccaa-1347-47ad-8f1b-b3dcc48a7c1f` 以 19 transitions / 22 browserCommands / 0 llmCalls 完成，业务输出和 cleanup 均已确认。旧 B-U 失败已定因为 B-A-T runtime scope 对“点击即时旧 URL、紧邻有界 wait 稳定到新 URL”的合法导航证据误拒绝，现已用原 supporting-wait 证据修正并由真实任务闭环。
@@ -186,7 +226,7 @@ D1 的专属代码和命令已退役，合同/Workbench 检查与定点用例通
 | [D 复跑干扰与显式节点](replay-repair/D_RUNTIME_RESILIENCE_AND_EXPLICIT_NODES.md) | React 干扰实验站、跨 Windows/macOS 的隔离 Function、多路 Branch、显式单值 LLM | A–C 已通过 | 干扰矩阵、Function 双平台准入、v2 节点、真实页面和不同输入均通过独立验收 |
 | [产品最小闭环](MINIMUM_PRODUCT_LOOP.md) | 可运行版本、运行预设、准备编排、链路画布直接运行与实时运行流、结果回执、人工等待与修复 | D 的当前产品范围通过 | P1–P6 全部退出；用户不接触 JSON 或内部验证按钮即可完成创建、准备、画布内运行、观测、查看结果和修复 |
 | [闭环修订 R1–R5](REQUIREMENT_DIALOGUE_PREPARATION_AND_REVISION.md) | 充分需求对话、来源解析、准备边界、技术运行完成、用户验收、自由画布修订和需求回流 | P1–P6 既有事实可用 | R1–R5 Windows x64 正式产品闭环通过；macOS arm64 不冒充已测 |
-| [正式复跑恢复与链路工作台](EXECUTION_LIFECYCLE_AND_CHAIN_WORKBENCH_ITERATION.md) | 分离链路结果与资源清理；先建立 ChainPresentation/CapabilityDescriptor 服务端事实，再接画布内运行、单次 execution 运行流、阶段总览、同画布聚焦和版本化修订 | I0 原型确认；实际第三次复跑与画布问题已核验 | I1–I7 Windows x64 已通过；跨平台结论等待 macOS 真实设备补验 |
+| [正式复跑恢复与链路工作台](EXECUTION_LIFECYCLE_AND_CHAIN_WORKBENCH_ITERATION.md) | 分离链路结果与资源清理；先建立 ChainPresentation/CapabilityDescriptor 服务端事实，再接画布内运行、单次 execution 运行流、阶段总览、阶段内原位展开和版本化修订 | I0 原型确认；实际第三次复跑与画布问题已核验 | I1–I7 Windows x64 已通过；跨平台结论等待 macOS 真实设备补验 |
 | [组合验收](replay-repair/E_INTEGRATION_ACCEPTANCE.md) | 正式产品入口、保存加载、同链换输入、清理恢复和可读修订工作台 | A–D 与修订 I1–I7 在 Windows x64 通过 | macOS arm64 真实设备补验；普通复跑继续只允许显式节点调用模型 |
 
 当前动作：

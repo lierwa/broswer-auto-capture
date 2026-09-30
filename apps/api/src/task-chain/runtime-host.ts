@@ -248,7 +248,8 @@ export class TaskRuntimeHost {
         || !node.capability.name.startsWith("browser.") || node.capability.name === "browser.read-fields"
         || z.object({ actionName: z.literal("navigate") }).passthrough().safeParse(node.config).success))
       return this.upstream.withCapabilities<T>({ signal: input.signal, ownerId: input.browserRunId,
-        connectionOwnerId: input.taskId, closeAfterOperation: input.purpose === "replay",
+        // WHY：正式运行只释放本 operation；同任务父连接由已有取消、交付和服务退出边界关闭。
+        connectionOwnerId: input.taskId,
         allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation,
         ...(input.browser ? { headless: input.browser.headless } : {}),
         ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}),

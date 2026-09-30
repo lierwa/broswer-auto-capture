@@ -28,9 +28,8 @@ test("完成终态与阶段出口只按本次事件上色，运行中不能提�
   const visibleChain = { ...chain, nodes: [{ id: "first", kind: "function", label: "第一动作" },
     { id: "second", kind: "function", label: "第二动作" },
     { id: "terminal", kind: "terminal", label: "完成", status: "completed", reason: "完成" }] } as TaskChain
-  const graph = (events: TaskExecutionEventBatch, focus = false) => buildCanvasGraph(visibleChain, presentation,
-    focus ? stageOne : null, events, () => {}, () => {})
-  const idle = buildCanvasGraph(visibleChain, presentation, null, null, () => {}, () => {})
+  const graph = (events: TaskExecutionEventBatch) => buildCanvasGraph(visibleChain, presentation, events, () => {})
+  const idle = buildCanvasGraph(visibleChain, presentation, null, () => {})
   assert.equal(graph(batch).nodes.some((node) => node.type === "chain-action"), false)
   assert.deepEqual(graph(batch).nodes.map((node) => [node.id, node.position]),
     idle.nodes.map((node) => [node.id, node.position]), "运行状态不能改变布局位置")
@@ -40,7 +39,7 @@ test("完成终态与阶段出口只按本次事件上色，运行中不能提�
   const ended = { ...batch, status: "completed", events: [...batch.events,
     executionEvent(4, "second", "finished", "success"), executionEvent(5, "terminal", "finished", "success")] } as TaskExecutionEventBatch
   assert.equal(graph(ended).nodes.find((node) => node.id === "__end:terminal")?.data.tone, "success")
-  assert.deepEqual(graph(batch, true).edges.filter((edge) => edge.source === "stage-one")
+  assert.deepEqual(graph(batch).edges.filter((edge) => edge.source === "stage-one")
     .map((edge) => [edge.target, edge.className]), [
       ["stage-two", "chain-edge chain-edge-running"], ["stage-two", "chain-edge chain-edge-idle"],
     ])
@@ -58,13 +57,13 @@ test("阶段总览只投影绑定 execution 的真实阶段边与状态", () => 
   assert.deepEqual(overviewChainEdges(chain, presentation, batch).slice(1, 3).map((edge) => edge.port), ["success", "failed"])
 })
 
-test("真实离开阶段后未走分支显示跳过，残留 started 不伪造完成", () => {
+test("无事件保持无执行记录，残留 started 不伪造完成", () => {
   const ended = { ...batch, status: "completed" as const }
   assert.equal(nodeRunTone("first", ended), "success")
   assert.equal(nodeRunTone("second", ended), "ended")
   const branchedStage = { ...stageOne, nodeIds: ["first", "unused-branch"] }
   assert.equal(stageRunTone(branchedStage, batch), "success")
-  assert.equal(nodeRunTone("unused-branch", batch, branchedStage), "skipped")
+  assert.equal(nodeRunTone("unused-branch", batch, branchedStage), "idle")
   assert.equal(stageRunTone(stageTwo, ended), "ended")
   assert.equal(overviewChainEdges(chain, presentation, ended).some((edge) => edge.tone === "running"), false)
   assert.equal(stageRunTone(stageTwo, { ...batch, status: "paused" }), "waiting")
@@ -77,7 +76,7 @@ test("阶段终态按真实去向区分，异常与取消不会投影为成功�
   const edges = overviewChainEdges(terminalChain, presentation, failure).slice(1)
   assert.deepEqual(edges.map((edge) => [edge.target, edge.tone]), [["__end:completed", "idle"], ["__end:failed", "failure"]])
   assert.equal(stageRunTone(stageOne, failure), "failure")
-  assert.equal(stageRunTone(stageTwo, failure), "skipped")
+  assert.equal(stageRunTone(stageTwo, failure), "idle")
   assert.equal(stageRunTone(stageOne, { ...batch, events: [executionEvent(1, "first", "finished", "human_required")] } as TaskExecutionEventBatch), "waiting")
 })
 
@@ -92,7 +91,18 @@ test("节点展示使用真实能力类型与业务名称，普通成功线不�
   assert.deepEqual(nodes.map((node) => actionPresentation(node).title), ["读取剧集列表", "等待条件满足", "点击最新正片", "选出最新正片"])
   assert.equal(edgePortLabel("success"), "")
   assert.equal(edgePortLabel("failed"), "失败")
-  assert.equal(terminalPresentation({ id: "failed", label: "failed", kind: "terminal", status: "failed" } as TaskChain["nodes"][number]).status, "failure")
+  assert.equal(terminalPresentation({ id: "failed", label: "failed", kind: "terminal", status: "failed" } as TaskChain["nodes"][number]).label, "失败")
+})
+
+test("同名data节点按已注册operation及其真实mode绑定区分，不改版本标题", () => {
+  const merge = { id: "values", label: "同名输出动作", kind: "capability", capability: { name: "data.transform", version: 1 },
+    config: { operation: "merge", arguments: { source: "source" } }, input: {} } as TaskChain["nodes"][number]
+  const assemble = { ...merge, id: "assemble", config: { operation: "transform", arguments: { mode: "format" } },
+    input: { format: { source: "constant", value: "assemble" } } } as TaskChain["nodes"][number]
+  assert.deepEqual([merge, assemble].map(node => actionPresentation(node).type), ["合并数据", "组装数据"])
+  assert.deepEqual([merge, assemble].map(node => actionPresentation(node).title), [merge.label, assemble.label])
+  const dynamic = { ...assemble, input: { format: { source: "input", path: ["operation"] } } } as TaskChain["nodes"][number]
+  assert.equal(actionPresentation(dynamic).type, "数据处理", "动态mode未执行前不猜assemble")
 })
 
 test("同名节点只接收选定 execution、步骤和最后一次 run 的事件", () => {

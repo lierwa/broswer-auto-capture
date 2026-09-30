@@ -1,7 +1,9 @@
 import {
   browserActionTitle, chainNodeDisplayTitle, nodeBindings,
-  type ChainNode, type ValueBinding,
+  type ChainNode, type Predicate, type TaskChain, type ValueBinding, type ValueSchema,
 } from "@browser-capture/contracts"
+
+export type PresentationChain = Pick<TaskChain, "nodes" | "edges"> & Partial<Pick<TaskChain, "inputContract" | "variables">>
 
 const chainFamilyLabels: Record<ChainNode["kind"], string> = {
   capability: "通用能力", function: "确定性函数", branch: "分支", browser: "浏览器动作", observe: "现场观察",
@@ -14,25 +16,39 @@ export function browserActionLabel(action: string) { return browserActionTitle(a
 export function actionPresentation(node: ChainNode) {
   if (node.kind === "terminal") return { type: "结束", description: node.reason, title: terminalPresentation(node).label }
   const action = browserAction(node)
-  const type = node.kind === "function" ? "Function" : node.kind === "capability" ? capabilityType(node, action)
-    : node.kind === "observe" ? "读取" : chainFamilyLabels[node.kind]
-  const description = action ? browserActionTitle(action) ?? "执行浏览器动作"
-    : node.kind === "function" ? "执行 JavaScript，按输入计算结果"
+  const data = dataAction(node)
+  const type = data ?? (node.kind === "function" ? "Function" : node.kind === "capability" ? capabilityType(node, action)
+    : node.kind === "observe" ? "读取" : chainFamilyLabels[node.kind])
+  const description = data ? "使用确定性数据操作生成下游值" : action ? browserActionTitle(action) ?? "执行浏览器动作"
+    : node.kind === "function" ? "根据参数计算结果"
     : type === "读取" ? "读取当前页面数据" : type === "分支" ? "按条件选择后续动作" : type
   return { type, description, title: chainNodeDisplayTitle(node) }
 }
 
-export function actionTarget(node: ChainNode) {
+function dataAction(node: ChainNode) {
+  if (node.kind !== "capability" || node.capability.name !== "data.transform" || node.capability.version !== 1) return null
+  const config = recordValue(node.config)
+  // WHY：这两项来自已注册算法的确定语义，适用于任意任务；不按任务标题猜作用，也不另造操作翻译表。
+  if (config?.operation === "merge") return "合并数据"
+  const modeInput = recordValue(config?.arguments)?.mode
+  const mode = typeof modeInput === "string" ? node.input?.[modeInput] : undefined
+  return config?.operation === "transform" && mode?.source === "constant" && mode.value === "assemble"
+    ? "组装数据" : "数据处理"
+}
+
+export function actionTarget(node: ChainNode, nodes: readonly ChainNode[] = []) {
   if (node.kind === "terminal") return "本次链路"
-  if (node.kind === "function") return "绑定的输入数据"
-  if (node.kind === "branch" || node.kind === "condition") return "已有运行值"
-  if (node.kind === "loop") return node.iteration.mode === "each" ? "有界输入集合" : "已声明的继续条件"
-  if (node.kind === "invoke") return "已保存的子链路"
-  if (node.kind === "llm") return "绑定的语义输入"
+  if (node.kind === "function") return Object.keys(node.inputs ?? {}).join("、") || "无参数计算"
+  if (node.kind === "branch" || node.kind === "condition") return "predicate" in node
+    ? predicateLabel(node.predicate, nodes) : node.cases.map((item) => item.label).join("；")
+  if (node.kind === "loop") return node.iteration.mode === "each" ? bindingSourceLabel(node.iteration.collection, nodes)
+    : predicateLabel(node.iteration.condition, nodes)
+  if (node.kind === "invoke") return `子链路版本 ${node.chain.version}`
+  if (node.kind === "llm") return bindingSourceLabel(node.input, nodes)
   if (node.kind === "human") return "需要用户处理的当前页面"
   if (node.kind === "browser" || node.kind === "observe") return stableTargetLabel(node.target)
     ?? (node.kind === "observe" ? "当前浏览器现场" : "当前页面")
-  if (node.kind !== "capability") return "当前运行上下文"
+  if (node.kind !== "capability") return actionInputSources(node, nodes)
   if (node.capability.name === "browser.read-fields") return readFieldsTarget(node.config)
   if (node.capability.name === "browser.workflow-step") {
     const config = recordValue(node.config), action = browserAction(node)
@@ -43,7 +59,7 @@ export function actionTarget(node: ChainNode) {
     if (action === "wait") return "已声明的等待条件"
     return "当前页面"
   }
-  return node.capability.name.startsWith("browser.") ? "当前浏览器现场" : "绑定的输入数据"
+  return node.capability.name.startsWith("browser.") ? "当前浏览器现场" : actionInputSources(node, nodes)
 }
 
 export function actionInputSources(node: ChainNode, nodes: readonly ChainNode[]) {
@@ -52,12 +68,10 @@ export function actionInputSources(node: ChainNode, nodes: readonly ChainNode[])
 }
 
 export function terminalPresentation(node: ChainNode) {
-  if (node.kind !== "terminal") return { label: node.label, status: "idle" as const }
-  const labels: Record<string, string> = { completed: "完成", failed: "失败", blocked: "受阻", cancelled: "已取消",
-    missing: "未找到目标", timeout: "超时", human_required: "等待人工" }
-  const label = node.label !== node.id ? node.label : labels[node.id] ?? labels[node.status] ?? "结束"
-  return { label, status: node.status === "completed" ? "success" as const
-    : node.id === "human_required" ? "waiting" as const : node.status === "cancelled" ? "skipped" as const : "failure" as const }
+  if (node.kind !== "terminal") return { label: node.label }
+  // WHY：ID 只定位节点；等待、超时等语义必须来自版本数据或运行事实，不能从 ID 猜。
+  const labels = { completed: "完成", partial: "部分完成", failed: "失败", blocked: "受阻", cancelled: "已取消" }
+  return { label: node.label !== node.id ? node.label : labels[node.status] }
 }
 
 function browserAction(node: ChainNode) {
@@ -67,15 +81,82 @@ function browserAction(node: ChainNode) {
   return typeof node.config.actionName === "string" ? node.config.actionName : null
 }
 
-function bindingSourceLabel(binding: ValueBinding, nodes: readonly ChainNode[]) {
+export function bindingSourceLabel(binding: ValueBinding, nodes: readonly ChainNode[]) {
   const path = binding.source !== "constant" && binding.path.length ? `（${binding.path.join(" › ")}）` : ""
   if (binding.source === "input") return `任务输入${path}`
-  if (binding.source === "variable") return `运行变量${path}`
+  if (binding.source === "variable") return `运行变量 ${binding.name}${path}`
   if (binding.source === "node") {
     const source = nodes.find((item) => item.id === binding.nodeId)
     return `前一节点：${source ? chainNodeDisplayTitle(source) : "未记录的上游动作"}${path}`
   }
-  return "常量"
+  return `固定值：${valueSummary(binding.value)}`
+}
+
+export function namedInputBindings(node: ChainNode, nodes: readonly ChainNode[], chain?: PresentationChain) {
+  const bindings = node.kind === "function" ? node.inputs : node.kind === "capability" ? node.input
+    : node.kind === "browser" || node.kind === "data" ? node.arguments : null
+  return Object.entries(bindings ?? {}).map(([name, binding]) => ({ name, binding,
+    source: binding.source === "constant" ? "版本固定值" : bindingSourceLabel(binding, nodes),
+    type: bindingType(binding, nodes, chain, node.kind === "function") }))
+}
+
+function bindingType(binding: ValueBinding, nodes: readonly ChainNode[], chain?: PresentationChain, requirements = false) {
+  if (binding.source === "constant") return valueType(binding.value)
+  const source = binding.source === "input" ? chain?.inputContract?.schema : binding.source === "variable"
+    ? chain?.variables?.[binding.name]?.schema : nodes.find((item) => item.id === binding.nodeId)?.outputContract?.schema
+  let schema = source
+  // WHY：沿公开合同逐段读类型；缺字段或开放对象不猜类型，也不把历史实值冒充合同。
+  for (const part of binding.path) {
+    schema = typeof part === "number" && schema?.type === "array" ? schema.items
+      : typeof part === "string" && schema?.type === "object" ? schema.properties[part] : undefined
+  }
+  return schema ? schemaTypeLabel(schema, requirements) : "类型未记录"
+}
+
+export function schemaTypeLabel(schema: ValueSchema, requirements = false): string {
+  if (!requirements) return schema.type === "array" ? `array<${schemaTypeLabel(schema.items)}>` : schema.type
+  // WHY：仅翻译运行校验已经消费的合同声明；不从实值补结构，也不另造描述协议。
+  if (schema.type === "object") {
+    const fields = Object.entries(schema.properties).map(([name, child]) =>
+      `${name}（${schema.required.includes(name) ? "必填" : "可选"}）：${schemaTypeLabel(child, true)}`)
+    return `object（${fields.join("；") || "无已声明字段"}；${schema.additionalProperties ? "允许" : "不允许"}额外字段）`
+  }
+  const constraints: string[] = []
+  if (schema.type === "string") {
+    if (schema.minLength !== undefined) constraints.push(`长度至少 ${schema.minLength}`)
+    if (schema.maxLength !== undefined) constraints.push(`长度至多 ${schema.maxLength}`)
+    if (schema.enum) constraints.push(`可选值：${schema.enum.map(valueSummary).join("、")}`)
+  }
+  if (schema.type === "number" || schema.type === "integer") {
+    if (schema.minimum !== undefined) constraints.push(`不小于 ${schema.minimum}`)
+    if (schema.maximum !== undefined) constraints.push(`不大于 ${schema.maximum}`)
+  }
+  if (schema.type === "array") {
+    if (schema.minItems !== undefined) constraints.push(`至少 ${schema.minItems} 项`)
+    if (schema.maxItems !== undefined) constraints.push(`至多 ${schema.maxItems} 项`)
+  }
+  const type = schema.type === "array" ? `array<${schemaTypeLabel(schema.items, true)}>` : schema.type
+  return `${type}${constraints.length ? `（${constraints.join("；")}）` : ""}`
+}
+
+export function predicateLabel(predicate: Predicate, nodes: readonly ChainNode[]) {
+  if (predicate.operator === "exists") return `${bindingSourceLabel(predicate.value, nodes)}存在`
+  if (predicate.operator === "array_length_at_least") {
+    return `${bindingSourceLabel(predicate.value, nodes)}的项数不少于${bindingSourceLabel(predicate.minimum, nodes)}`
+  }
+  return `${bindingSourceLabel(predicate.left, nodes)}${predicate.operator === "equals" ? "等于" : "大于"}${bindingSourceLabel(predicate.right, nodes)}`
+}
+
+function valueType(value: unknown) {
+  return value === null ? "null" : Array.isArray(value) ? "array" : typeof value
+}
+
+function valueSummary(value: unknown): string {
+  if (value === null) return "空值（null）"
+  if (value === "") return "空字符串"
+  if (Array.isArray(value)) return `${value.length} 项列表`
+  if (typeof value === "object") return `记录（${Object.keys(value!).join("、")}）`
+  return String(value)
 }
 
 function readFieldsTarget(config: unknown) {

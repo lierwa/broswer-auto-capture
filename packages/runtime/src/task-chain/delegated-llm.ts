@@ -5,6 +5,7 @@ import type { RuntimeState } from "./runtime.js"
 import { RuntimeBudgetExceededError, type ModelCallReport, type NodeCapabilityResult } from "./types.js"
 import { UncertainEffectError, executionStableKey, modelCount } from "./runtime-support.js"
 import { beginEffect, completeEffect, markEffectUncertain, persistRun, syncCheckpoint } from "./run-state.js"
+import { boundExecutionInput } from "./execution-record.js"
 
 export async function executeDelegatedLlm(
   state: RuntimeState,
@@ -37,8 +38,11 @@ export async function executeDelegatedLlm(
     await persistRun(state)
   }
   try {
+    const input = resolveBinding(node.input, state.context)
+    boundExecutionInput(state, node, input, [node.input])
+    await persistRun(state)
     const result = llmNodeCapabilityResultSchema.parse(await llm({ binding: state.run.binding, mode: state.run.mode, node,
-      input: resolveBinding(node.input, state.context), callId, signal: state.signal, onModelCall }))
+      input, callId, signal: state.signal, onModelCall }))
     const purposes = new Set(state.run.modelCalls.map((item) => item.purpose))
     if (delegate.modelPurposes.some((purpose) => !purposes.has(purpose))) throw new Error("delegated_model_audit_missing")
     state.run.auditComplete = state.run.modelCalls.every((item) => item.status !== "intended")

@@ -1,46 +1,45 @@
 import { MarkerType, type Edge } from "@xyflow/react"
 import type { ChainPresentation, ChainStage, TaskChain, TaskExecutionEventBatch, TaskWorkspaceSnapshot } from "@browser-capture/contracts"
-import { toneLabel, type StageCanvasNode, type StageRouteRow, type TerminalCanvasNode } from "./ChainCanvasNodes.js"
+import { toneLabel, type StageCanvasNode, type TerminalCanvasNode } from "./ChainCanvasNodes.js"
 import { actionPresentation, terminalPresentation } from "./chainNodePresentation.js"
 import { edgePortLabel, nodeRunTone, overviewChainEdges, stageRunTone,
   terminalCanvasId, type ChainRunTone, type ProjectedChainEdge } from "./chainWorkbenchProjection.js"
 import { layoutChainGraph, type ChainLayoutDirection } from "./chainLayout.js"
+import { branchRows, currentNodeEvent, loopContext } from "./chainControlProjection.js"
+import { nodeDurationLabel, stageDurationLabel } from "./chainExecutionFacts.js"
 
 type FlowNode = StageCanvasNode | TerminalCanvasNode
 type Build = NonNullable<NonNullable<TaskWorkspaceSnapshot["activity"]>["build"]>
-type Presentation = Pick<ChainPresentation, "stages" | "overviewLayout" | "focusLayouts">
+type Presentation = Pick<ChainPresentation, "stages" | "overviewLayout">
 type GraphNode = TaskChain["nodes"][number] | Build["nodes"][number]
 type GraphEdge = TaskChain["edges"][number] | Build["edges"][number]
 
 /** WHY：生成片段只有已校验节点和真实边，没有伪入口、终点或 TaskRun 成功态。 */
 export function buildPreparationGraph(build: Build, onInspect: (id: string) => void,
-  expanded: ChainStage | null = null, onToggle: (id: string) => void = () => {},
-  onSelect: (id: string) => void = () => {}) {
+  onSelect: (id: string) => void = () => {}, selectedNodeId: string | null = null) {
   const direction: ChainLayoutDirection = "LR"
   const projected = preparationStageEdges(build)
   const edges = projected.map(flowEdge)
   const raw = build.presentation.stages.map((stage) => stageNode(stage, build.nodes, build.edges,
-    direction, null, expanded?.id === stage.id, build.phase === "prefix" ? "生成中" : "已生成",
-    onToggle, onInspect, onSelect))
+    direction, null, build.phase === "prefix" ? "生成中" : "已生成", onInspect, onSelect, selectedNodeId))
   return { nodes: layoutPresentedGraph(raw, edges, build.presentation, direction), edges }
 }
 
-export function buildCanvasGraph(chain: TaskChain, presentation: Presentation, expanded: ChainStage | null,
-  batch: TaskExecutionEventBatch | null, onEnter: (id: string) => void, onInspect: (id: string) => void,
-  onSelect: (id: string) => void = () => {}) {
+export function buildCanvasGraph(chain: TaskChain, presentation: Presentation,
+  batch: TaskExecutionEventBatch | null, onInspect: (id: string) => void,
+  onSelect: (id: string) => void = () => {}, selectedNodeId: string | null = null) {
   const direction: ChainLayoutDirection = "LR"
   const projected = overviewChainEdges(chain, presentation, batch)
   const edges = projected.map(flowEdge)
   const stages: FlowNode[] = presentation.stages.map((stage) => stageNode(stage, chain.nodes, chain.edges,
-    direction, batch, expanded?.id === stage.id, toneLabel(stageRunTone(stage, batch)),
-    onEnter, onInspect, onSelect))
+    direction, batch, toneLabel(stageRunTone(stage, batch, chain)), onInspect, onSelect, selectedNodeId))
   const targets = new Set(projected.map((edge) => edge.target))
   const terminals = chain.nodes.filter((node) => targets.has(terminalCanvasId(node.id))).map((node, index) => {
     const terminal = terminalPresentation(node)
     return terminalNode(terminalCanvasId(node.id), terminal.label, "end", direction,
-      { x: 0, y: index * 72 }, nodeRunTone(node.id, batch))
+      { x: 0, y: index * 72 }, nodeRunTone(node.id, batch, undefined, chain), nodeDurationLabel(node.id, batch))
   })
-  // WHY：开始/结束只属于完整链；阶段展开只增加父节点内部 DOM，React Flow 身份始终是同一批阶段。
+  // WHY：开始/结束只属于完整链；子行始终原位可读，React Flow 身份仍是同一批阶段。
   const raw = [terminalNode("__start", "开始", "start", direction, { x: 0, y: 0 }), ...stages, ...terminals]
   return { nodes: layoutPresentedGraph(raw, edges, presentation, direction), edges }
 }
@@ -93,37 +92,25 @@ function placeVerticalTerminals(nodes: FlowNode[], edges: Edge[]): FlowNode[] {
 }
 
 function stageNode(stage: ChainStage, nodes: GraphNode[], edges: GraphEdge[], direction: ChainLayoutDirection,
-  batch: TaskExecutionEventBatch | null, expanded: boolean, statusLabel: string,
-  onToggle: (id: string) => void, onInspect: (id: string) => void,
-  onSelect: (id: string) => void): StageCanvasNode {
+  batch: TaskExecutionEventBatch | null, statusLabel: string, onInspect: (id: string) => void,
+  onSelect: (id: string) => void, selectedNodeId: string | null): StageCanvasNode {
+  const chain = { nodes, edges }
   const actions = stage.nodeIds.map((id) => {
     const node = nodes.find((item) => item.id === id)!
     const info = actionPresentation(node)
-    return { id, title: info.title, type: info.type, tone: batch ? nodeRunTone(id, batch, stage) : "idle" as const }
+    const tone = batch ? nodeRunTone(id, batch, stage, chain) : "idle" as const
+    const event = currentNodeEvent(id, chain, batch)?.event, outcome = event?.outcome
+    const statusLabel = node.kind === "loop" ? outcome === "limit" ? "限额停止"
+      : outcome === "done" ? event?.execution?.loop?.exitReason === "stop_when" ? "约定停止" : "按规则结束"
+        : outcome === "body" && tone === "running" ? "循环处理中" : toneLabel(tone)
+      : toneLabel(tone)
+    return { id, title: info.title, type: info.type, tone, statusLabel, selected: selectedNodeId === id,
+      durationLabel: nodeDurationLabel(id, batch), branches: branchRows(node, chain, batch),
+      context: node.kind === "loop" ? loopContext(node, chain, batch) : [] }
   })
-  const routes = stageRoutes(stage, nodes, edges)
   return { id: stage.id, type: "chain-stage", position: { x: 0, y: 0 }, width: 240,
-    height: 47 + actions.length * 32 + (expanded ? 9 + routes.length * 28 : 0),
-    data: { title: stage.title, summary: stage.summary, tone: batch ? stageRunTone(stage, batch) : "idle",
-      direction, actions, routes, expanded, statusLabel, onToggle, onInspect, onSelect } }
-}
-
-function stageRoutes(stage: ChainStage, nodes: GraphNode[], edges: GraphEdge[]): StageRouteRow[] {
-  const inStage = new Set(stage.nodeIds)
-  const outgoing = edges.filter((edge) => inStage.has(edge.from))
-  const complex = stage.nodeIds.length > 1 || outgoing.length > 1
-    || outgoing.some((edge) => !["success", "completed"].includes(edgePort(edge)))
-  if (!complex) return []
-  const byId = new Map(nodes.map((node) => [node.id, node]))
-  return outgoing.map((edge) => {
-    const source = byId.get(edge.from), target = byId.get(edge.to)
-    const targetTitle = target ? target.kind === "terminal" ? terminalPresentation(target).label
-      : actionPresentation(target).title : edge.to
-    const port = edgePort(edge)
-    return { id: `${edge.from}:${port}:${edge.to}`, sourceNodeId: edge.from, targetNodeId: edge.to,
-      sourceTitle: source ? actionPresentation(source).title : edge.from,
-      port, portLabel: edgePortLabel(port), targetTitle }
-  })
+    data: { title: stage.title, summary: stage.summary, tone: batch ? stageRunTone(stage, batch, chain) : "idle",
+      direction, actions, statusLabel, durationLabel: stageDurationLabel(stage.nodeIds, batch), onInspect, onSelect } }
 }
 
 function preparationStageEdges(build: Build): ProjectedChainEdge[] {
@@ -132,24 +119,21 @@ function preparationStageEdges(build: Build): ProjectedChainEdge[] {
   const edges = build.edges.flatMap((edge): ProjectedChainEdge[] => {
     const source = stageByNode.get(edge.from), target = stageByNode.get(edge.to)
     if (!source || !target || source === target) return []
-    return [{ id: `preparation:${source}:${edge.port}:${target}`, source, target, port: edge.port, tone: "idle" }]
+    return [{ id: `preparation:${source}:${edge.from}:${edge.port}:${target}`, source, target, port: edge.port,
+      label: edgePortLabel(edge.port, build.nodes.find((node) => node.id === edge.from)), tone: "idle" }]
   })
   return edges.filter((edge, index) => edges.findIndex((item) => item.id === edge.id) === index)
 }
 
-function edgePort(edge: GraphEdge) {
-  return "port" in edge ? edge.port : edge.outcome
-}
-
 function terminalNode(id: string, label: string, terminal: "start" | "end", direction: ChainLayoutDirection,
-  position: { x: number; y: number }, tone: ChainRunTone = "idle"): TerminalCanvasNode {
-  return { id, type: "chain-terminal", position, width: 140, height: 50, data: { label, terminal, tone, direction } }
+  position: { x: number; y: number }, tone: ChainRunTone = "idle", durationLabel?: string): TerminalCanvasNode {
+  return { id, type: "chain-terminal", position, width: 140, height: 50, data: { label, terminal, tone, direction, durationLabel } }
 }
 
 function flowEdge(edge: ProjectedChainEdge): Edge {
   const color = edge.tone === "running" ? "var(--accent-9)" : edge.tone === "success" ? "var(--green-9)"
     : edge.tone === "failure" ? "var(--red-9)" : "var(--gray-8)"
-  return { id: edge.id, source: edge.source, target: edge.target, label: edgePortLabel(edge.port), type: "smoothstep",
+  return { id: edge.id, source: edge.source, target: edge.target, label: edge.label, type: "smoothstep", data: { tone: edge.tone },
     animated: edge.tone === "running", markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15 },
     className: `chain-edge chain-edge-${edge.tone}`, style: { stroke: color, strokeWidth: edge.tone === "running" ? 2.4 : 1.4 } }
 }

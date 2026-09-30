@@ -161,3 +161,59 @@ test("原窗口聚焦失败在成功刷新后仍保留可读反馈", async () =>
   assert.equal(connection.snapshot().errorCode, failure.code)
   assert.equal(connection.snapshot().busy, false)
 })
+
+const reviewContext = { taskId, executionId: id(60), requirement: { id: id(61), version: 1, revision: 2, digest: "a".repeat(64) },
+  release: { id: id(62), version: 3, digest: "b".repeat(64) }, draft: null, selection: null, resultDigest: null }
+const reviewCommand = { type: "review_execution" as const, requestId: id(63), executionId: id(60),
+  expectedSequence: 3, decision: "requirement_revision" as const, feedback: "原文字必须保留" }
+const savedReview = { id: id(64), decision: reviewCommand.decision, feedback: reviewCommand.feedback,
+  summary: "原运行完成", createdAt: "2026-09-30T00:00:00.000Z", context: reviewContext }
+
+test("反馈响应丢失、关闭面板与对话发送失败后仍沿同一命令重试", async () => {
+  const posts: string[] = [], sends: string[] = []
+  const connection = new TaskChainConnection(taskId, async (_url, init) => {
+    if (init?.method !== "POST") return Response.json(snapshot)
+    posts.push(String(init.body))
+    if (posts.length === 1) throw new Error("响应丢失")
+    return Response.json({ snapshot, acceptedExecution: null, savedReview })
+  })
+  const send = async (review: { id: string }) => { sends.push(review.id); return sends.length > 1 }
+  assert.equal(await connection.submitReview(reviewCommand, send), false)
+  assert.deepEqual(connection.snapshot().reviewIntents[id(60)]?.command, reviewCommand)
+  const reopened = { ...reviewCommand, requestId: id(65), feedback: "不能替换已提交文字" }
+  assert.equal(await connection.submitReview(reopened, send), false)
+  assert.equal(connection.snapshot().reviewIntents[id(60)]?.saved?.id, savedReview.id)
+  assert.equal(await connection.submitReview(reopened, send), true)
+  assert.equal(posts.length, 2); assert.equal(posts[0], posts[1])
+  assert.deepEqual(sends, [savedReview.id, savedReview.id])
+  assert.equal(connection.snapshot().reviewIntents[id(60)], undefined)
+})
+
+test("本次反馈缺回执时不能消费同execution旧回执", async () => {
+  let posts = 0, sends = 0
+  const connection = new TaskChainConnection(taskId, async (_url, init) => {
+    if (init?.method !== "POST") return Response.json(snapshot)
+    posts++
+    return Response.json({ snapshot, acceptedExecution: null, ...(posts === 1 ? { savedReview } : {}) })
+  })
+  await connection.dispatch(reviewCommand)
+  assert.equal(await connection.submitReview({ ...reviewCommand, requestId: id(66), feedback: "新意见" }, async () => {
+    sends++; return true
+  }), false)
+  assert.equal(sends, 0)
+  assert.match(connection.snapshot().reviewIntents[id(60)]?.error ?? "", /本次反馈回执未返回/)
+})
+
+test("回流立即busy且双击不重复发送；当前版本变化仍携带精确旧版本", async () => {
+  let finish: (accepted: boolean) => void = () => {}, sends = 0
+  const connection = new TaskChainConnection(taskId, async () => Response.json({ snapshot, acceptedExecution: null, savedReview }))
+  const send = async () => { sends++; return new Promise<boolean>(resolve => { finish = resolve }) }
+  const first = connection.submitReview(reviewCommand, send)
+  assert.equal(connection.snapshot().reviewIntents[id(60)]?.busy, true)
+  assert.equal(await connection.submitReview(reviewCommand, send), false)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(sends, 1); finish(true); assert.equal(await first, true)
+  const message = requirementRevisionMessage(savedReview.summary, savedReview.feedback, reviewContext)
+  assert.match(message, /"version":1,"digest"|"version":1,"revision":2/)
+  assert.match(message, /未重新确认前不要覆盖或执行/)
+})

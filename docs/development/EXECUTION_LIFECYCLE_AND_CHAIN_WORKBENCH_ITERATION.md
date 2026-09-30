@@ -8,6 +8,8 @@
 > 真正需求回流已产生 v3 并保留旧历史，证据为 `work/i7-requirement-return-1790012443299/result.json`；R1 unique / multiple / none 三分支均已通过，具体路径见 PROGRESS。
 > 02:11 新需求 v3 闭环通过：`work/i7-reprepare-1790013905749/result.json` 保存正式准备、sample / verification、release v6 发布及工作台普通复跑，三次运行均 completed / cleanup confirmed / llmCalls=0；同目录 `source-reuse-audit.json` 证明零重探索、仅一次缺失函数注解。当前 fork `44453845`。Windows 本轮 R1–R5 / I7 正式产品门关闭；macOS arm64 仍延期未测，约 48 秒普通点击的内部性能根因尚未定位。下文实施前问题与差距保留为历史快照，已确认设计继续有效。
 
+> 2026-09-29 交互修订：准备期和正式总览统一采用“阶段父节点内常驻紧凑动作列表”，所有阶段包括单动作阶段均使用同一父节点；复杂路径在原父节点原位展开，不切换独立 focus graph。prefix 从第一个有效 build 起提供可变 presentation，展示投影失败不得中断 build/ACK/B-U；final 在样本复跑前封存，同一 candidate/version 的后续运行只更新状态，显式 revision 另建新 presentation/checksum 且不改写旧版本。该决定由[准备期阶段嵌套画布、节点详情与结果展示开发方案](PREPARATION_STAGE_NESTED_WORKBENCH_20260929.md)定义，替代本文下方历史原型中的“单个临时动作摘要”“单动作阶段扁平化”“准备期直接平铺动作”和“切换到聚焦子图”；原清理、运行、不可变版本与同 execution 事件边界不变。
+
 本文是 2026-09-21 起正式复跑恢复与链路工作台开发的唯一实施基准，针对同一次产品闭环复盘暴露的三个相互关联问题：
 
 1. 发布链路的所有节点和 `TaskRun` 已经成功完成，但上游 runner 清理退出码为 1，外层把清理异常改写成“确定性链路失败、可模型修复”，导致产品不能再次运行；
@@ -28,7 +30,7 @@
 | 正式复跑 | 链路与 1/1 计划步骤已完成，runner 清理异常被误判为可修复链路失败 | 根因已核验，生产修复未实现 |
 | 链路修订服务端 | 草稿、operation、checksum、executable digest、聚焦验证和不可变发布已有基础 | 保留并扩展，不推倒重写 |
 | 链路展示 | 固定两列、跨运行事件拼接、原始 JSON 详情不可读 | 生产实现未通过 |
-| 交互方案 | 阶段总览、单个临时动作摘要、同画布聚焦编辑已形成 React Flow + Dagre 隔离原型 | 原型已确认，不等于生产完成 |
+| 交互方案 | 当时原型采用阶段总览、单个临时动作摘要和同画布聚焦编辑；2026-09-29 已由父节点内常驻动作列表替代 | 历史原型，不得作为当前实现依据 |
 | 正式闭环 | R2、R3、R5 因本次复跑和画布问题重新打开 | 必须按 I1 → I7 重新实现与验收 |
 
 原型事实位于 `apps/workbench/prototype.html` 与 `apps/workbench/src/prototype/`。实现时必须复用其已经确认的信息层级和交互语义；可以根据真实合同调整组件拆分与视觉细节，但不得退回永久展开子链、大容器子画布、原始 JSON 首屏或列表暗中运行。
@@ -72,7 +74,7 @@
 - 不得仅为 `upstream_cleanup_unconfirmed:1` 增加字符串分支。新运行必须使用类型化清理合同；旧字符串只能存在于隔离的只读兼容适配层。
 - 不得通过忽略非零退出码、无条件标 completed 或允许并发新运行掩盖资源占用。
 - 不得只调整现有画布坐标、边类型、CSS 或增加前端定时动画来宣称画布已修复。必须先建立单次 execution 运行合同、链路阶段投影和编辑器适配边界。
-- 不得把链路阶段和动作子图维护为两套图，也不得把全部动作常驻在撑大主图的阶段容器中。总览、临时摘要和聚焦态必须引用同一 TaskChain 节点与边。
+- 不得把链路阶段和动作子图维护为两套图，也不得把全部动作注册为会撑大主图的 React Flow compound child。总览动作列表行和聚焦态必须引用同一 TaskChain 节点与边；动作列表只是父节点内的 DOM 投影。
 - 不得把任务行点击或 session 选择暗中当成运行；任何异步交互必须在同一渲染周期进入明确 busy 状态，随后显示 accepted、settled 或 error。
 
 ### 2.3 服务端事实先于 UI
@@ -92,9 +94,9 @@ UI 不得先用本地状态伪造 `cleanup_required`、成功结果或版本事�
 
 ### 2.4 复用与依赖
 
-- 节点、连线、端口、选择、重连、视口和缩略图继续复用现有 `@xyflow/react@12.11.6`；阶段总览和聚焦动作子图的初始有向布局复用 `@dagrejs/dagre@3.1.1`。B-A-T 不自行重写这些通用基础设施。
+- 节点、连线、端口、选择、重连、视口和缩略图继续复用现有 `@xyflow/react@12.11.6`；阶段父节点的初始有向布局复用 `@dagrejs/dagre@3.1.1`，阶段内原位展开路由复用已保存的节点/边布局事实。B-A-T 不自行重写这些通用基础设施。
 - FlowGram/Coze 继续作为交互与视觉参考，不作为生产编辑器依赖。其官方容器示例依赖大子画布和展开后显示内部节点，与“不常驻子路径、不把子图塞进阶段容器”不一致；其 document/form/history/variable 状态所有权也会与服务端 revision 事实源重叠。
-- ELK 是更重的布局计算引擎，不是链路编辑器。阶段总览和聚焦子图分别布局后，Dagre 已覆盖当前有向图不变量；没有证据时不再引入 ELK。
+- ELK 是更重的布局计算引擎，不是链路编辑器。Dagre 已覆盖当前阶段父节点有向布局不变量，原位展开不需要再建一张子图；没有证据时不再引入 ELK。
 - capability descriptor 提供节点标题、摘要、类型化编辑字段、目标要求、端口、兼容替换和验证支持；未知 capability 只读，不用递归 JSON 表单兜底。
 - runner 清理继续复用 Node `ChildProcess`、现有 Windows 精确 PID 树终止和 browser-use 的公开 Browser close/kill；第三方进程杀手不能替代所有权、持久化和清理确认，因此不为此新增第二个进程管理框架或 CDP 客户端。
 
@@ -314,7 +316,7 @@ type ChainPresentation = {
 - 所有跨阶段出边必须由 `exits` 以真实 `sourceNodeId + sourcePort` 声明；阶段图的分支和回边从真实边派生，不能另存一套可漂移连线。
 - 阶段自身不进入 LangGraph，不产生节点事件，不消耗预算；阶段运行状态只聚合所选 execution 中真实节点状态。
 - `presentationDigest`、阶段分组和手动布局进入 revision checksum；它们不进入 executable digest。可执行节点、边、值绑定或 capability 配置变化才改变 executable digest。
-- 自动布局、临时动作摘要、当前聚焦阶段、视口和选中项是可重算或本地状态，不进入任何发布 digest。
+- 自动布局、动作列表的展开/选中态、当前聚焦阶段、视口和选中项是可重算或本地状态，不进入任何发布 digest；动作行引用的 nodeId 及其阶段归属仍来自版本化 presentation。
 - 发布后 `ChainPresentation` 与新 chain reference 一起不可变；旧版本和历史运行继续解析原 presentation。不得只按“最新布局”覆盖历史版本。
 
 ### 4.6 Capability Descriptor 合同
@@ -504,22 +506,22 @@ immutable TaskChain + versioned chain-stage facts
   + local preview/focus/selection state
   -> WorkflowPresentation
   -> React Flow adapter
-  -> stage overview | attached preview | focused action subgraph
+  -> stage nodes with inline action rows | focused action subgraph
 ```
 
 除修订草稿的手动布局外，展示和展开状态不进入 executable digest，不改变运行语义。自动布局结果可缓存，但必须能从同一输入重算。运行状态只能来自所选 execution 的持久化事实；客户端动画、轮询响应或编辑器内部状态都不是事实源。
 
 ### 7.2 链路阶段与动作子图是同一事实的层级投影
 
-链路只拥有一套可执行节点与边，但同一画布提供三个阅读层级：
+链路只拥有一套可执行节点与边，工作台也只提供一张原位嵌套图：
 
-- **阶段总览**回答“任务按什么顺序完成”。只显示开始、链路阶段、阶段间主路径和结束；阶段卡片显示目标、关键机制摘要、动作数和本次运行状态，不显示通用输入/输出框。
-- **临时动作摘要**回答“这个阶段大致做了什么”。单击阶段在其下方附着一条紧凑时间线，任一时刻只显示一个；它覆盖在画布上且不进入布局。存在分支、循环或异常出口时只提示“进入阶段查看完整路径”，不得伪造成线性列表。
-- **聚焦动作子图**回答“具体如何执行和修改”。双击或点击“进入阶段”后，同一画布用面包屑切换到该阶段引用的真实动作节点、端口、边和出口；返回后恢复总览视口与选择。
-- 运行中阶段只获得状态强调和可选的非抢焦点摘要，不得自动撑开主图。用户进入聚焦态后可跟随当前动作，但必须能关闭。
-- 阶段边界来自计划步骤、编译证据或显式版本化事实；不得由 UI 按网站名称、业务词、节点 label、坐标或数量猜测。旧链缺少可靠阶段时显示“未分组动作”，不得伪造业务含义。
+- **阶段总览**回答“任务按什么顺序完成、每个阶段发生了什么”。只把开始、阶段父节点、阶段间主路径和结束交给 React Flow；每个阶段父节点内部常驻显示引用真实 nodeId 的紧凑动作列表。动作列表不注册 React Flow 子节点或 Handle，不显示通用输入框、schema、内部 ID 或 JSON。
+- **原位展开路径**回答“复杂控制流具体如何执行和修改”。用户点击“展开路径”后，当前阶段父节点在原位显示其引用的真实动作 nodeId、端口、边和出口；收起后仍是原父节点和原视口。不出现面包屑切换、独立 focus graph 或第二个画布模式。
+- 所有阶段，包括只有一个动作的阶段，都使用相同父节点结构；不得因为动作数不同切换成另一种顶层卡片。
+- 运行中只更新阶段和子动作的状态、耗时与结果摘要，不改变阶段高度以外的结构，不触发 regroup、全图 remount 或自动 fitView。
+- 阶段边界来自 prefix/final 编译证据、可变准备 presentation 或显式版本化事实；不得由 UI 按网站名称、业务词、节点 label、坐标或数量猜测。旧 build/chain 缺少可靠阶段时显示一个“未分组动作”父节点，不得回退为顶层动作长链。
 
-链路阶段引用一段相连的动作子图，必须声明一个逻辑入口和具名出口。阶段外边只能穿过这些边界；阶段自身不参与 runtime 调度。总览、摘要与聚焦态都持有相同节点 ID，不复制运行状态或编辑内容。
+链路阶段引用一段相连的动作子图，必须声明一个逻辑入口和具名出口。阶段外边只能穿过这些边界；阶段自身不参与 runtime 调度。总览动作行与原位展开内容持有相同节点 ID，不复制运行状态或编辑内容。prefix presentation 只覆盖当前已闭合节点且明确为“生成中”；final presentation 在样本复跑前通过完整 chain 校验，并在同一 candidate/version 的后续过程中成为唯一结构。
 
 端口角色仍由节点/能力合同稳定声明：
 
@@ -527,26 +529,26 @@ immutable TaskChain + versioned chain-stage facts
 - `decision`：Branch case/default 等业务控制流；
 - `exception`：missing、timeout、blocked、human_required、failed、cancelled 等平台异常流。
 
-角色不得从 label、页面文案或边名称模糊匹配。阶段卡片可以汇总“异常出口 N”；进入聚焦态后必须能看到每条实际路径，未知端口显示为“其他出口”而不是被静默删除。
+角色不得从 label、页面文案或边名称模糊匹配。阶段卡片可以汇总“异常出口 N”；原位展开后必须能看到每条实际路径，未知端口显示为“其他出口”而不是被静默删除。
 
 ### 7.3 开源编辑器与布局边界
 
 生产链路运行台冻结为现有 React Flow 加 Dagre：
 
 1. `@xyflow/react@12.11.6` 承担节点、连线、端口、选择、重连、视口、缩略图和运行态绘制；
-2. `@dagrejs/dagre@3.1.1` 分别计算阶段总览和当前聚焦动作子图的初始 LR/TB 布局；不对带跨边界子节点的大容器做复合布局；
-3. 自动布局只在首次投影、阶段结构改变或用户点击“整理布局”时运行。拖动后的版本化坐标不因渲染、临时摘要或运行事件而改变；
-4. FlowGram/Coze 只作为参考。官方 loop 容器与 expand/collapse 源码验证了其核心模式是大容器内显示/隐藏子节点，不符合本迭代的附着预览和同画布聚焦；ELK 当前没有新增价值。
+2. `@dagrejs/dagre@3.1.1` 只计算阶段父节点总览的初始 LR/TB 布局；阶段内动作行和原位展开路由是同一父节点的 DOM/SVG 内容，Dagre 只使用父节点实际高度，不做 React Flow compound-node 或第二张子图布局；
+3. 自动布局只在首次投影、阶段身份/真实边改变或用户点击“整理布局”时运行。相同 stageId 保留位置；动作行、运行状态、耗时和选择变化不得触发布局；
+4. FlowGram/Coze 只作为结构参考，不引入其 document/form/history 状态所有权；ELK 当前没有新增价值。原型只固定父子层级与点击关系，视觉必须使用当前 Workbench/Radix 主题。
 
 两项依赖均为 MIT，提供 ESM/TypeScript 使用面并可在当前 Vite/Windows 工程内运行。B-A-T 自有代码只承担 TaskChain、阶段、revision、event、capability descriptor 和编辑器模型之间的薄适配；库不得拥有 runtime 状态，也不得把坐标写进 executable digest。
 
 布局结果必须满足：
 
 - 桌面默认按自然阅读方向排列，链路阶段顺序明确；
-- 聚焦动作节点不重叠，边不穿节点，主路径不交叉；
+- 原位展开的动作行/路由不重叠，边不穿内容，主路径不交叉；
 - 节点尺寸来自实际测量，端口位于符合流向的边缘；
-- 业务分支靠近主轴，异常路径在聚焦图的次级轨道；
-- 临时摘要、聚焦切换和运行态变化保持选中节点与合理视口；
+- 业务分支靠近主轴，异常路径在父节点内的次级轨道；
+- 子动作列表更新、原位展开/收起和运行态变化保持选中节点与合理视口；阶段外部 Handle 位于标题区垂直中心；
 - 布局失败显示可恢复错误并退回最近合法布局，不能回到固定两列假装成功。
 
 窄屏以可平移缩放画布和底部全屏检查器为主，不为适配宽度改写已发布手动布局。
@@ -554,7 +556,7 @@ immutable TaskChain + versioned chain-stage facts
 ### 7.4 布局与分组持久化
 
 - 初次编译的链没有手动布局时使用所选编辑器或布局 adapter 的确定性自动布局。
-- 链路阶段分组属于版本化展示事实；临时摘要和聚焦状态属于用户本地展示状态，两者不得混写。
+- 链路阶段分组与阶段内 nodeId 顺序属于版本化展示事实；动作行选中态和原位展开/收起状态属于用户本地展示状态，两者不得混写。
 - 创建修订草稿时，以当前自动布局或对应已发布 layout 作为草稿初始布局。
 - 拖动阶段或动作节点只修改对应草稿 `layout`，纳入 draft checksum，不进入 executable chain digest。
 - I4 优先扩展现有 revision draft/published snapshot 来拥有 `ChainPresentation`，避免再建一份可漂移草稿；repository 必须能按 `published.chain` 精确解析其不可变 presentation。
@@ -570,7 +572,7 @@ immutable TaskChain + versioned chain-stage facts
 │  [运行状态：正在执行阶段 2/4]                        │ 阶段/动作名称   │
 │                                                      │ 概览            │
 │  开始 → [阶段 1 ✓] → [阶段 2 运行中] → [阶段 3] → 完成│ 上下文与条件    │
-│                         └ 单个临时动作摘要            │ 动作设置        │
+│         每个阶段父节点内常驻显示紧凑动作列表          │ 动作设置        │
 │  面包屑 / 小地图 / 缩放 / 整理布局                    │ 验证与高级信息  │
 └──────────────────────────────────────────────────────┴─────────────────┘
 ```
@@ -601,15 +603,15 @@ immutable TaskChain + versioned chain-stage facts
 - completed 后保留本次路径和耗时，工具栏给出“查看结果 / 再次运行 / 调整链路 / 重新梳理需求”。
 - 实时传输优先复用现有持久化事件和连接层；若轮询不能保证顺序、续接或即时性，可增加服务端事件流，但必须带 execution id 与单调序列，断线重连从持久化事实补齐，不能增加第二个 runtime 状态源。
 
-### 7.8 已确认原型行为
+### 7.8 历史原型与 2026-09-29 待实施交互基线
 
-隔离原型已经通过 Windows Edge headless 渲染并得到用户确认。生产实现以以下行为为基线：
+隔离原型曾通过 Windows Edge headless 渲染；其中“四个 Tab、同一 TaskChain、直接运行与即时反馈”继续保留，“单个临时动作摘要”和“切换到聚焦子图”已被 2026-09-29 准备期长链反例与项目最高层级规则推翻。以下是下一轮实现要求，不表示当前源码已经具备：
 
 1. 需求对话、任务准备、链路图、运行结果四个 Tab 保持在同一任务工作台；链路图不是脱离生命周期的独立全屏产品。
-2. 阶段总览显示开始、阶段、结束和阶段间路径；阶段卡片保持紧凑，不显示通用输入/输出框或大图标。
-3. 单击阶段只在其下方附着一个动作摘要；选择其他阶段时替换前一个。摘要不参加 Dagre 布局，不永久撑开主图。
-4. 双击或“进入阶段”在同一 React Flow 画布进入聚焦态，并显示面包屑返回；真实动作节点、端口和边来自同一 TaskChain。
-5. 横向/纵向布局、整理布局、拖动、缩放和小地图复用 React Flow/Dagre；聚焦图允许超出首屏并通过平移、小地图浏览，不为“全图同时可见”缩小到不可读。
+2. final/运行总览显示开始、阶段父节点、结束和阶段间路径；prefix 只显示当前有证据的阶段与边，不伪造开始或结束。所有阶段包括单动作阶段使用相同父节点。
+3. 阶段父节点内部常驻紧凑动作列表；动作行引用真实 nodeId，但不是 React Flow 子节点。点击动作行打开该真实节点详情，阶段外 Handle 位于标题区垂直中心。
+4. 分支、循环、异常出口或编辑真实路径时，通过“展开路径”在原阶段父节点原位显示真实动作节点、端口和边；不切换画布模式或使用面包屑返回。
+5. 横向/纵向布局、整理布局、拖动、缩放和小地图复用 React Flow/Dagre；阶段原位展开后只推开必要的下游节点，不为“全图同时可见”缩小到不可读。
 6. 右侧面板只解释或编辑当前选择。阶段选择显示阶段边界和真实动作；动作选择显示所属阶段、前后动作、前置条件、动作配置和必须达到的后置条件。
 7. 修改 `press Enter` 等原子动作后立即显示“修改后待验证”并禁用发布；替换为点击时先启动真实浏览器目标选择，不出现 CSS selector 输入框。
 8. 顶部“再次运行”点击后立即进入 submitting/accepted 状态；原型中的运行动画只证明交互形式，生产状态必须来自 I3 的 execution 回执和事件事实。
@@ -618,18 +620,18 @@ immutable TaskChain + versioned chain-stage facts
 
 ## 8. 链路阶段与动作节点卡片设计
 
-阶段总览必须让用户看懂自动化任务怎么走；聚焦后的动作节点必须让用户不打开 JSON 也能理解具体动作。子路径不常驻，阶段和动作节点也不能在视觉上伪装成同一种卡片。
+阶段总览必须让用户同时看懂自动化任务怎么走以及每个阶段发生了什么；父节点内常驻动作列表，复杂路由也只在该父节点原位展开，不注册为撑大总览的第二批画布节点。阶段标题区、动作行和展开路由必须有清晰层级，不能伪装成同一种卡片。
 
 ### 8.1 固定结构
 
-每个链路阶段卡片只显示决策所需信息：
+每个链路阶段父节点只显示决策所需信息：
 
 - 顺序号和用户可读阶段目标；
-- 关键实际机制摘要，包括输入后是按回车、点击按钮还是选择候选等结果相关差异；
-- 动作数量、分支/异常提示和当前聚合运行状态；
-- “查看动作”与“进入阶段”入口。节点上不重复展示通用输入/输出，不使用占主视觉的大图标。
+- 标题区显示当前聚合运行状态、动作数量和分支/异常提示；
+- 标题区下方常驻该阶段的真实动作行，显示动作类型/标题、状态和可用耗时；
+- 复杂控制流才显示“展开路径”。节点上不重复展示通用输入/输出，不使用占主视觉的大图标，不保留固定高度空摘要区。
 
-每个聚焦动作节点至少显示：
+每个原位展开的动作项至少显示：
 
 - 紧凑类型标识和用户可读类型；
 - 一行任务动作标题；
@@ -687,9 +689,9 @@ capability descriptor 只认识平台通用能力和合同，例如导航、输�
 ### 9.3 选择与导航
 
 - 点击节点高亮其直接上游和下游；其他节点降低强调但仍可见。
-- 点击阶段卡片的“异常出口 N”会进入该阶段并聚焦对应边。
+- 点击阶段卡片的“异常出口 N”会原位展开该阶段并高亮对应边。
 - 节点详情关闭后焦点回到原节点。
-- 键盘可遍历链路阶段和动作节点、打开/关闭临时摘要、进入/退出聚焦态、打开详情和关闭面板。
+- 键盘可遍历链路阶段及其动作行、原位展开/收起路径、打开详情和关闭面板。
 - reduced motion 下关闭自动平移动画；布局计算不改变焦点顺序。
 
 ### 9.4 编辑命令与验证失效
@@ -703,7 +705,7 @@ UI 行为必须落到现有或新增的类型化 revision operation，不能直�
 | 修改按键、超时、输入绑定或普通 config | `replace_node` 或等价类型化 node patch | 改变 | 立即失效 |
 | 把按键替换为点击 | 兼容 capability replacement + 新 browser target | 改变 | 立即失效，目标选择后仍需聚焦验证 |
 | 增删节点或连线 | 现有 add/remove/upsert operation | 改变 | 立即失效 |
-| 仅切换总览/聚焦、打开摘要 | 本地展示状态 | 不变 | 不变，不保存 |
+| 仅原位展开/收起路径、选择动作行 | 本地展示状态 | 不变 | 不变，不保存 |
 
 当前 operation 若不能原子表达“更新 presentation”或“兼容替换 capability”，先扩展服务端合同和 checksum，再接 UI。不得把多次前端 patch 拼接成一个可能半成功的产品操作。
 
@@ -720,7 +722,7 @@ UI 行为必须落到现有或新增的类型化 revision operation，不能直�
 
 ### I0 — 架构与交互原型（已完成）
 
-已完成：ADR 0009/0010、领域术语、根因证据、React Flow + Dagre 复用评估，以及 `apps/workbench/prototype.html` 隔离原型。原型验证了四个 Tab、阶段总览、单个临时摘要、同画布聚焦、上下文动作编辑、验证失效和画布内再次运行的交互结构。
+已完成：ADR 0009/0010、领域术语、根因证据、React Flow + Dagre 复用评估，以及 `apps/workbench/prototype.html` 隔离原型。该历史原型验证了四个 Tab、上下文动作编辑、验证失效和画布内再次运行；其中“单个临时摘要”和“切换聚焦子图”已由 2026-09-29 的阶段父节点内动作列表与原位展开路由替代，不得继续实施。
 
 边界：原型使用静态样本和本地运行演示，不连接产品 API，不提供正式 execution、revision 或发布证据。生产代码不得导入原型样本；I0 不能作为 I1–I7 任一退出证明。
 
@@ -835,12 +837,12 @@ UI 行为必须落到现有或新增的类型化 revision operation，不能直�
 
 - 左侧列表只选择并立即反馈；运行/再次运行位于链路工具栏。
 - 同一渲染周期进入 submitting；accepted 后绑定回执中的 executionId，事件只按该 execution/sequence 续接。
-- 阶段总览、单个临时摘要、同画布聚焦/返回、LR/TB 整理布局、拖动、缩放、小地图和视口恢复遵循原型。
-- 自动布局只在无发布布局、结构改变或用户明确整理时运行；运行事件和摘要开关不得触发布局跳动。
+- 准备期和正式总览均使用阶段父节点内常驻动作列表；复杂路由在原阶段父节点原位展开/收起，LR/TB 整理布局、拖动、缩放、小地图和视口恢复继续复用现有 React Flow/Dagre 能力。
+- 自动布局只在无发布布局、阶段身份/真实边改变或用户明确整理时运行；动作行选择、运行事件和耗时变化不得触发布局跳动。
 - 节点/边状态包含文字或图形冗余；reduced-motion 关闭动画但不丢失信息。
 - `cleanup_required` 只在 execution 状态条出现，不伪造为节点或 repair 路径。
 
-最小验证：projection/adapter tests；Workbench 类型检查/生产构建各一次；1440px headless 覆盖任务选择、启动即时反馈、accepted 绑定、事件推进、刷新续接、临时摘要和聚焦切换。
+最小验证：projection/adapter tests；Workbench 类型检查/生产构建各一次；1440px headless 覆盖任务选择、启动即时反馈、accepted 绑定、事件推进、刷新续接、阶段动作列表和原位展开/收起。
 
 退出条件：用户无需 JSON 即可按阶段理解任务，从画布启动并观察唯一 execution；主路径无交叉、节点可读，刷新后不混入历史运行。
 
@@ -876,7 +878,7 @@ UI 行为必须落到现有或新增的类型化 revision operation，不能直�
 1. 从 Workbench 左侧选择任务，立即看到选中/加载反馈并打开当前发布链；左侧点击不启动运行；
 2. 从结果页创建修订草稿，修改节点或连线，验证并发布新不可变版本；
 3. 在链路运行台中确认当前版本和输入，使用“凡人修仙传”现有任务或同等真实公开任务点击普通再次运行；按钮立即进入启动态并取得唯一 execution；
-4. 同一画布自动绑定该 execution；阶段总览与聚焦动作子图的已通过边、当前边、等待和完成状态按持久化事件流转，刷新或断线重连后继续同一次运行；
+4. 同一画布自动绑定该 execution；阶段总览与原位展开路由的已通过边、当前边、等待和完成状态按持久化事件流转，刷新或断线重连后继续同一次运行；
 5. 正式 run 到达 completed，模型调用为 0，runner/Chrome/temp cleanup 为 confirmed；完成后同一运行台可再次运行；
 6. 服务重启后 release、preset、运行结果、事件序列、cleanup、链路阶段分组和 published layout 一致；
 7. 受控清理异常路径从正式 API/Workbench 投影为 execution 级 cleanup_required，不出现节点 repair；清理确认后恢复原结果；
@@ -913,9 +915,9 @@ UI 行为必须落到现有或新增的类型化 revision operation，不能直�
 | `apps/workbench/src/TaskWorkspace.tsx`、`ChainView.tsx` | 链路运行台壳 | 接入版本、输入、运行命令、active execution 和结果/修订导航 |
 | `apps/workbench/src/useTaskRunner.ts` | 运行命令状态 | idle/submitting/accepted/settled/error；返回并选择唯一 execution |
 | `apps/workbench/src/taskChainConnection.ts` | 运行事件连接 | 按 execution 和单调序列读取、重连补齐、释放订阅 |
-| `apps/workbench/src/taskChainProjection.ts` | 当前简易图投影 | 拆成阶段总览、聚焦子图、端口角色和单次 execution event projection；移除固定两列 |
+| `apps/workbench/src/taskChainProjection.ts` | 当前简易图投影 | 拆成阶段总览、阶段内原位路由、端口角色和单次 execution event projection；移除固定两列 |
 | 新 presentation/descriptor client adapter | 服务端事实到 React Flow | 不含业务特判；unknown descriptor 只读；不拥有版本或运行状态 |
-| `apps/workbench/src/LiveChain.tsx` | 画布容器 | 阶段总览、临时摘要、聚焦动作子图、运行流、published layout |
+| `apps/workbench/src/LiveChain.tsx` | 画布容器 | 阶段父节点与动作列表、原位展开路由、运行流、published layout |
 | `apps/workbench/src/ChainRevisionEditor.tsx` | 草稿编辑 | 上下文可读表单、兼容替换、明确端口、复用服务端版本事实 |
 | `apps/api/src/task-chain/chain-revision.ts` | 草稿/布局/checksum | 阶段分组、自动初始布局与发布布局来源；布局不进 executable digest |
 | `apps/workbench/prototype.html`、`src/prototype/` | 隔离交互基准 | 只用于对照；不导入生产入口、不作为 API 或验收事实源 |
@@ -924,10 +926,10 @@ UI 行为必须落到现有或新增的类型化 revision operation，不能直�
 
 ```text
 Product Alignment:
-- natural-language task: 用户在可读链路工作台直接启动复跑，先看懂链路阶段，再进入任一阶段查看和修订真实动作路径，并在资源清理异常时保留真实结果、核验清理后再次运行
+- natural-language task: 用户在可读链路工作台直接启动复跑，先看懂链路阶段，再在原阶段父节点内查看和修订真实动作路径，并在资源清理异常时保留真实结果、核验清理后再次运行
 - reusable chain boundary: 不可变 TaskChain 决定执行；链路阶段只引用真实动作子图并决定阅读层级；每个 TaskExecution 独立拥有运行流和清理事实
 - runtime inputs: 当前 release/preset 的业务输入、链版本、运行控制和用户显式清理/修订操作
-- dynamic task outputs: accepted execution、TaskRun 事件流、ExecutionCleanup、产品下一步、阶段总览/聚焦动作子图和新不可变修订版本
+- dynamic task outputs: accepted execution、TaskRun 事件流、ExecutionCleanup、产品下一步、阶段总览/原位展开路由和新不可变修订版本
 - generic platform capability used: TaskChain/LangGraph、runner/browser 生命周期、Zod/SQLite、React Flow、Dagre 及现有 revision/validation/publish
 - replay model calls: 0，显式 llm 节点除外；清理和手动修订不调用模型
 - site/task-specific code added: no
@@ -937,10 +939,10 @@ Product Alignment:
 
 ```text
 Reuse Assessment:
-- capability: 有所有权的 runner/browser 清理；带阶段总览、同画布聚焦编辑和实时运行态的工作流运行台
+- capability: 有所有权的 runner/browser 清理；带阶段总览、原位展开编辑和实时运行态的工作流运行台
 - existing implementation in repository: Node ChildProcess、browser-use Browser close/kill、Windows 精确 PID 树终止、@xyflow/react 12.11.6、revision draft/layout/checksum/digest、持久化 TaskRun events
 - mature candidates and pinned versions: 继续使用现有进程/Browser 公共面；`@xyflow/react@12.11.6` 与 `@dagrejs/dagre@3.1.1`；FlowGram 1.0.14 和 ELK 只作为已核验未采用候选
-- selected implementation: 清理在现有 owner/runner 适配层补结构化报告；画布保留 React Flow并以 Dagre 分别布局阶段总览与聚焦动作子图
+- selected implementation: 清理在现有 owner/runner 适配层补结构化报告；画布保留 React Flow，Dagre 只布局阶段父节点，复杂路由在父节点内原位展开
 - reused public surface: ChildProcess close/exit、browser-use Browser ownership；React Flow nodes/edges/handles/selection/reconnect/viewport/minimap；Dagre graph/layout/rankdir
 - B-A-T-owned adapter and remaining gap: accepted execution 与事件续接、execution cleanup 持久化、TaskChain/链路阶段/事件到编辑器模型映射、capability descriptor、版本化布局来源和上下文编辑器
 - license/runtime/platform fit: React Flow 与 Dagre 均为 MIT；Dagre 3.1.1 含 TypeScript 声明，包与 graphlib 合计约 1.9 MB unpacked，不等于最终 bundle；Windows/Vite headless 原型已通过，生产 bundle/交互仍待 I5，macOS arm64 仍未测
@@ -994,7 +996,7 @@ Reuse Assessment:
 - 已发布链路在画布内提供运行/再次运行，点击后立即反馈并取得唯一 accepted execution；左侧列表只选择任务；
 - 画布只绑定所选 execution，刷新/重连后继续同一持久化运行流，不混合历史运行；
 - 每个已发布 chain reference 都能解析唯一不可变 ChainPresentation；阶段分组、布局、checksum、executable digest 和 presentation digest 边界正确；
-- 当前真实链的阶段总览可读；单击只临时显示一个动作摘要，进入阶段后真实动作子图无节点重叠、边穿节点或主路径交叉；
+- 当前真实链的阶段总览可读；每个阶段父节点常驻显示真实动作列表，单动作阶段不扁平化；进入复杂阶段后真实动作子图无节点重叠、边穿节点或主路径交叉；
 - 所有实际动作与异常路径仍可聚焦、查看和编辑；
 - 节点详情首屏没有 raw JSON，用户能理解动作、输入、目标、条件、路由和最近运行；unknown descriptor 节点安全只读；
 - 手动修订、验证、发布形成新不可变版本，旧版本和历史运行不变；

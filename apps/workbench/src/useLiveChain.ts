@@ -2,16 +2,16 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import { eventsForStep } from "./chainWorkbenchProjection.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 
-export type WorkbenchContextMode = "execution" | "history" | "diagnostics" | "preparation" | null
+export type WorkbenchContextMode = "execution" | "history" | "diagnostics" | "preparation" | "start" | null
 
 export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const view = useSyncExternalStore(connection.subscribe, connection.snapshot, connection.snapshot)
   const [stepId, setStepId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null)
-  const [expandedStageId, setExpandedStageId] = useState<string | null>(null)
   const [runDialogMode, setRunDialogMode] = useState<"trial" | "run" | null>(null)
   const [contextMode, setContextMode] = useState<WorkbenchContextMode>(null)
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   useChainPolling(connection, active)
 
   const workspace = view.workspace
@@ -40,12 +40,19 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const acceptedExecutionId = !build && acceptedMatchesSurface(view.acceptedExecution, draft, release)
     ? view.acceptedExecution!.executionId : null
   const visibleExecutionId = selectedExecution?.id ?? acceptedExecutionId
-  const chainEvents = useMemo(() => step ? eventsForStep(step.stepId, visibleExecutionId, view.eventBatch) : null,
-    [step?.stepId, visibleExecutionId, view.eventBatch])
+  const detail = view.executionDetail?.execution.id === visibleExecutionId ? view.executionDetail : null
+  const reference = plan?.requirement, currentRequirement = workspace?.requirement
+  const requirement = detail?.requirement ?? (reference && currentRequirement?.id === reference.id
+    && currentRequirement.version === reference.version && currentRequirement.revision === reference.revision ? currentRequirement : null)
+  const calls = detail?.calls.filter((call) => call.stepId === step?.stepId) ?? []
+  const selectedCall = selectedRunId === null ? calls.at(-1) ?? null
+    : calls.find((call) => call.run.binding.runId === selectedRunId) ?? null
+  const chainEvents = useMemo(() => step ? eventsForStep(step.stepId, visibleExecutionId, view.eventBatch,
+    selectedCall?.run.binding.runId ?? selectedRunId) : null,
+    [step?.stepId, visibleExecutionId, view.eventBatch, selectedCall?.run.binding.runId, selectedRunId])
   const selectedNode = (build?.nodes ?? chain?.nodes)?.find((node) => node.id === selectedNodeId) ?? null
   const selectedStage = canvasPresentation?.stages.find((stage) => stage.id === selectedStageId)
     ?? canvasPresentation?.stages.find((stage) => selectedNode && stage.nodeIds.includes(selectedNode.id)) ?? null
-  const expandedStage = canvasPresentation?.stages.find((stage) => stage.id === expandedStageId) ?? null
   const executionRunning = Boolean(selectedExecution && ["queued", "running", "waiting_for_human", "paused", "cleanup_required"]
     .includes(selectedExecution.status))
 
@@ -54,8 +61,9 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
     else if (step && step.stepId !== stepId) setStepId(step.stepId)
   }, [step?.stepId, stepId])
   useEffect(() => {
-    setExpandedStageId(null); setSelectedNodeId(null); setSelectedStageId(null)
+    setSelectedNodeId(null); setSelectedStageId(null)
   }, [chain?.id, chain?.version, build?.stepId, build ? workspace?.activity?.id : undefined])
+  useEffect(() => { setSelectedRunId(null) }, [visibleExecutionId, step?.stepId])
   useEffect(() => {
     if (active && workspace?.activity && (["failed", "interrupted"].includes(workspace.activity.status)
       || (workspace.activity.status === "waiting_for_human"
@@ -69,12 +77,13 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const closeContext = () => { setSelectedNodeId(null); setSelectedStageId(null); setContextMode(null) }
 
   return {
-    view, workspace, source, plan, steps, step, chain, displayChain: chain, presentation, canvasPresentation, draft, release, build,
+    view, workspace, source, plan, requirement, steps, step, chain, displayChain: chain, presentation, canvasPresentation, draft, release, build,
     // WHY：准备批次身份保留到其草稿、复验、发布和运行；build sequence 不参与画布身份。
     canvasKey: `${nextCanvasGeneration.taskId}:${nextCanvasGeneration.authoringJobId ?? "existing"}:${build?.stepId ?? step?.stepId ?? "chain"}`,
-    selectedExecution, acceptedExecutionId, chainEvents, selectedNode, selectedStage, expandedStage,
-    runDialogMode, selectedNodeId, selectedStageId, expandedStageId,
-    contextMode, executionRunning, activityRunning, setStepId, setRunDialogMode, setExpandedStageId,
+    selectedExecution, acceptedExecutionId, detail, calls, selectedCall, selectedRunId, setSelectedRunId,
+    chainEvents, selectedNode, selectedStage,
+    runDialogMode, selectedNodeId, selectedStageId,
+    contextMode, executionRunning, activityRunning, setStepId, setRunDialogMode,
     setSelectedStageId, setSelectedNodeId, setContextMode,
     openContext, closeContext,
   }
@@ -96,6 +105,7 @@ function useChainPolling(connection: TaskChainConnection, active: boolean) {
     const poll = async () => {
       await connection.reload(controller.signal)
       await connection.reloadExecutionEvents(controller.signal)
+      await connection.reloadExecutionDetail(controller.signal)
       if (!controller.signal.aborted) timer = setTimeout(() => { void poll() }, 800)
     }
     void poll()

@@ -8,7 +8,7 @@ import {
   taskExecutionPacingSchema,
 } from "./product.js"
 import { requirementReferenceSchema, taskRequirementSchema } from "./requirement.js"
-import { taskDraftReferenceSchema, taskDraftSchema } from "./revision.js"
+import { taskDraftContentSchema, taskDraftReferenceSchema, taskDraftSchema } from "./revision.js"
 import { capabilityDescriptorSchema } from "./capability-descriptor.js"
 import { nodeExecutionEventSchema, taskRunModeSchema, taskRunSchema } from "./run.js"
 import { jsonValueSchema, taskOutputSchema } from "./value.js"
@@ -143,11 +143,18 @@ export const taskExecutionCleanupResumeSchema = z.object({
   result: taskExecutionResultSchema.nullable(),
 }).strict()
 
+export const executionReviewSelectionSchema = z.object({ stepId: keySchema, runId: identitySchema.nullable() }).strict()
+export const executionReviewContextSchema = z.object({
+  taskId: taskIdentitySchema, executionId: identitySchema, requirement: requirementReferenceSchema,
+  release: versionReferenceSchema.nullable(), draft: taskDraftReferenceSchema.nullable(),
+  selection: executionReviewSelectionSchema.nullable(), resultDigest: digestSchema.nullable(),
+}).strict()
 export const taskExecutionReviewSchema = z.object({
   id: identitySchema,
   decision: z.enum(["accepted", "requirement_revision"]),
   feedback: z.string().trim().min(1).max(2_000).nullable(),
   summary: z.string().trim().min(1).max(8_000),
+  context: executionReviewContextSchema.optional(),
   createdAt: z.string().datetime(),
 }).strict()
 
@@ -275,6 +282,16 @@ export const taskExecutionSummarySchema = z.object({
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
 }).strict()
 
+// WHY：按需读取精确运行与调用；摘要轮询不复制节点 I/O，也不把计划输入冒充链路实参。
+export const taskExecutionDetailSchema = z.object({
+  execution: taskExecutionSchema,
+  requirement: taskRequirementSchema.nullable(),
+  content: taskDraftContentSchema.nullable(),
+  calls: z.array(z.object({ stepId: keySchema, run: taskRunSchema.pick({
+    binding: true, input: true, outputs: true, status: true, outcome: true, sequence: true,
+  }) }).strict()),
+}).strict()
+
 export const taskAuthoringActivitySchema = z.object({
   id: identitySchema, status: z.enum(["queued", "running", "waiting_for_human", "failed", "interrupted"]),
   phase: preparationPhaseSchema,
@@ -316,6 +333,7 @@ export const acceptedTaskExecutionSchema = z.object({
 
 export const taskChainDispatchResponseSchema = z.object({
   snapshot: taskWorkspaceSnapshotSchema, acceptedExecution: acceptedTaskExecutionSchema.nullable(),
+  savedReview: taskExecutionReviewSchema.optional(),
 }).strict()
 
 export const taskReleaseHistoryPageSchema = z.object({
@@ -364,7 +382,8 @@ export const taskChainCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("review_execution"), ...request, executionId: identitySchema,
     expectedSequence: z.number().int().nonnegative(),
     decision: z.enum(["accepted", "requirement_revision"]),
-    feedback: z.string().trim().min(1).max(2_000).nullable() }).strict(),
+    feedback: z.string().trim().min(1).max(2_000).nullable(),
+    selection: executionReviewSelectionSchema.optional() }).strict(),
   z.object({ type: z.literal("run_task"), ...request, release: versionReferenceSchema,
     input: jsonValueSchema.optional(), pacing: taskExecutionPacingSchema.optional(),
     browser: taskExecutionBrowserSchema.optional() }).strict(),
@@ -387,6 +406,8 @@ export type ExecutionCleanup = z.infer<typeof executionCleanupSchema>
 export type TaskExecutionBrowserHandoff = z.infer<typeof taskExecutionBrowserHandoffSchema>
 export type TaskExecutionResult = z.infer<typeof taskExecutionResultSchema>
 export type TaskExecutionReview = z.infer<typeof taskExecutionReviewSchema>
+export type TaskExecutionDetail = z.infer<typeof taskExecutionDetailSchema>
+export type ExecutionReviewContext = z.infer<typeof executionReviewContextSchema>
 export type TaskExecutionFailureEvidence = z.infer<typeof taskExecutionFailureEvidenceSchema>
 export type TaskExecutionSummary = z.infer<typeof taskExecutionSummarySchema>
 export type TaskAuthoringActivity = z.infer<typeof taskAuthoringActivitySchema>

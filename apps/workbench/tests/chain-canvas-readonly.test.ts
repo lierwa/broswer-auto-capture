@@ -25,9 +25,8 @@ test("单动作阶段仍是唯一阶段父节点，真实 nodeId 只存在于内
     validation: { status: "passed", revision: 4, checksum: "b".repeat(64) } })
   const before = structuredClone(source)
   freeze(source)
-  const entered: string[] = [], inspected: string[] = []
-  const overview = buildCanvasGraph(source.chain, source.presentation, null, null,
-    (id) => entered.push(id), (id) => inspected.push(id))
+  const inspected: string[] = []
+  const overview = buildCanvasGraph(source.chain, source.presentation, null, (id) => inspected.push(id))
   assert.deepEqual(overview.nodes.map((node) => node.type), ["chain-terminal", "chain-stage", "chain-terminal"])
   assert.equal(overview.nodes.filter((node) => node.type === "chain-stage").length, 1)
   assert.equal(overview.nodes.some((node) => node.type === "chain-action"), false)
@@ -39,12 +38,11 @@ test("单动作阶段仍是唯一阶段父节点，真实 nodeId 只存在于内
   stageNode.data.onInspect("read")
   stageNode.position.x += 100
   stageNode.selected = true
-  assert.deepEqual(entered, [])
   assert.deepEqual(inspected, ["read"])
   assert.deepEqual(source, before)
 })
 
-test("展开多节点阶段只改变原阶段内部路径，React Flow 身份与父级边保持不变", () => {
+test("子行始终原位显示；动作选择不改变 React Flow 身份与父级边", () => {
   const grouped = { id: "grouped", title: "读取并选择", summary: "读取 → 选择", nodeIds: ["first", "second"],
     entryNodeId: "first", exits: [{ id: "next", label: "继续", sourceNodeId: "second", sourcePort: "success" }] }
   const tail = { id: "tail", title: "读取结果", summary: "读取结果", nodeIds: ["third"], entryNodeId: "third",
@@ -61,40 +59,27 @@ test("展开多节点阶段只改变原阶段内部路径，React Flow 身份与
     { stageId: grouped.id, nodes: grouped.nodeIds.map((nodeId, index) => ({ nodeId, x: index * 100, y: 0 })) },
     { stageId: tail.id, nodes: [{ nodeId: "third", x: 0, y: 0 }] },
   ] } as unknown as ChainPresentation
-  const entered: string[] = []
-  const collapsed = buildCanvasGraph(groupedChain, groupedPresentation, null, null,
-    (id) => entered.push(id), () => {})
-  assert.ok(collapsed.nodes.some((node) => node.id === grouped.id && node.type === "chain-stage"))
-  assert.ok(collapsed.nodes.some((node) => node.id === tail.id && node.type === "chain-stage"))
-  assert.equal(collapsed.nodes.some((node) => node.type === "chain-action"), false)
-  ;(collapsed.nodes.find((node) => node.id === grouped.id) as StageCanvasNode).data.onToggle(grouped.id)
-  assert.deepEqual(entered, [grouped.id])
-  const expanded = buildCanvasGraph(groupedChain, groupedPresentation, grouped, null, () => {}, () => {})
-  assert.deepEqual(expanded.nodes.map((node) => [node.id, node.type]),
-    collapsed.nodes.map((node) => [node.id, node.type]))
-  assert.deepEqual(expanded.edges.map((edge) => [edge.source, edge.target]),
-    collapsed.edges.map((edge) => [edge.source, edge.target]))
-  const collapsedStage = collapsed.nodes.find((node) => node.id === grouped.id) as StageCanvasNode
-  const expandedStage = expanded.nodes.find((node) => node.id === grouped.id) as StageCanvasNode
-  assert.equal(expandedStage.data.expanded, true)
-  assert.deepEqual(expandedStage.data.actions.map((item) => item.id), ["first", "second"])
-  assert.deepEqual(expandedStage.data.routes.map((item) => [item.sourceNodeId, item.targetTitle]), [
-    ["first", "选择候选"], ["second", "读取结果"],
-  ])
-  assert.deepEqual(expandedStage.position, collapsedStage.position)
-  assert.deepEqual(expandedStage.position, { x: 113, y: 71 })
-  assert.ok(Number(expandedStage.height) > Number(collapsedStage.height))
+  const initial = buildCanvasGraph(groupedChain, groupedPresentation, null, () => {})
+  assert.ok(initial.nodes.some((node) => node.id === grouped.id && node.type === "chain-stage"))
+  assert.ok(initial.nodes.some((node) => node.id === tail.id && node.type === "chain-stage"))
+  assert.equal(initial.nodes.some((node) => node.type === "chain-action"), false)
+  const selected = buildCanvasGraph(groupedChain, groupedPresentation, null, () => {}, () => {}, "second")
+  assert.deepEqual(selected.nodes.map((node) => [node.id, node.type]), initial.nodes.map((node) => [node.id, node.type]))
+  assert.deepEqual(selected.edges.map((edge) => [edge.source, edge.target]), initial.edges.map((edge) => [edge.source, edge.target]))
+  const initialStage = initial.nodes.find((node) => node.id === grouped.id) as StageCanvasNode
+  const selectedStage = selected.nodes.find((node) => node.id === grouped.id) as StageCanvasNode
+  assert.deepEqual(selectedStage.data.actions.map((item) => [item.id, item.selected]), [["first", false], ["second", true]])
+  assert.deepEqual(selectedStage.position, initialStage.position)
+  assert.deepEqual(selectedStage.position, { x: 113, y: 71 })
+  assert.equal(selectedStage.height, initialStage.height)
 })
 
-test("阶段标题、动作详情和路径展开都是原生按钮，动作点击传真实 nodeId", () => {
-  const selected: string[] = [], inspected: string[] = [], toggled: string[] = []
+test("阶段与动作保留原生按钮，选中持续可辨且没有路径展开", () => {
+  const selected: string[] = [], inspected: string[] = []
   const props = { id: stage.id, data: { title: stage.title, summary: stage.summary, direction: "LR", tone: "idle",
-    statusLabel: "待运行", expanded: false,
-    actions: [{ id: "read", title: "读取列表", type: "读取", tone: "idle" }],
-    routes: [{ id: "read:success:done", sourceNodeId: "read", targetNodeId: "done", sourceTitle: "读取列表",
-      port: "success", portLabel: "", targetTitle: "完成" }],
-    onSelect: (id: string) => selected.push(id), onInspect: (id: string) => inspected.push(id),
-    onToggle: (id: string) => toggled.push(id) } } as NodeProps<StageCanvasNode>
+    statusLabel: "待运行",
+    actions: [{ id: "read", title: "读取列表", type: "读取", tone: "idle", selected: true }],
+    onSelect: (id: string) => selected.push(id), onInspect: (id: string) => inspected.push(id) } } as NodeProps<StageCanvasNode>
   const element = StageCanvasCard(props)
   const button = findButton(element, "查看动作：读取列表")
   assert.ok(button)
@@ -104,19 +89,21 @@ test("阶段标题、动作详情和路径展开都是原生按钮，动作点�
   assert.deepEqual(inspected, ["read"])
   assert.equal(stopped, 1)
   findButton(element, "查看阶段：读取页面")!.props.onClick({ stopPropagation() {} })
-  findButton(element, "展开路径：读取页面")!.props.onClick({ stopPropagation() {} })
-  assert.deepEqual(selected, [stage.id]); assert.deepEqual(toggled, [stage.id])
+  assert.equal(findButton(element, "展开路径：读取页面"), undefined)
+  assert.deepEqual(selected, [stage.id])
   const html = renderToStaticMarkup(createElement(ReactFlowProvider, null, element))
   assert.match(html, /<button[^>]*aria-label="查看动作：读取列表"/)
-  assert.match(html, /<button[^>]*aria-label="展开路径：读取页面"/)
+  assert.doesNotMatch(html, /展开路径|chain-stage-routes/)
+  assert.match(html, /aria-pressed="true"/)
+  assert.match(html, /data-selected="true"/)
   assert.match(html, /chain-stage-handle/)
 })
 
 test("亮暗画布均透传主题并保留具名缩放与适应视图控件", () => {
   const noop = () => {}
-  const model = { displayChain: chain, presentation, canvasPresentation: presentation, expandedStage: null, chainEvents: null,
-    setSelectedStageId: noop, setExpandedStageId: noop, setSelectedNodeId: noop, setContextMode: noop,
-    selectedNodeId: null, selectedStageId: null, expandedStageId: null } as unknown as LiveChainModel
+  const model = { displayChain: chain, presentation, canvasPresentation: presentation, chainEvents: null,
+    setSelectedStageId: noop, setSelectedNodeId: noop, setContextMode: noop,
+    selectedNodeId: null, selectedStageId: null } as unknown as LiveChainModel
   for (const theme of ["light", "dark"] as const) {
     const html = renderToStaticMarkup(createElement(LiveChainCanvas, { model, active: true, theme }))
     assert.match(html, new RegExp(`class="[^"]*react-flow [^"]*${theme}`))

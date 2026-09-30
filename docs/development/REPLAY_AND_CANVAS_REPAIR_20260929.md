@@ -6,6 +6,8 @@
 
 最高边界仍是 [AGENTS.md](../../AGENTS.md) 和 [任务链路架构基准](TASK_CHAIN_ARCHITECTURE.md)。在线生成沿用 [现有方案](INCREMENTAL_NODE_COMPILATION_20260928.md)。本文件记录本轮实际实施与剩余范围，不宣称覆盖全部任务类型、循环、回退剪枝或任意输入泛化。
 
+2026-09-29 工作台交互后续以 [准备期阶段嵌套工作台开发方案](PREPARATION_STAGE_NESTED_WORKBENCH_20260929.md) 为准。该方案只替换展示投影：从准备期第一个合法 prefix 开始，所有阶段统一显示为“阶段父节点 + 动作子列表”，最终编译在样本复跑前封口为同一结构。它明确废止本文后文曾写下的“单节点阶段直接显示动作卡”“准备期未分组时平铺真实动作”和“仅最终 presentation 才生成分组”；不改变本文已验证的 B-U、编译、复跑与清理结论。
+
 ## 0. 当前实施状态
 
 - 已实施并验证：runner 清理真值、execution failed/stale 时当前步骤终态结算、点击后延迟导航 supporting wait 的 runtime scope/readiness 证明、同图 8 阶段分组。原 rejected artifact 已只读重放通过，API 所属回归与 package check 通过。
@@ -229,8 +231,8 @@ V2：8 个浏览器动作、10 个读取、3 个 Function、2 个输出组装、
 3. 以真实浏览器动作/最终业务字段读取为可见锚点。相邻且专为同一锚点服务的“读取→选择 Function→动作”可组成同一阶段；从实际绑定和来源证明归属，不按每 N 个节点切块。
 4. 合并必须保持图的单入口、真实出口和依赖顺序。共享读取、跨阶段依赖、分支/循环不得为了连成直线移动；保留真实边，不得复制节点。现有 `validateChainPresentation` 仍检查覆盖、入口、出口及布局身份。
 5. 多个浏览器动作只有已有证据能关联到同一明确业务推进时才合并。例如本任务“打开搜索框→输入→提交”能否组成一段，先核查现有目标、焦点/输入与页面转换证据；不能仅凭同 URL 合并所有点击，也不能认为一次 URL 变化必然就是一个业务阶段。
-6. 证据不足时保留单个真实动作及可读标题，不把整条链重新包装成一个业务阶段。单节点阶段直接显示动作卡，不给它一个无意义的折叠入口。已有有效业务分组优先，不能每次渲染重新猜。
-7. 分组生成放在正式 presentation 创建接线处，保存为当前草稿/新版本的展示数据；不是 React 内临时推导另一张权威业务图。若现有 `createStepChainPresentation` 缺少目标语义，最小传入编译现场已有的展示素材，不加 B-U 模型必填字段。
+6. 证据不足时保留单个真实动作及可读标题，不把整条链重新包装成一个业务阶段。单节点阶段也使用相同父节点外壳，并直接显示唯一动作行；这保证准备期、最终链路和不同任务都只有一种层级语法。已有有效业务分组优先，不能每次渲染重新猜。
+7. 分组不在 React 内临时推导。准备期每次合法 prefix 物化后，由 API 使用已有 `ChainPresentationContent` 生成可变展示快照；最终完整链路沿用 `createStepChainPresentation` 生成权威展示，并在创建草稿和样本复跑前完成严格覆盖校验。不得给 B-U 增加模型必填字段，也不得增加第二套阶段合同。
 
 本任务用于核对的业务顺序如下，**不是写进平台的专用分组规则或固定阶段数量**：
 
@@ -243,13 +245,13 @@ V2：8 个浏览器动作、10 个读取、3 个 Function、2 个输出组装、
 
 ### N4：原位展开与布局
 
-- 复用 ReactFlow 节点和边投影。展开一段时，其余阶段仍留在同一画布，不切到一张只含所有技术节点的图；收起后回到相同阶段。
-- 多节点阶段展开显示同一批真实 nodeId；外部连线进入其真实 entry，出去的连线对应真实 exits。分组卡是展示容器，不是可执行节点。
-- 一次仅展开一个阶段即可；这只是视图状态，不新增持久运行状态。使用现有 focusStageId 或等价本地状态，避免第二套主图/子图存储。
-- 主路径保持可读顺序，阶段内部可纵向排列；继续用已有 dagre。不要手写新的布局引擎，不靠降低 minZoom 把所有卡缩成小字解决问题。
+- 复用 ReactFlow 节点和边投影。React Flow 只接收阶段父节点；阶段包含的真实动作以父节点内部的紧凑列表行展示，不把每个动作再注册为一张平行画布节点。
+- 所有阶段默认直接显示动作子列表；点击动作行选择对应真实 `nodeId` 并打开节点详情。分支、循环或复杂内部控制流需要时，在该阶段父节点原位展开同一批真实 nodeId/edge；不再切换另一张主图或独立聚焦子图。
+- 阶段父节点的输入/输出 handle 位于父节点标题区的垂直中心，外部连线只连接父节点。动作行之间用列表内顺序表达，不绘制会与阶段主线竞争的外部连线。
+- 主路径保持可读顺序；继续用已有 dagre 只布局阶段父节点，父节点高度由动作行数量确定。不要手写新的布局引擎，不靠降低 minZoom 把所有卡缩成小字解决问题。
 - 展开/收起不 remount 整张 ReactFlow、不每次强制全图 fitView；保留视口上下文。初次载入或用户点击“适应视图”使用既有能力。
 - 标题显示动作与目标，详情继续放输入、目标、条件与运行摘要；Function 源码、内部 ID 和 JSON 留在高级信息。不新增大段进度文案、仪表盘或状态种类。
-- 节点/连线状态仍来自选中的同一次 execution，不能拼接不同运行的最新事件。在线 prefix 只表示已生成片段，不画伪成功终点；暂未完成分组时直接显示真实动作。
+- 节点/连线状态仍来自选中的同一次 execution，不能拼接不同运行的最新事件。在线 prefix 只表示已生成片段，不画伪成功终点；准备期直接消费 API 返回的当前阶段展示快照，旧记录缺少快照时也只能规范化为统一父节点，不能退回无限横排动作卡。
 
 ### N5：五个无值消费者的读取——核查后才决定是否删
 
@@ -277,8 +279,8 @@ V2：8 个浏览器动作、10 个读取、3 个 Function、2 个输出组装、
 | TS/Python 错误边界 | apps/api/python/browser_use_runner/hybrid_main.py、hybrid_commands.py；apps/api/src/upstream-browser/；task-chain/authoring-failure.ts | 保留主错误、原调用身份，清理单独记账；复用已有错误载体 |
 | 精确读取要求 | apps/api/src/upstream-browser/hybrid-read-requirements.ts、hybrid-materializer.ts、hybrid-prefix-materializer.ts | 保留 E3 修复，不扩成通用推理器 |
 | 读取保留性 | vendor/workflow-use/workflows/workflow_use/hybrid/natural_read_liveness.py | 逐条证明必要性，修正无效引用，不重造编译器 |
-| 展示数据 | apps/api/src/task-chain/presentation.ts；packages/contracts/src/task-chain/presentation.ts | 复用 stages/entry/exits/layout；优先不新增公共字段 |
-| 可读节点与嵌套图 | apps/workbench/src/chainNodePresentation.ts、ChainCanvasGraph.ts、LiveChainCanvas.tsx、chainWorkbenchProjection.ts、chainLayout.ts、useLiveChain.ts | 同图原位展开、真实标题与事件、保留上下文 |
+| 展示数据 | apps/api/src/task-chain/presentation.ts、authoring-build.ts、workspace-projection.ts；packages/contracts/src/task-chain/api.ts、presentation.ts | 复用 `ChainPresentationContent` 的 stages/entry/exits/layout；准备期保存可变快照，最终链路在样本复跑前通过完整覆盖与身份一致性校验；不新增阶段合同 |
+| 可读节点与嵌套图 | apps/workbench/src/chainNodePresentation.ts、ChainCanvasGraph.ts、LiveChainCanvas.tsx、chainWorkbenchProjection.ts、chainLayout.ts、useLiveChain.ts | React Flow 只布局阶段父节点；内部动作作为紧凑列表行，handle 位于父节点标题区垂直中心，点击动作行选择真实节点，保留视口上下文 |
 
 这是定位地图，不是要求修改所有文件。先沿当前结构确认真实入口；CodeGraph 可用时优先使用，本次工具列表中不可用，所以使用已知文件定点读取，未执行初始化。不要扫描 node_modules。
 
@@ -331,7 +333,7 @@ V2：8 个浏览器动作、10 个读取、3 个 Function、2 个输出组装、
 1. **主线真实性**：新准备实际从首页走明确路径，边运行边保存节点；普通复跑模型 0，合法终点完成，清理独立确认，第一次失败记录不被改写。
 2. **故障定位**：失败能区分原生探索、编译、普通动作、读取、模型、清理；安全主原因不被后续异常吞掉。E1 没有根因证据时明确未修，不因成功重跑打勾。
 3. **可读性**：用户不打开 JSON 能看出搜索、仓库、Issues、分页、目标项和字段读取的先后；不再只有整个任务一个盒子。
-4. **折叠价值**：多动作阶段可原位展开，其他阶段保持可见；单动作不强制套壳；技术动作有真实目标，Function/读取依赖可追溯。
+4. **层级一致**：所有阶段使用同一父节点外壳并直接显示真实动作子列表；单动作阶段只含一行，不退化成另一种节点。复杂阶段只在原父节点原位展开真实路由，技术动作有真实目标，Function/读取依赖可追溯。
 5. **同一执行图**：展示分组/布局不改变 executable chain digest、节点身份、实际控制流与模型调用。阶段覆盖每个非终态节点一次，业务不同终态不合并。
 6. **减法安全**：不以少节点数为目标；删除读取必须有无用途证据，不损坏定位、readiness、输出和样本。去掉错误约束不等于取消所有检查。
 7. **未知诚实**：历史启动/模型原因若已丢失，不要求凭空恢复，不以它们为无限重跑目标；结论保留“历史未定因，错误保存链已修/仍未修”。任何新的同类失败都必须按新证据处理。

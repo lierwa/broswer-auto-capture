@@ -8,13 +8,15 @@ import { WorkbenchContext } from "./WorkbenchContext.js"
 import { executionStatus } from "./ExecutionPresentation.js"
 import { preparationActivityLabel, useLiveChain, type LiveChainModel } from "./useLiveChain.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
+import type { TaskExecutionReview } from "@browser-capture/contracts"
 
-export function LiveChain({ connection, active, theme, onInterview, onRequirementRevision }: {
+export function LiveChain({ connection, active, theme, onInterview, onRequirementView, onRequirementRevision }: {
   connection: TaskChainConnection
   active: boolean
   theme: "light" | "dark"
   onInterview(): void
-  onRequirementRevision(summary: string, feedback: string): Promise<void>
+  onRequirementView(version: number): void
+  onRequirementRevision(review: TaskExecutionReview): Promise<boolean>
 }) {
   const model = useLiveChain(connection, active)
   const [publishOpen, setPublishOpen] = useState(false)
@@ -25,7 +27,8 @@ export function LiveChain({ connection, active, theme, onInterview, onRequiremen
     <WorkbenchToolbar model={model} connection={connection} onInterview={onInterview}
       onPublish={() => setPublishOpen(true)} />
     {view.error && <Callout.Root className="workbench-alert" color="red"><Callout.Text>{view.error}</Callout.Text>
-      {view.pending && <Button size="1" onClick={() => void connection.retry()}>重试同一请求</Button>}
+      {view.pending && <Button size="1" onClick={() => view.pending?.type === "review_execution"
+        ? model.openContext("execution") : void connection.retry()}>重试同一请求</Button>}
       {view.errorCode === "browser_profile_busy" && <Button size="1" variant="soft"
         onClick={() => void connection.closeBrowserProfileAndRetry()}>关闭账号浏览器后重试</Button>}
     </Callout.Root>}
@@ -34,11 +37,13 @@ export function LiveChain({ connection, active, theme, onInterview, onRequiremen
       data-inspector-open={Boolean(model.contextMode)}>
         <EmptyCanvas model={model} connection={connection} onInterview={onInterview} />
         <WorkbenchContext model={model} connection={connection}
+          onRequirementView={onRequirementView}
           onRequirementRevision={onRequirementRevision} />
       </div>
       : <div className="chain-layout" data-inspector-open={Boolean(model.selectedNode || model.selectedStage || model.contextMode)}>
         <LiveChainCanvas model={model} active={active} theme={theme} />
         <WorkbenchContext model={model} connection={connection}
+          onRequirementView={onRequirementView}
           onRequirementRevision={onRequirementRevision} />
       </div>}
     {model.runDialogMode && <ChainRunDialog open mode={model.runDialogMode} workspace={workspace} connection={connection}
@@ -102,7 +107,9 @@ function ExecutionStrip({ model }: { model: LiveChainModel }) {
   return <button className="execution-strip" data-tone={execution?.status ?? "accepted"}
     onClick={() => model.openContext("execution")} aria-live="polite">
     <i aria-hidden="true" /><span><strong>{execution ? executionStatus(execution.status) : "已提交"}</strong>
-      <small>{execution?.result?.summary ?? (execution ? "查看本次结果" : "排队中")}</small></span>
+      <small>{model.detail && !model.detail.execution.steps.some(step => step.runIds.length)
+        && ["failed", "blocked", "cancelled"].includes(model.detail.execution.status) ? "在步骤开始前结束，查看原因"
+        : execution?.result?.summary ?? (execution ? "查看本次结果" : "排队中")}</small></span>
     <span className="execution-strip-action">查看</span>
   </button>
 }

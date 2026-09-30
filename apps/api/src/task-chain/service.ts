@@ -18,7 +18,8 @@ import { assertExecutionBrowserSupported } from "../upstream-browser/retirement.
 import { TaskChainAuthoring } from "./authoring.js"
 import { assertDraftToken, draftReference } from "./chain-revision.js"
 import { capabilityDescriptors } from "./capability-descriptors.js"
-import { appendExecutionReview } from "./execution-review.js"
+import { saveExecutionReview } from "./execution-review.js"
+import { executionDetail } from "./execution-detail.js"
 import { projectExecutionResult } from "./execution-result.js"
 import { ExecutionPacingController } from "./execution-pacing.js"
 import { TaskPlanExecutor } from "./plan-executor.js"
@@ -62,6 +63,11 @@ export class TaskChainService {
 
   snapshot(taskId: string) {
     return workspaceSnapshot(this.store, this.repository, this.product, taskId)
+  }
+
+  executionDetail(taskId: string, executionId: string) {
+    const record = this.repository.execution(taskId, executionId)
+    return executionDetail(this.repository, record, this.frozenEventContent(taskId, record))
   }
 
   async controlBrowserHandoff(taskId: string, raw: unknown) {
@@ -157,6 +163,7 @@ export class TaskChainService {
   dispatch(taskId: string, raw: unknown, includeReceipt = false): TaskWorkspaceSnapshot | TaskChainDispatchResponse {
     const command = taskChainCommandSchema.parse(raw)
     let acceptedExecution: AcceptedTaskExecution | null = null
+    let savedReview: import("@browser-capture/contracts").TaskExecutionReview | undefined
     this.store.task(taskId)
     if (command.type === "cancel_authoring") this.cancelAuthoring(taskId, command.jobId)
     else if (command.type === "resume_preparation_human") conflict("人工恢复需要等待现场核验，请使用异步命令入口。")
@@ -168,13 +175,13 @@ export class TaskChainService {
       (job, run) => this.startAuthoring(taskId, job, run))
     else if (command.type === "trial_task_draft") acceptedExecution = this.trialDraft(taskId, command)
     else if (command.type === "publish_task_draft") this.publishDraft(taskId, command)
-    else if (command.type === "review_execution") this.reviewExecution(taskId, command)
+    else if (command.type === "review_execution") savedReview = saveExecutionReview(this.store, this.repository, taskId, command)
     else if (command.type === "run_task") acceptedExecution = this.runTask(taskId, command)
     else if (command.type === "resume_execution") this.resumeExecution(taskId, command)
     else if (command.type === "cleanup_execution") conflict("资源清理需要等待现场核验，请使用异步命令入口。")
     else this.cancelExecution(taskId, command.executionId)
     const snapshot = this.snapshot(taskId)
-    return includeReceipt ? { snapshot, acceptedExecution } : snapshot
+    return includeReceipt ? { snapshot, acceptedExecution, ...(savedReview ? { savedReview } : {}) } : snapshot
   }
 
   executionEvents(taskId: string, executionId: string, after: number) {
@@ -281,13 +288,6 @@ export class TaskChainService {
     this.host.assertExecutable(taskId, draft.content.steps.map((step) => step.chain))
     this.product.publishDraft(taskId, draft, (releaseId) =>
       this.store.recordOperation("task-draft:publish", command.requestId, command, releaseId))
-  }
-
-  private reviewExecution(taskId: string, command: Extract<TaskChainCommand, { type: "review_execution" }>) {
-    if (this.store.operation("task-execution:review", command.requestId, command)) return
-    const reviewed = appendExecutionReview(this.repository.execution(taskId, command.executionId), command)
-    this.repository.saveExecution(reviewed)
-    this.store.recordOperation("task-execution:review", command.requestId, command, reviewed.reviews.at(-1)!.id)
   }
 
   private runTask(taskId: string, command: Extract<TaskChainCommand, { type: "run_task" }>) {

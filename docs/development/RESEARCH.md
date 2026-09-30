@@ -1,5 +1,246 @@
 # 技术调研与复用结论
 
+## 2026-09-30 解锁后真实消费核查与输出约束补救
+
+解锁后从原任务/日常 Chrome 实际点 Allow，首次连上的 operation 保留父连接，下一次 operation 没有 SDK connect 或原生确认且运行完成。成功 run 的 40 个事件有真实输入/输出 envelope，11 对 recorded、9 对 redacted。原任务现场、完整成果和 Function 参数/返回均已核对；首个连上后 target mismatch 失败保留且根因未知。此结论只覆盖同 task/config 的有效连接，不支持跨任务、Chrome/服务重启的永久授权。Chrome 官方明确新调试 session 需要确认：[官方连接说明](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session)。
+
+输出省 merge 的同源整图核查发现旧 `applyReadRequirements` 只消费非空叶绑定；新 assemble 改为根 source 加常量 paths 后就绪约束丢失。最小补救复用 runtime 已公开的 `dataCapabilityConfigSchema`，按 arguments 别名、常量 mode/paths 和实际源键恢复原路径；目标映射路径与源 requiredPaths 分开。直接 terminal 返回只消费实际非空 node 绑定，根值、动态参数和控制流不增加猜测。独立对冲覆盖别名、嵌套前缀、非法路径、空/动态映射和 identity 变量写，无新模型字段、契约字段、图调度或库。
+
+两个真实消费反例先红；所属 4 条含 Python readiness probe 通过。原 artifact 通过当前 materializer/compiler 产生 19 节点，非输出节点及控制流、输入输出合同保持；本轮保存的 read 值经新 assemble 值/键序一致。旧 release 原文与摘要保持，候选未写入产品仓储或发布。这是新代码编译/数据消费验收，尚非新候选整链浏览器验收。
+
+交付边界定点核查：`/api/task-chain/artifact` 返回仓储 JSON 元数据，`ArtifactList` 只展示媒体类型/ID/摘要，没有真实文件下载端点或文件生成证明；不能宣称 Excel/Markdown 已交付。原窗口聚焦已有 `controlHandoff(focus)` → managedWindowAction → AttachedWindow.focus 的生产 seam，要求原 handoff lease 和原 target 仍存在；当前数据任务无需页面保留，所以本轮不以它验收现场交付。
+
+展示死规则反证：case ID 是版本数据，不是固定失败或循环含义。按实际源 node.kind/cases 优先解释节点、阶段、循环体与边，标准端口再按其真实类型处理；不能保留“blocked/limit 命中就是异常”的字符串表，也不能加保留字限制回避合法图。边在投影前持有真实源身份，私有 label 直接给 React Flow；分组合并保留已声明 case 身份，文案相同也不与循环边合并。独立对冲及 6 个先红反例保护此不变量；30 条所属验证通过，同文案反例补救仅重验 control 17 条。数据操作按既有注册 merge 与常量 transform+assemble 的算法语义显示中文，动态/未知不猜，无新增模型字段或第二翻译表，受影响单项及 Workbench check 通过。
+
+循环轮数与集合项数不互相推算：while 的已完成稳定次数和当前次数用“轮”，each 的集合游标/已处理数用“项”；未知总数没有分母。此最后文案补救只重验已有未知 while 单项，通过，不追加运行字段。
+
+## 2026-09-30 最小字段与输出精简最终对冲结论
+
+本轮沿已有事实路径与 Reuse Assessment 执行，不新增库、模型用途或必填 LLM 字段。删除重复 review invocation/result 身份、outputNames、missing 的 not_recorded 原因、无消费的路径展开接口和重复端口表。剩余 kind/标准端口/能力翻译来自公开 IR 与已验证配置，未添加网站、任务 ID、URL/selector 词表。schema 说明复用现有 ValueSchema 类型字段；只为 Function 展示真实结构和约束，普通动作保持短类型。
+
+输出方案已经查清 materializeOutputAssembly → data.transform → executeDataOperation → assembleValue 与 parseTaskValue：校验不规范化对象键序，既有 equals/Function 可观察顺序，不能靠字段名或 schema 宣称多字段重组恒等。独立对冲允许复用已有 assembler 删除同源 merge：rewrite 后父绑定完全一致、唯一字符串源键、paths 键序与字段顺序完全一致、closed 父对象 properties 恰好覆盖所选 required 键；否则回退。最终输出合同与变量写仍在 assemble，未重写数据能力或编译框架。新候选整值 exact contract 可 0 节点，同源投影 1 节点；旧 release 不改。输出 5 条定点不变量通过，目标合同验证调整后受影响 1 条通过；新候选整链真实运行未验。
+
+启动失败补救同样用生产消费事实：只在 fresh operation、无旧交付恢复、无 handoff 目的/目标回执、owner/lease 相同、当前真实清理报告 confirmed 且无 activeResources、browser_close confirmed/not_required 时清掉启动占用。旧交付/回执不明/释放不确认/owner 错配保守阻断；typed UpstreamProtocolError 且无 step.runIds 才归 existing external、repairable=false，不按错误字符串猜权限原因。现有 startup/handoff 5 条（含 5 类反例）通过，新实际失败 b104a9fc 同样无残留租约。
+
+用户后来明确授权处理本机原生 Allow；当时 Mac 已锁定，native UI 无法操作，未点击。新 sdk_connect 失败不当作链路回归通过，也不改原失败。真实首连及连续第二次复用未验证；当前保留有效 task 父连接只覆盖同 task/config 与连接存续期，不覆盖浏览器/服务重启。[Chrome 官方新调试会话确认边界](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session)。
+
+## 2026-09-30 正式运行之间的日常 Chrome 连接边界补救
+
+Product Alignment:
+- natural-language task: 同一任务再次运行时复用仍有效的用户 Chrome 控制连接，详情先说明实际业务事实。
+- reusable chain boundary: 每次 execution 独立页、能力与审计；task 拥有同一 SDK 父连接。读取、导航和表单共用。
+- runtime inputs: 原 task、operation owner、endpoint/profile/headless/origins/sites 指纹与真实释放报告。
+- dynamic task outputs: 原任务返回值、清理与交付事实；不改历史发布和运行。
+- generic platform capability used: 现有 TaskConnection.borrow/release、ConnectedTaskScope 与 retainedConnection 审计。
+- replay model calls: 0 新增。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 正式运行确认释放本 operation 后继续保留同 task 的 SDK 父连接。
+- existing implementation in repository: 准备/复验已经使用此保留路径，runtime-host 仅对 replay 强制 closeAfterOperation。
+- mature candidates and pinned versions: 沿用 browser-use 0.13.8、cdp-use 1.4.5、bubus 1.5.6；不引入/删除库。
+- selected implementation: 复用已存在的同任务释放路径，不新建连接池、代理、浏览器或自动重连。
+- reused public surface: TaskConnection 借用与释放、SDK start/stop、TargetScope ownedTargets。
+- B-A-T-owned adapter and remaining gap: 移除正式运行独有的强制断连；真实首次连接的 Chrome 原生授权仍不可省略。
+- license/runtime/platform fit: 不变；macOS 代码验证，Windows 真实运行未测。
+- browser/runtime/state ownership conflicts: 同 task/config 才可复用；不同 task 下一次借用、服务关闭、取消、handoff、启动失败、释放不确认或掉线最终关闭。业务失败的 operation 若确认释放，可保留父连接，不能承诺所有失败都断连。
+- replay model calls: 无新增。
+- rejected candidates and evidence: 不跨 task 共享、不自动 Allow、不关闭用户 Chrome、不换私有 Profile。Chrome 官方原生调试会话每次新连接需确认，保留连接只减少重连次数，不提供永久授权。
+- focused validation: 真实 runtime-host 正式入口适配与原 TaskConnection 生命周期定点验证；此次新的真实尝试失败在 sdk_connect、0 节点，不将其归因于前一次正式运行关闭。
+
+独立只读对冲已核验 resume 原租约、handoff 保留页面并关闭 SDK、配置漂移拒绝、operation 清理与父连接审计；结论允许最小补救，首连授权仍是当前接入方式的产品限制。[Chrome 官方说明](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session)。
+
+## 2026-09-30 独立交接后的节点展示与运行事实实施门
+
+Product Alignment:
+- natural-language task: 用户查看同一次链路调用的动作、条件、循环、实际输入输出与成果，并从结果回到同任务需求对话。
+- reusable chain boundary: 阶段内真实节点的只读投影和单次运行事实；导航读取、重复处理、表单操作共用。
+- runtime inputs: 所选不可变候选或发布图、需求引用、TaskRun.input、同 run/invocation 的有序事件。
+- dynamic task outputs: 同次返回值、逐次安全 I/O、真实循环与条件出口、交付和清理事实。
+- generic platform capability used: React Flow 阶段父卡、现有 contracts/runtime 事件、产品仓储、访谈幂等命令。
+- replay model calls: 展示与留存不增加模型调用；用户明确需求回流使用既有访谈用途。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 节点解释、运行事实留存、同任务需求回流及新候选输出绑定简化。
+- existing implementation in repository: ChainPresentation、TaskRun.events、TaskContractRepository.saveRun、executionEvents、review_execution、InterviewConnection。
+- mature candidates and pinned versions: 保留 React Flow 12.11.6、Radix Themes 3.3.0、Dagre 3.1.1、LangGraph 1.4.14、Zod；不引入/删除库。
+- selected implementation: 适配现有公共接口；持久事实仍由现有运行仓储承担。
+- reused public surface: React Flow Node/Handle、Radix 详情与结果布局、Zod schema、既有运行事件和幂等提交。
+- B-A-T-owned adapter and remaining gap: 当前事件只有状态出口，没有完整逐次 I/O；workspace summary 未携带精确需求、调用输入、review。新增可选受控事实并保持旧记录缺失语义；未冻结字段接受独立只读审查后实施。
+- license/runtime/platform fit: 已有依赖及许可证不变，浏览器与 Windows 真实验收另记。
+- browser/runtime/state ownership conflicts: 不增加浏览器控制会话、前端进度库、调度器或检查点库；查看不触发浏览器操作。
+- replay model calls: 0 新隐式调用。
+- rejected candidates and evidence: 不以日志保存 I/O，不从列表相邻/标题推断循环体，不从技术限额生成分母，不改旧 release/历史 run。
+- focused validation: 按阶段覆盖当前次优先、未知总数、分支共享汇合、缺事件、具名参数、输出绑定和回流幂等，不跑根级全量测试。
+
+当前基线：HEAD `2a8d2cdeb2b2b7ea3cfe49930511a1e9d5081683`，master；原有 10 个已跟踪文档修改与 2 个未跟踪文档保留。独立交接文档已全文阅读。展示稿采用一张阶段画布，直接子行、当前次分支规则、右侧计时、可查看起止卡；结果打开宽区，集合按保存值浏览，长文本可完整读。
+
+## 2026-09-30 变动数据下的跨页消费者就绪作用域补救
+
+Product Alignment:
+- natural-language task: 原任务读取第二页首条详情；首条随实时列表变化，不锁定探索样本。
+- reusable chain boundary: 点击或键盘导航后，唯一字段消费者绑定本次动作结果页；详情读取与导航后表单读取共用。
+- runtime inputs: 当前结构选择结果、动作所属 session/target、实际导航 URL、已编译读取配方。
+- dynamic task outputs: 当前选中详情的标题及正文，字段合同保持不变。
+- generic platform capability used: 已有 action_result_readiness、navigation owner、同轮 Page 身份校验和有界事实轮询。
+- replay model calls: 0；不重新探索，不重派已经执行的点击。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 将跨页 ready 消费者的样本作用域绑定到合法动作结果，不改变固定 URL 的授权条件。
+- existing implementation in repository: workflow-use fork 已有 transition 消费者动作结果绑定；ready 消费者遗漏。
+- mature candidates and pinned versions: 继续 browser-use 0.13.8 / workflow-use 0.2.11 fork；不引入新库。
+- selected implementation: 扩展现有唯一消费者选择条件，复用全部导航和身份核验。
+- reused public surface: OrdinaryCapability.execute_checked、TargetResolver、StepVerifier 和 Tenacity。
+- B-A-T-owned adapter and remaining gap: 仅补 ready 分支；不添加模型、控制器或第二套导航循环。
+- license/runtime/platform fit: 原许可证及 Python/Node 运行时不变；Windows 未做真实运行验收。
+- browser/runtime/state ownership conflicts: 消费者必须仍归同一次动作 session/target；固定 URL、多个消费者或无 URL 变化证明不得动态改写。
+- replay model calls: 0。
+- rejected candidates and evidence: 不删除 scope 校验、不硬编码新详情 URL。真实失败 run 1210bb38-ac4e-4ea2-8083-b2b39656bdc5 的 s-a-0028 返回首条 #9057，s-a-0029 的 ready scope 却为样本 #9050；现有选择函数只接纳 transition。
+- focused validation: 真实 capability seam 对 ready 导航先红后绿，保留固定 URL/歧义/动作身份反例；更新 fork manifest，原来源离线重编译后继续独立复验及正式运行。
+
+实测 c0f1e3f5-cd88-48e7-8edf-f26b0f4cb3b1 的日常 Chrome 首连已成功，执行到上述点击后校验失败；16 transitions / 22 browserCommands / 0 llmCalls，操作页清理确认、同任务父连接保留。该失败不能记为已通过，也不改变旧运行。
+
+实施后验收：真实 seam 动态 ready 正例先红后绿，6 条用例逐条通过，固定 URL/多个消费者/缺少 changed/归属变化仍拒绝，点击严格一次。原 final 只读离线重编译得到同一 20 节点摘要、新模型调用 0，因此未修改草稿或旧 artifact 历史摘要。真实独立复验 e3dd159d 及本地 V5 正式运行 01987d57 均 completed，各 20 transitions / 23 browserCommands / 0 llmCalls，输出真实当前首条 #9057 而非探索 #9050，cleanup confirmed。复验到正式阶段同 Python PID69039，正式 startup 没有 sdk_connect；结束后进程退出，Chrome PID657 保持。完整证据与截图在 PROGRESS 顶部。
+
+## 2026-09-30 同任务连续阶段连接复用实施门
+
+Product Alignment:
+- natural-language task: 继续原任务，在日常 Chrome 完成独立复验及正式执行，不反复断连授权。
+- reusable chain boundary: 同任务父连接、每次操作独立页与能力；读取和表单操作同样需要。
+- runtime inputs: task connectionOwnerId、独立 operation ownerId、原生端点、已确认来源。
+- dynamic task outputs: 原链路输出与不可变版本不变。
+- generic platform capability used: 原 Browser/SessionManager、CDP Target attach/close、TargetScope。
+- replay model calls: 0；不增加模型判断或重试循环。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 同任务准备/样本/复验共享一个 SDK 连接，正式结束及服务关闭断开父连接。
+- existing implementation in repository: RunnerProcess 每次 start/close，AttachedWindow/TargetScope 已限定 ownedTargets；生命周期过短导致每阶段新连接。
+- mature candidates and pinned versions: browser-use 0.13.8、cdp-use 1.4.5、bubus 1.5.6；已查公开 Browser.start/stop 及 SessionManager Target.attachToTarget。
+- selected implementation: 复用现有 SDK Browser、CDP 与 Scope，不引入控制器、代理或 Agent loop。
+- reused public surface: Browser.start 已连接幂等；Target.createTarget/attachToTarget/closeTarget；最终 Browser.stop。
+- B-A-T-owned adapter and remaining gap: 同任务独占借用、父子所有权及释放审计；每次独立页面/缓存；配置漂移拒绝；真正清理失败阻断复用。
+- license/runtime/platform fit: 不增删库，原 Node/Python 运行时；真实验收仅本机 macOS，Windows 未测。
+- browser/runtime/state ownership conflicts: 父任务拥有连接/进程/临时目录，execution 只拥有页及能力；释放报告明确 retainedConnection，不伪报父进程退出；最终关闭只断连接，不关用户 Chrome。
+- replay model calls: 无新增。
+- rejected candidates and evidence: keep_alive 不能阻止 Browser.stop 重置 CDP；不靠跳过清理、不池化不同任务、不自建 websocket 重连。
+- focused validation: 真实 Runner/AttachedWindow seam 先红后绿；两 owner 一连接、独立页、最终 stop；取消、漂移及释放失败反例；随后原草稿独立复验与正式入口真实验收。
+
+此处为实施前记录，不代表真实复用已通过。历史连接失败及业务运行保持原样，后续验收另记。
+
+首连等待补救（真实复验 `46d6defb-20f1-4695-8773-03b3ba6093ab` 未执行节点）：复用不解决首次授权耗时。当前 pinned `CDPClient.start` 没有公开 open_timeout 入参，内部 websocket 默认 10 秒；BrowserStart handler 又硬编码 connect 15 秒，BrowserStartEvent 默认 30 秒。只延长一个外层 timeout 无效。继续复用原 SDK 的 start/connect/event bus，通过限定当前 Browser、当前本机 endpoint、首连 await 的窄适配提供有界人工确认预算；不修改安装依赖，不复制连接主体，不新增连接/重试循环。公开事件 timeout 优先复用；若需代理依赖调用点，必须版本锁定、无关调用保持原值、退出/取消 finally 恢复，并以新 seam 红绿测试核验。预算扩大只延长已有明确授权连接的等待，不增加接入对象或数据权限。
+
+## 2026-09-30 日常 Chrome 连接入口补救
+
+Product Alignment:
+- natural-language task: 在原任务继续准备及复跑，始终复用用户日常 Chrome，不以私有 Profile 替代。
+- reusable chain boundary: 任务浏览器连接与窗口所有权；页面读取和页面操作任务共用。
+- runtime inputs: 本机 Chrome 原生连接、当前 ownerId、恢复租约和已确认来源。
+- dynamic task outputs: 原任务结果合同不变。
+- generic platform capability used: 既有 AttachedWindow / TargetScope；Chrome 原生 DevToolsActivePort。
+- replay model calls: 连接与普通复跑 0；B-U 探索审计不变。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 附加日常浏览器，限定本次任务窗口及标签所有权。
+- existing implementation in repository: RunnerProcess.startHybrid、AttachedWindow、TargetScope 已有本机 ws 连接与隔离/清理能力；缺失默认原生端点解析，准备入口未传产品 ownerId。
+- mature candidates and pinned versions: 继续 browser-use 0.13.8 / cdp-use 1.4.5；核对 Chrome 官方原生连接文档和 chrome-devtools-mcp BrowserManager.ts（源 blob 699c1613f97412d73b560ec97c2cdcc238e86ccb）。
+- selected implementation: 原生 DevToolsActivePort 配置读取，连接仍由现有 Browser-Use/CDP 与 AttachedWindow 承担。
+- reused public surface: Chrome 用户数据根的 DevToolsActivePort；既有 Browser(cdp_url=...)；不另建 MCP 控制器或 Agent loop。
+- B-A-T-owned adapter and remaining gap: 严格解析本机端点，显式连接优先；配置缺失在启动前报错，不再静默启动私有浏览器；准备/样本/正式运行传同一产品所有权。
+- license/runtime/platform fit: 不增删依赖；Node fs/os/path 与原 Python 运行时；按平台解析 Chrome 标准目录，Windows/Linux 只做定点路径验证，不冒充真实验收。
+- browser/runtime/state ownership conflicts: 不读取 Cookie/Profile 内容，不复制登录态，不关闭 Chrome；原 profilePath 仅作为既有任务租约元数据位置。清理只关闭 ownedTargets。
+- replay model calls: 不新增。
+- rejected candidates and evidence: 不使用 chrome-devtools-mcp 的私有启动默认值，也不添加其 Puppeteer 控制器；项目既有附加连接已覆盖控制/所有权需求，缺口仅配置适配。关闭遗留私有 Chromium 不再作为此任务的重试方案。
+- focused validation: 三项真实 RunnerProcess seam 回归先红（静默私有启动、原生端点遗漏、显式连接覆盖）；补准备 owner 回归，接回原工作台任务做真实验证。
+
+本机初始日常 Chrome PID657 无调试监听且原生开关关闭，API 未设置临时 BAT_UPSTREAM_BROWSER_CDP_URL；历史 Windows 成功不能证明本机配置。用户明确授权开启后，Chrome 原生界面已显示 127.0.0.1:9222，DevToolsActivePort 生成且监听仍为 PID657。官方原生连接需开关和每次连接 Allow：[Chrome 文档](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session)，源码读取规则见 [BrowserManager](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/src/BrowserManager.ts)。同一原任务 final 与第一遍普通样本已通过，独立复验在启动阶段失败，完整验收尚未完成。
+
+启动诊断补充：复用现有 DiagnosticChannel / fd4 / SourceLifecycleDiagnostics，而非新增控制器或重试循环。仅适配 `reserve`、`sdk_connect`、`task_target_prepare`、`task_target_focus` 固定阶段；失败因果链最多 4 层，只保留固定异常分类、精确安全码和可信源码名称/行号，不保存 SDK 消息、个人路径或页面数据。诊断先于原清理且写入失败不改变原异常，原浏览器/租约所有权不变。实际 AttachedWindow.start 与 TS 持久化 seam 先红后绿，Python 9 项与 TS 6 项通过；补齐 Runner callback 后从原草稿独立复跑，不能用后续成功改写首次连接失败的未知子因。
+
+新复验的 SDK 连接在 10211ms 超时，未进入目标初始化；安全定位到 pinned cdp-use/client.py:277 的 websocket 握手，默认 open_timeout=10。连续阶段的原生授权重复来自 B-A-T 每次 close/handoff → Browser.stop → SDK reset → WebSocket.stop，并非 keep_alive 可以保住连接。公开 Browser.start 在已连接时跳过新连接；公开 CDP Target.attachToTarget + 原 SessionManager 可处理新任务页：先拒绝提前的未知 autoAttach，createTarget 回执后持久化 owner，再显式 attach，不信任未知 target、不重造控制器。[Target 协议](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Target.pdl)。受控 SDK 检查 connect/stop 均为 0，未控制真实 Chrome，不当作复用已接入。最小范围是同一准备批次：单独拥有连接，运行只拥有各自任务页/能力/状态；必须明确资源所有权和 cleanup 事实，不能直接绕过 stop 或套任意跨任务池。SDK 意外掉线仍有自身重连行为，不能承诺所有场景永远无原生授权。
+
+## 2026-09-30 原主线保存来源修复：就绪依赖与等待分类一致性
+
+Product Alignment:
+- natural-language task: 从既有浏览器任务取得第二页首条详情；先修同一失败来源，不新建替代任务。
+- reusable chain boundary: 现有动作、读取、选择函数及其来源证明到同一参数化 TaskChain 的编译适配。
+- runtime inputs: 已确认需求与运行输入，不固化站点字段或样本 href。
+- dynamic task outputs: 按原结果合同读取的详情标题和正文。
+- generic platform capability used: 已验证的读取就绪依赖保留、等待 coverage 来源校验、选择注解错误诊断，以及只含布尔值/摘要的通用焦点效果事实。
+- replay model calls: 普通节点 0；不增模型重试或全局完成 judge。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 保存原生探索事实后形成可审计复跑图，不复制浏览器或工作流控制能力。
+- existing implementation in repository: browser-use 0.13.8 原生 Agent；workflow-use 0.2.11 fork 的公开 compile_request、现有 consumer_readiness_by_action / waits_owned_by_next_target / QuickJS 校验。
+- mature candidates and pinned versions: 继续使用上述锁定组件；LangGraph StateGraph 保持正式图调度所有权。
+- selected implementation: 修正 B-A-T 自有来源适配，不替换外部关键库。
+- reused public surface: 同一 compile_request 与既有零模型来源重编译入口；prefix/final 同一规则。
+- B-A-T-owned adapter and remaining gap: a33 合法选择函数已验证，却因唯一下游就绪读 a34 被值活性裁掉而留下悬空消费者；a6 分类器已证明等待归属，独立 coverage 校验不识别同一规则。保留最小必需就绪读；可由真实物理后态或另一已保留读取证明时仍裁掉冗余探查。
+- license/runtime/platform fit: 不增删依赖；browser-use 沿用 MIT、workflow-use fork 沿用 AGPL-3.0，既有 Python/TS/QuickJS 运行时不变；本轮不宣称 Windows 验收。
+- browser/runtime/state ownership conflicts: 离线重编译不控制浏览器、不写历史来源；正式执行仍是原单会话、LangGraph 和 SQLite 产品事实源。
+- replay model calls: 不新增。
+- rejected candidates and evidence: 不以重写 Agent loop、执行器或删除安全闸门补救；ADR0005 多缺陷复评表明这些缺陷位于自有 liveness/coverage 适配，不是外部组件控制能力缺失。若原生记录无法证明动作效果，仍保留 gap，不能由本修复强行发布。
+- focused validation: 原失败 cad814b6 来源无模型/无浏览器重编译；先红的跨层回归与断因果、伪归属负例，再回原任务正式入口。a35 原源码/错误细节未保存，a3/a4/a5 效果证据尚未证明，分别处理，不归因于模型。
+
+焦点证据补充复评：现有 `Page.get_elements_by_css_selector` / `Element.get_basic_info` / `Element.evaluate` 已覆盖焦点读取，不添加 DOM 控制组件。新采集可读取固定 `:focus` backend 身份集合摘要和 target 的 `:focus-within` 布尔值，不记录输入值、页面文本或 selector 猜测。旧 TaskChain 的 `target_state` 读取默认不包含新字段；只有新来源明确含 `focused` 的条件才启用，避免改变旧发布链的严格 JSON 比较。焦点动作效果仍须真实证据，不将未变化焦点或 trusted dispatch 本身冒充效果。
+
+## 2026-09-30 两线修复：先需求对话阻断与局部 UI，再回主线编译
+
+用户已明确授权：在原任务修复草案网址误解析、长标题、输入区双重焦点边框，以及报错/重试分离的布局；支线验证后继续原主线，不新增替代任务。原任务 `acf401e3-caed-40d9-8c1b-5d1d753f2194` 的 revision 5/6 原始输出在正式 `parseInterviewOutput` 中都报 `interview_draft_url_unverified`；已选来源保留，入口绑定正确。唯一变量探针去掉 Markdown 反引号后均通过：原 URL 提取器把末尾反引号解析为 `%60`。标题由首条请求截取 80 字，并非模型短标题过长。修正必须保留来源白名单，不允许任意同站深链。
+
+```text
+Product Alignment:
+- natural-language task: 在原需求对话恢复合法准备草案提交，清晰呈现失败、重试与输入状态；之后继续原浏览器任务编译主线。
+- reusable chain boundary: 用户来源事实与 Markdown 草案 -> 确定性来源校验；对话/任务事实 -> 标题与失败操作展示。适用于页面读取与表单/内容操作任务。
+- runtime inputs: 原对话、已选来源、失败输出及最新访谈轮次；不新增业务输入。
+- dynamic task outputs: 原准备草案与来源引用不变；不伪造结果或运行成功。
+- generic platform capability used: URL 标准化、既有来源绑定、SQLite/Drizzle 投影、共享 InteractiveTimeline/Composer、Radix 主题与控件。
+- replay model calls: 普通节点 0；同任务人工触发一次需求重试沿既有模型调用，不追加模型标题或 judge。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 合法 Markdown URL 与来源事实适配，以及需求对话局部状态布局。
+- existing implementation in repository: source-resolution.ts、ProductStore.list、AI Connect InteractiveTimeline/Composer、Radix Themes。
+- mature candidates and pinned versions: 标准 URL API；AI Connect React 0.3.2 cc7d94fe；Radix Themes 3.3.0；React 19.1.1。
+- selected implementation: 保留以上现有实现，不增删库；只修正文 URL 字面边界与宿主显示组合。
+- reused public surface: URL.href、既有 selectedSourceFacts/preparationEntryFacts、Timeline composition/entries/actions、Radix Button/Theme。
+- B-A-T-owned adapter and remaining gap: 严格来源准入与任务标题派生、失败反馈的领域组合；不实现新 Markdown 渲染器、对话框架或重试队列。
+- license/runtime/platform fit: 已锁定的现有依赖与 TypeScript/浏览器 CSS；不改变许可证、Node 或 Windows 路径边界。
+- browser/runtime/state ownership conflicts: 不修改来源历史、用户命名、模型设置、浏览器所有权或执行器；不新建产品任务。
+- replay model calls: 普通复跑 0；重试仍是需求对话一次原有调用。
+- rejected candidates and evidence: 不更换组件或加完整 Markdown 框架；此次缺口是已证实的 URL 字面边界，不是渲染能力缺失。
+- focused validation: 先红后绿的草案/来源与标题回归，原失败输出零模型重放，原任务一次正式 UI 重试，深浅色与窄屏布局核验。
+```
+
+主线当前 job `4cff3311-c8fc-4fc7-8d49-46ea8db41570` 已失败，不再是执行中；B-U 已读取详情并 done，终编仍拒绝。支线通过后基于保存来源处理读取依赖剪枝、supporting wait 规则接线与注解诊断证据，不将支线通过当作主线完成。
+
+## 2026-09-30 真实展示证据与新准备验收边界
+
+正式参数化新任务 job `ede1384b-0e40-4fb2-8aa4-6c43888a45e0` 已验证 `ChainPresentationContent` 的真实 prefix 保存/公开投影与阶段父节点 adapter：sequence 3→46 中 `stage-d66f280c217976b3`、内部 nodeId 和 `(0,0)` 坐标稳定，prefix 无伪 terminal。42 个动作、字段读取与 done 已完成，cleanup confirmed、`activeResources=false`；但 source `44140aee-fec5-42c7-8cac-4df4c6e4166d` 的 `a-0023` 选择证据不足，最终编译拒绝。选择程序仅收到 candidates，不能直接读取需求中的运行时仓库输入，故没有把样本仓库名固化进函数来冒充泛化。正式 UI 离线 job `c46c94a8-b23a-4c78-818f-d0369bfefb1c` 在不启动浏览器的情况下复现缺口。这些事实证明展示 seam 与资源闭合，不证明新任务 final 成功；本轮保持编译语义不变。
+
+V4 正式新 execution `b3c37d38-dca4-4d9b-89eb-6f1a81848225` 以 19 transitions / 22 browserCommands / 0 llmCalls 完成且清理确认。Workbench 真实显示 8 个父阶段、内部动作与动作说明；节点输出缺少持久化事实时显示“本次节点输出未记录”，结果区按精确合同呈现标题/正文单条记录。这核验了现有发布链与本次展示改动的兼容，尚不能证明新的 final build 与 draft 保存内容相同。
+
+真实重新准备暴露了画布身份边界：仅以 task/step 作为 React Flow key，会把旧发布链视口沿用到新的首个 prefix，首阶段被裁出画面。修正仅在新的 authoring job 首个 build 改变画布身份，并将该身份保留到同批 final、草稿和运行；build sequence、展开、主题与运行状态都不参与 key。复用 React 的现有组件身份与 React Flow 首次 fitView，不添加布局器或自动重试；6 项所属回归、Workbench typecheck 和真实 prefix 可见性通过。新增 Hook 热更新的开发页面在重载后恢复，后端探索未受影响。键盘详情、主题和窄屏下方面板已有真实 UI 证据，触屏硬件与 reduced-motion 的现场行为仍未单独测试。
+
+2026-09-30 的正式新准备 job `4cff3311-c8fc-4fc7-8d49-46ea8db41570` 继续使用已确认无输入需求，观察到了 navigate/wait 两阶段 prefix 的稳定身份、归属和布局；当前尚无 final/draft/validation。完整验收结论须等该新记录实际闭环，不能用旧 V4、离线重编译或截图替代。
+
+## 2026-09-29 准备期阶段嵌套与结果展示：现有能力足够，缺口在投影接线
+
+本节最初是[准备期阶段嵌套画布、节点详情与结果展示开发方案](PREPARATION_STAGE_NESTED_WORKBENCH_20260929.md)的只读证据摘要；后续实施已验证原选型成立。产品代码只在既有 contracts/API presentation seam、Workbench React Flow adapter、详情和结果 renderer 内接线，没有新增依赖、数据库表、模型字段、浏览器动作、Agent loop、调度器或运行状态。聚焦回归、三个 workspace 类型检查与 Workbench production build 已通过；真实 Workbench 新任务和浏览器验收仍未执行。
+
+- `hybrid-prefix-schema.ts` 明确不含完整入口、终点、output assembly 和 result binding；但 `hybrid-prefix-materializer.ts` 已只返回当前依赖闭合的真实 nodes/edges。因此准备期可以画真实局部阶段，不能画假完成、假终点或假结果。
+- 实施前 `AuthoringBuild.accept` 已在每次 prefix/final checkpoint 保存 build，而 `TaskAuthoringActivity.build` 只有 nodes/edges。现已在同一保存屏障复用 `ChainPresentationContent`，没有让 React 根据 label、URL 或动作数量临时猜分组。
+- `createStepChainPresentation` 已在完整候选链形成后、草稿和样本复跑前创建正式 presentation。最终阶段视图不需要等待样本或独立复验结束；需要的是 final build 与草稿 presentation 的覆盖、身份和布局一致性门。
+- 实施前 `ChainCanvasGraph` 对准备 build 使用 LR Dagre 把每个动作画成 240×112 顶层节点，并只为多节点阶段画容器；这同时造成准备期横向长链和单/多动作两套层级语法。现已仅把阶段作为 React Flow 节点，仍只复用 React Flow、Dagre 和现有 ChainPresentation，没有引入 FlowGram、ELK 或第二张执行图。
+- 既有结果合同已经区分 `payload.mode = execution|data`，`TaskOutput.kind = value|artifact`，值 schema 可区分 object、array 和标量。实施前 Workbench 只用 `ResultValue` 递归展示 JSON；现已按原合同选择 renderer，没有增加网站、Issue、商品或“报告类型” special case。
+- 交互原型只验证“阶段父节点 + 动作列表 + 阶段间连线 + 独立结果区”的结构。视觉必须使用现有 Workbench/Radix 主题 token，不复制原型的颜色、尺寸或装饰。
+
+复用结论：保持不新增关键依赖、数据库表、模型字段、浏览器动作、Agent loop、调度器或运行状态；API 现已拥有 prefix/final 阶段投影、公开降级和 final chain digest 一致性门，Workbench 只负责 React Flow adapter、选择、详情和结果渲染。实现前的 flat build 红灯已精确命中旧行为；最终聚焦证据为 contracts 12/12、API 16/16、Workbench 29/29。上述属于受控静态/行为证据，不替代 P4 真实任务验收。
+
 ## 2026-09-29 延迟导航 supporting wait 误拒绝：定因、修正与真实验收
 
 旧 job `8c036479-d914-4671-868c-492e7dd063d3` 在 sequence 13 被宿主拒绝，artifact `4677984b-1e03-4c13-87cb-5c42160ba4fe`。保存证据表明 `a-0010` 点击 Issues 已派发；其即时 post `o-0020` 仍是旧仓库 URL，紧邻 `a-0011` 是成功的 `bounded_postcondition_wait/v1`，pre/post `o-0021/o-0022` 已在同一新 Issues URL 和同一 tab/document 稳定，随后 `a-0012` 正常读取 Next 候选。旧 `hybrid-runtime-scope` 只接受动作 post 与 supporting wait pre 同 URL，因而产生 `runtime_scope_supporting_wait_discontinuous`，再被投影成 `hybrid_consumer_readiness_boundary_unproven` / `hybrid_compilation_host_rejected`。旧运行 12 次模型调用均 completed；模型、选择结果和页面读取不是本次根因。
@@ -1440,11 +1681,11 @@ Product Alignment:
 当前清理实现已经拥有 ChildProcess、browser-use Browser owner、Windows 精确 PID 树终止和临时目录删除；缺口是结构化清理报告、幂等 close、
 持久化恢复和产品投影，不是缺少另一个进程框架或浏览器驱动。新增第三方进程管理库不能解决 owner、Profile、历史结果和 cleanup_required 合同，因此不采用。
 
-最初调研先后把问题误判为“只缺自动布局”和“需要容器/子画布编辑器”。进一步从 TaskChain 事实源和节点编辑闭环核验后，正确边界是：链路只有一套真实动作节点与边；用户阅读层新增版本化**链路阶段**，总览只显示阶段，单击只附着一个临时动作摘要，进入阶段才在同一画布聚焦真实动作子图。子路径不常驻，也不应被塞进撑大主图的阶段容器。
+最初调研先后把问题误判为“只缺自动布局”和“需要容器/子画布编辑器”。当时进一步核验后形成“阶段总览 + 单个临时动作摘要 + 聚焦真实动作子图”的结论；2026-09-29 的准备期长链反例证明单个摘要仍不足，项目最高层级规则又明确禁止切换成另一张子图。当前决定改为每个阶段父节点内常驻紧凑动作列表；分支、循环和复杂出口也只在原父节点原位展开。列表行和展开路由只引用同一 TaskChain 的真实 nodeId/edge，不是 React Flow compound child、第二份图或可执行子链。
 
-仓库已经使用 `@xyflow/react@12.11.6`。其公开节点、边、Handle、选择、重连、视口和 MiniMap 足以覆盖阶段总览与聚焦子图；两个层级分别布局后，不需要 React Flow `parentId` 的复合 sub-flow。`@dagrejs/dagre@3.1.1` 为 MIT，含 TypeScript 声明，直接依赖 `@dagrejs/graphlib@4.0.5`；npm 元数据的 unpacked size 分别约 1.41 MB 与 0.47 MB，约 1.9 MB 不是浏览器最终 bundle，也不是启动时解包 8 MB。Dagre 只在首次投影、结构改变或用户点击“整理布局”时计算坐标，不在每次渲染运行。
+仓库已经使用 `@xyflow/react@12.11.6`。其公开节点、边、Handle、选择、重连、视口和 MiniMap 足以覆盖阶段父节点总览；阶段内的动作列表和原位展开路由是同一父节点的 DOM/SVG 内容，不需要 React Flow `parentId` 的复合 sub-flow 或另一张 focus graph。`@dagrejs/dagre@3.1.1` 为 MIT，含 TypeScript 声明，直接依赖 `@dagrejs/graphlib@4.0.5`；npm 元数据的 unpacked size 分别约 1.41 MB 与 0.47 MB，约 1.9 MB 不是浏览器最终 bundle，也不是启动时解包 8 MB。Dagre 只在首次投影、阶段结构改变或用户点击“整理布局”时计算父节点坐标，不在每次渲染运行。
 
-FlowGram.AI 与 Coze Studio 仍是有价值的产品参考，但不作为生产编辑器依赖。官方 free-layout loop 示例用 `isContainer` 建立容器；`toggleLoopExpanded` 在折叠/展开时改变容器尺寸并隐藏/显示子节点和连线。这正是当前产品拒绝的“大容器内常驻子画布”结构。FlowGram 的 editor/document/form/history/variable 等广泛状态所有权也会与 B-A-T 已有服务端 revision、checksum、digest 和持久化事实源重叠。ELK 对阶段总览与单阶段聚焦这两张派生布局没有 Dagre 之外的已证实价值，因此本轮不引入。
+FlowGram.AI 与 Coze Studio 仍是有价值的产品参考，但不作为生产编辑器依赖。官方 free-layout loop 示例用 `isContainer` 建立容器；`toggleLoopExpanded` 在折叠/展开时改变容器尺寸并隐藏/显示子节点和连线。当前方案拒绝由第二批画布节点组成的 compound sub-flow；阶段卡里的动作列表与展开路由是同一父节点的 DOM/SVG 投影，不参与运行调度。FlowGram 的 editor/document/form/history/variable 等广泛状态所有权也会与 B-A-T 已有服务端 revision、checksum、digest 和持久化事实源重叠。ELK 对阶段父节点布局没有 Dagre 之外的已证实价值，因此本轮不引入。
 
 节点详情不能由 UI 递归解释任意 config。需要新增通用 capability descriptor registry，为每种平台能力声明标题/摘要生成、类型化字段、控件、目标要求、端口、兼容替换和验证支持。它不认识网站、业务字段、页面文案或 CSS class。缺少 descriptor 的 capability 只读，不能用 JSON 编辑器兜底。修改原子动作时必须连同所属阶段、前置条件、后置条件和下一动作展示；任何执行语义改变使旧验证失效，直到聚焦验证重新证明阶段具名出口可达。
 
@@ -1461,10 +1702,10 @@ CodeGraph 对当前接线的核验还显示：任务行选择只更新选中项�
 - https://reactflow.dev/learn/advanced-use/performance
 
 Reuse Assessment:
-- capability: 正式 execution 所属资源的可靠清理与恢复；带阶段总览、同画布聚焦编辑和单次 execution 实时运行态的链路工作台。
+- capability: 正式 execution 所属资源的可靠清理与恢复；带阶段总览、阶段内原位展开编辑和单次 execution 实时运行态的链路工作台。
 - existing implementation in repository: ChildProcess/browser-use owner/Windows PID 树终止/临时目录清理；`@xyflow/react@12.11.6`、revision draft layout/checksum/digest、TaskRun 持久化事件。
 - mature candidates and pinned versions: 保留现有 runner/browser 公共面；`@xyflow/react@12.11.6`、`@dagrejs/dagre@3.1.1`；FlowGram 1.0.14 与 ELK 仅为对照候选。
-- selected implementation: 现有 runner adapter 增加结构化 cleanup report；UI 保留 React Flow，以 Dagre 分别布局阶段总览和聚焦动作子图。
+- selected implementation: 现有 runner adapter 增加结构化 cleanup report；UI 保留 React Flow，Dagre 只布局阶段父节点，复杂路由在父节点内原位展开。
 - reused public surface: ChildProcess close/exit、browser-use Browser close/kill；React Flow nodes/edges/handles/selection/reconnect/viewport/minimap；Dagre graph/layout/rankdir。
 - B-A-T-owned adapter and remaining gap: cleanup 持久化与产品状态、accepted execution/事件续接、ChainPresentation/CapabilityDescriptor 服务端事实、TaskChain/阶段/事件到编辑器模型映射、发布布局来源和上下文节点编辑。
 - license/runtime/platform fit: 不为清理新增依赖；React Flow/Dagre 均为 MIT，Dagre 含类型声明；Windows/Vite headless 隔离原型已通过，生产接线仍待 I5，macOS arm64 仍延期未测。

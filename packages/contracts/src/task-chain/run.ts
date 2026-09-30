@@ -4,6 +4,8 @@ import { artifactReferenceSchema, budgetSchema, consumptionSchema, contractVersi
 import { observationConditionSchema } from "./binding.js"
 import { modelCallPurposeSchema, terminalStatusSchema } from "./node.js"
 import { jsonValueSchema, taskOutputSchema } from "./value.js"
+import { nodeExecutionRecordSchema } from "./execution-record.js"
+export * from "./execution-record.js"
 
 export const runBindingSchema = z.object({
   runId: identitySchema, invocationId: identitySchema, taskId: taskIdentitySchema,
@@ -45,8 +47,11 @@ export const nodeExecutionEventSchema = z.object({
   nodeId: keySchema, status: z.enum(["planned", "started", "finished"]),
   outcome: keySchema.nullable(), idempotencyKey: textSchema, stableKey: textSchema.nullable(),
   browserStateDigest: digestSchema.optional(),
+  execution: nodeExecutionRecordSchema.optional(),
 }).strict().refine((event) => (event.status === "finished") === (event.outcome !== null), "只有完成事件携带出口")
   .refine((event) => !event.browserStateDigest || event.status === "finished", "browser_receipt_requires_finished")
+  .refine((event) => !event.execution || event.status !== "planned", "execution_record_requires_dispatch")
+  .refine((event) => !event.execution?.output || event.status === "finished", "output_record_requires_finished")
 export const modelCallAuditSchema = z.object({
   callId: identitySchema, invocationId: identitySchema, nodeId: keySchema, purpose: modelCallPurposeSchema,
   model: textSchema, intendedAt: z.string().datetime(), status: z.enum(["intended", "completed", "failed", "interrupted"]),

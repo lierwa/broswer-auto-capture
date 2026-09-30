@@ -182,6 +182,10 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
     const query = executionEventsQuery.parse(request.query)
     return taskChain.executionEvents(query.taskId, query.executionId, query.after)
   })
+  app.get("/api/task-chain/execution", (request) => {
+    const query = executionEventsQuery.omit({ after: true }).parse(request.query)
+    return taskChain.executionDetail(query.taskId, query.executionId)
+  })
   app.get("/api/task-chain/history", (request) => {
     const query = taskHistoryQuery.parse(request.query)
     return taskChain.history(query.taskId, query.kind, query.offset, query.limit)

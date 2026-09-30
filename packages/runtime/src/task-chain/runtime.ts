@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto"
 import {
-  CONTRACT_VERSION, invokeChainResultSchema, llmNodeCapabilityResultSchema, modelCallAuditSchema, nodeCapabilityResultSchema,
+  CONTRACT_VERSION, llmNodeCapabilityResultSchema, modelCallAuditSchema, nodeCapabilityResultSchema,
   nodePorts, parseTaskOutput, parseTaskValue, resumeVerificationResultSchema, sameRunBinding, taskCheckpointSchema,
   taskResumeRequestSchema, taskRunRequestSchema, taskRunSchema, type ChainNode, type JsonValue, type NodeOutcome,
   type TaskCheckpoint, type TaskOutput, type TaskRun,
 } from "@browser-capture/contracts"
-import { applyWrites, evaluatePredicate, readObservation, readPath, resolveBinding, resolveBindings, type BindingContext } from "./bindings.js"
+import { applyWrites, readObservation, resolveBinding, resolveBindings, type BindingContext } from "./bindings.js"
 import { withBrowserCommandAccounting } from "./browser-consumption.js"
 import { recordBrowserCheckpoint, validateBrowserCheckpoint } from "./browser-checkpoint.js"
 import { compileTaskChain, type CompiledTaskChain } from "./compiler.js"
@@ -16,11 +16,14 @@ import { driveTaskChain } from "./engine.js"
 import { digestJson, executableChainDigest, stableUuid } from "./hash.js"
 import { executeFunctionNode } from "./function.js"
 import { executeLoop } from "./loop.js"
+import { executeInvoke } from "./runtime-invoke.js"
+import { boundExecutionInput, withholdExecutionInput } from "./execution-record.js"
+import { evaluateRecordedPredicate, predicateRecords } from "./recorded-predicate.js"
 import { resolveNodeResultRoute } from "./result-routing.js"
 import { RuntimeBudgetExceededError, type NodeCapabilityResult, type TaskChainCapabilities,
   type RuntimeNodePacing, type TaskChainRuntimeInput } from "./types.js"
 import { BudgetError, UncertainEffectError, activeNow, assertBudget, executionStableKey, modelCount, now } from "./runtime-support.js"
-import { beginEffect, completeEffect, failRun, finishTerminal, invokedOutput, markEffectUncertain,
+import { beginEffect, completeEffect, failRun, finishTerminal, markEffectUncertain,
   pauseRun, persistRun, recordEvent, syncCheckpoint } from "./run-state.js"
 export type RuntimeState = {
   compiled: CompiledTaskChain; run: TaskRun; context: BindingContext; checkpoint: TaskCheckpoint
@@ -214,7 +217,8 @@ async function executeNode(state: RuntimeState) {
     || node.kind === "capability" && node.capability.name.startsWith("browser.")) && result.outcome === "success") {
     state.checkpoint.externalFailure = null; state.run.externalFailure = null
   }
-  recordEvent(state, node, "finished", result.outcome, idempotencyKey, stableKey, browserStateDigest)
+  recordEvent(state, node, "finished", result.outcome, idempotencyKey, stableKey, browserStateDigest,
+    validatesOutput ? output : undefined)
   syncCheckpoint(state)
   state.resumingNodeId = null
   state.resumeBrowser = null
@@ -238,13 +242,23 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
   stableKey: string | null): Promise<NodeCapabilityResult> {
   const context = state.context
   if (node.kind === "capability") return executeCapability(state, node, idempotencyKey, stableKey)
-  if (node.kind === "function") return executeFunctionNode(node, resolveBindings(node.inputs, context), state.signal)
-  if (node.kind === "data") return { outcome: "success", output: executeDataOperation(node.operation, resolveBindings(node.arguments, context)) }
-  if (node.kind === "condition") return { outcome: evaluatePredicate(node.predicate, context) ? "true" : "false", output: null }
+  if (node.kind === "function") {
+    const input = resolveBindings(node.inputs, context)
+    boundExecutionInput(state, node, input, node.inputs)
+    await persistRun(state)
+    return executeFunctionNode(node, input, state.signal)
+  }
+  if (node.kind === "data") {
+    const input = resolveBindings(node.arguments, context)
+    boundExecutionInput(state, node, input, node.arguments)
+    return { outcome: "success", output: executeDataOperation(node.operation, input) }
+  }
+  if (node.kind === "condition") return { outcome: evaluateRecordedPredicate(state, node, node.predicate, "condition") ? "true" : "false", output: null }
   if (node.kind === "branch") {
-    if ("predicate" in node) return { outcome: evaluatePredicate(node.predicate, context) ? "true" : "false", output: null }
+    if ("predicate" in node) return { outcome: evaluateRecordedPredicate(state, node, node.predicate, "condition") ? "true" : "false", output: null }
     try {
-      for (const item of node.cases) if (evaluatePredicate(item.predicate, context)) return { outcome: item.id, output: null }
+      const records = predicateRecords()
+      for (const item of node.cases) if (evaluateRecordedPredicate(state, node, item.predicate, item.id, records)) return { outcome: item.id, output: null }
       return { outcome: "default", output: null }
     } catch { return { outcome: "failed", output: null, reason: "branch_predicate_failed" } }
   }
@@ -253,9 +267,12 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
     if (!state.capabilities.browser) throw new Error("browser_capability_unavailable")
     await beginEffect(state, "browser", node.id, stableKey, idempotencyKey)
     const target = resolveTarget(node.target, context)
+    const arguments_ = resolveBindings(node.arguments, context)
+    boundExecutionInput(state, node, arguments_, node.arguments)
+    await persistRun(state)
     let result: NodeCapabilityResult
     try { result = nodeCapabilityResultSchema.parse(await state.capabilities.browser({ binding: state.run.binding, node,
-      arguments: resolveBindings(node.arguments, context), ...(target ? { target } : {}), idempotencyKey, signal: state.signal })) }
+      arguments: arguments_, ...(target ? { target } : {}), idempotencyKey, signal: state.signal })) }
     catch (error) {
       await markEffectUncertain(state)
       throw new UncertainEffectError(error instanceof Error ? error.message : "browser_effect_uncertain")
@@ -266,6 +283,7 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
   if (node.kind === "observe") {
     if (!state.capabilities.observe) throw new Error("observe_capability_unavailable")
     const target = resolveTarget(node.target, context)
+    withholdExecutionInput(state, node)
     const result = nodeCapabilityResultSchema.parse(await state.capabilities.observe({ binding: state.run.binding,
       node, ...(target ? { target } : {}), signal: state.signal }))
     if (result.outcome === "success" && !observationMatches(node.stableWhen, result.output ?? null, context)) return { ...result, outcome: "missing" }
@@ -273,10 +291,12 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
   }
   if (node.kind === "human") return executeHuman(state, node)
   if (node.kind === "llm") return executeLlm(state, node)
-  if (node.kind === "invoke") return executeInvoke(state, node, idempotencyKey)
+  if (node.kind === "invoke") return executeInvoke(state, node, idempotencyKey, writeVariable)
   if (node.kind === "emit") {
     const raw = node.output.kind === "value" ? { kind: "value", contract: { id: node.contract.id, version: node.contract.version }, value: resolveBinding(node.output.value, context) }
       : resolveBinding(node.output.artifact, context)
+    boundExecutionInput(state, node, raw as JsonValue,
+      [node.output.kind === "value" ? node.output.value : node.output.artifact])
     const output = parseTaskOutput(node.contract, raw)
     state.run.outputs[node.name] = output; state.checkpoint.outputs[node.name] = output
     return { outcome: "success", output: (output.kind === "value" ? output.value : output.artifact) as unknown as JsonValue }
@@ -286,6 +306,8 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
     const raw = node.result.output.kind === "value" ? { kind: "value", contract: {
       id: node.result.contract.id, version: node.result.contract.version }, value: resolveBinding(node.result.output.value, context) }
       : resolveBinding(node.result.output.artifact, context)
+    boundExecutionInput(state, node, raw as JsonValue,
+      [node.result.output.kind === "value" ? node.result.output.value : node.result.output.artifact])
     const output = parseTaskOutput(node.result.contract, raw)
     state.run.outputs[node.result.name] = output; state.checkpoint.outputs[node.result.name] = output
     return { outcome: "success", output: (output.kind === "value" ? output.value : output.artifact) as unknown as JsonValue }
@@ -296,6 +318,7 @@ async function dispatchNode(state: RuntimeState, node: ChainNode, idempotencyKey
 async function executeCapability(state: RuntimeState, node: Extract<ChainNode, { kind: "capability" }>,
   idempotencyKey: string, stableKey: string | null): Promise<NodeCapabilityResult> {
   if (resumesCapabilityFromObservation(state)) {
+    withholdExecutionInput(state, node)
     // WHY：只有链路声明的完成条件能够证明人工已完成当前动作，URL 存在只证明仍有页面。
     return { outcome: "success", output: node.outputContract.schema.type === "null"
       ? null : structuredClone(state.resumeObservation), browser: state.resumeBrowser ?? state.checkpoint.browser ?? undefined }
@@ -309,11 +332,13 @@ async function executeCapability(state: RuntimeState, node: Extract<ChainNode, {
     ...(node.human ? { resumeCondition: node.human.resumeWhen.operator === "exists" ? node.human.resumeWhen
       : { ...node.human.resumeWhen, expected: resolveBinding(node.human.resumeWhen.expected, state.context) } } : {}),
     signal: state.signal }
+  boundExecutionInput(state, node, invocation.input, node.input)
   const builtin = executeBuiltinCapability(invocation)
   if (builtin) return builtin
   if (!state.capabilities.capability) throw new Error("capability_unavailable")
   const effect = node.effect !== "read"
   if (effect) await beginEffect(state, "capability", node.id, stableKey, idempotencyKey)
+  else await persistRun(state)
   let result: NodeCapabilityResult
   try {
     result = nodeCapabilityResultSchema.parse(await state.capabilities.capability(invocation))
@@ -350,6 +375,7 @@ function observationMatches(condition: Extract<ChainNode, { kind: "observe" }>["
   return found.exists && JSON.stringify(found.value) === JSON.stringify(resolveBinding(condition.expected, context))
 }
 async function executeHuman(state: RuntimeState, node: Extract<ChainNode, { kind: "human" }>): Promise<NodeCapabilityResult> {
+  withholdExecutionInput(state, node)
   if (state.resumingNodeId === node.id && state.resumeObservation !== null) {
     return { outcome: "success", output: structuredClone(state.resumeObservation), browser: state.resumeBrowser ?? state.checkpoint.browser ?? undefined }
   }
@@ -379,8 +405,11 @@ async function executeLlm(state: RuntimeState, node: Extract<ChainNode, { kind: 
   state.run.modelCalls.push(audit); state.run.auditComplete = false; state.run.consumed.llmCalls = null
   await beginEffect(state, "llm", node.id, executionStableKey(state), callId)
   try {
+    const input = resolveBinding(node.input, state.context)
+    boundExecutionInput(state, node, input, [node.input])
+    await persistRun(state)
     const result = llmNodeCapabilityResultSchema.parse(await state.capabilities.llm({ binding: state.run.binding, mode: state.run.mode, node,
-      input: resolveBinding(node.input, state.context), callId, signal: state.signal }))
+      input, callId, signal: state.signal }))
     let v2Failure: string | null = null
     if ("systemPrompt" in node && result.reportedInvocations !== 1) v2Failure = "llm_invocation_count_invalid"
     if ("systemPrompt" in node && (result.reportedBrowserCommands ?? 0) !== 0) v2Failure = "llm_browser_command_forbidden"
@@ -404,87 +433,4 @@ async function executeLlm(state: RuntimeState, node: Extract<ChainNode, { kind: 
     await markEffectUncertain(state)
     throw new UncertainEffectError(error instanceof Error ? error.message : "llm_effect_uncertain")
   }
-}
-
-async function executeInvoke(state: RuntimeState, node: Extract<ChainNode, { kind: "invoke" }>, idempotencyKey: string): Promise<NodeCapabilityResult> {
-  if (!state.capabilities.invoke) throw new Error("invoke_capability_unavailable")
-  const rawInput = node.iteration.mode === "once" ? resolveBinding(node.input, state.context) : null
-  const items = node.iteration.mode === "each" ? resolveBinding(node.iteration.collection, state.context) : [rawInput]
-  if (!Array.isArray(items)) throw new Error("invoke_collection_required")
-  const unique: { item: JsonValue; stableKey: string }[] = [], seen = new Map<string, string>()
-  for (const item of items) {
-    const stableValue = node.iteration.mode === "each" ? readPath(item, node.iteration.stableKeyPath) : "once"
-    if (!["string", "number", "boolean"].includes(typeof stableValue)) throw new Error("invoke_stable_key_scalar_required")
-    const stableKey = String(stableValue), itemDigest = digestJson(item)
-    const previous = seen.get(stableKey)
-    if (previous && previous !== itemDigest) throw new Error("invoke_stable_key_collision")
-    if (previous) continue
-    seen.set(stableKey, itemDigest); unique.push({ item, stableKey })
-  }
-  const selected = node.iteration.mode === "each" ? unique.slice(0, node.iteration.maxItems) : unique
-  const truncated = node.iteration.mode === "each" && unique.length > node.iteration.maxItems
-  const outputs: JsonValue[] = [], failures: string[] = []
-  for (const { item, stableKey } of selected) {
-    if (node.iteration.mode === "each") writeVariable(state, node.iteration.itemVariable, item)
-    const childInput = node.iteration.mode === "each" ? resolveBinding(node.input, state.context) : rawInput!
-    const inputDigest = digestJson(childInput)
-    // WHY：父节点、外层循环、子链版本与本次输入共同定义调用；仅凭子链 ID 和稳定键会串用已完成输出。
-    const invocationId = stableUuid(idempotencyKey, stableKey, node.chain.id, String(node.chain.version), node.chain.digest, inputDigest)
-    let progress = state.checkpoint.invocations.find((entry) => entry.invocationId === invocationId)
-    if (progress && (progress.stableKey !== stableKey || progress.inputDigest !== inputDigest
-      || progress.chain.id !== node.chain.id || progress.chain.version !== node.chain.version
-      || progress.chain.digest !== node.chain.digest)) throw new Error("invoke_progress_identity_mismatch")
-    if (progress?.status === "completed") { if (progress.output) outputs.push(invokedOutput(progress.output)); continue }
-    // WHY：旧检查点的 ID 不含外层现场，不能在恢复时猜测它对应哪次已发生的外部效果。
-    const legacyId = stableUuid(state.run.binding.runId, node.id, stableKey)
-    if (!progress && state.checkpoint.invocations.some((entry) => entry.invocationId === legacyId)) {
-      throw new Error("invoke_progress_legacy_identity_unverifiable")
-    }
-    if (!progress) {
-      progress = { invocationId, chain: node.chain, stableKey, inputDigest, status: "pending", output: null, checkpointId: null, reason: null }
-      state.checkpoint.invocations.push(progress)
-      state.capabilities.accountConsumption?.({ invocations: 1 })
-      state.run.consumed.invocations += 1
-    }
-    progress.status = "running"
-    const childIdempotencyKey = `${idempotencyKey}:${invocationId}`
-    await beginEffect(state, "invoke", node.id, stableKey, childIdempotencyKey)
-    let result
-    try {
-      result = invokeChainResultSchema.parse(await state.capabilities.invoke({ parent: state.run.binding, chain: node.chain,
-        input: childInput, invocationId, stableKey, idempotencyKey: childIdempotencyKey, signal: state.signal }))
-      completeEffect(state)
-    } catch (error) {
-      progress.status = "paused"; progress.reason = error instanceof Error ? error.message : "invoke_effect_uncertain"
-      await markEffectUncertain(state)
-      throw new UncertainEffectError(progress.reason)
-    }
-    progress.status = result.outcome.status === "completed" ? "completed" : result.outcome.status === "partial" ? "partial"
-      : result.outcome.status === "paused" ? "paused"
-        : result.outcome.status === "cancelled" ? "cancelled" : "failed"
-    progress.output = result.output; progress.checkpointId = result.checkpointId ?? null; progress.reason = result.outcome.reason
-    if (result.output) outputs.push(invokedOutput(result.output))
-    if (result.externalFailure) {
-      return { outcome: result.outcome.status === "waiting_for_human" ? "human_required" : "blocked",
-        output: outputs as unknown as JsonValue, reason: result.outcome.reason,
-        externalFailure: result.externalFailure }
-    }
-    if (result.outcome.status === "waiting_for_human") {
-      waitForInvokedHuman(state, node, result.outcome.reason)
-      return { outcome: "human_required", output: outputs as unknown as JsonValue, reason: result.outcome.reason }
-    }
-    if (result.outcome.status !== "completed") {
-      failures.push(result.outcome.reason)
-      if (node.iteration.mode !== "each" || node.iteration.onItemFailure === "stop") break
-      if (node.iteration.onItemFailure === "pause") return { outcome: "blocked", output: outputs as unknown as JsonValue }
-    }
-  }
-  if (failures.length) return { outcome: outputs.length ? "partial" : "failed", output: outputs as unknown as JsonValue, reason: failures.join("；") }
-  if (truncated) return { outcome: outputs.length ? "partial" : "blocked", output: outputs as unknown as JsonValue, reason: "逐项调用数量超过链路预算。" }
-  return { outcome: "success", output: (node.iteration.mode === "once" ? outputs[0] ?? null : outputs) as unknown as JsonValue }
-}
-function waitForInvokedHuman(state: RuntimeState, node: Extract<ChainNode, { kind: "invoke" }>, reason: string) {
-  syncCheckpoint(state); state.checkpoint.id = randomUUID(); state.run.checkpoint = structuredClone(state.checkpoint); state.run.status = "waiting_for_human"
-  state.run.outcome = { status: "waiting_for_human", waitpointId: stableUuid(state.run.binding.runId, node.id, "waitpoint"),
-    checkpointId: state.checkpoint.id, reason, evidence: structuredClone(state.checkpoint.artifacts) }
 }

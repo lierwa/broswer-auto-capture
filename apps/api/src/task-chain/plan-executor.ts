@@ -10,6 +10,7 @@ import type { TaskContractRepository } from "./repository.js"
 import type { TaskRuntimeHost } from "./runtime-host.js"
 import { projectExecutionResult, type FailureHint } from "./execution-result.js"
 import { executionCleanupAuditSchema, RuntimeCleanupRequiredError, type RunnerCleanupReport } from "../upstream-browser/cleanup.js"
+import { UpstreamProtocolError } from "../upstream-browser/service.js"
 
 export class TaskPlanExecutor {
   constructor(private readonly store: ProductStore, private readonly repository: TaskContractRepository,
@@ -17,6 +18,7 @@ export class TaskPlanExecutor {
 
   async execute(record: TaskExecution, signal: AbortSignal, resume = false, pacing?: RuntimeNodePacing) {
     const cleanupObservation: { value: { ownerId: string; report: RunnerCleanupReport } | null } = { value: null }
+    const resumingWindow = record.browserHandoff.status === "active"
     try {
       const plan = this.repository.plan(record.taskId, record.plan.id, record.plan.version, record.plan.digest)
       if (!this.isCurrent(record, plan)) return this.finish(record, "stale", "需求或计划版本已变化，原授权不能继续执行。",
@@ -25,7 +27,6 @@ export class TaskPlanExecutor {
         { classification: "version", code: "plan_contract_invalid", repairable: false })
       const chains = this.boundChains(record, plan)
       const managedWindow = Boolean(record.release && !(record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER).headless)
-      const resumingWindow = record.browserHandoff.status === "active"
       record.status = "running"; record.sequence++; record.reason = "正在执行本次计划固定的链路版本。"
       record.cleanup = { status: "pending", attempt: record.cleanup.attempt + 1, code: null,
         evidenceDigest: null, updatedAt: new Date().toISOString() }
@@ -82,6 +83,7 @@ export class TaskPlanExecutor {
           if (observedCleanup?.report.status === "confirmed") {
             this.saveCleanupAudit(record, observedCleanup.ownerId, observedCleanup.report)
             this.confirmCleanup(record, observedCleanup.report.evidenceDigest)
+            this.settleReleasedStartup(record, observedCleanup, resumingWindow)
           } else {
             const evidence = this.saveOwnerVerification(record, stableUuid(record.id, "cleanup-owner"), false,
               "runtime_cleanup_report_missing")
@@ -110,6 +112,19 @@ export class TaskPlanExecutor {
     this.bump(record)
   }
 
+  private settleReleasedStartup(record: TaskExecution,
+    observed: { ownerId: string; report: RunnerCleanupReport }, resumingWindow: boolean) {
+    const handoff = record.browserHandoff, browserClose = observed.report.stages.find(stage => stage.stage === "browser_close")
+    // WHY：启动 owner 不是已交付租约；只用同 operation 的真实释放证明。恢复旧交付页或交付回执不明仍保留占用。
+    if (resumingWindow || handoff.status !== "pending" || handoff.purpose !== null || handoff.targetDigest !== null
+      || handoff.ownerId !== observed.ownerId || handoff.leaseId !== observed.ownerId
+      || observed.report.status !== "confirmed" || observed.report.activeResources !== false
+      || !browserClose || !["confirmed", "not_required"].includes(browserClose.status)) return
+    record.browserHandoff = { status: "not_requested", purpose: null, leaseId: null, ownerId: null,
+      targetDigest: null, reason: null, updatedAt: new Date().toISOString() }
+    this.bump(record)
+  }
+
   private finishPrimaryFailure(record: TaskExecution, error: unknown, signal: AbortSignal) {
     if (signal.aborted) {
       const current = this.repository.execution(record.taskId, record.id)
@@ -124,6 +139,11 @@ export class TaskPlanExecutor {
     if (error instanceof RuntimeBudgetExceededError || error instanceof Error && error.message === "plan_item_limit_exceeded") {
       return this.finish(record, "blocked", error.message,
         { classification: "budget", code: "execution_budget_exceeded", repairable: false })
+    }
+    // WHY：没有任何链路调用的上游启动失败不授权模型修图；类型与调用事实分类，不猜原生授权或网络根因。
+    if (error instanceof UpstreamProtocolError && record.steps.every(step => step.runIds.length === 0)) {
+      return this.finish(record, "failed", `运行失败：${error.message}`,
+        { classification: "external", code: error.code, repairable: false })
     }
     return this.finish(record, "failed", `运行失败：${error instanceof Error ? error.message : "execution_failed"}`,
       { classification: "deterministic", code: "execution_failed", repairable: true })

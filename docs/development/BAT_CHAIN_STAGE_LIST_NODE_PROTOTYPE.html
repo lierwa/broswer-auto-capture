@@ -1,0 +1,999 @@
+<!-- Structure-only interaction reference. Production UI must use the current Workbench theme and components. -->
+<div id="bat-chain-stage-list-node">
+  <style>
+    #bat-chain-stage-list-node {
+      color-scheme: light dark;
+      --bg: light-dark(#edf0ec, #0b0d0c);
+      --canvas: light-dark(#f8faf7, #111411);
+      --surface: light-dark(#ffffff, #1a1d1a);
+      --surface-2: light-dark(#f3f5f1, #202420);
+      --ink: light-dark(#172019, #f1f4ef);
+      --muted: light-dark(#6a746c, #99a39b);
+      --line: light-dark(#cbd2cb, #394039);
+      --line-strong: light-dark(#7c877e, #808a82);
+      --green: light-dark(#08754a, #45d08d);
+      --green-soft: light-dark(#e0f4e8, #153728);
+      --gold: light-dark(#9b6b00, #efb52a);
+      --gold-soft: light-dark(#fff3c9, #3c2e0d);
+      --blue: light-dark(#285fac, #76a9ff);
+      --blue-soft: light-dark(#e7f0ff, #142844);
+      --shadow: light-dark(rgba(20, 29, 22, .13), rgba(0, 0, 0, .42));
+      width: 100%;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      line-height: 1.35;
+    }
+
+    #bat-chain-stage-list-node * { box-sizing: border-box; }
+    #bat-chain-stage-list-node button { font: inherit; }
+    #bat-chain-stage-list-node button:focus-visible,
+    #bat-chain-stage-list-node summary:focus-visible {
+      outline: 2px solid var(--gold);
+      outline-offset: 2px;
+    }
+
+    #bat-chain-stage-list-node .shell {
+      position: relative;
+      height: 584px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--bg);
+      box-shadow: 0 16px 42px var(--shadow);
+    }
+
+    #bat-chain-stage-list-node .taskbar,
+    #bat-chain-stage-list-node .runbar,
+    #bat-chain-stage-list-node .canvasbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #bat-chain-stage-list-node .taskbar {
+      height: 55px;
+      padding: 8px 13px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    #bat-chain-stage-list-node .task-ident {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 9px;
+    }
+
+    #bat-chain-stage-list-node .task-icon {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      flex: none;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--gold) 50%, transparent);
+      border-radius: 6px;
+      color: var(--gold);
+      background: var(--gold-soft);
+      font-size: 16px;
+    }
+
+    #bat-chain-stage-list-node h1 {
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    #bat-chain-stage-list-node .task-meta {
+      display: flex;
+      gap: 7px;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 9px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #bat-chain-stage-list-node .task-meta .published { color: var(--green); }
+    #bat-chain-stage-list-node .top-actions { display: flex; gap: 6px; flex: none; }
+
+    #bat-chain-stage-list-node .button {
+      min-height: 30px;
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      color: var(--ink);
+      background: var(--surface-2);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    #bat-chain-stage-list-node .button.primary {
+      border-color: var(--gold);
+      color: light-dark(#2e2100, #2e2100);
+      background: var(--gold);
+    }
+
+    #bat-chain-stage-list-node .runbar {
+      height: 35px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-2);
+      box-shadow: inset 3px 0 0 var(--green);
+      font-size: 9px;
+    }
+
+    #bat-chain-stage-list-node .run-state { display: flex; align-items: center; gap: 7px; }
+    #bat-chain-stage-list-node .run-state i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    #bat-chain-stage-list-node .run-stats { color: var(--muted); }
+
+    #bat-chain-stage-list-node .canvasbar {
+      height: 37px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      font-size: 10px;
+      font-weight: 680;
+    }
+
+    #bat-chain-stage-list-node .canvas-actions { display: flex; gap: 5px; }
+    #bat-chain-stage-list-node .canvas-action {
+      min-height: 25px;
+      padding: 3px 7px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--muted);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 9px;
+    }
+
+    #bat-chain-stage-list-node .viewport {
+      position: relative;
+      height: 456px;
+      overflow: hidden;
+      touch-action: none;
+      cursor: grab;
+      background-color: var(--canvas);
+      background-image: radial-gradient(circle, color-mix(in srgb, var(--muted) 30%, transparent) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+
+    #bat-chain-stage-list-node .viewport.is-panning { cursor: grabbing; }
+    #bat-chain-stage-list-node .world {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 3040px;
+      height: 640px;
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    #bat-chain-stage-list-node .edges {
+      position: absolute;
+      inset: 0;
+      width: 3040px;
+      height: 640px;
+      overflow: visible;
+      pointer-events: none;
+    }
+
+    #bat-chain-stage-list-node .edge {
+      fill: none;
+      stroke: var(--line-strong);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      opacity: .78;
+    }
+
+    #bat-chain-stage-list-node .edge.is-active {
+      stroke: var(--gold);
+      stroke-width: 2.2;
+      opacity: 1;
+    }
+
+    #bat-chain-stage-list-node .stage-node,
+    #bat-chain-stage-list-node .terminal-node {
+      position: absolute;
+      width: 224px;
+      overflow: visible;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--ink);
+      background: var(--surface);
+      box-shadow: 0 4px 13px color-mix(in srgb, var(--shadow) 52%, transparent);
+      cursor: default;
+    }
+
+    #bat-chain-stage-list-node .stage-node::before,
+    #bat-chain-stage-list-node .stage-node::after,
+    #bat-chain-stage-list-node .terminal-node::before,
+    #bat-chain-stage-list-node .terminal-node::after {
+      content: "";
+      position: absolute;
+      z-index: 4;
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      background: var(--line-strong);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--line-strong) 62%, transparent);
+      transform: translateY(-50%);
+    }
+
+    #bat-chain-stage-list-node .stage-node::before,
+    #bat-chain-stage-list-node .stage-node::after { top: 31px; }
+    #bat-chain-stage-list-node .terminal-node::before,
+    #bat-chain-stage-list-node .terminal-node::after { top: 50%; }
+
+    #bat-chain-stage-list-node .stage-node::before,
+    #bat-chain-stage-list-node .terminal-node::before { left: -6px; }
+    #bat-chain-stage-list-node .stage-node::after,
+    #bat-chain-stage-list-node .terminal-node::after { right: -6px; }
+    #bat-chain-stage-list-node .terminal-node[data-terminal="start"]::before,
+    #bat-chain-stage-list-node .terminal-node[data-terminal="end"]::after { display: none; }
+
+    #bat-chain-stage-list-node .stage-node.is-selected {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 22%, transparent), 0 8px 22px var(--shadow);
+    }
+
+    #bat-chain-stage-list-node .stage-head {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      width: 100%;
+      height: 62px;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 9px;
+      border: 0;
+      border-radius: 6px 6px 0 0;
+      color: inherit;
+      text-align: left;
+      background: var(--surface-2);
+      cursor: pointer;
+    }
+
+    #bat-chain-stage-list-node .stage-number {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      color: var(--muted);
+      background: var(--surface);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #bat-chain-stage-list-node .stage-copy { min-width: 0; }
+    #bat-chain-stage-list-node .stage-copy small,
+    #bat-chain-stage-list-node .stage-copy strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #bat-chain-stage-list-node .stage-copy small {
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: .08em;
+    }
+
+    #bat-chain-stage-list-node .stage-copy strong { margin-top: 2px; font-size: 12px; font-weight: 680; }
+    #bat-chain-stage-list-node .stage-duration { color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+
+    #bat-chain-stage-list-node .action-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      border-top: 1px solid var(--line);
+    }
+
+    #bat-chain-stage-list-node .action-list li + li { border-top: 1px solid var(--line); }
+    #bat-chain-stage-list-node .action-row {
+      display: grid;
+      grid-template-columns: 15px minmax(0, 1fr) auto 6px;
+      width: 100%;
+      min-height: 33px;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px 3px 12px;
+      border: 0;
+      color: inherit;
+      text-align: left;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    #bat-chain-stage-list-node .action-row:hover,
+    #bat-chain-stage-list-node .action-row:focus-visible { background: var(--surface-2); }
+    #bat-chain-stage-list-node .action-row.is-selected { background: var(--gold-soft); }
+    #bat-chain-stage-list-node .action-icon {
+      display: grid;
+      width: 15px;
+      height: 15px;
+      place-items: center;
+      border-radius: 4px;
+      color: var(--muted);
+      background: var(--surface-2);
+      font-size: 8px;
+    }
+
+    #bat-chain-stage-list-node .action-row.is-selected .action-icon { color: var(--gold); background: var(--surface); }
+    #bat-chain-stage-list-node .action-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 10px;
+      font-weight: 620;
+    }
+
+    #bat-chain-stage-list-node .action-time { color: var(--muted); font-size: 8px; font-variant-numeric: tabular-nums; }
+    #bat-chain-stage-list-node .ok-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+    #bat-chain-stage-list-node .terminal-node {
+      width: 118px;
+      border-color: color-mix(in srgb, var(--green) 55%, var(--line));
+      background: var(--surface);
+    }
+
+    #bat-chain-stage-list-node .terminal-button {
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr);
+      width: 100%;
+      min-height: 48px;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 8px;
+      border: 0;
+      border-radius: 6px;
+      color: inherit;
+      text-align: left;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    #bat-chain-stage-list-node .terminal-mark {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--green);
+      font-size: 11px;
+    }
+
+    #bat-chain-stage-list-node .terminal-copy small,
+    #bat-chain-stage-list-node .terminal-copy strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #bat-chain-stage-list-node .terminal-copy small { color: var(--green); font-size: 7px; font-weight: 720; letter-spacing: .07em; }
+    #bat-chain-stage-list-node .terminal-copy strong { margin-top: 1px; font-size: 10px; }
+
+    #bat-chain-stage-list-node .zoom-controls {
+      position: absolute;
+      z-index: 12;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      box-shadow: 0 4px 12px var(--shadow);
+    }
+
+    #bat-chain-stage-list-node .zoom-controls button,
+    #bat-chain-stage-list-node .zoom-controls output {
+      display: grid;
+      min-width: 29px;
+      height: 28px;
+      margin: 0;
+      padding: 0 7px;
+      place-items: center;
+      border: 0;
+      border-right: 1px solid var(--line);
+      color: var(--muted);
+      background: transparent;
+      font-size: 9px;
+    }
+
+    #bat-chain-stage-list-node .zoom-controls button { cursor: pointer; }
+    #bat-chain-stage-list-node .zoom-controls button:last-child { border-right: 0; }
+    #bat-chain-stage-list-node .zoom-controls button:hover { color: var(--ink); background: var(--surface-2); }
+
+    #bat-chain-stage-list-node .minimap {
+      position: absolute;
+      z-index: 11;
+      right: 12px;
+      bottom: 12px;
+      width: 174px;
+      height: 54px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      box-shadow: 0 4px 12px var(--shadow);
+      cursor: pointer;
+    }
+
+    #bat-chain-stage-list-node .mini-track { position: absolute; inset: 0; }
+    #bat-chain-stage-list-node .mini-node {
+      position: absolute;
+      top: 20px;
+      width: 13px;
+      height: 13px;
+      border-radius: 2px;
+      background: var(--line);
+    }
+
+    #bat-chain-stage-list-node .mini-node.terminal { background: var(--green); }
+    #bat-chain-stage-list-node .mini-view {
+      position: absolute;
+      top: 6px;
+      height: 42px;
+      border: 1px solid var(--ink);
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--surface) 17%, transparent);
+      pointer-events: none;
+    }
+
+    #bat-chain-stage-list-node .drawer {
+      position: absolute;
+      z-index: 30;
+      top: 90px;
+      right: 0;
+      bottom: 0;
+      width: 324px;
+      overflow: auto;
+      border-left: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: -14px 0 32px color-mix(in srgb, var(--shadow) 62%, transparent);
+      transform: translateX(101%);
+      transition: transform .2s ease;
+    }
+
+    #bat-chain-stage-list-node .drawer.is-open { transform: translateX(0); }
+    #bat-chain-stage-list-node .drawer-head {
+      position: sticky;
+      z-index: 2;
+      top: 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 13px 14px 11px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    #bat-chain-stage-list-node .drawer-head small { color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .08em; }
+    #bat-chain-stage-list-node .drawer-head h2 { margin: 3px 0 0; font-size: 14px; line-height: 1.3; }
+    #bat-chain-stage-list-node .drawer-close {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: none;
+      place-items: center;
+      border: 0;
+      border-radius: 4px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    #bat-chain-stage-list-node .drawer-close:hover { color: var(--ink); background: var(--surface-2); }
+    #bat-chain-stage-list-node .drawer-body { padding: 13px 14px 18px; }
+    #bat-chain-stage-list-node .status-line {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 12px;
+      color: var(--green);
+      font-size: 10px;
+      font-weight: 650;
+    }
+
+    #bat-chain-stage-list-node .status-line i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    #bat-chain-stage-list-node .fact-list { margin: 0; border-top: 1px solid var(--line); }
+    #bat-chain-stage-list-node .fact-list > div {
+      display: grid;
+      grid-template-columns: 68px minmax(0, 1fr);
+      gap: 8px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 9px;
+    }
+
+    #bat-chain-stage-list-node .fact-list dt { color: var(--muted); }
+    #bat-chain-stage-list-node .fact-list dd { margin: 0; overflow-wrap: anywhere; font-weight: 580; }
+    #bat-chain-stage-list-node details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+    #bat-chain-stage-list-node summary { color: var(--muted); cursor: pointer; font-size: 9px; }
+    #bat-chain-stage-list-node .advanced { margin-top: 8px; padding: 9px; border-radius: 5px; background: var(--surface-2); color: var(--muted); font: 8px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    #bat-chain-stage-list-node .result-card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-2);
+    }
+
+    #bat-chain-stage-list-node .result-card small { color: var(--muted); font-size: 8px; }
+    #bat-chain-stage-list-node .result-card h3 { margin: 5px 0 10px; font-size: 12px; line-height: 1.45; }
+    #bat-chain-stage-list-node .result-card p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.65; }
+    #bat-chain-stage-list-node .result-actions { display: flex; gap: 5px; margin-top: 11px; }
+    #bat-chain-stage-list-node .result-actions .button { min-height: 27px; font-size: 9px; }
+
+    @media (max-width: 720px) {
+      #bat-chain-stage-list-node .shell { height: 552px; }
+      #bat-chain-stage-list-node .taskbar { height: 52px; }
+      #bat-chain-stage-list-node .run-stats { display: none; }
+      #bat-chain-stage-list-node .viewport { height: 427px; }
+      #bat-chain-stage-list-node .drawer { top: 87px; width: min(88vw, 324px); }
+      #bat-chain-stage-list-node .top-actions .button:first-child { display: none; }
+      #bat-chain-stage-list-node .minimap { width: 132px; }
+    }
+  </style>
+
+  <section class="shell" aria-label="任务链路交互稿">
+    <header class="taskbar">
+      <div class="task-ident">
+        <span class="task-icon" aria-hidden="true">⌘</span>
+        <div class="task-name">
+          <h1>获取第二页首个 Issue 详情</h1>
+          <div class="task-meta"><span class="published">已发布 V4</span><span>8 个阶段</span><span>18 个动作</span></div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="button" type="button" data-open-output>查看最终输出</button>
+        <button class="button primary" type="button">▶ 再次运行</button>
+      </div>
+    </header>
+
+    <div class="runbar">
+      <span class="run-state"><i></i><strong>运行完成 · 41.2 秒</strong></span>
+      <span class="run-stats">0 次模型调用 · 19 次节点流转 · 22 条浏览器命令</span>
+    </div>
+
+    <div class="canvasbar">
+      <span>任务链路</span>
+      <div class="canvas-actions">
+        <button class="canvas-action" type="button" data-focus="1">首阶段</button>
+        <button class="canvas-action" type="button" data-fit>适应画布</button>
+        <button class="canvas-action" type="button" data-focus="8">末阶段</button>
+      </div>
+    </div>
+
+    <div class="viewport" aria-label="可平移和缩放的 React Flow 链路画布">
+      <div class="world">
+        <svg class="edges" aria-hidden="true">
+          <defs>
+            <marker id="bat-stage-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="context-stroke"></path>
+            </marker>
+          </defs>
+        </svg>
+
+        <article class="terminal-node" data-terminal="start" data-stage="start" data-x="-88">
+          <div class="terminal-button">
+            <span class="terminal-mark">▶</span>
+            <span class="terminal-copy"><small>入口</small><strong>开始</strong></span>
+          </div>
+        </article>
+
+        <article class="stage-node" data-stage="1" data-x="76">
+          <button class="stage-head" type="button" data-stage-detail="1">
+            <span class="stage-number">01</span>
+            <span class="stage-copy"><small>阶段</small><strong>打开 GitHub</strong></span>
+            <span class="stage-duration">8.710s</span>
+          </button>
+          <ol class="action-list">
+            <li><button class="action-row" type="button" data-action="open-github"><span class="action-icon">↗</span><span class="action-title">打开 github.com</span><span class="action-time">8.710s</span><i class="ok-dot"></i></button></li>
+          </ol>
+        </article>
+
+        <article class="stage-node" data-stage="2" data-x="386">
+          <button class="stage-head" type="button" data-stage-detail="2">
+            <span class="stage-number">02</span>
+            <span class="stage-copy"><small>阶段</small><strong>打开搜索入口</strong></span>
+            <span class="stage-duration">2.349s</span>
+          </button>
+          <ol class="action-list">
+            <li><button class="action-row" type="button" data-action="focus-search"><span class="action-icon">⌖</span><span class="action-title">点击搜索框</span><span class="action-time">2.349s</span><i class="ok-dot"></i></button></li>
+          </ol>
+        </article>
+
+        <article class="stage-node" data-stage="3" data-x="696">
+          <button class="stage-head" type="button" data-stage-detail="3">
+            <span class="stage-number">03</span>
+            <span class="stage-copy"><small>阶段</small><strong>搜索目标仓库</strong></span>
+            <span class="stage-duration">3.879s</span>
+          </button>
+          <ol class="action-list">
+            <li><button class="action-row" type="button" data-action="type-query"><span class="action-icon">T</span><span class="action-title">输入 langchain-ai/langgraph</span><span class="action-time">1.743s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="submit-query"><span class="action-icon">↵</span><span class="action-title">提交搜索</span><span class="action-time">2.136s</span><i class="ok-dot"></i></button></li>
+          </ol>
+        </article>
+
+        <article class="stage-node is-selected" data-stage="4" data-x="1006">
+          <button class="stage-head" type="button" data-stage-detail="4">
+            <span class="stage-number">04</span>
+            <span class="stage-copy"><small>阶段</small><strong>进入目标仓库</strong></span>
+            <span class="stage-duration">6.386s</span>
+          </button>
+          <ol class="action-list">
+            <li><button class="action-row" type="button" data-action="read-repos"><span class="action-icon">◉</span><span class="action-title">读取搜索候选</span><span class="action-time">1.054s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row is-selected" type="button" data-action="select-repo"><span class="action-icon">◆</span><span class="action-title">选择目标仓库</span><span class="action-time">0.211s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="click-repo"><span class="action-icon">↗</span><span class="action-title">点击选中的仓库</span><span class="action-time">5.121s</span><i class="ok-dot"></i></button></li>
+          </ol>
+        </article>
+
+        <article class="stage-node" data-stage="5" data-x="1316">
+          <button class="stage-head" type="button" data-stage-detail="5">
+            <span class="stage-number">05</span>
+            <span class="stage-copy"><small>阶段</small><strong>进入 Issues</strong></span>
+            <span class="stage-duration">8.057s</span>
+          </button>
+          <ol class="action-list">
+            <li><button class="action-row" type="button" data-action="read-tabs"><span class="action-icon">◉</span><span class="action-title">读取仓库导航</span><span class="action-time">0.426s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="select-issues"><span class="action-icon">◆</span><span class="action-title">选择 Issues</span><span class="action-time">0.114s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="click-issues"><span class="action-icon">↗</span><span class="action-title">点击 Issues</span><span class="action-time">7.517s</span><i class="ok-dot"></i></button></li>
+          </ol>
+        </article>
+
+        <article class="stage-node" data-stage="6" data-x="1626">
+          <button class="stage-head" type="button" data-stage-detail="6">
+            <span class="stage-number">06</span>
+            <span class="stage-copy"><small>阶段</small><strong>进入第二页</strong></span>
+            <span class="stage-duration">5.857s</span>
+          </button>
+          <ol class="action-list">
+            <li><button class="action-row" type="button" data-action="read-next"><span class="action-icon">◉</span><span class="action-title">读取 next</span><span class="action-time">0.473s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="open-page2"><span class="action-icon">↗</span><span class="action-title">打开第二页</span><span class="action-time">5.384s</span><i class="ok-dot"></i></button></li>
+          </ol>
+        </article>
+
+        <article class="stage-node" data-stage="7" data-x="1936">
+          <button class="stage-head" type="button" data-stage-detail="7">
+            <span class="stage-number">07</span>
+            <span class="stage-copy"><small>阶段</small><strong>打开首个 Issue</strong></span>
+            <span class="stage-duration">4.584s</span>
+          </button>
+          <ol class="action-list">
+            <li><button class="action-row" type="button" data-action="read-issues"><span class="action-icon">◉</span><span class="action-title">读取 Issues</span><span class="action-time">1.122s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="select-first"><span class="action-icon">◆</span><span class="action-title">选择首页第一项</span><span class="action-time">0.134s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="open-issue"><span class="action-icon">↗</span><span class="action-title">打开 Issue</span><span class="action-time">3.328s</span><i class="ok-dot"></i></button></li>
+          </ol>
+        </article>
+
+        <article class="stage-node" data-stage="8" data-x="2246">
+          <button class="stage-head" type="button" data-stage-detail="8">
+            <span class="stage-number">08</span>
+            <span class="stage-copy"><small>阶段</small><strong>读取并组织输出</strong></span>
+            <span class="stage-duration">1.480s</span>
+          </button>
+          <ol class="action-list">
+            <li><button class="action-row" type="button" data-action="read-fields"><span class="action-icon">◉</span><span class="action-title">读取标题与正文</span><span class="action-time">1.475s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="bind-fields"><span class="action-icon">⇆</span><span class="action-title">绑定输出字段</span><span class="action-time">0.003s</span><i class="ok-dot"></i></button></li>
+            <li><button class="action-row" type="button" data-action="assemble-output"><span class="action-icon">✓</span><span class="action-title">生成最终结果</span><span class="action-time">0.002s</span><i class="ok-dot"></i></button></li>
+          </ol>
+        </article>
+
+        <article class="terminal-node" data-terminal="end" data-stage="completed" data-x="2556">
+          <button class="terminal-button" type="button" data-open-output>
+            <span class="terminal-mark">✓</span>
+            <span class="terminal-copy"><small>终点</small><strong>完成</strong></span>
+          </button>
+        </article>
+      </div>
+
+      <div class="zoom-controls" role="group" aria-label="画布缩放">
+        <button type="button" data-zoom-out aria-label="缩小">−</button>
+        <output data-zoom-label>92%</output>
+        <button type="button" data-zoom-in aria-label="放大">＋</button>
+        <button type="button" data-fit aria-label="适应画布">⌗</button>
+      </div>
+
+      <div class="minimap" aria-label="链路缩略图" role="button" tabindex="0">
+        <div class="mini-track"></div>
+        <div class="mini-view"></div>
+      </div>
+    </div>
+
+    <aside class="drawer" aria-hidden="true">
+      <div class="drawer-head">
+        <div><small data-drawer-kicker>动作</small><h2 data-drawer-title>选择目标仓库</h2></div>
+        <button class="drawer-close" type="button" aria-label="关闭详情">×</button>
+      </div>
+      <div class="drawer-body" data-drawer-body></div>
+    </aside>
+  </section>
+
+  <script>
+    (() => {
+      const root = document.querySelector('#bat-chain-stage-list-node');
+      if (!root) return;
+      const viewport = root.querySelector('.viewport');
+      const world = root.querySelector('.world');
+      const svg = root.querySelector('.edges');
+      const drawer = root.querySelector('.drawer');
+      const drawerKicker = root.querySelector('[data-drawer-kicker]');
+      const drawerTitle = root.querySelector('[data-drawer-title]');
+      const drawerBody = root.querySelector('[data-drawer-body]');
+      const zoomLabel = root.querySelector('[data-zoom-label]');
+      const miniTrack = root.querySelector('.mini-track');
+      const miniView = root.querySelector('.mini-view');
+      const stageNodes = [...root.querySelectorAll('.stage-node')];
+      const startTerminal = root.querySelector('.terminal-node[data-terminal="start"]');
+      const endTerminal = root.querySelector('.terminal-node[data-terminal="end"]');
+      const allNodes = [startTerminal, ...stageNodes, endTerminal];
+      const worldWidth = 3040;
+      const worldHeight = 640;
+      const centerLine = 270;
+      let scale = .92;
+      let tx = -770;
+      let ty = -36;
+      let drag = null;
+
+      const actionFacts = {
+        'open-github': ['打开 github.com', '浏览器打开页面', 'https://github.com', 'GitHub 首页已加载', '8.710 秒', 's-a-0001'],
+        'focus-search': ['点击搜索框', '浏览器点击', 'Search or jump to…', '搜索输入框获得焦点', '2.349 秒', 's-a-0002'],
+        'type-query': ['输入 langchain-ai/langgraph', '浏览器输入', 'GitHub 搜索框', '查询文本已写入', '1.743 秒', 's-a-0003'],
+        'submit-query': ['提交搜索', '键盘操作', '当前搜索框', '搜索结果页已打开', '2.136 秒', 's-a-0004'],
+        'read-repos': ['读取搜索候选', '页面读取', '搜索结果中的仓库候选', '读到可供选择的候选列表', '1.054 秒', 's-a-0005'],
+        'select-repo': ['选择目标仓库', '确定性选择', '搜索结果中的仓库候选', '选中 /langchain-ai/langgraph', '0.211 秒', 'selection-a-0006'],
+        'click-repo': ['点击选中的仓库', '浏览器点击', '已选中的仓库链接', '目标仓库页面已打开', '5.121 秒', 's-a-0006'],
+        'read-tabs': ['读取仓库导航', '页面读取', '仓库页导航栏', '读到 Issues 入口', '0.426 秒', 's-a-0008'],
+        'select-issues': ['选择 Issues', '确定性选择', '仓库导航候选', '选中 Issues 入口', '0.114 秒', 'selection-a-0009'],
+        'click-issues': ['点击 Issues', '浏览器点击', '已选中的 Issues 入口', 'Issue 列表页已打开', '7.517 秒', 's-a-0009'],
+        'read-next': ['读取 next', '页面读取', 'Issue 列表分页区', '读到下一页入口', '0.473 秒', 's-a-0011'],
+        'open-page2': ['打开第二页', '浏览器点击', 'next 分页入口', 'Issue 第二页已打开', '5.384 秒', 's-a-0012'],
+        'read-issues': ['读取 Issues', '页面读取', '第二页 Issue 列表', '读到当前页 Issue 候选', '1.122 秒', 's-a-0015'],
+        'select-first': ['选择首页第一项', '确定性选择', '第二页 Issue 候选', '选中当前页第一条 Issue', '0.134 秒', 'selection-a-0016'],
+        'open-issue': ['打开 Issue', '浏览器点击', '已选中的 Issue 链接', 'Issue 详情页已打开', '3.328 秒', 's-a-0016'],
+        'read-fields': ['读取标题与正文', '页面读取', '当前 Issue 详情页', '读到标题与正文', '1.475 秒', 's-a-0022'],
+        'bind-fields': ['绑定输出字段', '值绑定', '标题与正文读取结果', '标题、正文已绑定到输出', '0.003 秒', 'output-values'],
+        'assemble-output': ['生成最终结果', '结果组装', '已绑定的标题与正文', '生成一条结构化记录', '0.002 秒', 'output-assemble']
+      };
+
+      const stageFacts = {
+        1: ['打开 GitHub', '1 个动作', '无', 'GitHub 首页', '8.710 秒'],
+        2: ['打开搜索入口', '1 个动作', 'GitHub 首页', '已聚焦搜索框', '2.349 秒'],
+        3: ['搜索目标仓库', '2 个动作', '已聚焦搜索框', '仓库搜索结果', '3.879 秒'],
+        4: ['进入目标仓库', '3 个动作', '仓库搜索结果', 'langchain-ai/langgraph 仓库页', '6.386 秒'],
+        5: ['进入 Issues', '3 个动作', '目标仓库页', 'Issue 列表第一页', '8.057 秒'],
+        6: ['进入第二页', '2 个动作', 'Issue 列表第一页', 'Issue 列表第二页', '5.857 秒'],
+        7: ['打开首个 Issue', '3 个动作', 'Issue 列表第二页', '首个 Issue 详情页', '4.584 秒'],
+        8: ['读取并组织输出', '3 个动作', 'Issue 详情页', '单条记录', '1.480 秒']
+      };
+
+      function positionNodes() {
+        allNodes.forEach((node) => {
+          node.style.left = `${Number(node.dataset.x)}px`;
+          const header = node.querySelector('.stage-head');
+          const anchorHeight = header ? header.offsetHeight : node.offsetHeight;
+          node.style.top = `${centerLine - anchorHeight / 2}px`;
+        });
+        drawEdges();
+        buildMinimap();
+      }
+
+      function portY(node) {
+        const header = node.querySelector('.stage-head');
+        return node.offsetTop + (header ? header.offsetHeight / 2 : node.offsetHeight / 2);
+      }
+
+      function drawEdges() {
+        svg.querySelectorAll('.edge').forEach((edge) => edge.remove());
+        allNodes.forEach((node, index) => {
+          const next = allNodes[index + 1];
+          if (!next) return;
+          const x1 = node.offsetLeft + node.offsetWidth + 5;
+          const y1 = portY(node);
+          const x2 = next.offsetLeft - 6;
+          const y2 = portY(next);
+          const bend = Math.max(34, (x2 - x1) * .48);
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
+          path.setAttribute('marker-end', 'url(#bat-stage-arrow)');
+          path.setAttribute('class', `edge ${node.classList.contains('is-selected') || next.classList.contains('is-selected') ? 'is-active' : ''}`);
+          path.dataset.from = node.dataset.stage;
+          path.dataset.to = next.dataset.stage;
+          svg.appendChild(path);
+        });
+      }
+
+      function applyTransform() {
+        world.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+        zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+        updateMinimap();
+      }
+
+      function focusStage(id) {
+        const node = root.querySelector(`[data-stage="${id}"]`);
+        if (!node) return;
+        const visibleWidth = viewport.clientWidth;
+        const visibleHeight = viewport.clientHeight;
+        scale = .92;
+        tx = visibleWidth / 2 - (node.offsetLeft + node.offsetWidth / 2) * scale;
+        ty = visibleHeight / 2 - centerLine * scale;
+        applyTransform();
+      }
+
+      function fitAll() {
+        const first = allNodes[0];
+        const last = allNodes[allNodes.length - 1];
+        const contentWidth = last.offsetLeft + last.offsetWidth - first.offsetLeft + 80;
+        scale = Math.max(.28, Math.min(.7, viewport.clientWidth / contentWidth));
+        tx = 24 - first.offsetLeft * scale;
+        ty = viewport.clientHeight / 2 - centerLine * scale;
+        applyTransform();
+      }
+
+      function selectStage(id) {
+        stageNodes.forEach((node) => node.classList.toggle('is-selected', node.dataset.stage === String(id)));
+        root.querySelectorAll('.action-row').forEach((row) => row.classList.remove('is-selected'));
+        drawEdges();
+      }
+
+      function openDrawer(kicker, title, body) {
+        drawerKicker.textContent = kicker;
+        drawerTitle.textContent = title;
+        drawerBody.innerHTML = body;
+        drawer.classList.add('is-open');
+        drawer.setAttribute('aria-hidden', 'false');
+      }
+
+      function actionBody(facts) {
+        return `<div class="status-line"><i></i>本次运行已完成</div>
+          <dl class="fact-list">
+            <div><dt>做了什么</dt><dd>${facts[1]}</dd></div>
+            <div><dt>作用目标</dt><dd>${facts[2]}</dd></div>
+            <div><dt>完成条件</dt><dd>${facts[3]}</dd></div>
+            <div><dt>实际出口</dt><dd>success</dd></div>
+            <div><dt>本次节点输出</dt><dd>未记录</dd></div>
+            <div><dt>耗时</dt><dd>${facts[4]}</dd></div>
+          </dl>
+          <details><summary>高级信息</summary><div class="advanced">节点 ${facts[5]}<br>状态 completed</div></details>`;
+      }
+
+      function stageBody(facts) {
+        return `<div class="status-line"><i></i>阶段已完成</div>
+          <dl class="fact-list">
+            <div><dt>包含动作</dt><dd>${facts[1]}</dd></div>
+            <div><dt>入口上下文</dt><dd>${facts[2]}</dd></div>
+            <div><dt>出口上下文</dt><dd>${facts[3]}</dd></div>
+            <div><dt>总耗时</dt><dd>${facts[4]}</dd></div>
+          </dl>`;
+      }
+
+      const currentOutputBody = `<div class="result-card"><small>标题</small><h3>Boundary insert: add input to a running run at its next step boundary without cancelling it #9046</h3><small>正文</small><p>正文共 3,086 字符。此处显示可阅读预览；展开后查看完整正文。</p><div class="result-actions"><button class="button primary" type="button">展开全文</button><button class="button" type="button">复制结果</button></div></div>`;
+
+      function openOutput() {
+        root.querySelectorAll('.stage-node').forEach((node) => node.classList.remove('is-selected'));
+        root.querySelectorAll('.action-row').forEach((row) => row.classList.remove('is-selected'));
+        drawEdges();
+        openDrawer('本次结果', '单条记录', currentOutputBody);
+      }
+
+      root.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]');
+        if (action) {
+          const facts = actionFacts[action.dataset.action];
+          const owner = action.closest('.stage-node');
+          selectStage(owner.dataset.stage);
+          root.querySelectorAll('.action-row').forEach((row) => row.classList.toggle('is-selected', row === action));
+          openDrawer('动作', facts[0], actionBody(facts));
+          return;
+        }
+
+        const stage = event.target.closest('[data-stage-detail]');
+        if (stage) {
+          const id = stage.dataset.stageDetail;
+          const facts = stageFacts[id];
+          selectStage(id);
+          openDrawer(`阶段 ${String(id).padStart(2, '0')}`, facts[0], stageBody(facts));
+          return;
+        }
+
+        if (event.target.closest('[data-open-output]')) { openOutput(); return; }
+        if (event.target.closest('.drawer-close')) {
+          drawer.classList.remove('is-open');
+          drawer.setAttribute('aria-hidden', 'true');
+          return;
+        }
+        const focus = event.target.closest('[data-focus]');
+        if (focus) { focusStage(focus.dataset.focus); return; }
+        if (event.target.closest('[data-fit]')) { fitAll(); return; }
+        if (event.target.closest('[data-zoom-in]')) {
+          scale = Math.min(1.35, scale + .1); applyTransform(); return;
+        }
+        if (event.target.closest('[data-zoom-out]')) {
+          scale = Math.max(.32, scale - .1); applyTransform();
+        }
+      });
+
+      viewport.addEventListener('pointerdown', (event) => {
+        if (event.target.closest('button, .minimap')) return;
+        drag = { x: event.clientX, y: event.clientY, tx, ty };
+        viewport.setPointerCapture(event.pointerId);
+        viewport.classList.add('is-panning');
+      });
+
+      viewport.addEventListener('pointermove', (event) => {
+        if (!drag) return;
+        tx = drag.tx + event.clientX - drag.x;
+        ty = drag.ty + event.clientY - drag.y;
+        applyTransform();
+      });
+
+      viewport.addEventListener('pointerup', () => { drag = null; viewport.classList.remove('is-panning'); });
+      viewport.addEventListener('pointercancel', () => { drag = null; viewport.classList.remove('is-panning'); });
+      viewport.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+          const rect = viewport.getBoundingClientRect();
+          const px = event.clientX - rect.left;
+          const py = event.clientY - rect.top;
+          const wx = (px - tx) / scale;
+          const wy = (py - ty) / scale;
+          const next = Math.max(.32, Math.min(1.35, scale * (event.deltaY > 0 ? .9 : 1.1)));
+          tx = px - wx * next;
+          ty = py - wy * next;
+          scale = next;
+        } else {
+          tx -= event.deltaX || event.deltaY;
+          ty -= event.deltaX ? event.deltaY : 0;
+        }
+        applyTransform();
+      }, { passive: false });
+
+      function buildMinimap() {
+        miniTrack.innerHTML = '';
+        allNodes.forEach((node) => {
+          const mini = document.createElement('span');
+          mini.className = `mini-node ${node === startTerminal || node === endTerminal ? 'terminal' : ''}`;
+          mini.style.left = `${7 + node.offsetLeft / worldWidth * 158}px`;
+          miniTrack.appendChild(mini);
+        });
+        updateMinimap();
+      }
+
+      function updateMinimap() {
+        const miniWidth = root.querySelector('.minimap').clientWidth;
+        const ratio = (miniWidth - 14) / worldWidth;
+        const visibleWorld = viewport.clientWidth / scale;
+        const worldLeft = -tx / scale;
+        miniView.style.left = `${7 + Math.max(0, worldLeft) * ratio}px`;
+        miniView.style.width = `${Math.max(18, Math.min(miniWidth - 14, visibleWorld * ratio))}px`;
+      }
+
+      root.querySelector('.minimap').addEventListener('click', (event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = worldWidth / (rect.width - 14);
+        const worldX = Math.max(0, event.clientX - rect.left - 7) * ratio;
+        tx = viewport.clientWidth / 2 - worldX * scale;
+        applyTransform();
+      });
+
+      requestAnimationFrame(() => {
+        positionNodes();
+        focusStage(4);
+      });
+      window.addEventListener('resize', () => { positionNodes(); applyTransform(); });
+    })();
+  </script>
+</div>

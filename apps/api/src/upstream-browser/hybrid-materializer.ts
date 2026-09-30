@@ -16,6 +16,7 @@ import { hybridAuthoritySchema, hybridCompilerResponseSchema, hybridNaturalReque
   naturalSummarySegmentSchema,
   type HybridCompilation, type HybridSegment } from "./hybrid-schema.js"
 import { materializeHybridOutput } from "./hybrid-output.js"
+import { bindingSchemaInGraph, type BindingSchema } from "./hybrid-output-identity.js"
 import { type ResolveHybridChild } from "./hybrid-invoke.js"
 import { naturalPayloadContext, validateHybridRequestSources } from "./hybrid-natural-payload.js"
 import { materializeNaturalResult } from "./hybrid-result.js"
@@ -121,7 +122,8 @@ function finalizeMaterializedChain(input: MaterializeHybridInput, compilation: H
     outputSchema = variables[variable]!.schema
     output = { source: "variable", name: variable, path: [] }
   }
-  const assembly = materializeSelectedOutput(authority, context, compilation, input.step.outputContract.schema, graph.repeats)
+  const assembly = materializeSelectedOutput(authority, context, compilation, input.step.outputContract.schema, graph.repeats,
+    binding => bindingSchemaInGraph(binding, input.step.inputContract.schema, nodes, variables))
   if (assembly) {
     for (const edge of edges) if (edge.to === "completed") edge.to = assembly.entry
     if (entry === "completed") entry = assembly.entry
@@ -225,13 +227,13 @@ function effectiveControl(request: Record<string, JsonValue>) {
 }
 
 function materializeSelectedOutput(authority: Authority | null, context: SourceContext,
-  compilation: HybridCompilation, outputSchema: ValueSchema, repeats: ValidatedNaturalRepeat[]) {
+  compilation: HybridCompilation, outputSchema: ValueSchema, repeats: ValidatedNaturalRepeat[], sourceSchema: BindingSchema) {
   if (authority) return materializeHybridOutput(authority.requirement.clauses, compilation,
-    (binding) => rewriteBinding(binding, compilation))
+    (binding) => rewriteBinding(binding, compilation), sourceSchema)
   if (context.version !== 2 || compilation.compilerVersion !== "bat-hybrid/2") {
     throw new Error("hybrid_natural_source_mismatch")
   }
-  return materializeNaturalResult({ compilation, request: context.request, payload: context.payload, outputSchema, repeats,
+  return materializeNaturalResult({ compilation, request: context.request, payload: context.payload, outputSchema, repeats, sourceSchema,
     rewrite: (binding) => rewriteBinding(binding, compilation) })
 }
 

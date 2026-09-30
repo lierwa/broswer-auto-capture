@@ -4,8 +4,10 @@ import { mkdtemp, rm, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { CONTRACT_VERSION, nodePorts, stableTaskChainV2Schema, type StableChainNodeV2, type TaskConsumption } from "@browser-capture/contracts"
 import { TaskConnection } from "../src/upstream-browser/task-connection.js"
 import { PythonUpstreamBrowserRuntime, RunnerProcess } from "../src/upstream-browser/service.js"
+import { TaskRuntimeHost } from "../src/task-chain/runtime-host.js"
 import { hybridStartRequestSchema } from "../src/upstream-browser/hybrid-protocol.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES, runnerCleanupReportSchema, RuntimeCleanupRequiredError } from "../src/upstream-browser/cleanup.js"
 
@@ -47,7 +49,7 @@ function harness() {
 }
 
 // WHY：运行结束必须释放各自页面，但连续阶段不得再建 Python/浏览器连接；保留资源必须归父任务审计。
-test("two operations reuse one task connection and final replay closes it", async () => {
+test("two operations reuse one task connection and an explicit final close closes it", async () => {
   const h = harness()
   const a = h.connection.borrow({ connectionOwnerId: parent, signal: new AbortController().signal })
   await a.startHybrid(config(first))
@@ -158,6 +160,46 @@ test("production runtime uses the shared connection for independent operations",
   assert.deepEqual(diagnostics.find(value => value.phase === "runtime_outcome")?.cleanup?.retainedConnection,
     { ownerId: parent, scope: "task" })
 })
+
+// WHY：保护正式宿主→PythonRuntime→TaskConnection 的真实入口；不能只验证 borrow 默认值后漏掉宿主强制 final close。
+test("正式运行入口连续借用同任务连接并分别保存释放审计，服务退出再关闭父连接", async t => {
+  const h = harness(), directory = await mkdtemp(path.join(tmpdir(), "bat-replay-connection-"))
+  const runtime = new PythonUpstreamBrowserRuntime({ root: process.cwd(), directory,
+    subject: {} as ConstructorParameters<typeof PythonUpstreamBrowserRuntime>[0]["subject"] }, h.connection)
+  t.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
+  const host = new TaskRuntimeHost({} as never, { setAuthorizationValidator() {} } as never,
+    { selection() { throw new Error("model_forbidden") } } as never, undefined, runtime)
+  const chain = replayChain(), audits: Awaited<ReturnType<RunnerProcess["close"]>>[] = []
+  const empty = (): TaskConsumption => ({ transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 })
+  for (const browserRunId of [first, second]) await host.group({ taskId: parent, authorizationId: first,
+    browserRunId, requirementVersion: 1, purpose: "replay", chains: [chain], input: null,
+    signal: new AbortController().signal, budget: chain.budget, consumed: empty(), scopeConsumption: { step: empty() },
+    onCleanup: report => { audits.push(report) } }, async () => null)
+  assert.deepEqual(h.counts(), { creates: 1, finalCloses: 0, releases: 2 })
+  assert.deepEqual(audits.map(report => report.retainedConnection), [first, second].map(() => ({ ownerId: parent, scope: "task" })))
+  assert.ok(audits.every(report => report.status === "confirmed" && report.activeResources === false
+    && report.stages.find(stage => stage.stage === "child_exit")?.status === "not_required"))
+  await runtime.close()
+  assert.deepEqual(h.counts(), { creates: 1, finalCloses: 1, releases: 2 })
+})
+
+function replayChain() {
+  const unit = { id: "unit", version: 1, dialect: "bat-value-schema/v1" as const, schema: { type: "null" as const } }
+  const read: StableChainNodeV2 = { id: "read", label: "读取", kind: "capability", capability: { name: "browser.read-fields", version: 2 },
+    input: { url: { source: "constant", value: "https://example.test/" } }, config: {}, effect: "read", timeoutMs: 1_000,
+    outputContract: unit, writes: [] }
+  const terminals = (["completed", "failed"] as const).map(status => ({ id: status, label: status, kind: "terminal" as const,
+    status, reason: status, evidence: [{ source: "constant" as const, value: true }], outputContract: unit, writes: [] }))
+  return stableTaskChainV2Schema.parse({ contractVersion: CONTRACT_VERSION, kind: "chain", nodeModel: "stable/v2",
+    id: first, taskId: parent, version: 1, plan: { id: second, version: 1, digest: "a".repeat(64) }, stepId: "step", name: "连接边界",
+    inputContract: unit, outputContract: unit, variables: {}, entry: read.id, nodes: [read, ...terminals],
+    edges: nodePorts(read).map(port => ({ from: read.id, port, to: port === "success" ? "completed" : "failed" })),
+    completion: [{ id: "done", description: "合法结束", predicate: { operator: "equals",
+      left: { source: "constant", value: true }, right: { source: "constant", value: true } } }],
+    budget: { maxTransitions: 4, maxBrowserCommands: 2, maxActiveMs: 10_000, maxLlmCalls: 0, maxInvocations: 1, maxDepth: 1 },
+    reuseBoundary: { description: "同任务连接", assumptions: [], invalidationConditions: [] }, implementationSummary: "连接边界",
+    validation: { status: "candidate", evidence: [] } })
+}
 
 test("actual fd3 child survives phase release and closes only at the final boundary", async () => {
   let creates = 0

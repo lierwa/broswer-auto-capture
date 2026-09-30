@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 import { parseTaskValue, valueBindingSchema, type JsonValue, type ValueBinding, type ValueSchema } from "@browser-capture/contracts"
 import { materializeOutputAssembly, type MaterializedOutput } from "./hybrid-output.js"
+import type { BindingSchema } from "./hybrid-output-identity.js"
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
 import { repeatForBinding, type ValidatedNaturalRepeat } from "./hybrid-natural-repeat.js"
 import { hybridNaturalRequestSchema, hybridOutputAssemblyEvidenceSchema, hybridOutputAssemblySchema, hybridResultBindingSchema,
@@ -12,7 +13,7 @@ type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hyb
 export function materializeNaturalResult(input: { compilation: NaturalCompilation;
   request: z.infer<typeof hybridNaturalRequestSchema>; payload: ReturnType<typeof naturalPayloadContext>;
   outputSchema: ValueSchema; repeats?: ValidatedNaturalRepeat[];
-  rewrite: (binding: ValueBinding) => ValueBinding }): MaterializedOutput | null {
+  rewrite: (binding: ValueBinding) => ValueBinding; sourceSchema?: BindingSchema }): MaterializedOutput | null {
   const { compilation, request, payload, outputSchema, rewrite } = input
   const repeats = input.repeats ?? []
   const assembly = compilation.outputAssembly, resultBinding = compilation.resultBinding
@@ -30,11 +31,11 @@ export function materializeNaturalResult(input: { compilation: NaturalCompilatio
     path: item.to, binding: item.from })), schema: resultBinding.schema }, (binding) => {
       const repeated = repeatForBinding(repeats, binding)
       return repeated ? { source: "variable", name: repeated.variable, path: [] } : rewrite(binding)
-    }, writeVariable ? { writeVariable } : {})
+    }, { sourceSchema: input.sourceSchema, ...(writeVariable ? { writeVariable } : {}) })
   return { ...primary, alternates: branches.map((branch) => ({ terminalId: branch.falseTerminalId,
     ...materializeOutputAssembly({ fields: branch.falseResult.assignments.map((item) => ({
       path: item.to, binding: item.from })), schema: branch.falseResult.schema }, rewrite, { idPrefix: branch.id,
-      terminalId: "completed", ...(writeVariable ? { writeVariable } : {}) }) })) }
+      terminalId: "completed", sourceSchema: input.sourceSchema, ...(writeVariable ? { writeVariable } : {}) }) })) }
 }
 
 function assertResultBranch(branch: z.infer<typeof hybridResultBranchSchema>,

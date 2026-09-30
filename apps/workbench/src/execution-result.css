@@ -1,0 +1,27 @@
+/* WHY：成果宽区与节点窄详情共用同次受控结果，不另建抓取或运行事实。 */
+.saved-result-dialog { width: min(1100px, calc(100vw - 40px)); }
+.saved-result-body { max-height: 65vh; overflow: auto; margin: 18px 0; }
+.saved-result-body h4 { font-size: 14px; }
+.saved-result-body .context-value-record { width: 100%; }
+.saved-result-body .context-value-record dt { color: var(--gray-11); font-size: 12px; }
+.saved-result-body .context-value-record dd { margin: 0; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; }
+.saved-result-body p, .saved-result-body dd { white-space: pre-wrap; }
+.saved-result-body .context-value-record > div { grid-template-columns: minmax(90px, .2fr) minmax(0, 1fr); }
+.result-pagination { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+.result-record-detail { border: 1px solid var(--gray-6); border-radius: 6px; padding: 12px; margin: 8px 0; }
+.result-record-detail summary { cursor: pointer; font-size: 13px; }
+.chain-call-selection { display: grid; gap: 7px; margin: 14px 0; }
+.chain-call-selection > small { color: var(--gray-11); }
+.chain-workbench .react-flow__node-chain-terminal { width: 220px; }
+.chain-terminal-card { min-height: 96px; height: auto; border-radius: 8px; padding: 8px; position: relative; overflow: visible; }
+.chain-terminal-select { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  width: 100%; min-height: 78px; padding: 0; color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; }
+.chain-terminal-select > span { display: grid; gap: 5px; overflow-wrap: anywhere; }
+.chain-terminal-select strong { color: var(--color-text); font-size: 11px; }
+.chain-terminal-select small { line-height: 1.5; font-size: 9px; }
+.chain-terminal-select:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+.chain-workbench .react-flow__node.selected > .chain-terminal-card { border-color: var(--accent-8); box-shadow: 0 0 0 2px var(--accent-a4); }
+@media (max-width: 640px) {
+  .saved-result-dialog { width: calc(100vw - 24px); }
+  .saved-result-body .context-value-record > div { grid-template-columns: 1fr; gap: 5px; }
+}

@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
 import { CONTRACT_VERSION, UNRECORDED_BROWSER_HANDOFF, UNRECORDED_EXECUTION_CLEANUP, type TaskExecution } from "@browser-capture/contracts"
-import { appendExecutionReview } from "../src/task-chain/execution-review.js"
+import { appendExecutionReview, saveExecutionReview } from "../src/task-chain/execution-review.js"
 
 const digest = "a".repeat(64)
 const chain = { id: randomUUID(), version: 2, digest }
@@ -46,4 +46,38 @@ test("需求修订必须说明业务变化，未完成结果不能标记符合�
   const failed = execution("failed")
   assert.throws(() => appendExecutionReview(failed, { requestId: randomUUID(), expectedSequence: failed.sequence,
     decision: "accepted", feedback: null }), /只有技术运行完成/)
+})
+
+test("取消与待清理保留业务结论；响应丢失重试不重复追加", () => {
+  for (const status of ["cancelled", "cleanup_required"] as const) {
+    const record = execution(status)
+    if (status === "cleanup_required") {
+      record.cleanupResume = { status: "completed", reason: "已完成", result: null }
+      record.cleanup = { status: "unconfirmed", attempt: 1, code: "fixture_unconfirmed", evidenceDigest: digest,
+        updatedAt: record.updatedAt }
+    }
+    const command = { requestId: randomUUID(), expectedSequence: record.sequence,
+      decision: "requirement_revision" as const, feedback: "原范围理解错误" }
+    const reviewed = appendExecutionReview(record, command)
+    assert.equal(appendExecutionReview(reviewed, command), reviewed)
+    assert.equal(reviewed.reviews.length, 1)
+    assert.equal(reviewed.status, status)
+  }
+})
+
+test("保存反馈后operation写入中断，再有B反馈仍精确重试A及原结果引用", () => {
+  const original = execution(), command = { type: "review_execution" as const, requestId: randomUUID(),
+    executionId: original.id, expectedSequence: original.sequence, decision: "requirement_revision" as const, feedback: "A原说明" }
+  let record = original, operation: string | null = null
+  const store = { operation: () => operation, recordOperation: (_kind: string, _id: string, _command: unknown, id: string) => { operation = id } }
+  const repository = { execution: () => record, saveExecution: (value: TaskExecution) => { record = value } }
+  const first = saveExecutionReview(store as never, repository as never, original.taskId, command)!
+  assert.equal(first.context?.requirement.version, original.requirement.version)
+  assert.equal(first.context?.executionId, original.id)
+  operation = null
+  record = appendExecutionReview(record, { requestId: randomUUID(), expectedSequence: record.sequence,
+    decision: "requirement_revision", feedback: "B其它说明" })
+  const retried = saveExecutionReview(store as never, repository as never, original.taskId, command)!
+  assert.equal(retried.id, first.id); assert.equal(retried.feedback, "A原说明")
+  assert.equal(operation, first.id); assert.equal(record.reviews.length, 2)
 })

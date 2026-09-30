@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto"
-import { taskRunSchema, type ChainNode, type NodeOutcome, type TaskOutput } from "@browser-capture/contracts"
+import { taskRunSchema, type ChainNode, type JsonValue, type NodeOutcome, type TaskOutput } from "@browser-capture/contracts"
 import { resolveBinding } from "./bindings.js"
 import { stableUuid } from "./hash.js"
 import { now } from "./runtime-support.js"
 import type { RuntimeState } from "./runtime.js"
+import { executionRecordForEvent } from "./execution-record.js"
 
 export async function finishTerminal(state: RuntimeState, node: Extract<ChainNode, { kind: "terminal" }>) {
   for (const evidence of node.evidence) resolveBinding(evidence, state.context)
@@ -40,11 +41,12 @@ export async function failRun(state: RuntimeState, error: unknown) {
 }
 
 export function recordEvent(state: RuntimeState, node: ChainNode, status: "planned" | "started" | "finished",
-  outcome: NodeOutcome | null, idempotencyKey: string, stableKey: string | null, browserStateDigest?: string) {
+  outcome: NodeOutcome | null, idempotencyKey: string, stableKey: string | null, browserStateDigest?: string, output?: JsonValue) {
+  const execution = status === "planned" ? undefined : executionRecordForEvent(state, node, status, output)
   state.run.sequence += 1
   state.run.events.push({ sequence: state.run.sequence, at: now(state).toISOString(),
     invocationId: state.run.binding.invocationId, nodeId: node.id, status, outcome, idempotencyKey, stableKey,
-    ...(browserStateDigest === undefined ? {} : { browserStateDigest }) })
+    ...(browserStateDigest === undefined ? {} : { browserStateDigest }), ...(execution ? { execution } : {}) })
 }
 
 export function syncCheckpoint(state: RuntimeState) {

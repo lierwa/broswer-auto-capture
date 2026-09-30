@@ -4,6 +4,8 @@ import {
   type TaskOutput, type ValueSchema,
 } from "@browser-capture/contracts"
 import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react"
+import { Button } from "@radix-ui/themes"
+import { useState } from "react"
 
 export function StatusIcon({ status }: { status: string }) {
   if (status === "completed") return <CheckCircle2 size={18} />
@@ -12,9 +14,10 @@ export function StatusIcon({ status }: { status: string }) {
 }
 
 export function ResultValue({ value }: { value: JsonValue | null }) {
-  if (value === null) return <p>本次运行没有返回结构化数据。</p>
-  if (Array.isArray(value)) return <ol className="context-value-list">{value.map((item, index) => <li key={index}><ResultValue value={item} /></li>)}</ol>
-  if (typeof value === "object") return <dl className="context-value-record">{Object.entries(value).map(([key, item]) =>
+  if (value === null) return <span>空值（null）</span>
+  if (value === "") return <span>空字符串</span>
+  if (Array.isArray(value)) return value.length ? <ol className="context-value-list">{value.map((item, index) => <li key={index}><ResultValue value={item} /></li>)}</ol> : <span>空列表</span>
+  if (typeof value === "object") return !Object.keys(value).length ? <span>空记录</span> : <dl className="context-value-record">{Object.entries(value).map(([key, item]) =>
     <div key={key}><dt>{key}</dt><dd><ResultValue value={item} /></dd></div>)}</dl>
   return <span>{String(value)}</span>
 }
@@ -40,6 +43,10 @@ function ResultPayload({ result, outputContract }: {
   </div>
   const output = result.payload.output
   if (!output) return <p>本次运行没有结构化结果。</p>
+  return <TaskOutputView output={output} outputContract={outputContract} />
+}
+
+export function TaskOutputView({ output, outputContract }: { output: TaskOutput; outputContract: TaskDataContract | null }) {
   if (!outputContract) return <UnverifiedOutput output={output} reason="本次历史运行未能精确绑定输出合同，未按当前字段合同解读。" />
   if (output.contract.id !== outputContract.id || output.contract.version !== outputContract.version) {
     return <UnverifiedOutput output={output} reason="结果合同与当前任务版本不一致，未按当前字段合同解读。" />
@@ -57,11 +64,7 @@ function ResultPayload({ result, outputContract }: {
 function SchemaValue({ schema, value, root = false }: { schema: ValueSchema; value: JsonValue; root?: boolean }) {
   if (schema.type === "array") {
     if (!Array.isArray(value)) return <UnrenderableValue value={value} />
-    return <div className="context-record-list">{root && <><h4>记录列表</h4><p>{value.length} 条记录</p></>}
-      <ol className="context-value-list">{value.map((item, index) => <li key={index}>
-        <SchemaValue schema={schema.items} value={item} />
-      </li>)}</ol>
-    </div>
+    return <CollectionValue schema={schema.items} values={value} />
   }
   if (schema.type !== "object") return root ? <div className="context-scalar-result"><h4>兼容结果</h4>
     <ResultValue value={value} /></div> : <ResultValue value={value} />
@@ -71,6 +74,19 @@ function SchemaValue({ schema, value, root = false }: { schema: ValueSchema; val
   return <div className="context-record">{root && <h4>单条记录</h4>}
     <dl className="context-value-record">{fields.map((key) => <div key={key}><dt>{key}</dt>
       <dd>{Object.hasOwn(value, key) ? <FieldValue schema={schema.properties[key]} value={value[key]!} /> : "未提供"}</dd></div>)}</dl>
+  </div>
+}
+
+function CollectionValue({ schema, values }: { schema: ValueSchema; values: JsonValue[] }) {
+  const [page, setPage] = useState(0)
+  const size = 20, pages = Math.max(1, Math.ceil(values.length / size)), current = Math.min(page, pages - 1)
+  return <div className="context-record-list"><h4>已保存记录</h4><p>{values.length} 条记录</p>
+    {pages > 1 && <div className="result-pagination"><Button size="1" variant="soft" disabled={current === 0}
+      onClick={() => setPage(current - 1)}>上一页</Button><span>第 {current + 1} / {pages} 页</span>
+      <Button size="1" variant="soft" disabled={current + 1 === pages} onClick={() => setPage(current + 1)}>下一页</Button></div>}
+    <ol className="context-value-list" start={current * size + 1}>{values.slice(current * size, (current + 1) * size).map((value, index) =>
+      <li key={current * size + index}><details className="result-record-detail" open={values.length === 1}>
+        <summary>记录 {current * size + index + 1}</summary><SchemaValue schema={schema} value={value} /></details></li>)}</ol>
   </div>
 }
 

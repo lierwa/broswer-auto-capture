@@ -1,5 +1,107 @@
 # 开发进度
 
+### 2026-09-30 解锁后实际验收：日常 Chrome 连接复用和新逐次事实通过
+
+- **部分通过。** 用户解锁后已从原任务 `a81d8a80-50ae-48aa-a06c-558ccf08f76a`、原 Release V5 开始真实运行，并实际处理 Chrome 原生 Allow；没有创建任务、私有 Profile、分支/worktree，没有提交或推送。下节锁屏结论是当时快照，不再代表当前验收状态。
+- 三次结果分别保留：`41dfc78a-c7ec-4a70-855c-7e283c0093d7` 在 SDK connect 超时，runIds=[]、0 动作/0 模型、cleanup confirmed；首次实际连上后的 `55706cb8-f6e0-4f11-8973-51d74c1066ec` / run `01190d21-5d7b-4060-8d87-d424270244a4` 在 `s-a-0011` 报 `ordinary_event_target_mismatch`，execution 8 transitions/11 commands/0 模型，8 started、7 finished，清理确认。原诊断不足以确定该次 trusted event 身份关系失败的根因，后一次成功没有改写它。
+- 下一次真实连接复用与运行完成：execution `5b82f7de-79fe-486c-8a58-1d21a8846245` / run `058b3430-241f-4905-851b-86489488ef1c`，20 transitions、23 browserCommands、31264ms、0 llmCalls；20 started 与 20 finished.success，auditComplete=true。当前列表返回 #9067 的完整标题和正文，与旧运行 #9057 不同。TaskRun、step output、execution output 合同和值一致，工作台实际成果可读。
+- 第一连接 operation owner `9f6440a2-92b7-42b2-8a67-0e3346690498` 有 1 次 SDK connect；第二 owner `d10c7072-5998-4b4c-836e-3c3c1b60119c` 只有 reserve/prepare/focus，SDK connect=0，现场没有再弹 Allow。两次 operation 的清理均 confirmed、activeResources=false，分别保留 task 父连接；父 SDK 进程仍在线，用户 Chrome 没有关闭。缺少 operation→PID 的起始审计映射，不把当前进程快照说成严格相同 PID 证明。
+- 新事实真实落库：成功调用的 40 个 started/finished 事件都有 execution envelope；11 份输入与 11 份输出为 recorded，9 份输入与 9 份输出为 redacted。Function candidates 的 10 个实际候选与返回 1、最终 read/assemble/terminal 的实际结果可见；普通浏览器原始输入输出不冒充可安全记录。证据 `work/node-handoff-20260930-current/real-execution-facts.json`；旧事件未补写。
+- 开始实际展示需求 v2、发布 V5、步骤目的、同次调用以及“没有传入额外参数”；“查看对应需求”从原任务打开对应已确认草案，不发模型或浏览器请求。Function 参数结构/约束、当前实参、返回、下游、完整折叠源码已现场核对。截图 `start-real-success.jpg`、`start-requirement-v2.jpg`、`function-real-success.jpg`、`real-current-success.jpg` 位于同一证据目录。
+- **新候选只读编译门通过，不冒充已发布运行。** 原来源 artifact `720c8359-cf57-44d3-8d5f-ce5037c43034` 经实际 `materializeHybridChain` 与 `compileTaskChain` 成为 19 节点，candidate digest `d1f72ea65bb9a22083f222e14792fdcfa6feb5115c62324513cecc056a565357`；旧 V5 仍是 20 节点，两组合动作未改写。全部非输出节点、输入/输出合同以及去除输出组装后的控制流相同；本轮实际 read 值经过新 assembler 后值和键序相同，0 新模型。证据 `candidate-materialization-evidence.json`，候选没有写入产品仓储或发布。
+- 编译核查发现并补救了真实回归：删 merge 后叶绑定变成根对象+paths，原 applyReadRequirements 漏掉 final read 和 producer readiness 的 requiredPaths。现在复用公开 dataCapabilityConfigSchema，只对立即、唯一、@1、常量 assemble 按实际参数别名和源键恢复约束，校验路径；直接 terminal 返回非空来源也保留原约束。动态/未知/分支/循环/函数不猜，不从 schema.required 推导。两个新反例先红，所属 4 条（含真实 Python readiness 探针）绿；测试合同/类型调整后仅重验受影响 2 条及 API typecheck，通过。独立只读对冲无 must-fix。
+- 对用户质疑的死规则做了增量反证并补救：合法 branch case ID 可名为 blocked/limit/body/timeout/human_required，旧展示却按字符串套标准端口语义。现在节点、阶段、循环体和边先按真实 source.kind/cases 判断；边在源身份丢失前派生标签，同文案的 case 与 loop 边也不混并，ID 不随运行变。两类图均接线，只增私有派生 label，不进 contracts/持久化/LLM。5 个合法 case 与混边共 6 个先红反例转绿；受影响三个定点文件 30/30，最后同文案补救仅重验 control 17/17，Workbench typecheck 通过。旧 V5 同名动作按真实 operation/常量 mode 区分“合并数据/组装数据”，不改保存标题；中文修正只重验受影响 1 条。独立只读增量审查无新增 must-fix。
+- 最后定点文案补救：while 的稳定次数显示“已完成 N 轮/当前第 N 轮”，each 显示处理项数；只在 each 有可靠 total 时显示分母。仅未知 while 所属单项 1/1，无新字段或模型。中文数据类型已由原 V5 实际页面核对；最终成果截图 `final-current-success.jpg` 与 `output-actions-real-success.jpg` 已保存，工作台保留在本轮 #9067 成果页。未运行第三轮完整定点组或根级/全量测试。
+- 未完成/未测：跨 Chrome/服务重启或跨任务的永久免授权；新候选整链浏览器复跑/发布；真实用户反馈的 LLM 回流发送；局部修订交付；真实文件生成/下载及需保留现场的页面交付（本任务明确无需保留页面，也没请求文件格式）。已有 focus 生产入口和 artifact 元数据不能替这些验收。V5 没有 branch/loop，相关展示只由所属反例验证；Windows/其它站点/跨任务不扩测。服务及有效父连接保留运行，不为了再取绿色结果主动断连。
+
+### 2026-09-30 锁屏时节点实施快照：当时日常 Chrome 连续复跑未通过
+
+- 本节保留解锁前的失败和代码证据；最新真实验收以上节为准，下方旧 V5 成功不能验收这次改动。HEAD 仍以 `2a8d2cdeb2b2b7ea3cfe49930511a1e9d5081683` 为基线；原 dirty 文档保留，无分支/worktree、提交、推送或新产品任务。
+- 展示已实施：直接子行取消额外展开；if/else 和 ordered case 常显，只灰可证明的未选独占路径，共享汇合保守；未知总数不显示分母，集合游标与执行轮数区分，限额停止和 body 完成不冒充整体成功；耗时来自同次有序 started/finished 配对。私有 expanded/onToggle/onEnter 死接口和重复端口翻译已删除。
+- 起止与详情已实施：精确冻结需求/版本、步骤目的和真实调用输入；未开始明确无调用记录，虚拟开始不计时。Function 参数按真实绑定显示类型/结构/约束、固定值与来源，真实实参与返回单独读取，完整源码独立折叠。结束依据所选 call 最终 outcome，成果宽区使用保存值与合同，集合分页和长文本保留全部值；显式 call 读取失败不切到另一次调用，回流保留显式选择供服务端核验。
+- 运行事实已实施：复用 TaskRun.events 与现有仓储，在派发时捕获受控输入、结束时保存安全输出和真实循环/短路判断事实；缺失、脱敏、大小上限及 falsy 值分开。条件没有读到绑定值时不保存伪空对象。旧事件不补写；原始浏览器内容/未知能力不冒充可安全记录。新增字段只进入事实协议，无新增 LLM 必填字段、隐式模型或完成 judge。
+- 同任务需求回流已接线：服务端保存精确旧需求、release/draft、step/run 和结果摘要；前端使用持久 review 回执携带原话返回原访谈，保存/发送分段幂等，失败保留文字与原 requestId，旧版本冲突明确。删去重复 invocationId、结果身份及输出字段列表。真实用户反馈未为验收而伪造，实际 LLM 发送未执行；所属协议/连接反例通过，不把按钮等同真实发送验收。
+- 新候选输出精简：完整值合同精确一致直接绑定；同一封闭必需字段对象复用现有 assemble 一次，保留 rewrite、键序、falsy、目标重命名/嵌套与一次变量写。重复源键、数字键排序、开放/可缺/未知合同及混源回退。多字段重组不能仅凭 schema 证明完整值键序相等，所以未普遍消成 0 节点；旧 V5 两个组合节点未修改，也未发布新候选。
+- 本轮首次真实尝试 `b6e2f80c-7399-4d1c-89b7-669194a72d0b` 在 SDK connect 超时，0 节点、0 模型、cleanup confirmed。旧 catch 曾误留 unavailable 启动租约；通过现有 UI“核验原窗口”证实原 lease ended/无 ownedTargets，追加 ended 资源事实，原业务失败不改写。
+- producer 补救后真实尝试 `b104a9fc-05eb-42f7-87a2-f1cf2ac9de27`（2026-09-30 11:29:14 UTC 受理，11:30:16 UTC 结算）仍在 sdk_connect 失败，runIds=[]、transitions/browserCommands/llmCalls/invocations 全 0；cleanup confirmed，browserHandoff=not_requested 且 lease/owner=null，错误保留 hybrid_runner_failed、classification=external、repairable=false。实际 owner `26cc4b7b-95ac-4d2b-834c-4b174cebf078` 的 lease 已 ended，targetId=null、ownedTargets=[]；证明启动清理与分类补救生效，不证明浏览器链路成功。
+- 用户明确授权代点本机 Chrome Allow；实际 native UI 工具返回 Mac locked 且自动解锁未成功，未点 Allow、未绕过锁屏、未用私有 Profile。SDK 失败根因仍不按该现象补造。正式 runtime-host 已去掉 replay 独有强制父连接关闭，真实入口适配测试证明同任务两个 replay 只 start 一次并分别 release；但本轮真实首连/第二次复用均未通过。Chrome 官方对每个新调试 session 要求原生确认；保留有效连接不等于跨 Chrome/服务重启的永久授权。
+- 定点验证通过：contracts 记录 2 条、runtime 记录 12 条与 invoke/delegated 所属 19 条；Workbench 当前控制/详情 26 条、画布投影 10 条、终点/连接 14 条；API execution detail 3 条、review 4 条、TaskConnection 14 条、startup/handoff 5 条、输出 identity/projection 5 条及 cardinality 4 条。新投影目标合同调整后只重验受影响 1 条通过。API/Contracts/Workbench 类型检查通过，最终 Workbench build 通过，保留既有 large chunk 警告；未运行根级或全量测试。
+- 实际页面核对了原任务开始、Function 详情及终点/本次结果区；截图 `work/node-handoff-20260930-current/start-current.jpg`、`function-current.jpg`。业务需求与版本、无调用/无输入、参数来源/约束、返回要求真实可见；终点“尚未到达”、结果区“没有执行动作或返回成果”，没有用旧成功填空。工作台服务为本轮启动进程，仍保留运行；用户 Chrome 和原页面未关闭。
+- 未完成/未测：解锁后原任务连续两次日常 Chrome 真实复跑与新逐次 I/O 持久数据验收；新候选整链编译/复跑/发布；真实用户需求回流发送；局部修订交付；实际文件生成/下载和应保留页面交付（原任务未约定此成果，未添加格式）。当前 V5 无 condition/loop，不能用它验收条件循环；Windows、跨任务、其它站点未扩测。更早首次 target_state_fact_mismatch 根因继续未知。
+
+### 2026-09-30 独立交接实施基线（本轮）
+
+- HEAD 核对为 `2a8d2cdeb2b2b7ea3cfe49930511a1e9d5081683`，master；原有文档增量完整保留，无新分支/worktree、提交或推送。
+- 独立交接文档全文读取；最新要求覆盖旧稿：取消额外路径展开、未知总数无虚构分母、所有 if/else 常显、当前次事实优先、精确需求起止闭环。
+- 已拿实事件路径：runtime 的 recordEvent → persistRun → repository.saveRun/taskContracts.body → executionEvents → Zod batch → connection → 当前调用投影；完成后 checkpoint 释放但 events 保留。逐次 I/O 仍未实施时不宣称已记录。
+- 独立只读对冲指出实际绑定捕获必须位于派发时点；循环游标不是已处理数，读取上限不是总数；分支外来入边的后继也不能误灰。后续按阶段追加实际验证结果。
+
+### 2026-09-30 两线闭环：日常 Chrome 原主线 V5 正式通过
+
+- **通过本次实际主线验收。** 原草稿独立复验 `e3dd159d-4b37-48d0-8918-af2461aab63f` / run `d07ef783-b960-4f48-85ea-a03d5bf3e851` completed：20 transitions / 23 browserCommands / 0 llmCalls / 29014ms；当前第二页首条 #9057 的标题及正文均按原合同输出。与探索样本 #9050 不同，验证了真实列表变化，不是重复旧样本。cleanup confirmed，操作资源释放、父 task 连接明确保留。
+- 原工作台正式“发布”形成本地 Release V5 `8f89a965-4c31-4aef-8a1d-07df46d98864` / digest `5992e25012e152670305919cbef307fc549d2882a8836c53518424db571a2fe6`；原 candidate 图、revision 0、checksum 与 executable digest 未修改。随后从画布正式“运行”受理 execution `01987d57-e15f-47cf-8e79-cdb69e88123c` / run `320f1ccd-9e07-4bf6-85be-cb35e8bd0f12` completed：20 transitions / 23 browserCommands / 0 llmCalls / 27946ms，同样取得 #9057 标题及正文，cleanup confirmed、activeResources=false。
+- 真实连续阶段复用已核验：复验首连 Python PID69039（API PID68873），正式运行仍使用该同任务父连接；正式 startup 只有 reserve/target prepare/focus，没有 SDK connect 阶段，没有再次原生授权。正式结束后 PID69039 已退出，父连接不再 retained，日常 Chrome PID657 始终不变。用户原标签未作为 ownedTargets 清理；本次计划未请求页面交付，因此操作页按既有策略关闭。
+- 正式 UI 显示“已发布 V5”“运行完成”和合同驱动单条记录，标题/正文可见；截图 `work/nested-workbench-acceptance-Zh9aHE/main-v5-daily-chrome-completed.jpg`。支线的来源解析、短标题、单层焦点、错误/具名重试布局及同任务 revision 7 succeeded 证据继续成立，不是重新建任务。
+- 根因不是仅 function，也不是这次模型无法导航：已证实编译读取活性/等待分类、日常连接入口与连续阶段生命周期、首连等待预算、Python ready 与 TS 来源准入不一致。新动态 ready 回归 6 条逐条绿；原来源正式离线重编译 0 新模型、0 gap、同 20 节点/同 digest；定点 diff 检查通过。diagnosing-bugs/codebase-design 用于先复现真实 seam，再修原有适配边界，没有复制 SDK/Agent loop/状态机。
+- 保留全部历史失败、旧发布/来源、既有 dirty 修改；产品任务总数仍为 7，没有新建任务、branch/worktree、Git 提交或远程推送，也未运行根级/全量测试。Windows、其它站点、跨任务及所有历史未定因错误不在本次已通过范围；服务保留运行，工作台停在 V5 正式结果。
+
+### 2026-09-30 日常 Chrome 首连通过，动态详情作用域误拒绝已定因
+
+- 三层首连预算及连接复用的 Python 定点 27/27 已通过。原草稿真实独立复验 execution `c0f1e3f5-cd88-48e7-8edf-f26b0f4cb3b1` 首连成功，日常 Chrome PID657 不变；16 transitions / 22 browserCommands / 0 llmCalls 后，在 `s-a-0029` 点击后读取校验失败，不能标为主线通过。
+- 失败 run `1210bb38-ac4e-4ea2-8083-b2b39656bdc5` 的当前第二页首条为 #9057，选择序号 1；真实 trusted event、dispatchCount=1，后态 URL 摘要准确对应 #9057，session/target 未变。消费者 ready scope 仍为样本 #9050；Python `action_result_readiness` 仅接 transition，而 TS 来源准入已同时接纳 ready/transition，确定为执行适配遗漏，不是 function 选择失败或模型输出错误。
+- 操作页清理 confirmed，retainedConnection 明确归原 task，父 Python 进程保留；不把保留连接伪报为子进程退出。正补唯一 ready 消费者运行时作用域，保留固定 URL、身份及有界轮询；不新建任务、不再 B-U 探索、不改旧 candidate/发布/失败历史。下一步回原草稿复验及正式入口验收。
+- 补丁已落：只补现有 `action_result_readiness` 的 ready 选择分支。真实 OrdinaryCapability/verify_declared/TargetResolver seam 正例先红，定点 6 个用例逐条绿，固定 URL、歧义消费者、缺少 URL 变化证明、派发后及读取中 session/target 变化均继续拒绝，派发仍严格一次。fork manifest 核验通过，新 digest `2a4dad9ca5256f655e57aede2c035ee40d1b2d8affea33b05500150825d78e9e`。
+- 原 final canonicalRequest 通过正式 `recompileHybridSource` 及 `materializeHybridChain` 只读重编译：0 model calls、0 gaps、20 nodes，摘要仍为 `864fdccaedcc0552220f243c08db23789b034043e848348999293e40ae0bbab6`。因此保持原 candidate、草稿 checksum、旧 artifact 的历史编译 sourceDigest，不伪造新图或修改旧运行。正常重载本项目服务载入 Python 补丁，Chrome PID657 保持，新的真实独立复验 `e3dd159d-4b37-48d0-8918-af2461aab63f` 已从原工作台受理，待结算。
+
+### 2026-09-30 同任务父连接已接线，首连等待继续补救
+
+- 原准备/样本/独立复验接到同 task connectionOwnerId；每次 owner/page/审计独立，释放成功保存 retainedConnection，父进程阶段 not_required；正式 replay、handoff、取消及服务关闭走原最终 close，不关用户 Chrome。人工 handoff resume 保留原独占恢复协议。不同任务先核验关闭旧父资源，失败不借用。
+- Python Runner/AttachedWindow/SessionManager 13 项回归通过，覆盖两个 owner 一次连接、阶段 stop=0、最终 stop=1、提前 autoAttach、页/缓存/下载隔离、配置漂移、掉线拒绝重连、取消及交付页保留。TS 连接/真实 fd3/生产 Runtime 10 项及 daily Chrome Runner 4 项通过；原结构化 close 4 项、准备收尾 5 项、清理恢复 1 项、启动诊断 9 项通过；API 类型检查通过。均为定点或受控证据，不冒充真实 Chrome 复用。
+- 本项目服务已正常重载，日常 Chrome PID657 不变。原草稿真实复验 `46d6defb-20f1-4695-8773-03b3ba6093ab` 首连仍超时失败，0 commands、cleanup confirmed；本次中文原生确认处理晚于 SDK 预算。正在补首连有界等待，不能只因连接复用适配通过就停下或宣称主线闭环。原候选/旧失败历史不变，未新建产品任务、未发布新候选。
+
+### 2026-09-30 日常 Chrome 入口已修，原主线现场继续
+
+- 用户要求准备/样本/正式运行使用日常 Chrome，不再以专用 Profile 重试；下方“请求关闭遗留私有 Chromium”不是当前方案，未执行。
+- 确定代码缺陷：RunnerProcess 仅在临时 BAT_UPSTREAM_BROWSER_CDP_URL 存在时附加浏览器，配置缺失静默另起私有 Profile；准备入口没传产品 ownerId；环境变量还会覆盖显式连接/恢复身份。三项 RunnerProcess 回归和准备 owner 回归先红，修正后与原来源关闭回归合计 8/8，API 类型检查通过。
+- 默认只读 Chrome 原生 DevToolsActivePort；显式连接优先；连接缺失/headless/无 owner 在启动前拒绝，不能换用私有浏览器。复用已有 AttachedWindow/TargetScope，仅拥有任务标签，profilePath 只沿用为租约元数据位置，不复制用户 Profile。
+- 本机原生日常 Chrome PID657 起初未开调试；用户明确授权开启后，原生界面显示 127.0.0.1:9222，连接文件已生成，监听仍属 PID657。服务从本项目 PID44877 正常重载为47607，没有关闭 Chrome 或清理旧私有进程。
+- 同一原任务正式 UI 准备 job `fce5f334-89dc-47f0-8085-468cbc3b12b9` / Browser owner `b1167767-e7de-4767-8c67-182a59895228` 已在日常 Chrome 完成探索与终编：final sequence 37、20 节点、gap 0；草稿 `45f64ab2-7b34-4784-8f59-756752b8cd44`，候选链 `a20edbe6-f4af-4987-85da-8daf261180fc` v1 / digest `864fdccaedcc0552220f243c08db23789b034043e848348999293e40ae0bbab6`。准备的 primary/bridge completed，cleanup confirmed、activeResources=false。
+- 第一遍普通样本 execution `2f569c35-2b81-4656-8f74-1ebff1b48c6e` completed：20 transitions、23 browserCommands、0 llmCalls，读取第二页首条 #9050 标题与正文，cleanup confirmed。独立复验 `0f21b754-ab75-48f2-8611-f52776d4e932` 在启动阶段失败：0 transitions、0 browserCommands、0 invocations；owner `5abb03c3-6f74-4c6c-8a0b-85a3ffeee5f5` 没有创建任务 target，cleanup confirmed。SDK 子错误被旧诊断路径折叠为 RuntimeError，不能据时间或 Allow 行为认定唯一根因；正在补固定阶段/安全异常链，再从原草稿的独立复跑入口验证，不重做 B-U、不放宽发布门。
+- 工作台“专用浏览器账号”入口改为“日常 Chrome 连接”原生说明，不再提供新开私有浏览器操作；旧 Profile 清理 API 保留兼容，未删历史能力。真实弹窗与返回通过，Workbench 类型检查通过；截图 `work/nested-workbench-acceptance-Zh9aHE/daily-chrome-dialog.png`。
+- 原生端点解析/所有权 11 项回归通过，额外纯十进制端口负例先红后绿；日常 Chrome 失败文案 2 项先红后绿（mac/Windows/Linux 路径为受控证据，不冒充跨平台现场）。不改模型路由、不新建任务/分支/worktree、不提交推送。主线仍未完成，尚未发布或正式复跑此新候选。
+- 启动诊断已通过既有 fd4 接回 Runner callback，分开 reserve / SDK connect / task target prepare / focus，固定异常链最长 4 层，不记录异常消息或个人数据；Python start seam 9 项与 TS 持久化 6 项先红后绿。诊断不改连接策略，不宣称原复验连接首败已修复；下一次同草稿独立复跑用于真实定位。
+- 新诊断实际复验 `47e7b564-48df-4707-8086-fd4fbb65443b` 已失败，不能继续记为运行中：同一草稿 revision 0/checksum 不变，owner `96efa0a6-8a8a-4938-83d4-69c37de80495`；reserve 完成，SDK connect 在 10211ms 失败，安全异常链为 RuntimeError → TimeoutError → TimeoutError → CancelledError；未进入 task_target_prepare，未创建目标/执行节点，cleanup confirmed。钉住依赖 cdp-use/client.py:277 的 websockets.connect 没传 open_timeout，底层默认 10 秒。原生 Allow 处理晚于该连接失效，之后的 Allow 不能复活失败连接；用户再次反对反复授权，已停止新连接重试。
+- 连续阶段重复原生连接已核到 B-A-T 生命周期：AttachedWindow.close/handoff 调用 Browser.stop，SDK reset 关闭 WebSocket，keep_alive 只保 Chrome 进程。已连 Browser.start 是幂等的；受控实际 Browser/SessionManager/TargetScope 的旧页清除、新页显式 attach 与提前 autoAttach race 检查均在 connect=0/stop=0/private targets tracked=0 下通过。这仅证明可复用，未接入产品。共享连接必须有准备批次所有权，并隔离各 execution 状态和清理，不能只跳过 stop 就冒报所有资源释放；不添加跨任意任务池，不改写现有清理审计。当前新候选仍未发布/正式复跑。
+
+### 2026-09-30 两线修复：原对话支线通过，原主线编译继续修复
+
+- 原需求对话任务 `acf401e3-caed-40d9-8c1b-5d1d753f2194` 的来源选择与用户重试均已保存；revision 5/6 正式校验零模型重放证实 Markdown 反引号被吞进 URL，变成 `%60` 后误报未确认来源。草案短标题没有提交，列表/页头回退为首条请求的 80 字。用户还报告 Composer 双重焦点边框、失败红条与孤立重试图标，已授权一起修复。
+- 支线已通过同一任务正式 UI 重试：revision 7 / turn `4b9cd0e4-d8f4-475a-bed3-f4f5420ae344` succeeded，草案 v1 标题为“Example 首页只读验收”；原用户消息、所选来源与四次失败历史均保留，产品任务总数仍为 7。真实审计为 gpt-5.6-terra / medium / 一次调用。草案未确认或执行，不作为主线验收。
+- 来源与短标题所属回归 4/4、错误布局回归 2/2、canonical timeline 1/1、API/Workbench 类型检查通过。原 revision 5/6 模型输出不变，在正式解析器零模型重放通过。错误和具名重试现在同组展示，历史失败只读，输入框仅外层显示焦点；深/浅主题和 390px 窄屏无水平溢出。截图：`work/nested-workbench-acceptance-Zh9aHE/side-failure-dark.png`、`side-retry-succeeded.png`。
+- 当前回原主线。job `4cff3311-c8fc-4fc7-8d49-46ea8db41570` 实际已经在终编失败；下方“仍在执行”是历史观察，不再代表当前状态。B-U 到达详情不能证明编译、样本、发布或复跑通过。已证实自有适配层 a33 必需就绪读取被裁掉、a6 supporting wait 分类与校验不一致；其它缺口仍待闭合。
+- 两处编译缺陷已修：同一 `cad814b6` 原始来源经正式 `recompileHybridSource` 和 `validateSelectionFunctions` 得到 16 个节点，保留 `selection-a-0033` / `s-a-0033` / `s-a-0034`，选择来源与绑定校验通过，a6 coverage 误拒绝消除，模型调用 0。原 a35 缺少导航绑定、函数校验失败，a3/a4/a5 无后态证据及原 host-rejected 派生记录仍保留，不将局部通过写为可发布。
+- 新采集增加固定焦点布尔值及身份摘要，运行只在新条件声明时读取 focused，旧 target_state JSON 不变；焦点缺失、身份漂移和私有诊断值负例保持拒绝。选择校验现在保留安全宿主错误码，不增模型重试或 guest 原文。读取活性 11 项、CompilerReadiness 8 项、选择注解 7 项、焦点 6 项、TS 固定诊断 1 项定点通过。既有 host-extract、page-identity 和 scroll-consumer 夹具失败已用内存中的 HEAD 原实现复现，属于基线失败，未扩大本轮修复范围。API 类型检查、fork 来源校验及 diff 检查通过；未运行根级/全量测试。
+- 同一原任务正式 UI 重新准备 job `283a7808-88c0-4c22-8f67-b08be2f87ab9` 已受理并即时显示提交状态，但在浏览器启动阶段失败（actionsStarted=0、modelCallsStarted=0、无编译调用）；诊断为 `hybrid_runner_failed` / `cleanup_close_protocol_timeout`。没有 final/draft/sample/release。当前项目专用 Profile 的 SingletonLock 指向遗留 Chromium PID 25025（10:00:41 启动，PPID=1）；持久 Profile 复用锁冲突是强匹配机制，尚需关闭后验证，不能宣称已证明唯一启动根因。旧租约无法证明当前清理归属，未杀进程或清锁，已请求用户明确同意只关闭此专用进程后继续。截图 `work/nested-workbench-acceptance-Zh9aHE/main-startup-blocked.png`。
+- 不新增产品任务、分支/worktree，不改旧来源、对话失败记录或 release，不改变模型路由。主线尚未通过。
+
+### 2026-09-30 阶段嵌套真实验收：prefix 与 V4 正式复跑通过，新准备 final 尚未完成
+
+- **部分通过。** 用户已授权继续实施与真实验收。2026-09-29 的正式 Workbench 新任务 `3adde418-bc7f-4029-a75c-49b624bf8082` 确认 GitHub Issue 需求 v2，以 `langchain-ai/langgraph` / `9046` 开始代表试做；job `ede1384b-0e40-4fb2-8aa4-6c43888a45e0` 的 prefix sequence 3→46 多次采样始终为阶段 `stage-d66f280c217976b3`、内部动作 `s-a-0001`、坐标 `(0,0)`，无假开始/结束或运行成功。代表探索完成 42 个动作与 48 次模型调用（46 agent、2 semantic annotation），字段读取和原生 done 成功，browser run `2ccba16b-1eae-4fb1-8565-2fda2df14f95` 的 primary/bridge completed、cleanup confirmed、`activeResources=false`。
+- **该参数化新任务的完整验收未通过。** 来源 `44140aee-fec5-42c7-8cac-4df4c6e4166d` 保留；`a-0023` 在 repository 候选选择处缺少可表达运行时输入的选择绑定，source gap 为 `missing_binding / selection_annotation_insufficient_evidence`，宿主最终以 `hybrid_compilation_host_rejected` 拒绝。未生成 final、draft、sample/verification execution 或 release。正式 UI“只重新编译已保存试做”的 job `c46c94a8-b23a-4c78-818f-d0369bfefb1c` 在 `explorationSessions=0`、`compilationCalls=1` 下复现同一缺口，未启动浏览器。此编译边界不在本次 presentation 修改范围，未修改准入语义来换取通过。
+- **当前代码上的 V4 正式复跑与结果 UI 通过。** 从链路工作台运行 Release V4，execution `b3c37d38-dca4-4d9b-89eb-6f1a81848225` completed：19 transitions、22 browserCommands、0 llmCalls，输出标题与正文，cleanup confirmed、`activeResources=false`，专用 Profile 进程已退出。真实 UI 显示 8 个阶段父节点及内部动作、一对开始/完成；动作说明显示输入来源、目标、出口、完成状态、耗时和“本次节点输出未记录”；结果区直接显示单条记录。该复跑确认现有发布链在新展示下可用，不能替代新 candidate 的 final→草稿一致性验收。
+- **补救了真实画布视口问题。** 重新准备同一任务时，原 `canvasKey` 仅绑定 task/step，导致首个 prefix 继承旧发布图视口并被裁出屏幕。现在新 authoring job 的首个 build 更新画布身份，同批 prefix/final/草稿/复验/发布/运行保留身份，sequence 不参与 key。所属 6 项回归、Workbench typecheck 与 `git diff --check` 通过；新增 Hook 的开发热更新需重新载入页面，未中断后端准备。重载后的真实 prefix 两阶段完整可见，键盘 Enter 可打开节点说明，浅/深主题和 390px 窄屏下方面板已检查，默认尺寸与原主题已恢复。
+- **新的正式准备仍在执行。** 2026-09-30 从已确认的无输入需求“获取第二页首个 Issue 详情”触发 job `4cff3311-c8fc-4fc7-8d49-46ea8db41570`，以新准备记录验证完整展示时序；当前已观察 navigate/wait 两个阶段的真实 prefix，身份、归属与坐标保持稳定，尚无 final/draft/validation。截图保存在 `work/nested-workbench-acceptance-Zh9aHE/`。P4 保持未完成，不能把旧 V4 或 prefix 通过写成全链验收通过。
+- 本轮未创建分支/worktree，未提交、未推送、未运行根级/全量测试；新任务失败和旧发布/运行事实均保留。
+
+### 2026-09-29 准备期阶段嵌套 P0-P3 实施时记录（当时 P4 尚未执行）
+
+- **代码 P0-P3 与 P4 静态门通过，真实产品验收未完成。** 先用旧 flat build adapter 固定红灯；随后每个合法 prefix build 在原保存屏障投影可变 `ChainPresentationContent`，final 在样本复跑前封存 presentation 与 executable chain digest。投影异常只在公开 workspace 降级为服务端“未分组动作”父阶段，不拒绝合法 build、不改变 sequence/ACK，也不把 prefix 伪装成可运行链。
+- 准备与正式画布现在都只把阶段父节点交给 React Flow；单动作与多动作阶段使用同一结构，真实 nodeId 仅存在于父节点内部动作行。复杂路径只在原父节点内展开，阶段坐标精确消费 `overviewLayout`；prefix 更新、运行着色和展开不移动已有阶段，开始/结束仅属于完整正式链。
+- 节点详情首屏现在展示真实动作、目标、输入来源、条件/出口、所选 execution 状态与同 invocation 耗时；没有持久化节点输出时明确写“本次节点输出未记录”。结果展示复用现有 `payload.mode`、`TaskOutput` 与精确输出合同，区分完成回执、空结果、单记录、列表、标量和 artifact；合同身份不匹配、历史合同不可证明或值未通过 `parseTaskValue` 时只保留未解读提示与折叠原始值。
+- 聚焦验证通过：contracts 12/12、API 16/16、Workbench 29/29；三个 workspace `tsc --noEmit` 通过，Workbench production build 通过，`git diff --check` 通过。未运行根级/全量测试，也未运行浏览器 acceptance 文件；Vite 仅保留既有大 chunk warning。
+- P4 只读前检发现既有开发服务 PID 70671 正在监听 4173/4175；未启动、停止或重载它。SQLite 中无活动 authoring、execution、cleanup、browser run、interview 或旧 execution，浏览器 owner 为 `closed`，且无专用 Profile owner marker。因为创建新任务和占用真实产品浏览器需要新增授权，本轮没有做正式 Workbench 新任务、prefix→final→样本→复验→发布→运行验收，不能把静态通过写成 UI/真实链路通过。
+- 本轮未修改 B-U Agent loop、prefix/final 编译语义、TaskChain 节点/边、LangGraph/运行器、模型路由、样本/复验准入或 cleanup；未创建分支/worktree，未提交、未推送，原有失败与 V4 历史记录均保留。
+
 ### 2026-09-29 当前结论：B-U 在线编译误拒绝已修，V4 正式运行通过
 
 - **通过。** 新准备 job `31290e49-0ed3-4ce7-80d3-844764eff7e3` 已跨过原失败 sequence 13，B-U 完成 22 个工具调用和 26 次模型调用，在线 final sequence 25，形成 19 节点/18 连线；source artifact `a1deeba0-4878-4f29-838c-6f5d92adda7b`，digest `228562d16d249eb66cbfa626a65b1edb41101080a69a61fec223c6db9936f461`。模型审计全部 completed，没有模型调用错误。
@@ -1806,8 +1908,8 @@ R5 受控产品验收：
 已更新产品基准：
 
 - 新增 ADR 0010，固定“链路工作台是直接运行与实时观测入口”、即时反馈状态机、accepted execution 回执和按 execution/sequence 续接。其最初写入的“大容器内嵌子画布、FlowGram 优先”方案已在同日架构复盘后被 ADR 当前版本取代，不得据本段实施。
-- 当前有效设计是同一 TaskChain 的阶段总览、单个临时动作摘要和同画布聚焦动作子图；技术路径不常驻、不形成第二份图，也不塞进巨型阶段容器。
-- 当前选型保留 `@xyflow/react@12.11.6`，引入 `@dagrejs/dagre@3.1.1` 分别布局阶段总览和聚焦子图；FlowGram/Coze 仅作交互参考，ELK 当前不引入。
+- 当时有效设计是同一 TaskChain 的阶段总览、单个临时动作摘要和同画布聚焦动作子图；2026-09-29 已由本文顶部的“阶段父节点内常驻动作列表 + 复杂路径原位展开”方案替代。动作列表和展开路由不是第二批画布节点或可执行子链，不再切换独立聚焦子图。
+- 当前选型保留 `@xyflow/react@12.11.6`，引入 `@dagrejs/dagre@3.1.1` 布局阶段父节点；阶段内路由使用同父节点内的 DOM/SVG 投影，FlowGram/Coze 仅作交互参考，ELK 当前不引入。
 - 严格顺序保持 I1 → I7；I3 建立幂等运行回执和事件合同，I4 建立 presentation/descriptor 服务端事实，I5 接生产运行台，I6 接修订发布，I7 从正式 Workbench/API 验收。
 
 以上记录描述当时的文档设计阶段；后续同日原型进展见下节。

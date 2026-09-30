@@ -23,6 +23,7 @@ import "./styles.css";
 import "./chat.css";
 import "./workbench.css";
 import "./chain-workbench.css";
+import "./execution-result.css";
 
 function subscribe(callback: () => void) {
   const media = matchMedia("(max-width: 1099px)");

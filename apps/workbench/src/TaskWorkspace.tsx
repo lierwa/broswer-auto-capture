@@ -8,6 +8,7 @@ import { LiveChain } from "./LiveChain.js"
 import { TaskChainConnection } from "./taskChainConnection.js"
 import { requirementRevisionMessage } from "./resultReview.js"
 import type { TaskSummary } from "./taskContract.js"
+import type { TaskExecutionReview } from "@browser-capture/contracts"
 import type { useModelSettings } from "./useModelSettings.js"
 
 type WorkspaceView = "interview" | "canvas"
@@ -38,9 +39,17 @@ export function TaskWorkspace({ task, visible, theme, otherRunning, modelSetting
   function openDraft(value: number) {
     setVersion(value); setActiveTab("interview")
   }
-  async function reopenRequirement(summary: string, feedback: string) {
+  async function reopenRequirement(review: TaskExecutionReview) {
+    if (!review.context || review.context.taskId !== task.id || !review.feedback) return false
+    // WHY：已保存 review ID 是唯一提交身份；响应丢失后沿 InterviewConnection 原命令重发。
+    if (interview.pending?.type === "message" && interview.pending.requestId === review.id) {
+      setActiveTab("interview")
+      return interview.sendRevision(interview.pending.text, review.id, interview.pending.expectedRevision)
+    }
+    if (!interview.ready || interview.busy || interview.state.active || interview.pending || task.archived || otherRunning) return false
+    const revision = interview.state.revision
     setActiveTab("interview")
-    await interview.send(requirementRevisionMessage(summary, feedback))
+    return interview.sendRevision(requirementRevisionMessage(review.summary, review.feedback, review.context), review.id, revision)
   }
   return <section className="task-workspace" data-task-id={task.id} hidden={!visible} aria-label={task.title}>
     <div className="task-body"><section className="panel review-panel" aria-label="需求与链路">
@@ -52,6 +61,7 @@ export function TaskWorkspace({ task, visible, theme, otherRunning, modelSetting
           readOnly={task.archived} appearance={theme} modelSettings={modelSettings} /></Tabs.Content>
         <Tabs.Content value="canvas" forceMount hidden={activeTab !== "canvas"}><LiveChain connection={taskChainConnection}
           theme={theme} active={visible && activeTab === "canvas"} onInterview={() => setActiveTab("interview")}
+          onRequirementView={openDraft}
           onRequirementRevision={reopenRequirement} /></Tabs.Content>
       </Tabs.Root>
     </section><DraftDialog state={interview.state} version={version}

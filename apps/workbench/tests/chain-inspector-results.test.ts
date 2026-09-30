@@ -3,9 +3,10 @@ import test from "node:test"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import type {
-  StableChainNodeV2, TaskDataContract, TaskExecutionEventBatch, TaskExecutionResult,
+  ChainNode, StableChainNodeV2, TaskDataContract, TaskExecutionEvent, TaskExecutionEventBatch, TaskExecutionResult,
 } from "@browser-capture/contracts"
 import { ChainInspector } from "../src/ChainInspector.js"
+import { ChainNodeExecution } from "../src/ChainNodeExecution.js"
 import { ExecutionResultView } from "../src/ExecutionPresentation.js"
 
 const node = {
@@ -25,6 +26,15 @@ const node = {
   },
   writes: [],
 } satisfies StableChainNodeV2
+
+test("each跳过重复键后的祖先游标展示集合位置，不冒充第几轮", () => {
+  const owner = { id: "repeat", label: "处理输入", kind: "loop", iteration: { mode: "each" } } as ChainNode
+  const event = { sequence: 1, runId: "run", event: { nodeId: node.id, status: "started", invocationId: "call",
+    execution: { loops: [{ nodeId: owner.id, index: 2, stableKey: "second-unique-key" }] } } } as TaskExecutionEvent
+  const html = renderToStaticMarkup(createElement(ChainNodeExecution, { event, batch: null, nodes: [owner] }))
+  assert.match(html, /集合位置第 3 项/)
+  assert.doesNotMatch(html, /第 3 轮/)
+})
 
 test("完成节点没有持久化输出时明确显示未记录", () => {
   const batch = {
@@ -65,7 +75,7 @@ test("完成节点没有持久化输出时明确显示未记录", () => {
   assert.match(html, /本次节点输出未记录/)
 })
 
-test("动作详情首屏显示目标、输入来源、真实出口与同 invocation 耗时", () => {
+test("动作详情首屏显示目标、输入来源和真实出口，耗时仅在画布", () => {
   const click = {
     ...node,
     id: "click",
@@ -115,14 +125,50 @@ test("动作详情首屏显示目标、输入来源、真实出口与同 invocat
     batch,
     onClose() {},
   }))
-  const firstScreen = html.split("<details>")[0]!
+  const firstScreen = html.split("<details")[0]!
 
   assert.match(firstScreen, /<dt>动作<\/dt><dd>点击目标<\/dd>/)
   assert.match(firstScreen, /<dt>目标<\/dt><dd>目标按钮<\/dd>/)
-  assert.match(firstScreen, /<dt>输入来自<\/dt><dd>前一节点：读取当前记录/)
-  assert.match(firstScreen, /<dt>条件和出口<\/dt><dd>成功 → 完成<\/dd>/)
-  assert.match(firstScreen, /<dt>耗时<\/dt><dd>1\.5 秒<\/dd>/)
-  assert.doesNotMatch(firstScreen, /outputContract|config|source|prompt/)
+  assert.match(firstScreen, /前一节点：读取当前记录/)
+  assert.match(firstScreen, /<h4>下一步<\/h4><p>成功 → 完成<\/p>/)
+  assert.doesNotMatch(html, /<dt>耗时<\/dt>/)
+  assert.doesNotMatch(firstScreen, /outputContract|config|prompt|返回要求|本次执行身份|事件序号/)
+})
+
+test("Function 类型按绑定路径推导，实参以可读内容展示，内部信息折叠", () => {
+  const calculate = { id: "calculate", label: "生成摘要", kind: "function", language: "javascript",
+    source: "return { title, ordinal, ready };", inputs: {
+      title: { source: "input", path: ["records", 0, "title"] },
+      ordinal: { source: "node", nodeId: node.id, path: ["ordinal"] },
+      ready: { source: "variable", name: "ready", path: [] },
+      absent: { source: "input", path: ["not-declared"] },
+    }, outputContract: node.outputContract, writes: [], timeoutMs: 1000 } satisfies StableChainNodeV2
+  const contract = (schema: TaskDataContract["schema"]) => ({ ...node.outputContract, schema })
+  const read = { ...node, outputContract: contract({ type: "object", properties: { ordinal: { type: "integer" } },
+    required: ["ordinal"], additionalProperties: false }) }
+  const executionId = "00000000-0000-4000-8000-000000000031"
+  const stored = { executionId, sequence: 2, stepId: "step", runId: executionId, runSequence: 2, event: {
+    sequence: 2, at: "2026-09-30T01:00:00.000Z", invocationId: executionId, nodeId: calculate.id,
+    status: "finished" as const, outcome: "success", idempotencyKey: "calculate", stableKey: null,
+    execution: { input: { status: "recorded" as const, value: { title: "内容标题", ordinal: 0, ready: false, absent: null } },
+      output: { status: "recorded" as const, value: { title: "内容标题", ordinal: 0, ready: false } } } } }
+  const batch = { executionId, executionSequence: 2, status: "completed" as const, after: 0, next: 2, events: [stored] }
+  const html = renderToStaticMarkup(createElement(ChainInspector, { chain: { nodes: [read, calculate], edges: [],
+    inputContract: contract({ type: "object", properties: { records: { type: "array", items: { type: "object",
+      properties: { title: { type: "string" } }, required: ["title"], additionalProperties: false } } },
+    required: ["records"], additionalProperties: false }), variables: { ready: contract({ type: "boolean" }) } },
+    node: calculate, stage: null, batch, onClose() {} }))
+  const firstScreen = html.split("<details")[0]!
+  assert.match(firstScreen, /<strong>title<\/strong><small>string<\/small>/)
+  assert.match(firstScreen, /<strong>ordinal<\/strong><small>integer<\/small>/)
+  assert.match(firstScreen, /<strong>ready<\/strong><small>boolean<\/small>/)
+  assert.match(firstScreen, /<strong>absent<\/strong><small>类型未记录<\/small>/)
+  assert.match(firstScreen, /内容标题/)
+  assert.match(firstScreen, /<span>0<\/span>/)
+  assert.match(firstScreen, /<span>false<\/span>/)
+  assert.match(firstScreen, /空值（null）/)
+  assert.doesNotMatch(firstScreen, /<pre|返回要求|执行身份|事件序号|由实际绑定值确定|绑定的输入数据/)
+  assert.match(html, /函数代码 · JavaScript/)
 })
 
 test("阶段详情只显示阶段摘要而不重复动作列表", () => {
@@ -161,6 +207,43 @@ test("阶段详情只显示阶段摘要而不重复动作列表", () => {
   assert.match(html, /<dt>已知入口<\/dt><dd>读取当前记录<\/dd>/)
   assert.match(html, /<dt>真实出口<\/dt><dd>成功 → 完成<\/dd>/)
   assert.doesNotMatch(html, /<ol>/)
+})
+
+test("Function 未调用也显示版本常量及真实合同约束，返回结构可读而不冒充实值", () => {
+  const contract = (schema: TaskDataContract["schema"]) => ({ ...node.outputContract, schema })
+  const calculate = { id: "calculate", label: "整理参数", kind: "function", language: "javascript",
+    source: "return { entries: [] };", inputs: {
+      title: { source: "input", path: ["title"] },
+      count: { source: "node", nodeId: node.id, path: ["count"] },
+      entries: { source: "variable", name: "entries", path: [] },
+      fixed: { source: "constant", value: { limit: 0, enabled: false, text: "" } },
+    }, outputContract: contract({ type: "object", properties: { entries: { type: "array", minItems: 0, maxItems: 2,
+      items: { type: "object", properties: { title: { type: "string", minLength: 1 },
+        score: { type: "integer", minimum: 0, maximum: 99 } }, required: ["title"], additionalProperties: false } } },
+      required: ["entries"], additionalProperties: false }), writes: [], timeoutMs: 1000 } satisfies StableChainNodeV2
+  const read = { ...node, outputContract: contract({ type: "object", properties: { count: { type: "integer", minimum: 0, maximum: 5 } },
+    required: ["count"], additionalProperties: false }) }
+  const html = renderToStaticMarkup(createElement(ChainInspector, { chain: { nodes: [read, calculate], edges: [],
+    inputContract: contract({ type: "object", properties: { title: { type: "string", minLength: 0, maxLength: 80,
+      enum: ["", "已选标题"] } }, required: ["title"], additionalProperties: false }), variables: {
+      entries: contract({ type: "array", minItems: 0, maxItems: 3, items: { type: "boolean" } }),
+    } }, node: calculate, stage: null, batch: null, onClose() {} }))
+  const firstScreen = html.split("<details")[0]!
+  assert.match(firstScreen, /string（长度至少 0；长度至多 80；可选值：空字符串、已选标题）/)
+  assert.match(firstScreen, /integer（不小于 0；不大于 5）/)
+  assert.match(firstScreen, /array&lt;boolean&gt;（至少 0 项；至多 3 项）/)
+  assert.match(firstScreen, /版本固定值/)
+  assert.match(firstScreen, /<span>0<\/span>/)
+  assert.match(firstScreen, /<span>false<\/span>/)
+  assert.match(firstScreen, /空字符串/)
+  assert.match(firstScreen, /本次尚无执行记录|本次尚无完成输出/)
+  const requirements = html.slice(html.indexOf("<summary>返回要求"), html.indexOf("</details>"))
+  assert.match(requirements, /entries（必填）：array&lt;object/)
+  assert.match(requirements, /title（必填）：string（长度至少 1）/)
+  assert.match(requirements, /score（可选）：integer（不小于 0；不大于 99）/)
+  assert.match(requirements, /至少 0 项；至多 2 项/)
+  assert.match(requirements, /不允许额外字段/)
+  assert.doesNotMatch(requirements, /<pre|&quot;properties&quot;/)
 })
 
 test("execution mode 展示完成回执而不是伪造业务数据报告", () => {
@@ -242,7 +325,7 @@ test("data array 按精确输出合同渲染记录列表", () => {
 
   const html = renderToStaticMarkup(createElement(ExecutionResultView, { result, outputContract: contract }))
 
-  assert.match(html, /记录列表/)
+  assert.match(html, /已保存记录/)
   assert.match(html, /2 条记录/)
   assert.ok(html.indexOf("title") < html.indexOf("body"), "列表字段顺序来自精确输出合同")
   assert.match(html, /第一条正文/)

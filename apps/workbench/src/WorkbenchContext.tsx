@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react"
 import { Button, SegmentedControl, TextArea } from "@radix-ui/themes"
 import { AlertTriangle } from "lucide-react"
-import { parseTaskValue, type JsonValue, type TaskExecution, type TaskExecutionEventBatch } from "@browser-capture/contracts"
+import { parseTaskValue, type JsonValue, type TaskExecution, type TaskExecutionDetail, type TaskExecutionEventBatch } from "@browser-capture/contracts"
+import { ExecutionContext } from "./ExecutionContext.js"
+import { ChainStartContext, ChainTerminalContext } from "./ChainBoundaryContext.js"
 import { ChainInspector } from "./ChainInspector.js"
+import { ChainNodeExecution } from "./ChainNodeExecution.js"
+import { SavedExecutionResultDialog } from "./SavedResultDialog.js"
+import { eventsForStep } from "./chainWorkbenchProjection.js"
 import { ValueSchemaForm, initialValue } from "./ValueSchemaForm.js"
 import { ExecutionActions, HistoricalBrowserHandoffActions } from "./ExecutionActions.js"
 import { ExecutionResultView, StatusIcon, executionStatus, cleanupStatus,
@@ -10,10 +15,11 @@ import { ExecutionResultView, StatusIcon, executionStatus, cleanupStatus,
 import type { TaskChainConnection } from "./taskChainConnection.js"
 import { preparationActivityLabel, type LiveChainModel } from "./useLiveChain.js"
 
-export function WorkbenchContext({ model, connection, onRequirementRevision }: {
+export function WorkbenchContext({ model, connection, onRequirementView, onRequirementRevision }: {
   model: LiveChainModel
   connection: TaskChainConnection
-  onRequirementRevision(summary: string, feedback: string): Promise<void>
+  onRequirementView(version: number): void
+  onRequirementRevision(review: import("@browser-capture/contracts").TaskExecutionReview): Promise<boolean>
 }) {
   const { chain, presentation, selectedStage, selectedNode, chainEvents, contextMode } = model
   const [feedback, setFeedback] = useState("")
@@ -21,6 +27,8 @@ export function WorkbenchContext({ model, connection, onRequirementRevision }: {
   if (model.build && (selectedNode || selectedStage)) return <ChainInspector chain={model.build}
     presentation={model.build.presentation} preparing preparationPhase={model.build.phase}
     stage={selectedStage} node={selectedNode} batch={null} onClose={model.closeContext} />
+  if (selectedNode?.kind === "terminal") return <ChainTerminalContext model={model} node={selectedNode} />
+  if (contextMode === "start") return <ChainStartContext model={model} onRequirementView={onRequirementView} />
   if (chain && presentation && (selectedNode || selectedStage)) return <ChainInspector chain={chain}
     presentation={presentation} stage={selectedStage} node={selectedNode} batch={chainEvents}
     onClose={model.closeContext} />
@@ -35,56 +43,6 @@ export function WorkbenchContext({ model, connection, onRequirementRevision }: {
 
 function ContextHeader({ eyebrow, title, onClose }: { eyebrow: string; title: string; onClose(): void }) {
   return <header><span>{eyebrow}</span><button onClick={onClose} aria-label="关闭上下文区">×</button><h3>{title}</h3></header>
-}
-
-function ExecutionContext({ model, connection, feedback, setFeedback, onClose, onRequirementRevision }: {
-  model: LiveChainModel
-  connection: TaskChainConnection
-  feedback: string; setFeedback(value: string): void
-  onClose(): void
-  onRequirementRevision(summary: string, feedback: string): Promise<void>
-}) {
-  const execution = model.selectedExecution
-  const [reviewing, setReviewing] = useState(false)
-  const [reviewOpen, setReviewOpen] = useState(false)
-  useEffect(() => setReviewOpen(false), [execution?.id])
-  async function review(decision: "accepted" | "requirement_revision") {
-    if (!execution) return
-    setReviewing(true)
-    try {
-      const summary = execution.result?.summary ?? executionStatus(execution.status)
-      const accepted = await connection.dispatch({ type: "review_execution", requestId: crypto.randomUUID(),
-        executionId: execution.id, expectedSequence: execution.sequence, decision,
-        feedback: feedback.trim() || null })
-      if (accepted && decision === "requirement_revision") await onRequirementRevision(summary, feedback.trim() || "需要重新确认需求。")
-      if (accepted) setReviewOpen(false)
-    } finally { setReviewing(false) }
-  }
-  return <aside className="chain-inspector workspace-context" aria-label="当前执行">
-    <ContextHeader eyebrow="运行" title="本次结果" onClose={onClose} />
-    {!execution ? <p>{model.acceptedExecutionId ? "已提交，正在等待本次运行记录。" : "尚未运行。"}</p> : <>
-      <div className="context-status" data-tone={execution.status}><StatusIcon status={execution.status} />
-        <div><strong>{execution.result?.summary ?? executionStatus(execution.status)}</strong>
-          <small>{formatTime(execution.updatedAt)}</small></div></div>
-      {/* selectedExecution 已由精确 draft/release surface 过滤；只在这里使用该 surface 的 plan 合同。 */}
-      {execution.result && <section className="context-result"><ExecutionResultView result={execution.result}
-        outputContract={model.plan?.outputContract ?? null} /></section>}
-      {["failed", "blocked"].includes(execution.status) && <p>当前没有链路修订入口；本次失败记录已保留。</p>}
-      <ExecutionActions execution={execution} connection={connection} />
-      {["completed", "partial", "failed", "blocked"].includes(execution.status) && <section className="context-feedback">
-        {!reviewOpen ? <Button size="1" variant="ghost" onClick={() => setReviewOpen(true)}>记录结果反馈</Button> : <>
-          <h4>结果反馈</h4><TextArea value={feedback} onChange={(event) => setFeedback(event.target.value)}
-            placeholder="可选：说明与你预期不同的地方" maxLength={2000} />
-          <div><Button size="1" variant="soft" disabled={reviewing} onClick={() => void review("accepted")}>符合预期</Button>
-            <Button size="1" variant="ghost" disabled={reviewing}
-              onClick={() => void review("requirement_revision")}>目标或结果含义需变更</Button>
-            <Button size="1" variant="ghost" disabled={reviewing} onClick={() => setReviewOpen(false)}>取消</Button></div>
-        </>}
-      </section>}
-      <details className="context-technical"><summary>技术详情</summary><dl><dt>状态</dt><dd>{execution.status}</dd>
-        <dt>清理</dt><dd>{execution.cleanup.status}</dd></dl></details>
-    </>}
-  </aside>
 }
 
 function PreparationContext({ model, connection, onClose }: {
@@ -193,17 +151,19 @@ function HistoricalExecutionDetail({ execution, connection, onBack }: {
   execution: TaskExecution; connection: TaskChainConnection; onBack(): void
 }) {
   const [events, setEvents] = useState<TaskExecutionEventBatch | null>(null)
+  const [detail, setDetail] = useState<TaskExecutionDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [eventsFailed, setEventsFailed] = useState(false)
   useEffect(() => {
     const controller = new AbortController()
-    void connection.readHistoricalExecutionEvents(execution.id, controller.signal).then((batch) => {
+    void Promise.all([connection.readHistoricalExecutionEvents(execution.id, controller.signal),
+      connection.readExecutionDetail(execution.id, controller.signal)]).then(([batch, detail]) => {
       if (controller.signal.aborted) return
-      setEvents(batch); setEventsFailed(!batch); setLoading(false)
+      setEvents(batch); setDetail(detail); setEventsFailed(!batch); setLoading(false)
     })
     return () => controller.abort()
   }, [connection, execution.id])
-  const result = execution.result
+  const result = detail?.execution.cleanupResume?.result ?? detail?.execution.result ?? execution.result
   return <>
     <div className="context-actions"><Button size="1" variant="ghost" onClick={onBack}>返回运行历史</Button></div>
     <div className="context-status" data-tone={execution.status}><StatusIcon status={execution.status} />
@@ -216,7 +176,8 @@ function HistoricalExecutionDetail({ execution, connection, onBack }: {
         : execution.mode === "verification" ? "独立复跑检查" : "正式运行"}</dd>
       {execution.cleanup.status !== "confirmed" && <><dt>资源清理</dt><dd>{cleanupStatus(execution.cleanup.status)}</dd></>}</dl>
     <section className="context-result"><h4>本次结果</h4>
-      {result ? <ExecutionResultView result={result} outputContract={null} /> : <p>{execution.reason}</p>}</section>
+      {result ? <SavedExecutionResultDialog result={result} outputContract={detail?.content?.plan.outputContract ?? null} />
+        : <p>{execution.reason}</p>}</section>
     {execution.cleanup.status === "unconfirmed" && <section className="context-alert"><AlertTriangle size={15} />
       <div><strong>资源清理尚未确认</strong><p>{execution.cleanup.code ?? "请查看原执行的清理记录。"}</p></div></section>}
     <details className="context-technical"><summary>本次节点事件 · {loading ? "读取中" : events?.events.length ?? 0} 条</summary>
@@ -225,6 +186,9 @@ function HistoricalExecutionDetail({ execution, connection, onBack }: {
           <strong>{item.sequence}. {item.nodeTitle ?? "未记录动作名称"} · {historicalEventStatus(item.event.status, item.event.outcome)}</strong>
           <small>{formatTime(item.event.at)} · {item.stepTitle ?? (execution.steps.findIndex((step) => step.stepId === item.stepId) >= 0
             ? `第 ${execution.steps.findIndex((step) => step.stepId === item.stepId) + 1} 步` : "步骤未关联")}</small>
+          {item.event.status !== "planned" && <details><summary>这一次动作的实际输入与输出</summary>
+            <ChainNodeExecution event={item} batch={eventsForStep(item.stepId, execution.id, events, item.runId)}
+              nodes={detail?.content?.steps.find(step => step.stepId === item.stepId)?.chain.nodes ?? []} /></details>}
         </li>)}</ol> : <p>这次运行没有保存节点事件。</p>}
     </details>
     <details className="context-technical"><summary>原始记录</summary>

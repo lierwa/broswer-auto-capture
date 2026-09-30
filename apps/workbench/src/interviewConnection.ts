@@ -61,7 +61,7 @@ export class InterviewConnection {
     } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
   }
   async dispatch(command: InterviewCommand) {
-    if (this.view.busy && command.type !== "cancel") return
+    if (this.view.busy && command.type !== "cancel") return false
     const input = interviewCommandSchema.parse(command)
     const cancelling = input.type === "cancel"
     if (!cancelling) this.update({ busy: true, pending: input, error: "" })
@@ -71,10 +71,12 @@ export class InterviewConnection {
       if (!response.ok) throw new Error(errorEnvelope.parse(result).error)
       this.accept(result)
       if (!cancelling) this.update({ pending: null, error: "" })
+      return true
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : "请求未完成，请重新连接。" })
       // TRADE-OFF：响应丢失不代表提交失败。保留原幂等键供用户重发，并先恢复服务端事实。
       await this.reload().catch(() => {})
+      return false
     } finally { if (!cancelling) this.update({ busy: false }) }
   }
   retrySubmission = async () => { if (this.view.pending) await this.dispatch(this.view.pending) }
