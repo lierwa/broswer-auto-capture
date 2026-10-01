@@ -108,17 +108,18 @@ class ProfileOwnerTests(unittest.TestCase):
 
     def test_recovery_requires_matching_creator_after_runner_absence(self):
         window = Mock()
+        window.end_gracefully = AsyncMock()
         window._load.return_value = SimpleNamespace(creatorPid=self.owner.pid)
         window.inspect.return_value = {'active': False}
         with patch('browser_use_runner.profile_owner.psutil.Process', side_effect=psutil.NoSuchProcess(1234)), \
                 patch('browser_use_runner.profile_owner.ManagedWindow', return_value=window):
             self.assertEqual(recover_profile_owner('profile', self.owner.ownerId, self.owner.ownerId, self.owner), {'active': False})
-            window.end.assert_called_once_with(self.owner.ownerId, allow_controlled=True)
+            window.end_gracefully.assert_awaited_once_with(self.owner.ownerId, allow_controlled=True)
             window.reset_mock()
             window._load.return_value = SimpleNamespace(creatorPid=self.owner.pid + 1)
             with self.assertRaisesRegex(ValueError, 'owner_mismatch'):
                 recover_profile_owner('profile', self.owner.ownerId, self.owner.ownerId, self.owner)
-            window.end.assert_not_called()
+            window.end_gracefully.assert_not_called()
 
     def test_missing_lease_still_inspects_profile_absence(self):
         window = Mock()

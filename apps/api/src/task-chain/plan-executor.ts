@@ -26,7 +26,8 @@ export class TaskPlanExecutor {
       if (taskPlanExecutionIssues(plan).length) return this.finish(record, "blocked", "计划输入输出合同不再满足执行约束，需要生成新计划。",
         { classification: "version", code: "plan_contract_invalid", repairable: false })
       const chains = this.boundChains(record, plan)
-      const managedWindow = Boolean(record.release && !(record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER).headless)
+      // WHY：无头同样占用本次专属进程；沿用固定 owner 与清理审计，不因没有可见现场丢失资源身份。
+      const managedWindow = Boolean(record.release)
       record.status = "running"; record.sequence++; record.reason = "正在执行本次计划固定的链路版本。"
       record.cleanup = { status: "pending", attempt: record.cleanup.attempt + 1, code: null,
         evidenceDigest: null, updatedAt: new Date().toISOString() }
@@ -43,7 +44,8 @@ export class TaskPlanExecutor {
       }
       await this.host.group({ taskId: record.taskId, authorizationId: record.authorizationId, browserRunId,
         requirementVersion: record.requirement.version, purpose: record.mode ?? "replay", chains, input: record.input, signal,
-        ...(!record.mode || record.mode === "replay" ? { browser: record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER } : {}),
+        ...(record.browser || !record.mode || record.mode === "replay"
+          ? { browser: record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER } : {}),
         ...(managedWindow ? { managedWindow: { ownerId: browserRunId, resume: resumingWindow },
           handoffPurpose: () => record.status === "waiting_for_human" || record.status === "paused" ? "human_wait" as const
             : record.status === "completed" && plan.browserHandoff === "keep_open" ? "delivery" as const : null,

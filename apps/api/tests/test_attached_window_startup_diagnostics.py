@@ -34,8 +34,10 @@ class AttachedStartupDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
                                      diagnostic=self.diagnostics.emit)
         self.window.close = AsyncMock()
         self.browser = SimpleNamespace(id='fixture-session', start=AsyncMock(),
-                                       get_or_create_cdp_session=AsyncMock())
-        self.scope = SimpleNamespace(install=Mock(), require_focus=Mock(), close=Mock())
+                                       get_or_create_cdp_session=AsyncMock(),
+                                       cdp_client=SimpleNamespace(send=SimpleNamespace(
+                                           Target=SimpleNamespace(activateTarget=AsyncMock()))))
+        self.scope = SimpleNamespace(install=Mock(), require_focus=Mock(return_value='fixture-target'), close=Mock())
 
     def records(self):
         return list(map(json.loads, self.diagnostics.channel.getvalue().splitlines()))

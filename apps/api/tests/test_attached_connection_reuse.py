@@ -27,13 +27,14 @@ class SDKFixture:
             is_local=False, keep_alive=True, no_viewport=True, enable_default_extensions=False))
         self.browser._aboutblank_watchdog = SimpleNamespace(_stopping=False)
         self.targets = {'personal': {'targetId': 'personal', 'type': 'page', 'url': 'about:blank'}}
-        self.created, self.connects, self.stops, self.attach_count = [], 0, 0, 0
+        self.created, self.activated, self.connects, self.stops, self.attach_count = [], [], 0, 0, 0
+        self.fail_activate = False
         self.fail_close, self.cancel_create, self.early_attach_rejected = False, False, False
         self.client = CDPClient(self.endpoint)
         self.client.ws = SimpleNamespace(state=State.OPEN)
         self.client.send = SimpleNamespace(Target=SimpleNamespace(createTarget=self.create,
             closeTarget=self.close_target, getTargets=self.get_targets, setAutoAttach=AsyncMock(),
-            attachToTarget=self.attach), Runtime=SimpleNamespace(runIfWaitingForDebugger=AsyncMock()),
+            attachToTarget=self.attach, activateTarget=self.activate), Runtime=SimpleNamespace(runIfWaitingForDebugger=AsyncMock()),
             Network=SimpleNamespace(enable=AsyncMock()))
         self.response_callback = None
         self.client.register = SimpleNamespace(Page=SimpleNamespace(javascriptDialogOpening=lambda _f: None),
@@ -62,6 +63,14 @@ class SDKFixture:
 
     async def get_targets(self, *args, **kwargs):
         return {'targetInfos': list(self.targets.values())}
+
+    async def activate(self, params):
+        target_id = params['targetId']
+        if target_id == 'personal' or target_id not in self.created:
+            raise AssertionError('activation_outside_task_ownership')
+        if self.fail_activate:
+            raise RuntimeError('controlled_activation_failure')
+        self.activated.append(target_id)
 
     async def attach(self, params):
         self.attach_count += 1
@@ -140,6 +149,30 @@ class AttachedConnectionReuseTests(unittest.IsolatedAsyncioTestCase):
     async def release(self, owner=None):
         return await self.runner.handle({'id': str(uuid4()), 'type': 'hybrid_release',
                                          'connectionOwnerId': str(owner or self.parent)})
+
+    # WHY：SDK logical focus 不保证真实页面 visible；新/复用连接均须激活各自已登记的任务目标。
+    async def test_new_and_reused_connection_activate_only_the_current_owned_task_target(self):
+        await self.runner.start(self.config(self.owner_a))
+        target_a = self.runner.managed_window._load(self.owner_a).targetId
+        self.assertEqual(self.sdk.activated, [target_a])
+        self.assertTrue((await self.release())['closed'])
+        await self.runner.start(self.config(self.owner_b))
+        target_b = self.runner.managed_window._load(self.owner_b).targetId
+        self.assertEqual(self.sdk.activated, [target_a, target_b])
+        self.assertEqual(self.sdk.connects, 1)
+        self.assertTrue((await self.release())['closed'])
+        self.assertIn('personal', self.sdk.targets)
+
+    # WHY：实际激活可失败；目标已经属于本 operation，原关闭合同必须回收它而保留个人页。
+    async def test_activation_failure_preserves_original_error_and_owned_target_cleanup(self):
+        self.sdk.fail_activate = True
+        with self.assertRaisesRegex(RuntimeError, '^controlled_activation_failure$'):
+            await self.runner.start(self.config(self.owner_a))
+        lease = self.runner.connection.last_window._load(self.owner_a)
+        self.assertEqual(lease.status, 'ended')
+        self.assertNotIn(lease.targetId, self.sdk.targets)
+        self.assertIn('personal', self.sdk.targets)
+        self.assertTrue((await self.runner.close())['closed'])
 
     async def test_two_operation_owners_release_pages_but_connect_once_and_stop_only_finally(self):
         await self.runner.start(self.config(self.owner_a))

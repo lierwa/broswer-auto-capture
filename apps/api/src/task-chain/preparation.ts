@@ -15,7 +15,7 @@ import { syncConfirmedRequirement } from "./requirement.js"
 
 type WorkStarter = (job: TaskAuthoringJob, run: (signal: AbortSignal) => Promise<unknown>) => void
 type ValidationEnqueuer = (requestId: string, draft: TaskDraft, input: JsonValue,
-  mode: "sample" | "verification") => TaskExecution
+  mode: "sample" | "verification", browser?: TaskExecution["browser"]) => TaskExecution
 
 export class TaskPreparationCoordinator {
   constructor(private readonly store: ProductStore, private readonly repository: TaskContractRepository,
@@ -31,6 +31,7 @@ export class TaskPreparationCoordinator {
     const now = new Date().toISOString(), job = this.repository.saveJob({ id: stableUuid(command.requestId, "prepare"),
       taskId, type: "prepare", key: `${requirement.id}:${requirement.version}:prepare`, status: "queued", sequence: 0,
       reason: "正在生成任务草稿。", resultId: null, browserRunId: null, waitpoint: null, audit: null,
+      browser: this.store.executionBrowser(),
       preparation: { phase: "forming_plan", plan: null, chains: [], candidatePlan: null, draft: null,
         planCandidates: [],
         representativeInput: null, verificationInput: null, inputRequest: null, requirementReturn: null,
@@ -87,6 +88,7 @@ export class TaskPreparationCoordinator {
     const job: TaskAuthoringJob = { id: stableUuid(command.requestId, "offline-compilation"), taskId,
       type: "prepare", key: failed.key, status: "queued", sequence: 0,
       reason: "正在使用已保存的代表试做来源离线编译。", resultId: null, browserRunId: null,
+      ...(failed.browser ? { browser: failed.browser } : {}),
       waitpoint: null, audit: null, preparation: {
         phase: "preexecuting", plan: planReference(plan), chains: [], candidatePlan: plan, draft: null,
         planCandidates: [], recoveredFromJobId: recovery.sourceJobId, resumedFromJobId: null,
@@ -124,7 +126,7 @@ export class TaskPreparationCoordinator {
       if (taskInputRequiresVariation(plan.inputContract)
         && digestJson(input) === digestJson(preparation.representativeInput)) conflict("复用边界验证需要另一组不同的业务输入。")
       const draft = requireJobDraft(this.repository, job)
-      const record = this.enqueueValidation(stableUuid(command.requestId, "verification"), draft, input, "verification")
+      const record = this.enqueueValidation(stableUuid(command.requestId, "verification"), draft, input, "verification", job.browser)
       preparation.verificationInput = input; preparation.inputRequest = null
       preparation.phase = "validating_verification"; job.status = "running"; job.reason = "正在复验当前草稿。"
       preparation.validationExecutionIds.push(record.id); this.touch(job)
@@ -172,7 +174,7 @@ export class TaskPreparationCoordinator {
           job.preparation.verificationInput = structuredClone(job.preparation.representativeInput)
           job.preparation.phase = "validating_verification"; job.status = "running"; job.reason = "正在独立复验当前草稿。"
           const verification = this.enqueueValidation(stableUuid(job.id, "singleton-verification"), draft,
-            job.preparation.verificationInput, "verification")
+            job.preparation.verificationInput, "verification", job.browser)
           job.preparation.validationExecutionIds.push(verification.id); this.touch(job); this.schedule(); return
         }
         this.requestInput(job, plan, "verification"); return
@@ -204,7 +206,7 @@ export class TaskPreparationCoordinator {
       digest: executableChainDigest(step.chain) }))
     current.preparation.draft = draftReference(draft)
     current.preparation.phase = "validating_sample"; current.status = "running"; current.reason = "正在试跑当前草稿。"
-    const record = this.enqueueValidation(stableUuid(job.id, "sample-validation"), draft, input, "sample")
+    const record = this.enqueueValidation(stableUuid(job.id, "sample-validation"), draft, input, "sample", current.browser)
     current.preparation.validationExecutionIds.push(record.id); this.touch(current); this.schedule()
   }
 

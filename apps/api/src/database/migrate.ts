@@ -39,8 +39,8 @@ PRAGMA user_version = 2;
 
 export function migrate(connection: Database.Database) {
   const version = connection.pragma("user_version", { simple: true })
-  if (version === 19) return
-  if (typeof version !== "number" || version < 0 || version > 19) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
+  if (version === 20) return
+  if (typeof version !== "number" || version < 0 || version > 20) throw new Error("数据库版本高于当前程序，已停止启动以保护数据。")
   // WHY：结构变更也必须整体提交，不能让部分建表成为成功迁移标记。
   connection.transaction(() => {
     if (version === 0) connection.exec(schema)
@@ -128,35 +128,45 @@ export function migrate(connection: Database.Database) {
       }
       connection.exec("PRAGMA user_version = 13")
     }
-    if (version < 14) connection.exec(`CREATE TABLE taskChainRevisionDrafts (
-      id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), baseChainId TEXT NOT NULL,
-      status TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision >= 0), checksum TEXT NOT NULL,
-      body TEXT NOT NULL CHECK(json_valid(body)), updatedAt TEXT NOT NULL);
-      CREATE INDEX task_chain_revision_drafts_task_updated ON taskChainRevisionDrafts(taskId,updatedAt);
-      PRAGMA user_version = 14;`)
-    if (version < 15) connection.exec(`CREATE TABLE taskExecutionCleanupAudits (
-      id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id),
-      executionId TEXT NOT NULL REFERENCES taskExecutions(id), attempt INTEGER NOT NULL CHECK(attempt > 0),
-      source TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)), createdAt TEXT NOT NULL,
-      UNIQUE(executionId,attempt));
-      CREATE INDEX task_execution_cleanup_audits_task_execution
-        ON taskExecutionCleanupAudits(taskId,executionId,attempt);
-      PRAGMA user_version = 15;`)
-    if (version < 16) connection.exec(`CREATE TABLE taskChainPresentations (
-      recordId TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), chainId TEXT NOT NULL,
-      chainVersion INTEGER NOT NULL CHECK(chainVersion > 0), chainDigest TEXT NOT NULL,
-      presentationDigest TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)), createdAt TEXT NOT NULL,
-      UNIQUE(chainId,chainVersion));
-      CREATE INDEX task_chain_presentations_task_chain
-        ON taskChainPresentations(taskId,chainId,chainVersion);
-      PRAGMA user_version = 16;`)
-    if (version < 17) migrateSimplifiedWorkbench(connection)
-    if (version < 18) migrateWorkspaceSequence(connection)
-    if (version < 19) connection.exec(`ALTER TABLE operations ADD COLUMN taskId TEXT REFERENCES tasks(id);
-      CREATE INDEX operations_task ON operations(taskId);
-      PRAGMA user_version = 19;`)
+    migrateRecentVersions(connection, version)
   })()
 }
+
+// WHY：仍在原迁移事务内按版本执行；拆分只控制函数长度，不另建迁移器。
+function migrateRecentVersions(connection: Database.Database, version: number) {
+  if (version < 14) connection.exec(`CREATE TABLE taskChainRevisionDrafts (
+    id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), baseChainId TEXT NOT NULL,
+    status TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision >= 0), checksum TEXT NOT NULL,
+    body TEXT NOT NULL CHECK(json_valid(body)), updatedAt TEXT NOT NULL);
+    CREATE INDEX task_chain_revision_drafts_task_updated ON taskChainRevisionDrafts(taskId,updatedAt);
+    PRAGMA user_version = 14;`)
+  if (version < 15) connection.exec(`CREATE TABLE taskExecutionCleanupAudits (
+    id TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id),
+    executionId TEXT NOT NULL REFERENCES taskExecutions(id), attempt INTEGER NOT NULL CHECK(attempt > 0),
+    source TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)), createdAt TEXT NOT NULL,
+    UNIQUE(executionId,attempt));
+    CREATE INDEX task_execution_cleanup_audits_task_execution
+      ON taskExecutionCleanupAudits(taskId,executionId,attempt);
+    PRAGMA user_version = 15;`)
+  if (version < 16) connection.exec(`CREATE TABLE taskChainPresentations (
+    recordId TEXT PRIMARY KEY, taskId TEXT NOT NULL REFERENCES tasks(id), chainId TEXT NOT NULL,
+    chainVersion INTEGER NOT NULL CHECK(chainVersion > 0), chainDigest TEXT NOT NULL,
+    presentationDigest TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)), createdAt TEXT NOT NULL,
+    UNIQUE(chainId,chainVersion));
+    CREATE INDEX task_chain_presentations_task_chain
+      ON taskChainPresentations(taskId,chainId,chainVersion);
+    PRAGMA user_version = 16;`)
+  if (version < 17) migrateSimplifiedWorkbench(connection)
+  if (version < 18) migrateWorkspaceSequence(connection)
+  if (version < 19) connection.exec(`ALTER TABLE operations ADD COLUMN taskId TEXT REFERENCES tasks(id);
+    CREATE INDEX operations_task ON operations(taskId);
+    PRAGMA user_version = 19;`)
+  // WHY：这里只保存用户的非秘密环境选择；执行记录另存当次快照，不修改链路版本。
+  if (version < 20) connection.exec(`CREATE TABLE browserSettings (
+    id TEXT PRIMARY KEY, mode TEXT NOT NULL CHECK(mode IN ('daily','dedicated-visible','dedicated-headless')),
+    revision INTEGER NOT NULL CHECK(revision >= 0)); PRAGMA user_version = 20;`)
+}
+
 
 function migrateWorkspaceSequence(connection: Database.Database) {
   // WHY：对象 revision 求和会在 job 替换、草稿删除或发布后回退；数据库写入触发单调序列并随事务提交。

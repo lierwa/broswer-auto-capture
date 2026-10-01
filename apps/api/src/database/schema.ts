@@ -45,6 +45,9 @@ export const operations = sqliteTable("operations", {
   taskId: text().references(() => tasks.id),
 }, (table) => [primaryKey({ columns: [table.scope, table.requestId] })])
 export const imports = sqliteTable("imports", { id: text().primaryKey(), digest: text().notNull(), createdAt: text().notNull() })
+export const browserSettings = sqliteTable("browserSettings", {
+  id: text().primaryKey(), mode: text().notNull(), revision: integer().notNull(),
+})
 export const aiSettings = sqliteTable("aiSettings", {
   subjectId: text().primaryKey(), selection: text({ mode: "json" }).$type<ModelSelection>().notNull(),
 })

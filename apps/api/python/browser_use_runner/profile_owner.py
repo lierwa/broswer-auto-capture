@@ -1,5 +1,6 @@
 """Persist one profile runner identity; recovery verifies absence without killing a PID."""
 import os
+import asyncio
 from pathlib import Path
 from uuid import UUID
 
@@ -78,5 +79,5 @@ def recover_profile_owner(profile_path, owner_id, lease_id, owner):
     if lease.creatorPid != owner.pid:
         raise ValueError('hybrid_profile_runner_owner_mismatch')
     # WHY：仅在原控制 runner 身份已核验且退出后，复用既有窗口所有权关闭；不触其他 owner/Profile。
-    window.end(lease_id, allow_controlled=True)
+    asyncio.run(window.end_gracefully(lease_id, allow_controlled=True))
     return window.inspect(lease_id)

@@ -11,7 +11,7 @@ test("daily Chrome connection errors identify the connection layer and never sug
   }
 })
 
-test("website login guidance refers to the user's daily Chrome", () => {
-  assert.match(authoringFailureMessage(new Error("browser_login_required")), /日常 Chrome/)
-  assert.doesNotMatch(authoringFailureMessage(new Error("browser_login_required")), /专用浏览器/)
+test("website login guidance follows the selected environment and its same Profile", () => {
+  assert.match(authoringFailureMessage(new Error("browser_login_required")), /当前选择的浏览器/)
+  assert.match(authoringFailureMessage(new Error("browser_login_required")), /同一专属 Profile/)
 })

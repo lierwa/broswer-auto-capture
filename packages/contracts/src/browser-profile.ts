@@ -1,5 +1,14 @@
 import { z } from "zod"
 
+export const browserModeSchema = z.enum(["daily", "dedicated-visible", "dedicated-headless"])
+export type BrowserMode = z.infer<typeof browserModeSchema>
+export const browserEnvironmentSchema = z.object({
+  mode: browserModeSchema, revision: z.number().int().nonnegative(),
+}).strict()
+export function executionBrowser(mode: BrowserMode) {
+  return { mode, headless: mode === "dedicated-headless" }
+}
+
 export const browserProfileStatusSchema = z.enum(["closed", "opening", "open", "closing", "cleanup_required"])
 
 export const browserProfileStateSchema = z.object({

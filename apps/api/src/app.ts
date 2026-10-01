@@ -22,6 +22,10 @@ import { OriginAccessGate } from "./browser/origin-access-gate.js"
 import { BrowserProfileService } from "./browser/profile-service.js"
 import { PythonUpstreamBrowserRuntime, type UpstreamBrowserRuntime } from "./upstream-browser/service.js"
 import { TaskDeletionService } from "./task-deletion.js"
+import { BrowserEnvironmentService, mountBrowserEnvironment } from "./browser/environment-service.js"
+import { mountBrowserProfile } from "./browser/profile-routes.js"
+import { DailyChromeExtension } from "./browser/daily-extension.js"
+import { mountDailyChromeExtension } from "./browser/daily-extension-routes.js"
 
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
 export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider;
@@ -48,14 +52,20 @@ export async function createApplication(options: AppOptions) {
     options.originAccessGate ?? (options.browserExecutor ? undefined : new OriginAccessGate(store))) }
   catch (error) { ai.close(); await store.close(); throw error }
   let taskChain: TaskChainService
+  const dailyChrome = new DailyChromeExtension(options.root, options.directory,
+    () => { browserEnvironment.assertStable(); assertBrowserIdle(browser, taskChain, store, browserProfile) })
   try {
     upstream = options.upstreamBrowserRuntime ?? new PythonUpstreamBrowserRuntime({ root: options.root,
-      directory: options.directory, subject: ai.forSubject(SHARED_AI_SUBJECT) })
+      directory: options.directory, subject: ai.forSubject(SHARED_AI_SUBJECT),
+      browserMode: () => store.browserEnvironment().mode, dailyChromeEndpoint: () => dailyChrome.endpoint() })
     taskChain = new TaskChainService(store, browser, aiModel, upstream, options.taskChainCapabilities)
   }
   catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   const browserProfile = new BrowserProfileService(options.root, options.directory)
   const deletion = new TaskDeletionService(store, coordinator, browser, browserProfile, taskChain, options.directory)
+  const browserEnvironment = new BrowserEnvironmentService(store, upstream,
+    () => { dailyChrome.assertStable(); assertBrowserIdle(browser, taskChain, store, browserProfile) },
+    () => dailyChrome.disconnect())
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
   app.addHook("onRequest", async (request, reply) => {
     const host = request.headers.host ?? ""
@@ -74,7 +84,14 @@ export async function createApplication(options: AppOptions) {
     const status = publicStatus(error)
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
-  routes(app, coordinator, browser, browserProfile, taskChain, deletion, store, ai, options.developmentIdentity)
+  mountBrowserEnvironment(app, browserEnvironment, () => deletion.assertWritable())
+  mountDailyChromeExtension(app, dailyChrome, () => deletion.assertWritable())
+  mountBrowserProfile(app, browserProfile, browserEnvironment, () => deletion.assertWritable(), () => {
+    if (browser.owner() || taskChain.isAnyActive()) {
+      throw new DomainError("browser_busy", "当前任务正在使用浏览器，请完成或停止后再管理账号。", 409)
+    }
+  })
+  routes(app, coordinator, browser, browserProfile, taskChain, deletion, store, ai, browserEnvironment, dailyChrome, options.developmentIdentity)
   await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
   app.addHook("preClose", async () => {
     store.workspaceChanges.close()
@@ -85,7 +102,7 @@ export async function createApplication(options: AppOptions) {
     finally { await browser.close(); await coordinator.close() }
     if (report?.status === "unconfirmed") throw new Error("hybrid_task_connection_cleanup_required")
   })
-  app.addHook("onClose", async () => { ai.close(); await store.close() })
+  app.addHook("onClose", async () => { dailyChrome.close(); ai.close(); await store.close() })
   try {
     if (options.serveUi) {
       await app.register(fastifyStatic, { root: path.join(options.root, "apps", "workbench", "dist") })
@@ -93,8 +110,15 @@ export async function createApplication(options: AppOptions) {
         ? reply.sendFile("index.html") : reply.code(404).send({ error: "页面或接口不存在。", code: "not_found" }))
     }
     await app.ready()
-    return { app, coordinator, store, browser, browserProfile, taskChain }
+    return { app, coordinator, store, browser, browserProfile, browserEnvironment, dailyChrome, taskChain }
   } catch (error) { await app.close(); throw error }
+}
+function assertBrowserIdle(browser: BrowserService, taskChain: TaskChainService, store: ProductStore,
+  profile: BrowserProfileService) {
+  if (browser.owner() || taskChain.isAnyActive() || store.activeBrowserWindowLease()) {
+    throw new DomainError("browser_busy", "当前任务正在使用或保留浏览器，请先完成或停止并核验现场。", 409)
+  }
+  if (profile.isBusy()) throw new DomainError("browser_profile_busy", "请先完成专用浏览器账号操作并关闭窗口。", 409)
 }
 function publicStatus(error: unknown) {
   if (error instanceof z.ZodError) return 400
@@ -111,19 +135,9 @@ const taskHistoryQuery = taskQuery.extend({ kind: z.enum(["releases", "execution
   limit: z.coerce.number().int().min(1).max(100).default(20) })
 function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService,
   browserProfile: BrowserProfileService, taskChain: TaskChainService, deletion: TaskDeletionService,
-  store: ProductStore, ai: AI,
+  store: ProductStore, ai: AI, browserEnvironment: BrowserEnvironmentService, dailyChrome: DailyChromeExtension,
   developmentIdentity?: { pid: number; root: string; stop?: () => void }) {
-  app.get("/api/health", () => ({ service: "browser-capture-api", version: 1,
-    ...(developmentIdentity ? { development: { pid: developmentIdentity.pid, root: developmentIdentity.root } } : {}) }))
-  if (developmentIdentity) app.post("/api/dev/shutdown", (request) => {
-    const command = developmentShutdownSchema.parse(request.body)
-    if (command.pid !== developmentIdentity.pid || !samePath(command.root, developmentIdentity.root)) {
-      throw new DomainError("development_instance_changed", "开发服务身份已变化，拒绝停止。", 409)
-    }
-    const timer = setTimeout(() => developmentIdentity.stop?.(), 25)
-    timer.unref()
-    return { stopping: true }
-  })
+  mountDevelopmentHealth(app, developmentIdentity)
   app.get("/api/model-settings", () => ({ selection: store.sharedModelSelection(SHARED_AI_SUBJECT) ?? null }))
   app.put("/api/model-settings", async (request) => {
     const body = modelSettingsBody.parse(request.body)
@@ -137,15 +151,6 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
       }
       throw new DomainError("invalid_model_selection", "模型选择无效，请重新选择账号和模型。", 400)
     }
-  })
-  app.get("/api/browser-profile", () => browserProfile.snapshot())
-  app.post("/api/browser-profile", async (request) => {
-    deletion.assertWritable()
-    return browserProfile.control(request.body, () => {
-      if (browser.owner() || taskChain.isAnyActive()) {
-        throw new DomainError("browser_busy", "当前任务正在使用浏览器，请完成或停止后再管理账号。", 409)
-      }
-    })
   })
   app.get("/api/tasks", () => taskChain.projectTasks(coordinator.list()))
   app.post("/api/tasks", (request) => {
@@ -164,11 +169,13 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
   app.get("/api/browser", (request) => browser.snapshot(taskQuery.parse(request.query).taskId))
   app.post("/api/browser", (request) => {
     deletion.assertWritable()
+    browserEnvironment.assertStable(); dailyChrome.assertStable()
     return browser.control(taskQuery.parse(request.query).taskId, request.body)
   })
   app.get("/api/task-chain", (request) => taskChain.snapshot(taskQuery.parse(request.query).taskId))
   app.post("/api/task-chain", async (request, reply) => {
     deletion.assertWritable()
+    browserEnvironment.assertStable(); dailyChrome.assertStable()
     const command = taskChainCommandSchema.parse(request.body)
     if (browserProfile.isBusy() && !["cancel_authoring", "cancel_execution"].includes(command.type)) {
       throw new DomainError("browser_profile_busy", "请先在浏览器账号设置中完成操作并关闭专用浏览器。", 409)
@@ -217,12 +224,26 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
     return streamLines(reply, signal => coordinator.observe(taskId, after, signal, continuous === "true"))
   })
 }
+function mountDevelopmentHealth(app: FastifyInstance,
+  identity?: { pid: number; root: string; stop?: () => void }) {
+  app.get("/api/health", () => ({ service: "browser-capture-api", version: 1,
+    ...(identity ? { development: { pid: identity.pid, root: identity.root } } : {}) }))
+  if (identity) app.post("/api/dev/shutdown", (request) => {
+    const command = developmentShutdownSchema.parse(request.body)
+    if (command.pid !== identity.pid || !samePath(command.root, identity.root)) {
+      throw new DomainError("development_instance_changed", "开发服务身份已变化，拒绝停止。", 409)
+    }
+    const timer = setTimeout(() => identity.stop?.(), 25)
+    timer.unref()
+    return { stopping: true }
+  })
+}
 const modelSettingsBody = z.object({ selection: z.unknown() }).strict()
 const developmentShutdownSchema = z.object({ pid: z.number().int().positive(), root: z.string().min(1) }).strict()
 const artifactQuery = taskQuery.extend({ artifactId: z.string().uuid() })
 function sensitiveAIPath(method: string, url: string) {
   const pathName = url.split("?", 1)[0]
-  return pathName === "/api/model-settings" || pathName === "/api/browser-profile"
+  return pathName === "/api/model-settings" || pathName === "/api/browser-environment" || pathName === "/api/browser-profile"
     || pathName?.startsWith("/api/browser-profile/")
     || pathName === "/api/ai" || pathName?.startsWith("/api/ai/")
     || method === "POST" && (pathName === "/api/task-chain" || pathName === "/api/task-chain/handoff")

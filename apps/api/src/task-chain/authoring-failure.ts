@@ -98,7 +98,7 @@ export function authoringFailureMessage(error: unknown): string {
     return "浏览器任务结束时没有完成安全收尾，系统已停止并且没有发布这条链路；请重新准备。"
   }
   if (/captcha|login|authentication|verification/i.test(message)) {
-    return "网站要求登录或人工验证；请先在日常 Chrome 的任务窗口中处理账号状态，再继续当前任务。"
+    return "网站要求登录或人工验证；请在当前选择的浏览器任务窗口中处理账号状态，再继续当前任务。无头环境需先使用同一专属 Profile 的可见窗口完成登录。"
   }
   if (/model_account|ai_|provider/i.test(message)) return "模型服务没有完成这次准备，请检查模型账号设置后重试。"
   if (/timeout/i.test(message)) return "网站响应超时，系统已停止并且没有发布不完整链路；请稍后重新准备。"

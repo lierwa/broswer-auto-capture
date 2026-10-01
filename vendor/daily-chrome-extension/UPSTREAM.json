@@ -1,0 +1,80 @@
+{
+  "repository": "https://github.com/microsoft/playwright",
+  "commit": "8b552173e8d767db29b8baef8f4a1f08cf7f26bf",
+  "extensionVersion": "0.4.0",
+  "license": "Apache-2.0",
+  "files": {
+    "browserModel.ts": {
+      "source": "packages/playwright-core/src/tools/mcp/browserModel.ts",
+      "sha256": "e89261f77ef4d78935c051e42e50458e74066381cc6f071196a112e5fe96110b"
+    },
+    "cdpRelayV2.ts": {
+      "source": "packages/playwright-core/src/tools/mcp/cdpRelayV2.ts",
+      "sha256": "db32c68ffe422bfef9e477f23d062c79c79150ca9c5b3503618d26a7524e1556"
+    },
+    "protocol.ts": {
+      "source": "packages/playwright-core/src/tools/mcp/protocol.ts",
+      "sha256": "041f648b328631e0cb54bd7de37f003d54b01d6701b98f3757f6e059eb1a7598"
+    },
+    "manualPromise.ts": {
+      "source": "packages/isomorphic/manualPromise.ts",
+      "sha256": "86c9695f31a0f5e4d3c2919d5a8d6b3eeb8118bf9a978005d85121fb0db380a3"
+    },
+    "LICENSE": {
+      "source": "LICENSE",
+      "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb"
+    },
+    "extension/src/background.ts": {
+      "source": "packages/extension/src/background.ts",
+      "sha256": "63a93322dd12456e4cf62d177b0bbe4f4b0aa93e15d2139071b47e81f8e2ad46"
+    },
+    "extension/src/connectedTabGroup.ts": {
+      "source": "packages/extension/src/connectedTabGroup.ts",
+      "sha256": "0133d4eabb4aa633a6ef1567a39df1eb7e1bd2dd73cac96c6db895984cc87916"
+    },
+    "extension/src/relayConnection.ts": {
+      "source": "packages/extension/src/relayConnection.ts",
+      "sha256": "3ea2d78561d9660fce53e479a0b50b77b4aa7baba84edb289fa3b6bdebd0ff4c"
+    },
+    "extension/src/ui/authToken.tsx": {
+      "source": "packages/extension/src/ui/authToken.tsx",
+      "sha256": "28197a5cb54fce470e51fea734c7d516acb89f0d2f5a5c6deec5eef0a6dc8949"
+    },
+    "extension/src/ui/connect.tsx": {
+      "source": "packages/extension/src/ui/connect.tsx",
+      "sha256": "0ed811628c2a6c8f8586582d75ea04b36a2112dfda4a81c1d27d73c24305d645"
+    },
+    "cdpRelay.ts": {
+      "source": "packages/playwright-core/src/tools/mcp/cdpRelay.ts",
+      "sha256": "5f19dfb0034a2877029c36e5a4c665082ff27a1b0af22374f8f796f91d98078d"
+    },
+    "time.ts": {
+      "source": "packages/isomorphic/time.ts",
+      "sha256": "82946e2f05595deaf3d5b879e91057882e784394f6ec009b5ebbdff8aa5073bd"
+    },
+    "timeoutRunner.ts": {
+      "source": "packages/isomorphic/timeoutRunner.ts",
+      "sha256": "4399b0e7b0bdd6d7c6e38db34c8f1f4e2dd4df0251e99addff6b25d90f77814d"
+    },
+    "extension/manifest.json": {
+      "source": "packages/extension/manifest.json",
+      "sha256": "7113475e750553ee2a47ccddc2e61e852c53ad4a454c4e4be8ff75a6ea54e6d5"
+    }
+  },
+  "modifications": [
+    "CDP browser-level Target compatibility; explicit owned targets only",
+    "Local ManualPromise import; error reporting omits raw page/credential values",
+    "Task-owned windows; group membership does not grant ownership",
+    "Use original disconnect on auth-token regeneration; no extension auto-reattach",
+    "Token URL uses private loopback redirect, never Chrome argv",
+    "Declare only connect.html web-accessible to http://127.0.0.1/* for the original loopback redirect; retain original token checks",
+    "Retain original approved extension mapping across sequential SDK clients; never auto-reconnect the extension",
+    "Refresh owned Target facts through original chrome.debugger Target.getTargetInfo; stale attach-time URL is not a postcondition fact"
+  ],
+  "ioAdapter": {
+    "library": "ws",
+    "version": "8.21.3",
+    "license": "MIT",
+    "publicSurface": "WebSocketServer({noServer:true}), handleUpgrade, WebSocket close/send/events"
+  }
+}

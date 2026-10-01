@@ -198,6 +198,7 @@ export class TaskChainAuthoring {
       if (!allowedOrigins.length) throw new Error("preexecution_entry_unresolved")
       await this.upstream.withAuthoring!({ selection: model.selection, signal, ownerId: job.browserRunId,
       connectionOwnerId: job.taskId,
+      ...(job.browser?.mode ? { browserMode: job.browser.mode } : {}),
       allowedOrigins,
       onHumanWait: (wait, resume) => this.waitForHuman(job, wait, resume, signal),
       onProgress: (event) => this.recordProgress(job, event) }, async (session) => {

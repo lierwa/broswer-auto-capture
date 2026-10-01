@@ -128,10 +128,10 @@ test("确认后计划投影不调用模型", async () => {
 })
 
 
-test("本次来源保存并关闭 owner；缺在线最终编译即失败，不搜索旧任务或离线补编译", async () => {
+test("本次来源沿用环境快照并关闭 owner；缺在线最终编译即失败，不搜索旧任务或离线补编译", async () => {
   const draft = requirement(), plan = projectPreparationPlan(draft, 1), events: string[] = []
   const job = { id: randomUUID(), taskId: draft.taskId, key: "current", status: "queued", sequence: 0,
-    type: "prepare", browserRunId: null } as TaskAuthoringJob
+    type: "prepare", browserRunId: null, browser: { mode: "dedicated-headless", headless: true } } as TaskAuthoringJob
   const artifacts: unknown[] = []
   const repository = { saveJob: () => {},
     jobs: () => { throw new Error("must_not_search_old_jobs") },
@@ -143,7 +143,8 @@ test("本次来源保存并关闭 owner；缺在线最终编译即失败，不�
   const ai = { selection: () => selection, prepare: async () => ({ selection }) }
   let frozenSource = ""
   const upstream = {
-    withAuthoring: async (_input: unknown, work: (session: HybridAuthorSession) => Promise<void>) => {
+    withAuthoring: async (_input: { browserMode?: string }, work: (session: HybridAuthorSession) => Promise<void>) => {
+      assert.equal(_input.browserMode, "dedicated-headless")
       events.push("browser-open")
       await work({ author: async (source, options) => {
         const sign = (value: unknown) => ({ ...value as object, digest: digestCanonicalJson(jsonValueSchema.parse(value)) })

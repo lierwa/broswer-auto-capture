@@ -1,7 +1,7 @@
 import { retireWorkflowV1 } from "./retirement.js"
 import { randomUUID } from "node:crypto"
 import { spawn, type ChildProcess } from "node:child_process"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, realpath, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import readline from "node:readline"
@@ -28,6 +28,7 @@ import { authoringHumanEventSchema, authoringHumanResumeResultSchema, hybridAuth
 import { compilationCheckpointSchema, receiveCompilation, type CompilationHandler,
   type CompilationPending } from "./hybrid-compilation-checkpoint.js"
 import { dailyChromeConnection, resolveDailyChromeEndpoint } from "./daily-chrome-connection.js"
+import type { BrowserMode } from "@browser-capture/contracts/browser-profile"
 
 export type UpstreamAuthorResult = ReturnType<typeof runnerAuthorResultSchema.parse> & { modelCalls: ModelCallReport[] }
 export type UpstreamReplayResult = ReturnType<typeof runnerReplayResultSchema.parse> & { modelCalls: ModelCallReport[] }
@@ -45,14 +46,14 @@ export interface UpstreamBrowserRuntime {
     work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T>
   withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
     connectionOwnerId?: string; closeAfterOperation?: boolean;
-    headless?: boolean; managedWindow?: { ownerId: string; resume: boolean };
+    headless?: boolean; browserMode?: BrowserMode; managedWindow?: { ownerId: string; resume: boolean };
     handoffPurpose?: () => "delivery" | "human_wait" | null;
     onHandoff?: (purpose: "delivery" | "human_wait", lease: ReturnType<typeof hybridWindowLeaseSchema.parse>) => void;
     onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
     onCleanup?: (report: RunnerCleanupReport) => void },
     work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T>
   withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
-    connectionOwnerId?: string;
+    connectionOwnerId?: string; browserMode?: BrowserMode;
     onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
     work: (session: HybridAuthorSession) => Promise<T>): Promise<T>
   managedWindowAction?(input: { action: "inspect" | "focus" | "end" | "verify_closed"; ownerId: string; leaseId: string }):
@@ -83,7 +84,8 @@ export class RunnerProcess {
     private readonly onDiagnostic?: (line: string) => void,
     private readonly lifecycle: { runnerScript?: string; closeTimeoutMs?: number; childCloseTimeoutMs?: number;
       removeTemporaryDirectory?: typeof rm; runnerEnvironment?: Record<string, string>;
-      resolveBrowserEndpoint?: typeof resolveDailyChromeEndpoint } = {}) {}
+      resolveBrowserEndpoint?: typeof resolveDailyChromeEndpoint; browserMode?: BrowserMode;
+      resolveExtensionEndpoint?: () => Promise<string | undefined> } = {}) {}
 
   envValue(name: string) { const value = process.env[name]?.trim(); return value || undefined }
   envBoolean(name: string, fallback: boolean) {
@@ -96,8 +98,16 @@ export class RunnerProcess {
   }
 
   async startHybrid(config: Omit<ReturnType<typeof hybridStartRequestSchema.parse>["config"], "allowedSites">) {
-    const connection = await dailyChromeConnection(config, this.envValue("BAT_UPSTREAM_BROWSER_CDP_URL"),
-      this.lifecycle.resolveBrowserEndpoint ?? resolveDailyChromeEndpoint)
+    const mode = this.lifecycle.browserMode ?? "daily"
+    const extensionEndpoint = mode === "daily" && !config.existingBrowser
+      ? await this.lifecycle.resolveExtensionEndpoint?.() : undefined
+    // WHY：专属 Profile 已由 B-U 与既有窗口 owner 实现；选择专属模式不能探测/借用日常 Chrome。
+    const connection = mode === "daily"
+      ? await dailyChromeConnection(config, extensionEndpoint ?? this.envValue("BAT_UPSTREAM_BROWSER_CDP_URL"),
+        this.lifecycle.resolveBrowserEndpoint ?? resolveDailyChromeEndpoint)
+      : { ...config, headless: mode === "dedicated-headless", connectionOwnerId: undefined,
+        existingBrowser: undefined }
+    if (mode !== "daily" && config.existingBrowser) throw new Error("hybrid_browser_environment_owner_conflict")
     const windowOwner = connection.existingBrowser ?? connection.managedWindow
     this.managedWindow = windowOwner ? { ownerId: windowOwner.ownerId,
       profilePath: config.profilePath } : null
@@ -160,7 +170,8 @@ export class RunnerProcess {
     this.signal.throwIfAborted()
     if (this.child) throw new Error("upstream_runner_already_started")
     if (this.cleanup) throw new Error("upstream_runner_already_closed")
-    const ownerDirectory = await mkdtemp(path.join(tmpdir(), "bat-hybrid-owner-"))
+    // WHY：Python 已记录 realpath；macOS /var 别名不能造成同一 owner 的身份失配。
+    const ownerDirectory = await mkdtemp(path.join(await realpath(tmpdir()), "bat-hybrid-owner-"))
     this.temporaryDirectory = ownerDirectory
     const python = this.envValue("BAT_UPSTREAM_BROWSER_PYTHON")
       ?? path.join(this.root, "work", "upstream-browser-hybrid", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python")

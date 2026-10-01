@@ -118,7 +118,8 @@ class Runner:
             if self.browser is not None:
                 raise ValueError('hybrid_profile_owner_requires_offline_runner')
             return (current_profile_owner(request.ownerId, request.launcherPid) if isinstance(request, ProfileOwnerRequest)
-                    else recover_profile_owner(request.profilePath, request.ownerId, request.leaseId, request.runner))
+                    else await asyncio.to_thread(recover_profile_owner, request.profilePath,
+                                                 request.ownerId, request.leaseId, request.runner))
         if isinstance(request, ExecuteRequest):
             return await self.execute(request.command.model_dump(), action_ref=request.actionRef)
         if isinstance(request, ObserveRequest):
@@ -211,14 +212,15 @@ class Runner:
                 self.connection = ConnectedTaskScope(config)
             self.managed_window, self.browser = await self.connection.start(config, domains, self.diagnostic)
         elif window_config is not None:
-            if config.headless:
+            if config.headless and config.existingBrowser is not None:
                 raise ValueError('hybrid_managed_window_requires_visible')
             attached = config.existingBrowser is not None or (window_config.resume
                        and AttachedWindow.has_lease(self.profile_path, window_config.ownerId))
             self.managed_window = (AttachedWindow(self.profile_path, window_config.ownerId,
                                    config.existingBrowser.cdpUrl if config.existingBrowser else None,
                                    diagnostic=self.diagnostic)
-                                   if attached else ManagedWindow(self.profile_path, window_config.ownerId))
+                                   if attached else ManagedWindow(self.profile_path, window_config.ownerId,
+                                                                  headless=config.headless))
             self.browser = await self.managed_window.start(resume=window_config.resume, allowed_domains=domains)
         else:
             self.browser = owned_browser(self.profile_path, headless=config.headless, allowed_domains=domains)
@@ -281,6 +283,8 @@ class Runner:
             raise ValueError('hybrid_session_not_started')
         if self.connection is not None:
             self.connection.scope.ensure_connection()
+        if isinstance(self.managed_window, ManagedWindow):
+            self.managed_window.ensure_connection()
         command = COMMAND.validate_python(raw)
         if isinstance(command, StepCommand) and command.actionName == 'navigate':
             if not allowed_url(command.args.get('url', ''), self.allowed_sites):
@@ -370,6 +374,8 @@ class Runner:
             raise ValueError('hybrid_session_not_started')
         if self.connection is not None:
             self.connection.scope.ensure_connection()
+        if isinstance(self.managed_window, ManagedWindow):
+            self.managed_window.ensure_connection()
         for attempt in range(4):
             try:
                 return await self._observe_once()

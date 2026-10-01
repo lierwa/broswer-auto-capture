@@ -251,7 +251,8 @@ export class TaskRuntimeHost {
         // WHY：正式运行只释放本 operation；同任务父连接由已有取消、交付和服务退出边界关闭。
         connectionOwnerId: input.taskId,
         allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation,
-        ...(input.browser ? { headless: input.browser.headless } : {}),
+        ...(input.browser ? { headless: input.browser.headless,
+          browserMode: input.browser.mode ?? (input.browser.headless ? "dedicated-headless" : "daily") } : {}),
         ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}),
         ...(input.handoffPurpose ? { handoffPurpose: input.handoffPurpose } : {}),
         ...(input.onHandoff ? { onHandoff: input.onHandoff } : {}),

@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "B-A-T 日常 Chrome",
+  "version": "0.4.0",
+  "description": "连接 B-A-T，仅控制任务创建的窗口；授权可撤销。基于固定微软扩展 0.4.0。",
+  "permissions": [
+    "debugger",
+    "activeTab",
+    "tabs",
+    "tabGroups"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["connect.html"],
+      "matches": ["http://127.0.0.1/*"]
+    }
+  ],
+  "background": {
+    "service_worker": "lib/background.mjs",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "B-A-T 日常 Chrome",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAny5D+fFXQvCt8672o7wArWRx9GrDGt6bGm9DNUtMaKgiR2H93q9Ei9HCirrkvQvc0VSbduuPaCIUwORNhSIWWfbQNKZCxYx4GDKXQQ9TqyOlpM1zW/9rBuZdA0yIarIjXQhj6+du7lgdtFG0enCxp5NUVucAPBRCjmGhzW3xLT9uXRttXhkuRz4jmHhlnrIb9TPK9UW8LpW3J3bkWmKq07/PlWZmxbMzVZs6zBVmjy4MT8arK2UwjtVx8Z5uPk11TQVqgkMbF1YHk1Br1765XtccRDqnPxa7hoHKmdkpftJEIB/lAZ0Kc3YN12Ts9BcafTFQZDBVkTSJPICbHYtbvwIDAQAB"
+}

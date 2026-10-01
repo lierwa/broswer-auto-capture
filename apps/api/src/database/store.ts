@@ -14,6 +14,7 @@ import * as schema from "./schema.js"
 import { parseModelSelection, type ModelSelection } from "@agent-platform/ai-connect/client"
 import { automaticTaskTitle } from "./task-title.js"
 import { WorkspaceChanges } from "./workspace-changes.js"
+import { browserEnvironmentSchema, browserModeSchema, executionBrowser } from "@browser-capture/contracts/browser-profile"
 
 export type ProductDatabase = ReturnType<typeof drizzle<typeof schema>>
 export function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex") }
@@ -182,6 +183,30 @@ export class ProductStore {
     this.assertAvailable()
     const row = this.db.select().from(schema.aiSettings).where(eq(schema.aiSettings.subjectId, subjectId)).get()
     return row ? parseModelSelection(row.selection) : undefined
+  }
+  browserEnvironment() {
+    this.assertAvailable()
+    const row = this.db.select().from(schema.browserSettings).where(eq(schema.browserSettings.id, "local")).get()
+    return browserEnvironmentSchema.parse(row ? { mode: row.mode, revision: row.revision } : { mode: "daily", revision: 0 })
+  }
+  saveBrowserEnvironment(raw: unknown, expectedRevision: number) {
+    this.assertAvailable()
+    const mode = browserModeSchema.parse(raw)
+    return this.connection.transaction(() => {
+      const current = this.browserEnvironment()
+      if (current.revision !== expectedRevision) conflict("浏览器选择已变化，请重新读取后再保存。")
+      if (mode === current.mode) return current
+      const next = { mode, revision: current.revision + 1 }
+      this.db.insert(schema.browserSettings).values({ id: "local", ...next }).onConflictDoUpdate({
+        target: schema.browserSettings.id, set: next,
+      }).run()
+      return next
+    })()
+  }
+  executionBrowser(browser?: { headless: boolean; mode?: ReturnType<typeof browserModeSchema.parse> | undefined }) {
+    // WHY：旧显式可见请求一直使用日常 Chrome，不能被新全局无头选择覆盖；缺省才读取当前选择。
+    const mode = browser?.mode ?? (browser ? browser.headless ? "dedicated-headless" : "daily" : this.browserEnvironment().mode)
+    return executionBrowser(mode)
   }
   saveSharedModelSelection(subjectId: string, input: unknown) {
     this.assertAvailable()

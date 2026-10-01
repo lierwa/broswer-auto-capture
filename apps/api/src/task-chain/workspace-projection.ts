@@ -101,7 +101,7 @@ function summarizeExecution(record: TaskExecution) {
     release: record.release, draft: record.draft,
     steps: record.steps.map((step) => ({ stepId: step.stepId, chain: step.chain,
       status: step.status, reason: step.reason })),
-    result: record.result, cleanup: record.cleanup, browserHandoff: record.browserHandoff,
+    result: record.result, cleanup: record.cleanup, browser: record.browser, browserHandoff: record.browserHandoff,
     createdAt: record.createdAt, updatedAt: record.updatedAt,
   }
 }
@@ -113,6 +113,7 @@ export function projectActivity(job: TaskAuthoringJob | null) {
   // WHY：样本/独立验证开始后由正式草稿和本次 execution 接管画布，不能继续以生成片段遮住运行。
   const build = ["preexecuting", "compiling"].includes(phase) ? job.authoring?.build : undefined
   return { id: job.id, status: job.status, phase, sequence: job.sequence, reason: job.reason,
+    ...(job.browser ? { browser: job.browser } : {}),
     ...(build ? { build: { stepId: build.stepId, sequence: build.sequence, digest: build.digest,
       phase: build.phase, nodes: build.nodes, edges: build.edges,
       presentation: build.presentation ?? ungroupedPreparationPresentation(build.nodes, build.edges) } } : {}),

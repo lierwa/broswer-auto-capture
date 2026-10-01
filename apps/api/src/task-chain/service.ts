@@ -57,7 +57,7 @@ export class TaskChainService {
     this.authoring = new TaskChainAuthoring(this.repository, ai, upstream)
     this.executor = new TaskPlanExecutor(store, this.repository, this.host)
     this.preparation = new TaskPreparationCoordinator(store, this.repository, this.authoring,
-      (requestId, draft, input, mode) => this.enqueueDraftTrial(requestId, draft, input, mode),
+      (requestId, draft, input, mode, browser) => this.enqueueDraftTrial(requestId, draft, input, mode, browser),
       () => this.scheduleDrain())
   }
 
@@ -269,9 +269,11 @@ export class TaskChainService {
   }
 
   private enqueueDraftTrial(requestId: string, draft: TaskDraft, input: JsonValue,
-    mode: "sample" | "verification") {
+    mode: "sample" | "verification", browser?: TaskExecution["browser"]) {
     this.host.assertExecutable(draft.taskId, draft.content.steps.map((step) => step.chain))
     const record = queuedDraftExecution(draft.taskId, requestId, draft, input, { nodeDelayMs: 0 }, mode)
+    // WHY：同一次准备的探索与两次原有验证使用其快照；普通草稿试跑才读取当前选择。
+    record.browser = this.store.executionBrowser(browser)
     this.repository.saveExecution(record)
     this.repository.saveCandidate(taskExecutionCandidateSchema.parse({ executionId: record.id, taskId: draft.taskId,
       draft: draftReference(draft), content: structuredClone(draft.content), createdAt: record.createdAt }))
@@ -299,7 +301,7 @@ export class TaskChainService {
     const requirement = syncConfirmedRequirement(this.store, this.repository, taskId)
     if (!requirement) conflict("只能运行当前已确认需求。")
     const closure = this.host.assertExecutable(taskId, release.content.steps.map((step) => step.chain))
-    const browser = command.browser ?? DEFAULT_TASK_EXECUTION_BROWSER
+    const browser = this.store.executionBrowser(command.browser)
     if (release.content.plan.browserHandoff === "keep_open" && browser.headless) {
       conflict("发布版本要求交付原页面，请使用可见浏览器运行。")
     }

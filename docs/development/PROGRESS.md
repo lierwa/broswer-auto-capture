@@ -1,5 +1,131 @@
 # 开发进度
 
+## 2026-10-02 任务窗口激活回归修复与原 V5 完整复跑（最新）
+
+**本项通过。** 新扩展窗口适配使用 `chrome.windows.create(focused:false)`，B-U0.13.8 的 logical focus 不会激活真实页面。原前两步在实际日常 Chrome154 复现相同 target_state_fact_mismatch、页面 hidden；仅加现成 `Target.activateTarget` 后同条件通过。已在 AttachedWindow.start/start_connected 的既有 task_target_focus 阶段补实际激活，先用 TargetScope 核验已持久化的本 operation 目标；激活失败沿原关闭合同处理。不修改已发布图、selector、后条件或等待，不新增驱动/协议/重试/模型调用。
+
+- **通过**：所属 Python 24/24（新/复用连接激活、激活失败清理和原启动诊断）；新增两项修前均红、修后绿。`git diff --check` 通过。Python 在下次运行创建的新 runner 中加载补丁，开发服务未重启。
+- **通过**：从真实工作台“运行”提交原 V5，execution `97a83b22-1a20-4308-8095-6536b2669a53` / run `443055d0-2e3b-494c-8b42-90675eb98f80` 均 completed；release `8f89a965-4c31-4aef-8a1d-07df46d98864` / digest `5992e25012e152670305919cbef307fc549d2882a8836c53518424db571a2fe6` 不变。日常 mode；20 transitions、23 browserCommands、0 llmCalls、modelCalls=[]、auditComplete=true、cleanup confirmed。
+- **通过**：首页搜索、仓库、Issues、第二页首项和标题/正文读取均完成；工作台显示所有节点完成，成果弹窗显示字段。只记录输出长度/摘要：标题97字符、正文1630字符。授权自动复用，无需重载扩展或重填；用户 Chrome PID657 保持运行。
+- **失败，保留**：原 execution `88c57009-f73a-4355-8c85-ab16a74517ca` 不改写。其已有诊断证明单次 trusted 点击命中目标后代，94次后条件仍 expanded/focused=false；原日志没有 visibility，不补造旧现场。本轮证实窗口适配回归及当前复现因果。诊断夹具初次两次 stable/v1/v2 混用在图校验处失败、未派发 GitHub 点击，清理确认；prefix 汇总最初误用事件 type 统计 firstClickPassed=false，完成状态和实际 expanded/focused=true 是对照依据，已修正探针统计。
+- **阻塞**：Windows缺实机；当前日常 Chrome 进程未开放旧 native debugging，无法对同一进程做旧端口 A/B，未关闭/重启或复制 Profile。
+- **未测**：日常 Chrome 冷启动/重启、升级/卸载、实际扩展授权重新生成/撤销、首次完整 LLM 探索→编译→发布、iframe/popup/下载额外样本及全量测试。本次完整普通复跑不替代这些门。
+
+证据：ignored `work/daily-chrome-p0/search-prefix-actual.log`、`search-prefix-activate.log`、`owned-activation-red.log`、`owned-activation-green.log`、`search-focus-full-v5-proof.json` 与 `search-focus-full-v5-result.jpg`；固定源码与复用说明见 RESEARCH 最新节。诊断脚本仅在 ignored debug 目录保留，不进入产品入口。现有 checkout/master/HEAD674ed366不变，未创建分支/worktree，未提交或推送，未改相邻项目。
+
+## 2026-10-02 实际日常Chrome154首次配对与持久授权复用通过
+
+**连接页拦截已修复，实际日常Profile的配对、保存授权与最小普通运行已通过；完整首版验收仍有未测与Windows阻塞。** 用户已完成安装并确认重新加载，不再将首次安装/配对记作当前工具阻塞。源码固定版本用于复现，不要求用户更换或降级Chrome。
+
+- 仍在原checkout、master/674ed366；保护已有改动，无分支/worktree、提交、推送或相邻项目改动。本次产品修补只有受管manifest的原connect.html资源声明及UPSTREAM修改记录，原token/CDP/窗口合同不变。
+- Chrome154.0.8037.92的Default（用户1）实际保存成功；状态不含授权码，文件权限0600。原启动器复用现有Chrome；保存后闲置断连不会删除授权，下一次主动运行复用保存授权，不增加用户操作。
+- 合成本地页面使用实际日常Profile，经现有PythonUpstreamBrowserRuntime、W-U和TaskChainRuntime/LangGraph完整普通运行1次；status=passed、modelCalls=0、auditComplete=true、cleanup=confirmed，fixture进程退出0。没有新建或改写产品发布链路。
+- 原V5任务实际execution `88c57009-f73a-4355-8c85-ab16a74517ca`失败于s-a-0002点击后目标状态合同：`ordinary_postcondition_failed_target_state_fact_mismatch`。实际导航完成、llmCalls=0、modelCalls=[]、auditComplete=true、cleanup confirmed；根因未证明，不用合成页面成功改写此结论。
+- 第一个额外探针被已有闲置relay占用挡住；这是验证准备失误，保留首败。通过既有环境选择释放闲置连接后恢复daily，重测受影响探针通过。配置最终daily/revision2；原授权保留、原链路版本不变、不增加链路复验。
+
+| 状态 | 本阶段最小验证 |
+| --- | --- |
+| 通过 | 原HTTP跳转/manifest边界先红后绿，所属4例；最终扩展原地构建；API类型检查；独立Chromium134同路径握手/清理；实际Chrome154配对与保存、保存授权复用、1次原运行时完成/0模型/清理；实际工作台三模式与授权保留；git diff --check。 |
+| 失败，保留 | 上述GitHub V5真实运行；CfT145独立探针在版本/扩展断言前超时、根因未知且清理确认；第二连接探针准备失败，释放闲置连接后通过。 |
+| 阻塞 | Windows缺实机：安装、ACL、自动启动/复用、重启与撤销。 |
+| 未测 | 实际日常Chrome冷启动/重启、实际Profile旧码撤销/卸载；完整首次探索→编译→发布；iframe/popup/下载额外样本；根级全量测试。原134测试Profile的重启/撤销/所有权证据仍限定原样本。 |
+
+实际证据：ignored `work/daily-chrome-p0/real-daily-chrome154-runtime.log`、`real-daily-chrome154-authorization.jpg`；首败/独立浏览器记录和精确入口见RESEARCH最新节。开发服务仍由本项目原npm dev运行；没有结束用户Chrome或读取个人页面、Cookie、凭据内容到日志。
+
+## 2026-10-02 最小首次使用操作与工作台入口恢复
+
+- Chrome 当前仅有一个资料目录 Default，显示名“用户1”；工作台已自动选中，不要求用户选择或创建 Profile。已将现有工作台停在日常 Chrome 授权弹窗，用户只需加载现成解压扩展并首次复制授权码保存。
+- 先前开发服务已退出、4173/4175 无监听；只读核对没有进行中的准备或执行后，复用原 `npm run dev` 恢复本项目服务，独立进程会话 PID52466。页面和 API 健康均200，授权仍为未保存；未控制用户 Chrome。启动日志位于 ignored `work/daily-chrome-p0/workbench-dev-20261002.log`。
+- 没有修改授权协议或自动化绕过安装限制；实际日常 Profile 配对及 Windows 验收仍未通过，不因入口恢复更改结论。
+
+## 2026-10-01 日常扩展产品接入、持久授权与真实普通复跑（当前结算）
+
+**开发接线已完成，整项验收未完成。** 实际日常 Profile 加载扩展/首次配对仍被当前浏览器工具阻塞；Windows 缺实机。不能把下列独立测试 Profile 证据替代这两个验收门。以下旧节的“P0 未通过 / P1 尚未开发 / 持久授权不可用”均为上一阶段记录。
+
+- 现有 checkout 和 `master@674ed366222961840a7e0af8495f37ad81b8ae1d` 未变。保护进入 session 时的六份 dirty 文档；未建分支/worktree、提交、推送或改相邻项目。用户 Chrome PID657 保持原进程。
+- **P0 通过（限定样本）**：固定 Microsoft extension0.4.0 / `8b552173e8d767db29b8baef8f4a1f08cf7f26bf` 的受管最小修复实际被 browser-use0.13.8 / cdp-use1.4.5 消费；补 browser-level Target 方法，原 session 映射不变。目标事实改读原 `chrome.debugger.sendCommand(Target.getTargetInfo)`，修复 attach 快照的旧 URL 导致 W-U 后置条件失败。
+- **P1 已开发并实测**：复用扩展原 Profile-local token、比较、断连和重新生成；凭据复用 ai-connect0.3.2/f0ef768f 的公开 ProviderCredentialStore（原锁、原子写入、0600）。只在真握手后保存；查看状态不返回 token；迟到配对不能覆盖撤销。重建宿主、退出并重启测试 Chrome 后授权仍有效；重新生成 token 立即断开，旧 token 被拒绝；宿主可删除自己的已保存授权。
+- **P2 已开发并实测**：原 PythonUpstreamBrowserRuntime / TaskConnection 接入扩展 endpoint，专属可见/无头模式保持原 B-U owner。切换环境先关闭闲置父连接及扩展连接，保存授权继续保留；切换模式不加链路复验。真实 workflow-use0.2.11 受管 fork `5d2d19fe8835cc86f1bf3e04302a5000d590f249` + LangGraph 连续两次普通运行 completed、0 模型、审计完整、正常运行清理确认。
+- **任务所有权反例通过**：在独立 Profile 中创建无所有权标签，放进同一任务窗口并拖入分组；原扩展边界没有返回它，显式 attach 被拒绝，拖入被取消。读取直接消费 TargetScope 保存的原 getTargets，避免仅靠宿主过滤掩盖扩展越权。
+- **P3 已开发并现场核对**：Radix 环境弹窗显示三种模式、实际 Profile 名称、解压目录、授权页入口、密码输入、连接并保存、查看和撤销。真实工作台当前显示日常 Chrome、用户1、未保存授权；没有伪报配对完成。后续给用户安装步骤时确认先前 PID20362 已退出、两个端口均空闲、数据库没有进行中的准备或执行，再恢复本项目服务为 PID41790；4173 页面与4175 API健康均200，授权状态仍为未保存。没有停止用户 Chrome。
+- **P4 交付物已生成**：`work/daily-chrome-extension/extension`，含原许可证、第三方许可证、UPSTREAM 固定版本/源摘要/修改清单；实际构建入口 `node scripts/build-daily-chrome-extension.mjs`。macOS/Windows 的安装、更新、撤销和卸载操作见开发文档。
+
+验证结算：
+
+| 状态 | 证据与范围 |
+| --- | --- |
+| 通过 | API 类型检查；工作台类型检查与构建；两个所属测试文件共11例；最终扩展构建；真实 SDK 导航/点击/DOM 观察；两次 W-U/LangGraph 零模型运行；重建宿主/测试 Chrome 重启；token 撤销/旧 token 拒绝；同窗口/分组个人页反例；实际 Profile 名称元数据只读核验；工作台授权弹窗与三模式选项现场核对。 |
+| 失败并已修复 | 原版 `Target.setDiscoverTargets`；原映射的缓存 URL 后置条件失败。旧 headless 夹具没有 Profile 名称缓存且启动器复用未通过，切到与日常模式一致的可见测试 Chrome。裸 SDK 撤销后触发自身自动重连及退出队列挂起，夹具改为复用产品已有 AttachedWindow/TargetScope；挂起 fixture 在无任何子进程后按确切 PID 停止，未涉及用户 Chrome。首败日志保留。 |
+| 已知限制 | `Browser.grantPermissions` 在扩展目标通道不可用，真实样本警告但导航/运行成功；不能声称浏览器权限管理、下载或所有 CDP 功能均已兼容。撤销后的在途测试控制无法再关页，原运行清理为 unconfirmed；沿既有 cleanup_required 合同保留，不重连/不改判原业务结果。最终 fixture 由其 Chrome owner 回收，fixture cleanup=confirmed。 |
+| 阻塞 | 实际日常 Profile 安装/首次持久配对：浏览器工具拒绝 `chrome://extensions/` 并禁止替换 UI/raw-CDP 绕过；这是工具限制，未证明 Chrome 安装受限。Windows 实机安装、ACL、冷启动/复用、重启与撤销缺设备。 |
+| 未测 | 实际日常 Profile 的冷启动/升级/卸载；扩展路径下完整首次 LLM 探索→编译→发布；iframe/popup/下载的额外样本；Windows 打包命令现场；根级全量测试。基线 App/explore 超100行函数未作额外无关重构，本轮新增函数与文件未越限。 |
+
+最新原始证据：`work/daily-chrome-p0/product-lifecycle-ownership.log`（退出0，含 BAT_PROOF）；前一完整生命周期 `product-lifecycle-scoped.log`；真实最终包 SDK `consumer-product-relay.log`；URL 首败 `product-lifecycle-runtime.log`；原版首败 `consumer-resume-baseline.log`。测试 Profile/凭据已回收；没有记录 Cookie、授权码或原始敏感页面。
+
+清理：8 个被替代的自有候选探针/旧构建/VM helper 已移出产品目录，历史快照在 ignored `work/daily-chrome-p0/retired-research`，不再是执行入口。构建不依赖 tests helper；上游复制源码保留许可证和来源，不以文件数代替验收。当前77个工作区改动路径包含原dirty文档、先前P2接线以及固定上游受管子集，不能说整轮文件净减少。
+
+## 2026-10-01 三环境产品接线与实际消费者验证（最新结算）
+
+**未全部完成。** 本轮继续实施了不依赖日常扩展选型的 P2，以及 P3 的环境/专属账号入口；P0 日常扩展兼容门仍未通过，P1 持久配对/撤销尚未开发。下方“P1–P4 尚未实施”“API PID16753 保留”均为先前阶段快照，不能覆盖本节。
+
+- 现有 checkout、`master@674ed366222961840a7e0af8495f37ad81b8ae1d`；保留原 dirty 文档、ADR 与 CONTEXT。没有分支/worktree、提交、推送或相邻项目改动。
+- **已开发**：Radix 三环境选择、SQLite v20 持久化与 revision 冲突检查、准备任务及 execution 的环境快照、正式运行单次选择、真实运行/失败环境展示。模式选择不改变 TaskChain/release/digest，不追加链路复验或模型字段。
+- **已开发**：专属可见/无头沿用原 BrowserProfile/ManagedWindow 和同一个 Profile；账号管理沿用原可见窗口。切换/打开账号窗口前只释放空闲连接，任务、账号窗口或保留现场占用时拒绝并发切换。原连接清理未确认时保留原选择，不另造恢复协议。
+- **已开发**：准备、原有样本验证与复验消费同次准备环境快照；普通独立草稿试跑及下一次准备才读取当前选择。旧 job 没有 mode 时不补造历史。旧显式 headless=false 仍走原日常可见入口，不能被全局无头选择覆盖；缺省才读取当前选择。无头正式运行仍有稳定 owner，清理失败保留原业务失败及 `cleanup_required`。
+- **修复**：macOS `/var` 与 `/private/var` 的 runner 临时根身份不一致，改为创建时规范化真实根目录，未放宽 owner/PID/路径核验。专属进程原强制退出导致存储未刷盘，改为先通过既有 cdp-use/精确 lease 请求正常关闭，再沿原 end/cleanup 合同核验；日常 AttachedWindow 不调用 Browser.close。新增断线标记沿用已有禁止自动重连策略。
+
+### 通过
+
+- 两种专属模式的真实 Chrome + browser-use/cdp-use 导航、共享合成 localStorage 与确认清理；另一次实际消费 PythonUpstreamBrowserRuntime → 原 TaskChainRuntime/LangGraph，两个 run 均 completed、llmCalls=0、auditComplete=true、每次逻辑 browserCommands=1，cleanup confirmed。不是完整新准备/编译/发布验收。
+- 同一专属 Profile 的可见账号窗口实际 open/close；私有空白 UI 中可见→无头选择保存、刷新保留、账号打开/关闭同周期 busy 反馈与最终 closed。没有登录真实账号或记录凭据。截图：`work/browser-environment-ui-proof/mode-headless.jpg`。
+- 模式/持久化/CAS/旧合同/并发与同源 HTTP 定点测试 6 项；新增准备快照保存重启/旧记录未知 1 项、现有 authoring 的快照消费 1 项；旧显式可见兼容 1 项；无头 owner 与原清理失败合同 1 项；v20 迁移原 JSON 字节保留 1 项。
+- 原日常连接/节奏 6 项、Profile/错误/占用 9 项（其中临时路径身份项首败后只重验该项）；原 Python 连接释放 13 项、Profile owner 10 项、新断线/无头/外部 owner 4 项。未运行根级、全量或重复已绿集合。
+- API typecheck、Workbench typecheck/production build、`git diff --check`；现有大 chunk 提示保留，不记为失败。
+- 正常关闭本项目旧开发 PID16753/83229/85299 后重载；每次核对同根目录身份与空闲状态，不按端口杀未知进程。最新 API/UI 为 PID87551，4175/4173 健康，默认环境仍 daily/revision0。用户 Chrome PID657 保持原进程。真实最新选择器截图：`work/browser-environment-ui-proof/mode-options-current.png`。
+
+### 失败与反例（不由后续通过改写）
+
+- 原版 Playwright extension + 原 CDPRelayServer 的真实扩展握手通过；固定 B-U/cdp-use 消费失败于 `Target.setDiscoverTargets`，原 relay 在 autoAttach 初始化前没有可转发的 attached tab。没有引入 Playwright 浏览器驱动。
+- Panerelay 原协议/后台逻辑的 owned Profile Native Messaging fixture 失败于 native_registration：后台存在、nativeMissing=false、nativeExited=true、transport=disconnected，原因未知。该 fixture 修改了测试 manifest，consumer 未启动；不能宣称正式 manifest、SDK 兼容或授权通过。独立 Native Host helper 启动成功仅是局部证据。
+- 专属运行最初正常清理缺存储刷盘；先修复再重验。一次真实 LangGraph 探针对物理访问次数的 `[0,1]` 假设失败，实测两个逻辑命令合计四次页访问；后续只验证存储跨模式连续性，不承诺一次逻辑命令只有一次物理导航，额外访问根因未确认。
+- graceful close 初次超出原清理预算后产生未确认；限定原 cdp-use 调用预算后受影响两模式通过。首个 dev 重启因原端口身份释放中的保护检查拒绝，确认旧 PID/两端口退出后正常启动。探针页面被上游移除导致 evaluate 上下文失效等研究夹具首败，以及 Workbench 可选字段类型首败，均保留并定点修正。
+
+### 阻塞与未测
+
+- **阻塞：日常扩展采用与持久配对/撤销。** 固定候选的任务窗口、非 owner 标签页准入、秘密/原授权行为仍有 P0 冲突，不能原样冻结。按用户明确要求，修改候选行为或增加机制须给固定源码/真实反例后交用户决定；未自行另造授权协议/驱动/恢复。
+- **阻塞：目标日常 Profile 首次加载/批准。** 浏览器工具自动批准检查此前拒绝 `chrome://extensions`（仅允许 HTTP/HTTPS）；没有改用原生 UI、原始 CDP 或 Profile 文件绕过。独立全新测试 Profile 可开发测试，不能代替日常绑定验收。
+- **阻塞：Windows 实机。** 本轮没有 Windows 设备，继续完成可开展 macOS 开发，不把缺机扩成整体停止。
+- **未测**：新模式完整 B-U 首次探索→W-U 在线编译→样本/复验→发布→正式执行的端到端；真实账号登录/跨站效果；目标日常 Chrome 的自动打开、指定 Profile 绑定、跨浏览器/服务重启持久信任、实际 owner/拖入/撤销；macOS 完整扩展交付与 Windows 安装/生命周期。
+
+详见 [固定来源与最新证据](DAILY_CHROME_EXTENSION_P0_EVIDENCE_20261001.md#继续实施真实消费者与三环境产品接线)。研究与产品证据分开，旧失败和成功不回写。
+
+## 2026-10-01 P0 候选构建与无人值守实浏览器加载
+
+- **通过**：固定原版 Playwright extension 0.4.0 原构建；Chromium 134 全新测试 Profile 中授权 UI、原后台 chrome.runtime 消息实际运行；消费端为现有 browser-use/cdp-use，模型 0、清理 confirmed。生成可复现研究构建入口与所属 API 的显式 Python fixture，随构建提供原版权/许可证，产品依赖未改。
+- **失败**：CfT 145 首次 SDK 启动超时，根因未知；即时清理核验曾报 cleanup_required，随后确认资源退出并回收测试目录。134 首次探针误用 evaluate 的 async-arrow 格式，修正后只重验该项。来源 urllib 再次 IncompleteRead，curl 获取同一固定 archive 并通过原摘要。所有首败独立保留。
+- **阻塞/未测**：日常 Chrome 154 的首次安装/批准与目标 Profile 验收；完整候选 relay 消费、任务窗口/持久授权/三环境接线；Windows 实机。P0 兼容门仍不通过，候选没有冻结。Panerelay 是新增调查对象，非现有组件，不能仅凭撤销探针推荐采用。
+- **边界修正**：受保护安装不能替用户确认，但构建和独立真实浏览器测试不依赖用户在场；前次答复将安装扩大为全部开发停止条件，已纠正。[完整补证](DAILY_CHROME_EXTENSION_P0_EVIDENCE_20261001.md#后续补证用户不在电脑旁时的开发验证)。用户 Chrome PID657 与 API PID16753 保留，无分支/worktree/提交/推送，也未重跑原 9 项或全量测试。
+
+## 2026-10-01 日常 Chrome 扩展 P0 实施与候选阻塞
+
+- **未完成：P0 兼容准入不通过，P1–P4 尚未实施。** 本轮已有明确开发授权；基线为现有 `master@674ed366`，保留原 4 个修改文档与 2 个新增文档；未创建分支/worktree、提交或推送。
+- 已新增 `scripts/research-daily-chrome-sources.py`、API 的显式候选探针与来源辅助；固定三候选 archive SHA-256/逐文件摘要，保留许可证。现有产品 B-U/W-U、父连接、运行/恢复合同未改。详细 [P0 记录](DAILY_CHROME_EXTENSION_P0_EVIDENCE_20261001.md) 包含完整 Reuse Assessment 和实际入口。
+- **通过**：9 项各自取得最终通过，表明反例/性质得到原代码执行证明；Panerelay 两项使用真实 HTTP/WebSocket，撤销后旧凭据拒绝，newWindow 同时被丢弃；API 所属 typecheck 通过。这不是 Chrome 扩展或产品零模型复跑通过。
+- **失败**：Playwriter 非本次 owner 的历史云清理/默认原始日志；Playwright group 拖入扩权、空目标枚举和 argv token；Panerelay 建页要求 all-tabs 并丢失 newWindow，三者均不能原样采用。首次下载中断与未齐来源造成 2/9、纯类型误加载造成 3/5 的研究工具失败保留，补救只重验受影响项；不算产品首败或兼容通过。
+- **阻塞**：按用户事先要求，已提出允许哪个候选的受管最小扩展/继续寻找的取舍，未自行决定。Windows 无本轮实机；浏览器工具自动安全检查拒绝打开 chrome://extensions（仅允许 HTTP/HTTPS），加载解压扩展与首次批准须由用户实际完成。
+- **未测**：真实日常 Chrome/Profile、原扩展构建/安装/更新、持久授权与重启、B-U 原生探索→W-U 编译→验证→普通复跑、三环境选择及自动打开/已有实例复用、实际页面隔离/撤销/清理、macOS/Windows 正式交付。
+- 只使用合成页面/秘密标记；临时日志文件、测试 relay/客户端在 finally 清理。未读取用户 Profile/Cookie/敏感页面，未真实调用云 cleanup/候选自动端口管理，原 API PID16753 与 Chrome PID657 保留。
+
+## 2026-10-01 日常 Chrome 扩展接入开发文档（文档完成，未实施）
+
+- 已完成 [开发文档](DAILY_CHROME_EXTENSION_DEVELOPMENT.md) 与新 session 接续指令，建立 [ADR 0013](../adr/0013-daily-chrome-task-window-control-boundary.md)；CONTEXT.md 记录环境选择、任务窗口、控制连接与持久配对术语。
+- 用户确认：仅任务专属窗口；首版 macOS 与 Windows；开发阶段本地加载解压扩展；主动连接/运行时自动打开 Chrome、已有实例复用；首版绑定一个指定 Profile。模式切换不新增强制链路复验，常规连接/授权/节点合同仍照常核验。
+- 用户追问“掉线/继续”的含义，未选择自动或手动恢复。已核对 TargetScope 禁止 SDK 擅自重连，TaskChainRuntime 普通异常走 failRun；文档继承现有失败、检查点和人工等待合同，不新增断线自动续跑或通用“继续”入口。
+- 用户强制要求开发的所有环节先找现成开源方案，能复用/沿用就复用/沿用，agent 不自行作出新增产品、架构或选型决策。文档已去除预设自定义短期 token/epoch 协议与 OS 凭据包，逐环节记录复用要求；具体缺口先给源码/真实反例，不自行另造基础设施。
+- 已做当前源码和固定上游来源静态核查；Playwriter/Playwright 均未连接到 B-A-T，未冻结组件。具体 endpoint、newWindow、日志/进程/辅助执行器/云清理反例已记录，不能把 README 和静态导出当兼容通过。
+- 本轮只改文档；没有安装、启停、日常 Chrome 连接、产品模型调用、产品测试、Git 提交或推送。访谈开始 Git 基线为 master/674ed366，工作区干净；开发 session 必须重新核对。
+- 产品取舍已收敛，不追加问卷。技术兼容、现成凭据/启动入口和采用依据由新 session 的 P0 核验；文档完成不代表接入、持久授权或两平台产品验收通过。
+
 ## 2026-10-01 checkpoint 后集中修复（代码与定点验证）
 
 - 修复前完整 checkpoint 已按用户要求提交：`e7ed54e44e3c560665cc3ff5101daea521800b24`。原 HEAD 为 `2a8d2cdeb2b2b7ea3cfe49930511a1e9d5081683`；没有分支/worktree、回退、推送或第二次提交。新补丁留在当前工作区。

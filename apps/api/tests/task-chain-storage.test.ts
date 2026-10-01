@@ -13,7 +13,7 @@ import { TaskContractRepository } from "../src/task-chain/repository.js"
 const budget = { maxTransitions: 30, maxBrowserCommands: 10, maxActiveMs: 30_000,
   maxLlmCalls: 0, maxInvocations: 5, maxDepth: 3 }
 
-test("v19 迁移保留旧表 JSON 原字节", async () => {
+test("v20 迁移保留旧表 JSON 原字节", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-task-contract-")), taskId = randomUUID()
   let store = await ProductStore.open(directory)
   store.taskAction({ type: "create", requestId: taskId })
@@ -22,14 +22,14 @@ test("v19 迁移保留旧表 JSON 原字节", async () => {
   const file = path.join(directory, "workbench.sqlite"), legacyBody = ' { "legacy": true, "rows": [1, 2] }\n'
   const raw = new Database(file)
   try {
-    raw.exec("DROP INDEX operations_task; ALTER TABLE operations DROP COLUMN taskId; PRAGMA user_version=18")
+    raw.exec("DROP TABLE browserSettings; DROP INDEX operations_task; ALTER TABLE operations DROP COLUMN taskId; PRAGMA user_version=18")
     raw.prepare("INSERT INTO plans(id,taskId,body) VALUES(?,?,?)").run("legacy-plan", created, legacyBody)
   } finally { raw.close() }
   store = await ProductStore.open(directory)
   try {
     const migrated = new Database(file, { readonly: true })
     try {
-      assert.equal(migrated.pragma("user_version", { simple: true }), 19)
+      assert.equal(migrated.pragma("user_version", { simple: true }), 20)
       const row = migrated.prepare("SELECT body FROM plans WHERE id = ? AND taskId = ?")
         .get("legacy-plan", created) as { body: string } | undefined
       assert.equal(row?.body, legacyBody)

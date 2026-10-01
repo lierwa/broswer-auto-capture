@@ -93,6 +93,7 @@ export async function recompileHybridSource(input: Omit<z.infer<typeof hybridCom
 /** WHY：浏览器与模型桥共同退出后才返回来源；候选写入者不在仍打开的会话中冒充 closed。 */
 export async function withHybridAuthoring<T>(input: { root: string; subject: ReturnType<AI["forSubject"]>;
   selection: ModelSelection; signal: AbortSignal; allowedOrigins: string[]; directory: string; ownerId: string;
+  headless?: boolean;
   onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
   work: (session: HybridAuthorSession) => Promise<T>, dependencies: AuthoringDependencies = {}) {
   const fork = await (dependencies.verifySource ?? verifyForkSource)(input.root)
@@ -117,7 +118,7 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
   try {
     await runner.startHybrid({ allowedOrigins: input.allowedOrigins,
       profilePath: path.join(input.directory, "browser-profile", "default"),
-      headless: runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
+      headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
       managedWindow: { ownerId: input.ownerId, resume: false } })
     const value = await work({ author: async (source, options) => {
       const offset = reports.length

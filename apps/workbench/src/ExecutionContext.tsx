@@ -7,6 +7,7 @@ import { CallSelection } from "./ChainBoundaryContext.js"
 import { SavedResultDialog, callOutputContracts } from "./SavedResultDialog.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 import type { LiveChainModel } from "./useLiveChain.js"
+import { recordedBrowserLabel } from "./BrowserEnvironmentSelect.js"
 
 type ReviewCommand = Extract<TaskChainCommand, { type: "review_execution" }>
 export function ExecutionContext({ model, connection, feedback, setFeedback, onClose, onRequirementRevision }: {
@@ -36,6 +37,7 @@ export function ExecutionContext({ model, connection, feedback, setFeedback, onC
     {!execution ? <p>{model.acceptedExecutionId ? "已提交，正在等待本次运行记录。" : "尚未运行。"}</p> : <>
       <div className="context-status" data-tone={businessStatus}><StatusIcon status={businessStatus ?? execution.status} />
         <div><strong>{executionStatus(businessStatus ?? execution.status)}</strong><small>{formatTime(execution.updatedAt)}</small></div></div>
+      <p>本次浏览器：{recordedBrowserLabel(execution.browser)}</p>
       {entered === false && canReview && <p>本次在步骤开始前结束，没有执行动作或返回成果。</p>}
       {entered === false && canReview && <p role="alert">{result?.failure?.reason ?? model.detail?.execution.cleanupResume?.reason ?? model.detail?.execution.reason}</p>}
       {entered !== false && <SavedResultDialog result={result} outputContract={model.plan?.outputContract ?? null} />}<CallSelection model={model} />

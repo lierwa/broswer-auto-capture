@@ -43,15 +43,15 @@ def _endpoint(value):
 
 
 @asynccontextmanager
-async def _client(endpoint):
+async def _client(endpoint, *, timeout=15, stop_timeout=5):
     client = CDPClient(_endpoint(endpoint))
     try:
-        async with asyncio.timeout(15):
+        async with asyncio.timeout(timeout):
             await client.start()
             await client.send.Browser.getVersion()
             yield client
     finally:
-        await asyncio.wait_for(client.stop(), timeout=5)
+        await asyncio.wait_for(client.stop(), timeout=stop_timeout)
 
 
 def _state(lease, active, reason=None):
@@ -299,7 +299,8 @@ class AttachedWindow:
             self._startup_event(stage, 'started')
             lease = self._load(self.owner_id)
             await browser.get_or_create_cdp_session(lease.targetId, focus=True)
-            self.scope.require_focus()
+            # WHY：B-U focus 只切换内部目标；扩展的新窗口可仍为 hidden，须激活已登记的任务页。
+            await browser.cdp_client.send.Target.activateTarget({'targetId': self.scope.require_focus()})
             lease = self._load(self.owner_id)
             lease.sessionId, lease.status = browser.id, 'running'
             self._save(lease)
@@ -345,7 +346,8 @@ class AttachedWindow:
             stage = 'task_target_focus'
             self._startup_event(stage, 'started')
             await browser.get_or_create_cdp_session(lease.targetId, focus=True)
-            scope.require_focus()
+            # WHY：复用父连接仍会创建新任务窗口；同一连接的显式激活只作用于本 operation 目标。
+            await browser.cdp_client.send.Target.activateTarget({'targetId': scope.require_focus()})
             scope.clear_operation_state()
             lease.sessionId, lease.status = browser.id, 'running'
             self._save(lease)

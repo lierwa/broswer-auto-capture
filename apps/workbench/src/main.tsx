@@ -17,7 +17,7 @@ import { useTasks } from "./useTasks.js";
 import { TaskSidebar, TaskMenu } from "./TaskSidebar.js";
 import { TaskWorkspace } from "./TaskWorkspace.js";
 import { useModelSettings } from "./useModelSettings.js";
-import { DailyChromeDialog } from "./DailyChromeDialog.js";
+import { BrowserEnvironmentDialog } from "./BrowserEnvironmentDialog.js";
 import { useTaskAttention } from "./useTaskAttention.js";
 import "./styles.css";
 import "./chat.css";
@@ -127,8 +127,8 @@ function App() {
                 </DropdownMenu.Content>
               </DropdownMenu.Root>}
               {task && <TaskMenu task={task} model={model} />}
-              <Tooltip content="日常 Chrome 连接">
-                <IconButton variant="ghost" color="gray" aria-label="日常 Chrome 连接"
+              <Tooltip content="浏览器环境">
+                <IconButton variant="ghost" color="gray" aria-label="浏览器环境"
                   onClick={() => setBrowserProfileOpen(true)}>
                   <CircleUserRound aria-hidden="true" size={18} />
                 </IconButton>
@@ -228,7 +228,7 @@ function App() {
           selectOnConnect
           requiredSurface="agentSession"
         />
-        <DailyChromeDialog open={browserProfileOpen} onOpenChange={setBrowserProfileOpen} />
+        <BrowserEnvironmentDialog open={browserProfileOpen} onOpenChange={setBrowserProfileOpen} />
       </main>
     </Theme>
   );

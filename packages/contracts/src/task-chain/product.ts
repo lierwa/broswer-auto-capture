@@ -5,13 +5,17 @@ import {
 import { requirementReferenceSchema } from "./requirement.js"
 import { taskDraftContentSchema } from "./revision.js"
 import { taskDataContractSchema, taskInputRequiresVariation } from "./value.js"
+import { browserModeSchema } from "../browser-profile.js"
 
 export const taskExecutionPacingSchema = z.object({
   nodeDelayMs: z.number().int().min(0).max(5000),
 }).strict()
 export const DEFAULT_TASK_EXECUTION_PACING = { nodeDelayMs: 0 } as const
 
-export const taskExecutionBrowserSchema = z.object({ headless: z.boolean() }).strict()
+export const taskExecutionBrowserSchema = z.object({
+  headless: z.boolean(), mode: browserModeSchema.optional(),
+}).strict().refine(value => !value.mode || value.headless === (value.mode === "dedicated-headless"),
+  "browser_mode_visibility_mismatch")
 export const DEFAULT_TASK_EXECUTION_BROWSER = { headless: false } as const
 
 const releaseStepValidationSchema = z.object({

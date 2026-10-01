@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -104,7 +104,7 @@ test("任务占用时不创建 Profile runner 或 owner 标记", async () => {
   } finally { await f.cleanup() }
 })
 test("临时目录必须位于精确受管根并具有同 owner 身份", async () => {
-  const f = await fixture(), temporary = await mkdtemp(path.join(tmpdir(), "bat-hybrid-owner-"))
+  const f = await fixture(), temporary = await mkdtemp(path.join(await realpath(tmpdir()), "bat-hybrid-owner-"))
   try {
     await f.service.control({ type: "open" }, () => {})
     const owner = await readProfileOwner(f.marker)

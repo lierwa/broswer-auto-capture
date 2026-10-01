@@ -6,6 +6,7 @@ from importlib.metadata import version
 from browser_use.browser.session_manager import SessionManager
 
 from browser_use_runner.popup_resume import PopupResumeAdapter
+from browser_use_runner.connection_policy import disconnected_handler
 
 
 class TargetScope:
@@ -43,10 +44,8 @@ class TargetScope:
         SessionManager.start_monitoring = start_monitoring
         TargetScope._active = self
         if self.prevent_reconnect:
-            async def reject_reconnect(*_args, **_kwargs):
-                # WHY：借用已有授权连接不等于授权 SDK 另开连接；掉线后固定拒绝，不重连或重放。
-                self.connection_lost = True
-            self._replace(self.browser, '_auto_reconnect', reject_reconnect)
+            self._replace(self.browser, '_auto_reconnect', disconnected_handler(
+                lambda: setattr(self, 'connection_lost', True)))
 
     def _replace(self, owner, name, replacement):
         original = getattr(owner, name)

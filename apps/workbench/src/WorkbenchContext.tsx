@@ -14,6 +14,7 @@ import { ExecutionResultView, StatusIcon, executionStatus, cleanupStatus,
   historicalEventStatus, formatTime } from "./ExecutionPresentation.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 import { preparationActivityLabel, type LiveChainModel } from "./useLiveChain.js"
+import { recordedBrowserLabel } from "./BrowserEnvironmentSelect.js"
 
 export function WorkbenchContext({ model, connection, onRequirementView, onRequirementRevision }: {
   model: LiveChainModel
@@ -80,6 +81,7 @@ function PreparationContext({ model, connection, onClose }: {
     <ContextHeader eyebrow="草稿生成" title={(noParameters && request?.purpose === "representative"
       ? "方案已通过，准备代表试做" : request?.prompt) ?? (activity
       ? preparationActivityLabel(activity.phase, activity.status) : restingTitle)} onClose={onClose} />
+    {activity && <p>本次浏览器：{recordedBrowserLabel(activity.browser)}</p>}
     {request && input !== undefined ? <>{!noParameters && <ValueSchemaForm contract={request.contract} value={input}
       onChange={setInput} disabled={connection.snapshot().busy} />}{error && <p className="error-text">{error}</p>}
       <Button disabled={model.view.busy} onClick={() => void submit()}>{model.view.busy ? "正在提交…"

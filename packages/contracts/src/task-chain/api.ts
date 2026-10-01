@@ -176,6 +176,8 @@ export const taskAuthoringJobSchema = z.object({
   status: z.enum(["queued", "running", "waiting_for_human", "completed", "failed", "interrupted"]), sequence: z.number().int().nonnegative(),
   reason: textSchema.nullable(), resultId: identitySchema.nullable(), browserRunId: identitySchema.nullable().default(null),
   waitpoint: humanWaitpointSchema.nullable().default(null),
+  // WHY：准备也冻结实际环境；旧 job 缺失时保留未知，不从当前选择补造历史。
+  browser: taskExecutionBrowserSchema.optional(),
   audit: authoringAuditSchema.nullable(),
   authoring: z.object({
     stage: z.enum(["planning", "exploring", "explored", "compiling", "compiled"]),
@@ -280,6 +282,7 @@ export const taskExecutionSummarySchema = z.object({
   steps: z.array(z.object({ stepId: keySchema, chain: versionReferenceSchema,
     status: taskExecutionStepSchema.shape.status, reason: textSchema.nullable() }).strict()),
   result: taskExecutionResultSchema.optional(), cleanup: executionCleanupSchema,
+  browser: taskExecutionBrowserSchema.optional(),
   browserHandoff: taskExecutionBrowserHandoffSchema.default(UNRECORDED_BROWSER_HANDOFF),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
 }).strict()
@@ -297,6 +300,7 @@ export const taskExecutionDetailSchema = z.object({
 export const taskAuthoringActivitySchema = z.object({
   id: identitySchema, status: z.enum(["queued", "running", "waiting_for_human", "failed", "interrupted"]),
   phase: preparationPhaseSchema,
+  browser: taskExecutionBrowserSchema.optional(),
   build: taskAuthoringJobSchema.shape.authoring.unwrap().shape.build.unwrap()
     .omit({ payload: true, authorRequestId: true })
     .extend({ presentation: chainPresentationContentSchema }).optional(),

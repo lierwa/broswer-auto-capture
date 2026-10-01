@@ -1,5 +1,189 @@
 # 技术调研与复用结论
 
+## 2026-10-02 搜索首步回归：任务窗口实际激活（实施前记录与修后结算）
+
+同一 V5 可执行摘要的六次历史运行均通过 `s-a-0002`，四次完整成功；扩展接入后 execution `88c57009-f73a-4355-8c85-ab16a74517ca` 首次停在该点击。原失败诊断 `data/source-lifecycle-diagnostics/7c82e11a-459f-4309-82c8-8804bfbf1cb0.jsonl:9` 已确认同一 target/document、单次 trusted 点击命中目标后代，94次检查仍 expanded=false、focused=false，非派发异常。W-U 与 TaskChainRuntime 未改动。
+
+当前实际 Chrome154/已保存授权的原前两步复现失败；任务页 `visibility=hidden`。仅在导航前通过既有 relay 调用 `Target.activateTarget`，同一 selector、动作与检查条件立即通过，页面 visible、expanded=true、focused=true，模型0、清理确认。固定 B-U0.13.8 的 `Browser.get_or_create_cdp_session(..., focus=True)` 只设置 agent_focus_target_id，并不调用 activateTarget/bringToFront；受管扩展的新窗口适配使用 `chrome.windows.create(..., focused:false)`。首次失败日志没有记录 visibility，不补造旧现场；本轮对照证明窗口实际激活缺失这一回归及当前复现的原因。
+
+```text
+Product Alignment:
+- natural-language task: 在日常 Chrome 的任务专属窗口执行已发布链路。
+- reusable chain boundary: 发布链路、selector、动作、后条件与运行审计不变。
+- runtime inputs: 已保存授权、原 Profile、execution 的已登记目标。
+- dynamic task outputs: 原运行结果与清理事实。
+- generic platform capability used: Chrome Target.activateTarget、既有任务窗口/TargetScope。
+- replay model calls: 0 新增调用，仅显式 llm 节点。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 新建任务页的真实激活，而非 SDK 内部控制目标切换。
+- existing implementation in repository: AttachedWindow.start/start_connected；BrowserModel.activateTarget 已调用 chrome.tabs.update(active:true) 与 chrome.windows.update(focused:true)。
+- mature candidates and pinned versions: 沿用 B-U0.13.8/cdp-use1.4.5 与 Microsoft8b552173e8d767db29b8baef8f4a1f08cf7f26bf/extension0.4.0；不更换驱动、协议或状态机。
+- selected implementation: 在现有 task_target_focus 阶段、目标租约持久化且 TargetScope 核验后，复用当前 SDK 根 CDP 连接调用 Target.activateTarget。
+- reused public surface: cdp-use.send.Target.activateTarget；既有受限 relay/Chrome tabs.update、windows.update。
+- B-A-T-owned adapter and remaining gap: 仅补两处新/复用父连接 operation 的任务页激活；完整 V5 正式运行待修后验证。
+- license/runtime/platform fit: 不新增依赖；原 Apache-2.0/MIT 记录不变；Windows实机阻塞。
+- browser/runtime/state ownership conflicts: 只激活已登记目标；激活失败仍沿原 task_target_focus/close 合同清理。避免在 createTarget 回执/租约登记前添加可失败副作用。
+- replay model calls: 0。
+- rejected candidates and evidence: 不修改 GitHub selector/等待/状态条件，不额外点击或模型重试；内部 focus 已被固定源码证实不等于实际激活。
+- focused validation: 当前 hidden 首两步红、仅原 API 激活后绿；待运行所属 owner/激活失败回归与完整正式 V5。
+```
+
+对照入口：ignored `work/daily-chrome-p0/search-prefix-proof.ts` 与 `search-prefix-entry.py`；原失败 `search-prefix-actual.log`、激活对照 `search-prefix-activate.log`。探针最初两次混用 stable/v1/v2 图格式，在 schema 校验处失败、未执行 GitHub 动作，清理确认；随后先做边界解析再执行。只保存固定 DOM 布尔值/计数，不保存页面文本、凭据或 Cookie。
+
+修后结算：所属 Python 24/24 通过，新/复用连接激活和激活失败清理两项先红后绿。真实工作台提交未改动的 V5，execution `97a83b22-1a20-4308-8095-6536b2669a53` / run `443055d0-2e3b-494c-8b42-90675eb98f80` 均 completed；20 transitions、23 browserCommands、0 llmCalls、审计完整、清理 confirmed。首页搜索至第二页首个 Issue 标题/正文完成，UI 成果弹窗已核验；标题97字符、正文1630字符，只额外保存长度与摘要。`search-focus-full-v5-proof.json` 与 `search-focus-full-v5-result.jpg` 为当前证据，原失败保留。初版 prefix 汇总误用 event.type，firstClickPassed 字段错误；对照的 completed/实际布尔值有效，已改用 event.status/outcome 统计，未重写原日志。诊断脚本移入 ignored `work/daily-chrome-p0/debug-search-focus-20261002/`，不在产品入口；没有新增长期日志。Windows 实机仍阻塞，实际 Profile 冷启动/重启/撤销及首次探索发布未测，不以此次复跑替代。
+
+## 2026-10-02 实际 Chrome154 连接页修复、持久授权与普通运行
+
+用户已经加载现成扩展并取得原授权码，首次保存打开 connect.html 时实际 Chrome154.0.8037.92 显示 ERR_BLOCKED_BY_CLIENT。只读核对安装身份 egiggbcomooebckhjcimllnoediapped、目录与当前包一致，禁用原因为空；修补前宿主 paired=false。记录不含授权码或完整连接 URL。此真实反例推翻了此前以 Chromium134 原生启动成功认定不需要 web_accessible_resources 的结论。
+
+```text
+Product Alignment:
+- natural-language task: 首次连接日常 Chrome，在任务专属窗口执行既有任务。
+- reusable chain boundary: 原 TaskChain、B-U/W-U、任务窗口与 TargetScope 不变。
+- runtime inputs: 原 Profile-local 授权码和既定 Profile。
+- dynamic task outputs: 原连接、运行与清理事实。
+- generic platform capability used: 原 relay 浏览器启动、Chrome 扩展资源导航、原 token 校验。
+- replay model calls: 0 新增调用，仅显式 llm 节点。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: loopback HTTP 启动地址安全导航到原扩展连接页。
+- existing implementation in repository: 原 CDPRelayServer launcher + 私有 WSServer 302；当前 manifest 未声明可访问连接页。
+- mature candidates and pinned versions: 沿用 Microsoft8b552173e8d767db29b8baef8f4a1f08cf7f26bf/extension0.4.0；Chrome Manifest V3 官方 web_accessible_resources；既有 B-U0.13.8/cdp-use1.4.5 测试消费者。
+- selected implementation: 已采用并实测 Chrome 官方资源声明的最小修补，不更换组件、协议或驱动。
+- reused public surface: Chrome manifest.web_accessible_resources；原 token/协议检查与任务窗口创建。
+- B-A-T-owned adapter and remaining gap: 只使原 connect.html 可从原127.0.0.1启动地址导航；用户重新加载后，实际日常 Profile 真握手、保存与普通运行已通过。
+- license/runtime/platform fit: Apache-2.0 原源码与入口不变；Windows继续缺实机。
+- browser/runtime/state ownership conflicts: 不放开所有扩展资源，不取消 token 校验、不向 Chrome argv 写凭据、不改 Profile/个人页所有权。
+- replay model calls: 0。
+- rejected candidates and evidence: 不退回原 argv token，也不使用关闭浏览器安全检查或复制 Profile 的方式消除拦截。
+- focused validation: 原 HTTP redirect + manifest 边界用例先红后绿；所属4例和API检查通过；Chromium134原生跳转通过；用户重新加载后的Chrome154实际配对、保存授权复用及原W-U/LangGraph普通运行通过。
+```
+
+官方入口：[Chrome 扩展资源导航合同](https://developer.chrome.com/docs/extensions/reference/manifest/web-accessible-resources)。从 web origin 导航到扩展资源需要声明可访问资源；matches 匹配 origin，路径必须为 /*。本次只声明 `connect.html` 对 `http://127.0.0.1/*` 可访问；原 token 校验、连接协议和任务窗口边界不变。修补后用户重新加载，实际工作台显示“连接已验证，授权已保存”；凭据文件权限0600，状态API不返回秘密。未关闭其他用户扩展或关闭浏览器安全检查。
+
+固定源码/依赖版本用于构建复现和许可证追溯，不要求用户安装相同 Chrome 版本或降级。实际日常Chrome154与独立Chromium134均已补证；不能由此宣称所有Chrome版本和所有CDP能力已测。
+
+| 状态 | 本次证据 |
+| --- | --- |
+| 通过 | 原loopback跳转/manifest回归4例；最终包原地重建；API类型检查；独立Chromium134同路径握手与清理；Chrome154实际首次配对、0600保存，随后运行自动复用已保存授权；合成本地页面经PythonUpstreamBrowserRuntime → W-U → TaskChainRuntime/LangGraph完成1次普通运行，modelCalls=0、auditComplete=true、cleanup=confirmed。 |
+| 失败，保留 | 已发布GitHub任务V5的实际execution `88c57009-f73a-4355-8c85-ab16a74517ca`：导航完成，在s-a-0002点击后报target_state_fact_mismatch；llmCalls=0、审计完整、清理确认。根因尚未证明，后续合成页面成功不改写该失败。独立CfT145探针在浏览器版本/扩展断言之前TimeoutError，清理确认，不能算145兼容失败或通过。 |
+| 验证准备失败，已补救 | 额外真实Profile探针首次请求第二条relay时被现有闲置连接挡住；单连接保护生效。通过原环境切换入口释放闲置连接并恢复daily，再仅重测受影响探针通过；不修改并发合同，不自动重试原GitHub任务。 |
+| 阻塞 | Windows缺实机，不能核验实际安装、ACL、启动/复用、重启、撤销。 |
+| 未测 | 实际日常Chrome冷启动/重启、实际Profile重新生成授权码与卸载、首次LLM探索→编译→发布全链、iframe/popup/下载额外样本、根级全量测试。 |
+
+入口：`apps/api/tests/daily-chrome-relay-compat.test.ts`；`node scripts/build-daily-chrome-extension.mjs`；实际Profile探针复用既有 `daily-chrome-playwright-relay.ts` 的 `BAT_SAVED_DAILY_PROOF=1` 模式（先停止任务并释放现有闲置连接，仅读取现有已保存授权，不配对/撤销，不读取个人页面）。证据：ignored `work/daily-chrome-p0/redirect-manifest-red.log`、`redirect-chromium134-green.log`、`redirect-chrome145-red.log`、`real-daily-chrome154-runtime-busy-first.log`、`real-daily-chrome154-runtime.log` 与不含授权码的工作台截图 `real-daily-chrome154-authorization.jpg`。原GitHub运行/模型审计/清理事实来自SQLite中的taskExecutions、taskContracts及taskExecutionCleanupAudits只读记录。
+
+## 2026-10-01 受管微软组件的真实产品消费与采用边界
+
+固定候选的最小适配已完成真实样本验证：最终扩展包 + DailyChromeExtension + PythonUpstreamBrowserRuntime + 原 W-U/LangGraph 连续两次普通运行，0模型；宿主重建和测试 Chrome 重启后持久授权有效；扩展重新生成 token 立即撤销，旧 token 被拒绝；同窗口/拖分组不能准入个人页。该结论限定 macOS 独立可见 Chromium134测试 Profile；实际日常 Profile 和 Windows仍未验收。
+
+```text
+Reuse Assessment:
+- capability: 指定日常Profile的扩展控制、持久凭据和任务窗口生命周期。
+- existing implementation in repository: TaskConnection、AttachedWindow/TargetScope、原失败/恢复/cleanup_required、B-U/W-U/LangGraph、ai-connect凭据存储、Radix。
+- mature candidates and pinned versions: Microsoft commit 8b552173e8d767db29b8baef8f4a1f08cf7f26bf / extension0.4.0（Apache-2.0）；ws8.21.3（MIT）；ai-connect0.3.2/f0ef768f（MIT）；B-U0.13.8 / cdp-use1.4.5 / W-U0.2.11 fork5d2d19fe8835cc86f1bf3e04302a5000d590f249。
+- selected implementation: 已真实消费的固定微软受管子集；不引入Playwright浏览器驱动或完整MCP/BrowserSkill。
+- reused public surface: 原 ExtensionProtocolV2 / BrowserModel / token生成比较与localStorage / PendingConnections / ConnectedTabGroup / chrome.debugger、tabs、windows；公开 ProviderCredentialStore；ws.WebSocketServer(noServer)/handleUpgrade。
+- B-A-T-owned adapter and remaining gap: browser-level Target缺口接回原session，目标事实用原Target.getTargetInfo更新；窗口/标签owner、同源边界、原运行入口、持久凭据引用和权限UI。Node HTTP/ws只替换上游私有HTTP包装；不写CDP驱动/密码学/恢复状态机。
+- license/runtime/platform fit: UPSTREAM.json记录原文件摘要与修改，Apache版权保留；产物附LICENSE与React/react-dom/scheduler固定包许可证。Node>=24；Windows代码存在，缺实机不能过门。
+- browser/runtime/state ownership conflicts: Profile不复制、不写登录态；单CDP client；原扩展映射在正常SDK交付/更换连接时保留，撤销/服务关闭用原close；断线由原TargetScope阻止自动重连。
+- replay model calls: 实际两次普通运行均0，显式llm边界不变。
+- rejected candidates and evidence: 不更换先前候选；Panerelay/Playwriter原反例仍保留。微软原版Target.setDiscoverTargets首败与缓存URL失败通过局部适配解决，无第二套控制器。
+- focused validation: product-lifecycle-ownership.log退出0，导航/点击/DOM、两次原TaskChainRuntime样本、宿主/Chrome重启、撤销与旧码拒绝、同窗口/分组越权反例；11所属用例、API/workbench检查与构建、真实UI。
+```
+
+Chrome启动完全沿固定原 spawn/Singleton入口；token URL由私有loopback跳转，不在Chrome argv中。可见测试实例真实复用通过；headless夹具不能代替日常可见启动器验证。当时Chromium134原生启动样本通过，未新增web-accessible声明；此判断已由上节实际Chrome154反例推翻并修补，不能继续作为不需要声明的依据。`Browser.grantPermissions`警告保留为能力限制，未做成功空回执扩张。精确入口：`vendor/daily-chrome-extension/UPSTREAM.json`、`scripts/build-daily-chrome-extension.mjs`、`apps/api/src/browser/daily-extension.ts`。
+
+清理被替代的研究VM/probe/旧构建共8文件至ignored retired-research；历史P0文档里的旧命令只描述当时执行，不作为当前入口。完整日常实装及Windows、首次全链探索和额外能力样本均不可借本结论补造。
+
+## 2026-10-01 接续：自行修复现有 B-U 与固定扩展的兼容缺口
+
+用户继续要求开发方自行解决 browser-use 连接失败，不把技术排查交回用户。先对已实际构建/握手的微软固定扩展作受管最小兼容修复；沿用其 CDP/session 模型、授权 token 与传输，不增加浏览器驱动、协议或恢复状态机。真实消费者通过前不冻结整体采用。目标日常 Profile 安装与开发验证分别结算。
+
+```text
+Product Alignment:
+- natural-language task: 从 B-A-T 在指定日常 Chrome 的任务窗口执行既有任务。
+- reusable chain boundary: 原 TaskChain 与 B-U/W-U 执行入口不变。
+- runtime inputs: 现有任务 owner、Profile 与已获准控制的目标。
+- dynamic task outputs: 既有任务输出、连接失败和清理事实。
+- generic platform capability used: 固定扩展的 BrowserModel/CDP relay 与现有 TargetScope。
+- replay model calls: 普通节点 0，仅显式 llm 节点。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: browser-use 的浏览器级 Target 初始化与任务目标枚举。
+- existing implementation in repository: 固定原版扩展/relay 真实握手；原 AttachedWindow/TargetScope。
+- mature candidates and pinned versions: Microsoft Playwright 8b552173e8d767db29b8baef8f4a1f08cf7f26bf，extension 0.4.0；browser-use 0.13.8/cdp-use 1.4.5。
+- selected implementation: 仅受管扩展当前固定候选的局部兼容；整体准入尚待真实消费者验证。
+- reused public surface: ExtensionProtocolV2/BrowserModel，原 chrome.debugger attach/sendCommand 及消息。
+- B-A-T-owned adapter and remaining gap: 浏览器级 Target 命令接入原模型；目标仅来自原授权事件，不枚举个人标签页。
+- license/runtime/platform fit: Apache-2.0，保留版权、原版本、原文件摘要与修改记录；macOS 实测，Windows 缺机。
+- browser/runtime/state ownership conflicts: 复用原映射；拒绝不在已授权模型中的 target，不新增控制会话。
+- replay model calls: 0。
+- rejected candidates and evidence: 不切换候选；原版真实失败 Target.setDiscoverTargets，extensionHandshake=true、cleanup=confirmed。
+- focused validation: 原真实失败探针、Target 命令所属边界用例，然后同一现有 SDK 消费修复版。
+```
+
+本次原版复现：`work/daily-chrome-p0/consumer-resume-baseline.log`，握手成功，consumer_start 的 `Target.setDiscoverTargets` 失败，0 模型，清理确认。日常安装页再次被浏览器自动安全审查拒绝：仅 HTTP/HTTPS，明确禁止 alternate UI/raw-CDP 绕过；不据此停止其余开发，也不把 owned Profile 探针标为日常验收。
+
+局部兼容已真实通过：`consumer-managed-final-cleanup.log` 的 sdkStart、navigationAndDom、observation 为 true，status=passed、modelCalls=0、cleanup=confirmed。沿用原 Session 映射补 discovery/getTargets/attach/getTargetInfo；B-U 在 discovery 后才注册 attached 监听，显式 attach 重发原 session 事件。夹具中 loader.stop 会关闭 Chrome、原 owner 已删临时目录后的重复删除等问题分别修正，不算产品兼容反例。
+
+P1 的持久事实继续复用微软原 Profile-local auth-token 与原 getConnectionStatus/disconnect，撤销时调用原断连；B-A-T 凭据保存复用现有 `@agent-platform/ai-connect` 0.3.2/f0ef768f 的公开 `integration/credentials/provider-credential-store`（MIT、Node>=24，原文件锁/原子 rename/0600），使用独立本地文件，不混入模型账号。已核对固定 tgz 的公开 exports、类型及实际写入源码，不另写凭据库/锁/加密/授权协议。浏览器启动沿用原 CDPRelayServer spawn/singleton Profile 参数；其 token URL 改由同一 loopback HTTP 包装跳转，进程参数只有无 token 的原连接地址。扩展仅增加 chrome.windows 与原 tabs 命令的任务窗口薄映射；不复制 CDP driver。实际入口与完整许可随产品包记录；Windows 实机仍阻塞。
+
+## 2026-10-01 原组件三环境复用与真实扩展消费者（最新）
+
+P0 日常扩展兼容仍未通过；P2 独立专属环境产品接线及 P3 环境/账号 UI 已实施。下面早期“未实施/未重载”记录是阶段历史，当前状态以本节和 PROGRESS 最新节为准。
+
+```text
+Reuse Assessment:
+- capability: 三环境配置、同次准备/执行快照、原专属 Profile 账号与清理。
+- existing implementation in repository: BrowserProfileService、ManagedWindow、TaskConnection、原 TaskChainRuntime/LangGraph、SQLite/Drizzle、Radix Dialog/Select。
+- mature candidates and pinned versions: browser-use 0.13.8、cdp-use 1.4.5、workflow-use 0.2.11（受管 fork 5d2d19fe8835cc86f1bf3e04302a5000d590f249）、Radix Themes 3.3.0。
+- selected implementation: 专属模式沿用仓库组件；没有产品依赖替换。日常扩展未冻结。
+- reused public surface: 原 Browser/BrowserProfile、cdp-use Browser.close、runner RPC、原账号窗口与清理合同、Drizzle、Radix Select/Dialog。
+- B-A-T-owned adapter and remaining gap: mode/revision、准备及 execution 快照、已有入口分流和 audit/cleanup；候选持久配对与窗口授权缺口仍未实施。
+- license/runtime/platform fit: 沿用原许可证；Node24.12/Python3.12/macOS 真浏览器通过；Windows 缺设备阻塞。
+- browser/runtime/state ownership conflicts: 运行或账号/交付窗口占用时不切换；只释放空闲父连接；Browser.close 限于核验 PID/createTime/exe/Profile/browserID 的专属 lease，日常 Chrome 不受此关闭入口影响。
+- replay model calls: 新真实普通 LangGraph 运行两个模式均 0，没有新 judge/重试模型/必填字段。
+- rejected candidates and evidence: 三个扩展不可原样通过；Playwright 真实 SDK consumer 首条 Target.setDiscoverTargets 失败，Panerelay native fixture 未到消费者，不能冻结采用。
+- focused validation: 所属 CAS/并发/旧合同/迁移/owner/断线验证、真实共享存储与确认清理、原账号窗口及真实三环境 UI；不以私有空白样本代替完整新准备或日常授权验收。
+```
+
+- 对应实际入口：`BrowserEnvironmentService.select`、`ProductStore.executionBrowser`、`TaskPreparationCoordinator.start`、`TaskChainAuthoring.explorePlan`、`TaskChainService.enqueueDraftTrial/runTask`、`PythonUpstreamBrowserRuntime.withAuthoring/withCapabilities`、`ManagedWindow.end_gracefully`。沿用现有恢复合同，未新增状态机。
+- Playwright 真原扩展/relay handshake 已通过，但固定 browser-use 0.13.8/cdp-use1.4.5 在 autoAttach 前发送 Target.setDiscoverTargets，原 relay 无 attached tab 可转发并拒绝；这是实消费者兼容反例。原内部入口/argv token/分组扩权等源码反例仍成立。
+- Panerelay 固定原后台/协议 Native Messaging 测试 manifest fixture 的实际 Chrome native Host 退出，根因未知，consumer 未到达；独立 helper 原 relay.listen 正常启动仅是局部证据。原 manifest 完整构建与正式 Native Host 安装未验证。遵循 [Chrome Native Messaging 官方机制](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)，没有发明生产安装器或凭据协议。
+- 真实 LangGraph 探针每个 run 逻辑命令 1、页面访问计数分别 [0,1] 与 [2,3]，实际原因未查明；这里只证明共享 Profile 存储连续与零模型，不声明物理动作唯一性。
+- 下阶段唯一新增取舍是成熟候选的受管行为扩展/继续寻找，不重新询问三环境、任务窗口、首版平台、单 Profile 或断线合同。[证据与失败结算](DAILY_CHROME_EXTENSION_P0_EVIDENCE_20261001.md#继续实施真实消费者与三环境产品接线)。
+
+## 2026-10-01 P0 无人值守构建与真实扩展加载补证
+
+原版 Playwright 候选 extension 0.4.0 已按固定上游 Vite 配置构建，在全新测试 Profile 中经现有 browser-use/cdp-use 完成 UI 与真实后台消息验证，模型 0、清理 confirmed；没有采用 Playwright 产品驱动或冻结候选。当前受管环境未安装 Playwright；历史 bundled Chromium 与微软 extension/relay 是不同事实。工具仅拒绝日常 Chrome 的受保护安装页，不能据此停止可独立进行的构建/测试。[完整补证与首败](DAILY_CHROME_EXTENSION_P0_EVIDENCE_20261001.md#后续补证用户不在电脑旁时的开发验证) 保留 CfT 145 启动超时、辅助 API 格式错误、首次清理核验和各项最小补救。真实日常 Chrome 154、完整 SDK relay 消费和 Windows 仍未验收，P0 兼容门仍不通过。
+
+## 2026-10-01 日常 Chrome 扩展 P0 固定来源与执行反例
+
+本轮已授权开发，从实际 `master@674ed366` 与 6 个既有文档 dirty paths 开始，保护原改动，无分支/worktree/提交/推送。完整 Product Alignment、Reuse Assessment、固定来源/许可证及真实层级证据见 [P0 记录](DAILY_CHROME_EXTENSION_P0_EVIDENCE_20261001.md)。
+
+固定 Playwriter `33d5c5a`、Playwright `8b552173`，补查 Panerelay `852dcd82` / `0.11.1`。原样采用均不满足已确认边界：Playwriter 历史云资源清理与默认日志；Playwright group 拖入扩权、空目标枚举、argv token；Panerelay 新页要求 all-tabs，并在真实 HTTP/WS 路径丢弃 newWindow。Panerelay 实际撤销旧凭据性质通过，可以作为复用依据，不代表持久配对或 Chrome 兼容。
+
+新增固定来源脚本与 API 显式 P0 探针，9 项各自有通过记录；来源下载/测试输入及纯类型循环的首次失败独立保留，补救只重验受影响项；所属 API typecheck 通过。没有产品候选接线、模型调用、Chrome/Native Host 安装或服务切换。P0 兼容准入不通过，已按用户要求提出候选最小扩展/继续寻找的取舍，未自行冻结采用。Windows 缺实机阻塞；扩展安装/批准需要用户实际操作。
+
+## 2026-10-01 日常 Chrome 扩展接入方案（文档与静态核查）
+
+详见 [开发文档](DAILY_CHROME_EXTENSION_DEVELOPMENT.md) 与 [ADR 0013](../adr/0013-daily-chrome-task-window-control-boundary.md)。用户确认默认仅任务专属窗口、首版 macOS/Windows、本地加载解压扩展、主动连接/运行自动打开 Chrome、一个指定 Profile；已纠正把模式切换强制升级为链路复验的建议，产品不新增这一步。
+
+保留 browser-use 0.13.8/cdp-use 1.4.5/workflow-use 0.2.11 的主线。候选为 Playwriter `33d5c5a2c5ebf702e387d94d609e038c98e0acec` 公开 CDP relay；Playwright `8b552173e8d767db29b8baef8f4a1f08cf7f26bf` 扩展的按 Profile token 为成熟授权对照。只复用传输，不引入额外 Agent/执行器。
+
+静态发现：现有 endpoint/path 与 newWindow 语义有适配差异；候选默认 CDP logger 会落盘，自动启动助手按端口管理进程，relay 自身还包含辅助执行器和启动后的 orphan-cloud 清理。必须关闭这些不符合本项目秘密/资源所有权边界的默认行为，不能只因公开导出 relay 就冻结选型。browser-use 固定版本已有 headers→CDP additional_headers，是可核验的成熟凭据消费入口，不据此新增短期 token 协议；真实兼容、两平台安装、持久授权与京东效果均未验证。
+
+当前断线源码证据：`TargetScope.ensure_connection` 与受管 `_auto_reconnect` 拒绝擅自重连；`TaskChainRuntime.executeExclusive` 对中断/预算以外异常进入 `failRun`。已有 checkpoint/resumeRequest/verifyResume 是条件性的既有恢复合同，不能推断控制掉线后自动暂停/续跑。文档沿用这些事实，不新增恢复系统。
+
+用户最新强制要求覆盖开发的所有环节：先找现成开源实现，能复用/沿用就复用/沿用，不由 agent 自行作出新增产品、架构或选型决策。故不预先指定自定义短期 token/epoch、OS 凭据包或新授权协议；P0 逐项注明所用现成源码/API、实际不满足点与真实证据，不以文档中的示例字段为自研要求。
+
+本 session 只编写文档并做只读核查，没有安装、启停、连接浏览器、模型运行或产品测试。开发文档与接续指令已完成，产品取舍已收敛；技术候选由新 session 的 P0 完成证据核验，未实施、未冻结采用决定。
+
 ## 2026-09-30 解锁后真实消费核查与输出约束补救
 
 解锁后从原任务/日常 Chrome 实际点 Allow，首次连上的 operation 保留父连接，下一次 operation 没有 SDK connect 或原生确认且运行完成。成功 run 的 40 个事件有真实输入/输出 envelope，11 对 recorded、9 对 redacted。原任务现场、完整成果和 Function 参数/返回均已核对；首个连上后 target mismatch 失败保留且根因未知。此结论只覆盖同 task/config 的有效连接，不支持跨任务、Chrome/服务重启的永久授权。Chrome 官方明确新调试 session 需要确认：[官方连接说明](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session)。

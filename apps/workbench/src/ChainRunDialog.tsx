@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react"
-import { Button, Callout, Checkbox, Dialog, Flex } from "@radix-ui/themes"
+import { Button, Callout, Dialog, Flex } from "@radix-ui/themes"
+import { executionBrowser, type BrowserMode } from "@browser-capture/contracts/browser-profile"
+import { BrowserEnvironmentSelect } from "./BrowserEnvironmentSelect.js"
+import { useBrowserEnvironment } from "./useBrowserEnvironment.js"
 import { parseTaskValue, type JsonValue, type TaskWorkspaceSnapshot } from "@browser-capture/contracts"
 import { ReplayPacingControl } from "./ReplayPacingControl.js"
 import { initialValue, ValueSchemaForm } from "./ValueSchemaForm.js"
@@ -16,7 +19,8 @@ export function ChainRunDialog({ open, onOpenChange, workspace, connection, mode
   const plan = source?.content.plan
   const [input, setInput] = useState<JsonValue | undefined>(undefined)
   const [pacing, setPacing] = useState(0)
-  const [headless, setHeadless] = useState(false)
+  const environment = useBrowserEnvironment(open)
+  const [browserMode, setBrowserMode] = useState<BrowserMode>("daily")
   const [inputError, setInputError] = useState("")
   const formRef = useRef<HTMLFormElement>(null)
   const requestId = useRef(crypto.randomUUID())
@@ -29,9 +33,11 @@ export function ChainRunDialog({ open, onOpenChange, workspace, connection, mode
     requestId.current = crypto.randomUUID()
     setInput(initialValue(plan.inputContract.schema))
     setPacing(0)
-    setHeadless(false)
     setInputError("")
   }, [open, sourceKey, plan?.inputContract.id, plan?.inputContract.version])
+  useEffect(() => {
+    if (environment.state) setBrowserMode(environment.state.mode)
+  }, [environment.state])
 
   async function submit() {
     if (!plan || input === undefined) return
@@ -45,7 +51,7 @@ export function ChainRunDialog({ open, onOpenChange, workspace, connection, mode
         : mode === "run" && workspace.release
           ? await connection.dispatch({ type: "run_task", requestId: requestId.current,
             release: workspace.release.reference, input: parsed, pacing: { nodeDelayMs: pacing },
-            browser: { headless } })
+            browser: executionBrowser(browserMode) })
           : false
       if (accepted) onOpenChange(false)
     } catch {
@@ -69,18 +75,19 @@ export function ChainRunDialog({ open, onOpenChange, workspace, connection, mode
       {parameterized && <ValueSchemaForm contract={plan.inputContract} value={input}
         onChange={(value) => { setInput(value); setInputError("") }} disabled={connection.snapshot().busy} />}
       {inputError && <p className="error-text" role="alert">{inputError}</p>}
+      {environment.error && <p className="error-text" role="alert">{environment.error}</p>}
       {mode === "run" && <details className="run-settings"><summary>运行设置</summary>
-        <label className="run-browser-setting"><Checkbox checked={headless}
-          disabled={connection.snapshot().busy || plan.browserHandoff === "keep_open"}
-          onCheckedChange={(checked) => setHeadless(checked === true)} />
-          <span><strong>无界面运行（Headless）</strong><small>{plan.browserHandoff === "keep_open"
-            ? "当前发布版本需要交付原页面，本次须使用可见窗口。"
-            : "关闭时打开可见的浏览器窗口；仅影响本次运行。"}</small></span>
-        </label>
+        <label className="run-browser-setting"><span>本次浏览器环境</span>
+          <BrowserEnvironmentSelect value={browserMode} disabled={connection.snapshot().busy || environment.busy}
+            visibleRequired={plan.browserHandoff === "keep_open"} onChange={mode => {
+              setBrowserMode(mode); requestId.current = crypto.randomUUID()
+            }} /></label>
+        {plan.browserHandoff === "keep_open" && <p>当前发布版本需要交付原页面，请选择可见环境。</p>}
         <ReplayPacingControl value={pacing} disabled={connection.snapshot().busy} onValueChange={setPacing} /></details>}
       <Flex className="dialog-actions" gap="2"><Button type="button" variant="soft" color="gray"
         disabled={connection.snapshot().busy}
-        onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={connection.snapshot().busy}>
+        onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={connection.snapshot().busy
+          || environment.busy || !environment.state || mode === "run" && plan.browserHandoff === "keep_open" && browserMode === "dedicated-headless"}>
         {connection.snapshot().busy ? "正在提交…" : independent ? "开始独立复跑" : mode === "trial" ? "开始试跑" : "开始运行"}</Button></Flex>
     </form>}
   </Dialog.Content></Dialog.Root>

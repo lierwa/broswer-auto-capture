@@ -1,4 +1,4 @@
-"""One explicit Chrome owner for a visible hybrid execution and its user lease."""
+"""One explicit Chrome owner for a dedicated hybrid execution and its user lease."""
 import asyncio
 import ctypes
 from ctypes import wintypes
@@ -18,6 +18,7 @@ from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWat
 from pydantic import Field
 
 from workflow_use.hybrid.evidence import Contract
+from browser_use_runner.connection_policy import disconnected_handler
 
 
 class WindowLease(Contract):
@@ -146,7 +147,7 @@ def _state(lease, active, reason=None):
 
 
 class ManagedWindow:
-    def __init__(self, profile_path, owner_id):
+    def __init__(self, profile_path, owner_id, *, headless=False):
         path = Path(profile_path)
         if not path.is_absolute():
             raise ValueError('hybrid_profile_path_absolute_required')
@@ -155,6 +156,8 @@ class ManagedWindow:
         self.owner_id = UUID(str(owner_id))
         self.transferred = False
         self.acquired = False
+        self.headless = headless
+        self.connection_lost = False
 
     def _load(self, lease_id=None):
         try:
@@ -263,6 +266,8 @@ class ManagedWindow:
         return _state(lease, False)
 
     async def start(self, *, resume, allowed_domains):
+        if resume and self.headless:
+            raise ValueError('hybrid_managed_window_headless_handoff_unsupported')
         if resume:
             lease = self._load(self.owner_id)
             if lease.status != 'handoff' or not self._verify(lease)[0]:
@@ -275,12 +280,13 @@ class ManagedWindow:
             except Exception:
                 self.end(lease.leaseId, allow_controlled=True)
                 raise
-        profile = BrowserProfile(headless=False, use_cloud=False, keep_alive=False,
+        profile = BrowserProfile(headless=self.headless, use_cloud=False, keep_alive=False,
                                  user_data_dir=str(self.profile_path), enable_default_extensions=False,
                                  allowed_domains=allowed_domains, cdp_url=f'http://127.0.0.1:{lease.cdpPort}',
                                  is_local=False)
         browser = Browser(browser_profile=profile, cdp_url=profile.cdp_url, is_local=False,
                           **({'id': lease.sessionId} if lease.sessionId else {}))
+        browser._auto_reconnect = disconnected_handler(lambda: setattr(self, 'connection_lost', True))
         try:
             await browser.start()
             if resume:
@@ -321,6 +327,9 @@ class ManagedWindow:
         (self.profile_path / 'DevToolsActivePort').unlink(missing_ok=True)
         args = [str(executable), f'--user-data-dir={self.profile_path}', '--remote-debugging-port=0',
                 '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check', 'about:blank']
+        # WHY：两个专属模式复用同一 Profile 和既有进程 owner；不要经 SDK 的 Chrome Profile 复制分支。
+        if self.headless:
+            args.insert(-1, '--headless=new')
         browser_temp = self.profile_path / 'browser-temp'
         browser_temp.mkdir(exist_ok=True)
         environment = os.environ.copy()
@@ -352,6 +361,8 @@ class ManagedWindow:
         raise ValueError('hybrid_managed_window_cdp_unavailable')
 
     async def handoff(self, browser):
+        if self.headless:
+            raise ValueError('hybrid_managed_window_headless_handoff_unsupported')
         lease = self._load(self.owner_id)
         if lease.status != 'running' or browser.id != lease.sessionId:
             raise ValueError('hybrid_managed_window_session_changed')
@@ -377,7 +388,30 @@ class ManagedWindow:
             if browser is not None:
                 await browser.stop()
             if self.path.exists():
-                self.end(self.owner_id, allow_controlled=True)
+                await self.end_gracefully(self.owner_id, allow_controlled=True)
         except Exception:
             return {'stage': 'browser_close', 'status': 'unconfirmed', 'code': 'cleanup_browser_close_failed'}
         return {'stage': 'browser_close', 'status': 'confirmed', 'code': None}
+
+    async def end_gracefully(self, lease_id, *, allow_controlled=False):
+        from browser_use_runner.attached_window import _client
+        lease = self._load(lease_id)
+        if lease.status != 'handoff' and not allow_controlled:
+            raise ValueError('hybrid_managed_window_controlled')
+        owner = _owner_process(lease)
+        if owner is not None:
+            # WHY：整浏览器关闭只用于已核验的专属进程；日常 Chrome 的 AttachedWindow 不调用此入口。
+            if not self._verify(lease, require_target=False)[0]:
+                raise ValueError('hybrid_managed_window_cdp_changed')
+            try:
+                async with _client(f'ws://127.0.0.1:{lease.cdpPort}/devtools/browser/{lease.browserId}',
+                                   timeout=1.5, stop_timeout=0.3) as client:
+                    await client.send.Browser.close()
+            except Exception:
+                pass  # 连接退出不能算清理证明，仍由原 owner/end 核验并清理。
+            await asyncio.to_thread(psutil.wait_procs, [owner], timeout=0.5)
+        return self.end(lease_id, allow_controlled=allow_controlled)
+
+    def ensure_connection(self):
+        if self.connection_lost:
+            raise ValueError('hybrid_managed_window_connection_lost')
