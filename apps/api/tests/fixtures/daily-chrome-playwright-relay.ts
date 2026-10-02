@@ -78,13 +78,17 @@ async function authorizationProbe() {
     const command = JSON.parse(line)
     try {
       if (command.op === "pair") {
-        await manager.pair({ profileDirectory: "Default", token: command.token })
+        await manager.pair({ profileDirectory: "Default", ...(command.token ? { token: command.token } : {}) })
         const permissions = await stat(path.join(directory, "daily-chrome/auth.json"))
         assert.equal(permissions.mode & 0o777, 0o600)
         const state = await manager.snapshot()
         assert.equal("token" in state, false)
         write({ paired: state.paired, connected: state.connected, privateCredentials: true, cdpUrl: await manager.endpoint() })
       } else if (command.op === "runtime") write(await runtimeProof(manager, directory))
+      else if (command.op === "status") {
+        const state = await manager.snapshot()
+        write({ paired: state.paired, connected: state.connected, busy: state.busy })
+      }
       else if (command.op === "reload") {
         manager.close(); manager = create()
         const endpoint = await manager.endpoint(), state = await manager.snapshot()

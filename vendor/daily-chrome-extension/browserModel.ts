@@ -152,6 +152,8 @@ export class BrowserModel {
     if (!tabSession)
       return { success: false };
     await this._sendToExtension('chrome.tabs.remove', [tabSession.tabId]);
+    // WHY：原生 remove 成功 ACK 可先于 onRemoved；沿用原幂等入口，避免枚举已关闭的 debugger。
+    this.onTabRemoved(tabSession.tabId);
     return { success: true };
   }
 

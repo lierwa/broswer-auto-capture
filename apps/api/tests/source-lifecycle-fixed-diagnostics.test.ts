@@ -4,8 +4,27 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { test } from "node:test"
 import { z } from "zod"
-import { SourceLifecycleDiagnostics } from "../src/upstream-browser/source-lifecycle-diagnostics.js"
+import { SourceLifecycleDiagnostics, readStartupFailure } from "../src/upstream-browser/source-lifecycle-diagnostics.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
+
+// WHY：旧失败只能读取同一 owner 的原始脱敏依据，SDK 包装错误不能覆盖先记录的失败阶段。
+test("historical startup cause is owner-bound, keeps the first failing stage and exposes no stack", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "bat-source-diagnostic-"))
+  const owner = "6fb34011-4c18-4b8f-8912-374ee505f18a", diagnostics = new SourceLifecycleDiagnostics(directory, owner)
+  try {
+    const causes = [{ errorKind: "runtime_error", code: "external_error", locations: [] },
+      { errorKind: "connection_error", code: "external_error", locations: [{ source: "sdk_cdp_client", line: 389 }] }]
+    diagnostics.acceptPythonLine(JSON.stringify({ phase: "attached_startup", status: "failed", stage: "task_target_prepare", causes }))
+    diagnostics.acceptPythonLine(JSON.stringify({ phase: "attached_startup", status: "failed", stage: "sdk_connect", causes }))
+    const result = readStartupFailure(directory, owner)!
+    assert.deepEqual(result, { stage: "task_target_prepare", occurredAt: result.occurredAt,
+      errorKind: "connection_error", code: "external_error" })
+    assert.equal(readStartupFailure(directory, "822e2508-8833-4b29-9b97-5978a460b2b5"), null)
+    assert.equal(readStartupFailure(directory, "../private"), null)
+    assert.equal(readStartupFailure(undefined, owner), null)
+    assert.ok(!JSON.stringify(result).includes("locations"))
+  } finally { diagnostics.close(); rmSync(directory, { recursive: true, force: true }) }
+})
 
 test("field-read diagnostics retain fixed codes and discard private error details", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "bat-source-diagnostic-"))

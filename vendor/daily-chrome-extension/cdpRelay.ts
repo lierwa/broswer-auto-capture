@@ -38,6 +38,7 @@ const playwrightExtensionId = ''; // B-A-T 必须显式提供其独立扩展身�
 import { logUnhandledError } from './log.js';
 import { ExtensionProtocolV2 } from './cdpRelayV2.js';
 import * as protocol from './protocol.js';
+import { z } from 'zod';
 
 type RawData = Buffer | string;
 import type { ExtensionCommandV2, ExtensionEventsV2 } from './protocol.js';
@@ -49,6 +50,7 @@ type WebSocket = any;
 const debugLogger = (..._args: unknown[]) => {};
 
 const extensionConnectionTimeout = +(process.env.PWTEST_EXTENSION_CONNECT_TIMEOUT ?? 30_000);
+const authorizationSchema = z.tuple([z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict()]);
 
 type CDPCommand = {
   id: number;
@@ -74,8 +76,9 @@ export class CDPRelayServer {
   private _token: string | undefined;
   private _handler: ExtensionProtocolV2;
   private _extensionConnectionPromise = new ManualPromise<void>();
+  private _taskCreationDispatched = false;
 
-  constructor(browserChannel: string, executablePath?: string, customUserDataDir?: string, profileDirectory?: string, private options?: { token?: string; extensionId: string }) {
+  constructor(browserChannel: string, executablePath?: string, customUserDataDir?: string, profileDirectory?: string, private options?: { token?: string; extensionId: string; requestAuthorization?: boolean }) {
     this._browserChannel = browserChannel;
     this._executablePath = executablePath;
     this._customUserDataDir = customUserDataDir;
@@ -86,6 +89,9 @@ export class CDPRelayServer {
     const sendCommand = (method: string, params: any): Promise<any> => {
       if (!this._extensionConnection)
         throw new Error('Extension not connected');
+      // WHY：记录实际发往扩展的创建，不把 SDK 的“打算创建”当成窗口已存在。
+      if (method === 'chrome.tabs.create' && this._extensionConnection.isOpen())
+        this._taskCreationDispatched = true;
       return this._extensionConnection.send(method as keyof ExtensionCommandV2, params);
     };
     this._handler = new ExtensionProtocolV2(sendCommand);
@@ -108,8 +114,10 @@ export class CDPRelayServer {
         debugLogger(`New connection to ${url.pathname}`);
         if (url.pathname === this._cdpPath)
           this._handlePlaywrightConnection(ws);
-        else
+        else if (request.headers.origin === `chrome-extension://${this.options?.extensionId}`)
           this._handleExtensionConnection(ws);
+        else
+          ws.close(1008, 'Extension origin required');
         return undefined;
       },
     });
@@ -127,6 +135,11 @@ export class CDPRelayServer {
     return `${this._wsHost}${this._extensionPath}`;
   }
 
+  // WHY：仅宿主首次配置消费原令牌，状态/API/CDP 均不得返回它。
+  authorizationToken(): string | undefined {
+    return this.isConnected() ? this._token : undefined;
+  }
+
   async establishExtensionConnection(clientName: string) {
     debugLogger('Establishing extension connection');
     await this._openConnectPageInBrowser(clientName);
@@ -136,6 +149,12 @@ export class CDPRelayServer {
     const { timedOut } = await raceAgainstDeadline(async () => {
       await this._extensionConnectionPromise;
       await this._handler.ready();
+      // WHY：原批准页现会退出；沿原模型 attach 本连接引导页，复用 Chrome 的 debugger 生命周期。
+      // 不增加心跳协议/定时重连，不枚举或 attach 用户个人标签。
+      await this._handler.handleCDPCommand('Target.setAutoAttach', { autoAttach: true, flatten: true }, undefined);
+      const targets = await this._handler.handleCDPCommand('Target.getTargets', {}, undefined);
+      if (!targets?.result.targetInfos.length)
+        throw new Error('daily_chrome_initial_target_not_attached');
     }, deadline);
     if (timedOut) {
       const profile = this._profileDirectory ? ` "${this._profileDirectory}"` : '';
@@ -157,6 +176,8 @@ export class CDPRelayServer {
     url.searchParams.set('protocolVersion', this._protocolVersion.toString());
     if (this._token)
       url.searchParams.set('token', this._token);
+    else if (this.options?.requestAuthorization)
+      url.searchParams.set('persistAuthorization', '1');
     const href = url.toString();
 
     this.openPage(this._wsServer.browserRedirect(href));
@@ -214,7 +235,7 @@ export class CDPRelayServer {
   }
 
   private _handlePlaywrightConnection(ws: WebSocket): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() && !this._canVerifyUnstartedTask()) {
       debugLogger('Rejecting Playwright connection: extension not connected');
       ws.close(1000, 'Extension not connected');
       return;
@@ -246,6 +267,13 @@ export class CDPRelayServer {
     debugLogger('Playwright MCP connected');
   }
 
+  private _canVerifyUnstartedTask(): boolean {
+    // TRADE-OFF：仅原 relay 的未派发证据可用于原 owner；新 relay 的空列表不具有这个证明力。
+    return !!this._extensionConnection && !this.isConnected()
+      && (this._taskCreationDispatched === false
+        || this._taskCreationDispatched === undefined && this._extensionConnection.hasSentCommands === false);
+  }
+
   private _closeExtensionConnection(reason: string) {
     this._extensionConnection?.close(reason);
     if (!this._extensionConnectionPromise.isDone())
@@ -268,7 +296,21 @@ export class CDPRelayServer {
       this._handler.onExtensionDisconnect(reason);
       this._closeCDPConnection(`Extension disconnected: ${reason}`);
     };
-    this._extensionConnection.onmessage = (method, params) => this._handler.handleExtensionEvent(method, params);
+    this._extensionConnection.onmessage = (method, params) => {
+      if (method !== 'extension.initialized') {
+        this._handler.handleExtensionEvent(method, params);
+        return;
+      }
+      if (!Array.isArray(params))
+        throw new Error('Invalid initialization configuration');
+      if (params.length) {
+        if (!this.options?.requestAuthorization || this._token)
+          throw new Error('Unexpected authorization configuration');
+        this._token = authorizationSchema.parse(params)[0].token;
+      }
+      // 首次交接结束后只向原协议映射器发送原始空初始化事件，不进入 CDP 或页面事实。
+      this._handler.handleExtensionEvent('extension.initialized', []);
+    };
     this._extensionConnectionPromise.resolve();
   }
 
@@ -289,6 +331,13 @@ export class CDPRelayServer {
   }
 
   private async _handleCDPCommand(method: string, params: any, sessionId: string | undefined): Promise<any> {
+    if (!this.isConnected()) {
+      if (method === 'Target.getTargets' && !sessionId && this._canVerifyUnstartedTask())
+        return { targetInfos: [] };
+      // 原 AttachedWindow 核验先读取静态 Browser 版本；它不派发 Chrome 命令。
+      if (method !== 'Browser.getVersion' || sessionId || !this._canVerifyUnstartedTask())
+        throw new Error('daily_chrome_extension_disconnected');
+    }
     switch (method) {
       case 'Browser.getVersion': {
         return {
@@ -348,6 +397,7 @@ class ExtensionConnection {
   }
 
   isOpen(): boolean { return this._ws.readyState === ws.OPEN; }
+  get hasSentCommands(): boolean { return this._lastId > 0; }
 
   close(message: string) {
     debugLogger('closing extension connection:', message);

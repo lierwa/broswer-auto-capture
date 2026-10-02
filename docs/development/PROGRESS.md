@@ -1,6 +1,80 @@
 # 开发进度
 
-## 2026-10-02 任务窗口激活回归修复与原 V5 完整复跑（最新）
+## 2026-10-02 Windows 测试交接与源码发布批次
+
+用户明确授权将当前 checkout/现有 master 的全部代码提交并推送远程，随后在家里的 Windows 实测。发布前本地 HEAD、origin/master 与实际远程 master 均为 `0a904506255986f30b13d0658aa29bbcc6c2d89f`，ahead/behind 为0/0；本批包含40个已有修改文件及新增 [Windows 测试交接](WINDOWS_DAILY_CHROME_TEST_HANDOFF_20261002.md)，不包含 ignored data/work、任务库、授权或 Chrome Profile。
+
+交接使用仓库既有 `npm.cmd run setup`、受管扩展构建及 `npm.cmd run dev` 入口；首次人工操作只需加载扩展、选择本机日常用户并允许保存授权，无需粘贴码。提供已有 saved-daily 零模型消费者入口与W01–W09逐项验收、失败取证方式；本机Mac的任务和授权不会随Git同步，Windows没有原V5时如实记录样本缺失阻塞。
+
+本发布步骤只核对入口、提交范围及Git一致性，不重复上轮已通过的47项TS、10项Python或所属类型检查。macOS既有通过证据见下节；Windows实机仍未测，冷启动/撤销等未测门也不因发布而改为通过。推送结果及最终SHA以本批对应Git提交和发布回复为准。
+
+## 2026-10-02 失败后复跑、原失败原因与日常授权（本轮范围完成，macOS 真机通过）
+
+用户本轮只授权这一条闭环，未扩展采集成果、重做全部弹窗或新增恢复/驱动/授权协议。实际 checkout HEAD=0a904506255986f30b13d0658aa29bbcc6c2d89f，现有 master 与进入时的20个已修改文件均保留；本轮未创建分支/worktree、未提交或推送。
+
+| 分项 | 结论 | 真实依据 |
+| --- | --- | --- |
+| 旧失败释放 | 通过 | 原 relay 向扩展发送命令计数0，唯一引导 tab 已不存在；原 AttachedWindow.verify_closed 同 owner 核验通过。execution 7634032b-2ebe-41d4-8d55-699bbc4c2f02 为 failed/cleanup=confirmed/attempt4，原失败 digest 63d40d0dfb6ab004998f4a0c242b352a36706efa9aca0a1f41c37f38809e34f0 不变。 |
+| 失败后的再次运行 | 通过 | 画布“再次运行”→“开始运行”实际提交新 execution 7e21249e-3da6-4d6b-8d61-0bc34c6f0b55；V5 release 8f89a965-4c31-4aef-8a1d-07df46d98864/digest5992e25012e152670305919cbef307fc549d2882a8836c53518424db571a2fe6 未变。原 GitHub 任务全部完成，20 transitions/23 browserCommands/0 LLM，TaskRun8682e39b-e53b-42a8-87c6-aabacd41eaf5 auditComplete=true/modelCalls=[]，cleanup确认。 |
+| 原失败原因与历史 | 通过 | 画布明确“查看失败原因”；再次运行、服务刷新、页面刷新之后，从“更多操作→历史记录→查看失败原因”仍显示旧03:33失败，创建任务窗口/浏览器通信异常、原版本与浏览器。失败与清理分开投影，不用手动清理按钮，不显示空成果/零条节点/原始JSON；原运行、失败、节点与清理审计均未删除。 |
+| 自动释放与安全反例 | 所属验证通过 | worker退出及再次运行各一次原 cleanup_execution/verify_closed，不循环重试；只在同owner实际关闭且child_exit等其它阶段确认后解除死worker引用。已发送 createTarget 但ACK丢失时继续拒绝确认；未以新relay空列表、删租约或删失败记录解锁。 |
+| 日常授权 | 通过 | 服务刷新后自动复用已有授权，无人工复制码/重新批准。原代码真实反例：空闲125.4秒 paired=true/connected=false。就绪修补后空闲131.5秒仍连接，随后上述V5完成；最终源码服务再次刷新、空闲237.2秒后仍paired/connected，Profile=Default（用户1），用户Chrome PID657始终保留。扩展worker本轮未改，无新重载要求。 |
+| 最小验证 | 通过 | TS所属6文件最终47项（relay13、TaskConnection15、固定诊断7、execution detail4、cleanup recovery3、handoff5）；Python startup diagnostics10项；API/Workbench/Contracts check。额外验证仅因新改动或失败修补重跑相关文件/包；未跑全量/根级测试。 |
+| Windows | 阻塞 | 无Windows实机；本轮不把跨平台源码或macOS样本写作Windows验收。 |
+| 其它 | 未测 | 真正已发送窗口创建后断线无ACK的实机恢复、日常Chrome冷启动/整个Chrome重启、新授权第一次Allow、撤销/卸载、原任务完整LLM探索编译发布、iframe/popup/下载不属于本次已过门。 |
+
+旧失败的根因边界：确定创建窗口阶段原CDP连接断开、命令未发出；原固定诊断仅os_error，断开的具体触发原因未保留。不能以本轮空闲反例或后来成功覆盖旧失败原因。新增connection_error分类仅保存固定枚举，不记录SDK消息、凭据、Cookie或原始页面。
+
+本轮中间失败如实保留：首次新增回归的夹具缺cleanup终态digest/source枚举不符，以及UI辅助函数误用完整execution类型，修正后所属检查通过；原只读释放消费者先请求Browser.getVersion，初次临时核验失败，沿既有元数据响应补齐后确认。旧服务缓存死worker清理报告导致第一次开发服务关闭exit1，资源已通过同owner真实核验；最终源码服务正常关闭exit0再刷新，Chrome未关闭。只读inspector诊断/临时源码载入失败未被写作产品通过；inspector已关闭。
+
+最小脱敏现场证据位于work/daily-chrome-p0（不入Git）：failed-run-original-non-dispatch-proof-20261002.json、failed-run-released-20261002.json、authorization-idle-before-fix-result-20261002.json、authorization-idle-after-fix-result-20261002.json、failed-rerun-v5-result-20261002.json、failed-rerun-final-service-20261002.json，以及failed-rerun-history-20261002.png/failed-rerun-history-detail-20261002.png、failed-rerun-authorization-20261002.png。最终真实弹窗已显示“已授权／用户1／已连接”；关闭后再次运行按钮可用、旧失败原因仍可见。下方旧“待清理/阻断复跑”为当时事实，以本节最终证据为准。
+
+## 2026-10-02 浏览器环境弹窗重排与授权交接
+
+按用户现场截图和明确授权，继续在原 checkout/master@`0a904506255986f30b13d0658aa29bbcc6c2d89f` 开发，保护进入本轮的18份已有修改。本轮只再修改现有 `BrowserEnvironmentSelect.tsx` 和 `workbench.css`，沿用原 Dialog 文件与开发记录；未新增文件、依赖、分支/worktree、提交或推送。
+
+弹窗已更新到实际工作台：原 Radix RadioCards 展示三种环境及用途，原紧凑 Select 继续供本次运行设置使用；去掉 Profile 术语和重复“已保存某模式”段落，页脚显示实际读取/保存结果。日常 Chrome 区域分别展示授权、绑定用户和连接状态，当前“已授权 / 用户1 / 未连接”；只保留“连接 Chrome”主按钮，重新授权/撤销收进原 DropdownMenu。首次安装说明与 Chrome 用户选择只在未授权时出现。已保存授权的普通连接过程不再提供会暗中删除凭据的“取消”操作；首次批准仍沿原 revoke 取消并如实标注。初次读取不显示撤销；读状态失败禁用授权动作；服务端 busy 也禁用模式切换。
+
+**用户需要的操作已完成**：本轮用户明确回复“我已经重新加载”。已有 Profile 授权仍保存，当前没有新的人工授权步骤，不要求复制码或再授权。此结论不代表原失败任务恢复。
+
+| 状态 | 本阶段证据 |
+| --- | --- |
+| 通过 | 所属 workbench 类型检查；定点 diff 空白检查；实际三模式可见、单一主按钮、管理菜单、关闭、刷新和重开。首读先显示“读取中”，随后读取持久的用户1授权；API 的 paired/connected/busy 与 UI 一致。实际 viewport1840×979，无弹窗内容裁切。截图 `work/daily-chrome-p0/browser-environment-dialog-20261002.png`，上下文截图同目录 `browser-environment-dialog-context-20261002.png`。 |
+| 失败 | 原 V5 的 `7634032b-2ebe-41d4-8d55-699bbc4c2f02` 仍是此前窗口创建启动失败；本轮没有运行或改写该 execution，具体断开原因仍未证明。 |
+| 阻塞 | 该 execution 的原资源清理仍待确认，不通过换 endpoint、删租约或重启来伪装恢复。Windows 仍缺实机。 |
+| 未测 | 本阶段不撤销真实已存授权，未在日常 Profile 做新弹窗的全新首次批准/撤销；未实切三环境、未做窄屏/Windows视觉验收。授权协议本轮未改，其之前限定样本结果保留在下节。 |
+
+复用固定源码、MIT许可和实际入口见 RESEARCH 最新节。采集/成果格式和旧任务内容未改。
+
+## 2026-10-02 首次允许自动保存授权、持久状态与采集成果调研（当前结算）
+
+**授权改造已实现并通过限定验证；整体真实任务验收未完成。** 在现有 checkout/master、实际 HEAD `0a904506255986f30b13d0658aa29bbcc6c2d89f` 开发；基线干净，保护现有工作，不创建分支/worktree、不改相邻项目。本轮新增授权来自用户“授权按照提的来做，最少人工；采集先调研别人产品/开源”，不把调研擅自扩大为采集/展示产品改造。下方原 V5 完整成功是前一轮事实，本轮的新启动失败不覆盖它，也不能被它覆盖。
+
+已做：安装解压扩展后，工作台选择指定 Profile →「授权并连接」→ Chrome 原 Allow「允许并保存授权」一次，宿主自动保存原 Profile token；以后主动连接/运行复用。界面去掉授权码输入，持续显示已授权/已连接/处理中/读取失败、绑定名称；刷新不丢事实，取消沿原 revoke 队列。三环境和原 TaskChain/B-U/W-U/TaskConnection 合同沿用，不新增模型调用或模式切换复验。仅首次配置交接原 token，不生成新协议令牌或自建状态机。
+
+| 状态 | 当前证据 |
+| --- | --- |
+| 通过 | 所属协议/授权测试10/10；API与workbench类型检查；最终扩展原地构建。最小错误路径覆盖：缺少/错误/未经请求的 token、Origin、撤销胜过迟到批准、指定 Profile、凭据不进入状态/CDP及0600。 |
+| 通过 | 真实 Chromium134 的全新 owned Profile：一次 Allow、无需复制码、B-U动作/DOM、非任务目标拒绝；两次原 W-U/LangGraph 普通复跑0模型、审计完整、清理确认；宿主重建、测试 Chrome 重启复用，撤销立即断开、旧 token 拒绝、宿主凭据移除。fixture最终只回收自身进程和资料。撤销后产品控制清理未确认，与 fixture最终回收通过分别报告。 |
+| 通过 | 真实关闭样本的 ACK/事件竞态修复：原 `tabs.remove` 成功 ACK 后沿用原幂等 `onTabRemoved`，不再枚举已关闭的 tab；失败 remove 不删映射，迟到事件不重复 detach。回归先红后绿，完整 fixture v4通过。 |
+| 通过 | 实际用户1/Chrome154 的已有保存授权，两次最小原运行均 completed、0模型、auditComplete=true、cleanup confirmed；第二次针对“主动连接后等待”差异等待5秒，亦通过。它们不代表下面原 V5 通过。 |
+| 通过 | 新开发服务加载补丁，实际 UI 的主动连接即时 busy→已连接，刷新/重开仍已授权。最终截图准确显示失败后“授权已保存，当前未连接”和已绑定用户1。用户 Chrome PID657 未被结束/重启；没有复制真实 Profile。 |
+| 通过，调研限定 | 官方 Apify/Browse AI/Firecrawl/Crawl4AI 做法；固定源码与许可、实际入口；B-U/markdownify/Readability 公开正文片段比较；长 JSON 被 B-U 模型上下文 wrapper 删除的真实函数反例；ExcelJS4.4.0写入/回读和独立 OOXML核验，1740字符/47换行保持。没有更改抓取方式、默认视图、旧任务或引入依赖。 |
+| 失败，保留 | 初次 fixture 布尔 evaluate 序列化错误；v2/v3关闭 ACK/移除事件间隙；一次临时 async wrapper 错误，修正后第二次 warm fixture通过。临时 private monkeypatch/延迟开关已从正式夹具移除。 |
+| 失败，未解决 | 工作台重新运行原 V5，execution `7634032b-2ebe-41d4-8d55-699bbc4c2f02`：`Target.createTarget` 等待回复期间 os_error → SDK RuntimeError → `hybrid_runner_failed`，0 transitions/0 browserCommands/0 llmCalls，尚未进入第一条业务节点。首次异常原文没有留存，具体断开原因未知；不把它归为 Chrome 版本或旧搜索点击问题。 |
+| 阻塞 | 原 owner/lease `118646fb-aab0-48a6-8d1f-6bc28e1e7862` 的连接已断开，starting、ownedTargets=[]。现有 cleanup_execution 尝试一次，返回 `cleanup_owner_verification_unavailable`，execution保持cleanup_required，原业务失败保留。未删除原租约、猜测/关闭个人目标、换连接验证旧 owner或新增恢复机制；此任务复跑当前被既有清理门阻断。 |
+| 阻塞 | Windows缺实机：安装、ACL、自动启动/复用、重启、撤销未验收，继续完成可开展代码与调研。 |
+| 未测 | 实际日常 Profile 重新加载新版扩展后的全新无码首次 Allow；日常Chrome冷启动/重启/卸载/重新生成授权；完整首次 LLM探索→编译→发布；iframe/popup/下载额外样本；商业控制台/付费API/下载及候选阅读器/网格产品接入、Excel应用视觉与Windows；根级/全量测试。 |
+
+授权和源码取舍、当前无法由既有合同核验旧目标的反例详见 [RESEARCH](RESEARCH.md#本轮授权验证结算与额外正式运行反例)。采集调研已完成本轮限定产物：推荐可供用户取舍的内容保真、阅读/表格视图和文件编码组合，尚未冻结选型。现有 artifact 界面只显示元数据，不冒称已实现 Markdown/Excel 下载或预览。新版扩展仍在 `work/daily-chrome-extension/extension`，首次步骤见 [开发说明](DAILY_CHROME_EXTENSION_DEVELOPMENT.md)。已有真实授权保留，不为验证新版初次流程强制用户重新授权。
+
+证据在 ignored `work/daily-chrome-p0/`：`first-approval-consumer-20261002-v4.log`、`actual-saved-first-approval-20261002.log`、`actual-saved-warm-20261002-v2.log`、`first-approval-ui-20261002.jpg`、`first-approval-ui-final-20261002.png`（全页面）、`first-approval-ui-readable-20261002.png`（按实际弹窗尺寸捕获）、`first-approval-v5-attempt-20261002.json`、`first-approval-v5-cleanup-20261002.json`。原启动诊断在 `data/source-lifecycle-diagnostics/118646fb-aab0-48a6-8d1f-6bc28e1e7862.jsonl`。调研固定来源/文件摘要与样本在 `work/collection-research-20261002/`。Cookie、凭据和原始敏感页面不入日志/Git。
+
+交付收尾：本轮修改18个已有 tracked 文件、没有新增 tracked 文件；代码文件均不超过500行，Python夹具函数不超过100行，`git diff --check`通过。解压包 manifest 的 service worker/页面/许可证入口和当前固定来源 metadata已定点核验；host侧 ACK修补后的 UPSTREAM记录已同步到产物。实际已安装旧包若要使用新增的全新无码批准，仍需在 Chrome 原扩展卡片重新加载一次；当前浏览器工具不开放该管理页，未通过私有接口绕过。既有真实授权无须重填。
+
+开发服务：原 repo dev PID52466 在无活动运行时经既有 `/api/dev/shutdown` 优雅退出；新 dev PID78819负责工作台4173/API4175并保留。产生新 cleanup_required 后没有再次启停服务。之前用户要求的全代码提交/推送已在本轮前完成；本轮改动只留本地，没有追加提交/推送。
+
+## 2026-10-02 任务窗口激活回归修复与原 V5 完整复跑（此前结算）
 
 **本项通过。** 新扩展窗口适配使用 `chrome.windows.create(focused:false)`，B-U0.13.8 的 logical focus 不会激活真实页面。原前两步在实际日常 Chrome154 复现相同 target_state_fact_mismatch、页面 hidden；仅加现成 `Target.activateTarget` 后同条件通过。已在 AttachedWindow.start/start_connected 的既有 task_target_focus 阶段补实际激活，先用 TargetScope 核验已持久化的本 operation 目标；激活失败沿原关闭合同处理。不修改已发布图、selector、后条件或等待，不新增驱动/协议/重试/模型调用。
 

@@ -55,10 +55,15 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
       } : {}), canRestoreByNavigation: input.canRestoreByNavigation ?? false }, work)
   }
 
-  managedWindowAction(input: Parameters<NonNullable<UpstreamBrowserRuntime["managedWindowAction"]>>[0]) {
+  async managedWindowAction(input: Parameters<NonNullable<UpstreamBrowserRuntime["managedWindowAction"]>>[0]) {
     const runner = new RunnerProcess(this.options.root, new AbortController().signal)
-    return runner.managedWindowAction({ ...input,
+    const result = await runner.managedWindowAction({ ...input,
       profilePath: path.join(this.options.directory, "browser-profile", "default") })
+    if (input.action === "verify_closed" && result.report.status === "confirmed" && !result.window.active
+      && result.window.ownerId === input.ownerId && result.window.leaseId === input.leaseId) {
+      this.connection.acceptClosedWindow(input.ownerId)
+    }
+    return result
   }
   private async closeIdleConnection() {
     const report = await this.connection.close()

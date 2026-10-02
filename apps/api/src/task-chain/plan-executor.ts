@@ -9,8 +9,25 @@ import type { ProductStore } from "../database/store.js"
 import type { TaskContractRepository } from "./repository.js"
 import type { TaskRuntimeHost } from "./runtime-host.js"
 import { projectExecutionResult, type FailureHint } from "./execution-result.js"
-import { executionCleanupAuditSchema, RuntimeCleanupRequiredError, type RunnerCleanupReport } from "../upstream-browser/cleanup.js"
-import { UpstreamProtocolError } from "../upstream-browser/service.js"
+import { executionCleanupAuditSchema, RuntimeCleanupRequiredError, RUNNER_CLEANUP_STAGES,
+  type ExecutionCleanupAudit, type RunnerCleanupReport } from "../upstream-browser/cleanup.js"
+import { UpstreamProtocolError, type UpstreamBrowserRuntime } from "../upstream-browser/service.js"
+
+export async function verifyClosedExecutionBrowser(record: TaskExecution, prior: ExecutionCleanupAudit | undefined,
+  upstream: UpstreamBrowserRuntime, controllerActive: boolean) {
+  const ownerId = stableUuid(record.id, "managed-window")
+  if (!prior || prior.ownerId !== ownerId || !upstream.managedWindowAction || controllerActive
+    || prior.stages.length !== RUNNER_CLEANUP_STAGES.length
+    || !RUNNER_CLEANUP_STAGES.every(name => prior.stages.some(stage => stage.stage === name
+      && (name === "browser_close" || stage.status !== "unconfirmed")))
+    || !prior.stages.some(stage => stage.stage === "child_exit" && stage.status === "confirmed")) return false
+  // WHY：复用原 owner 核验与退出审计；不关闭用户 Chrome，也不把另一个 relay 的空列表当成证明。
+  try {
+    const result = await upstream.managedWindowAction({ action: "verify_closed", ownerId, leaseId: ownerId })
+    return result.report.status === "confirmed" && result.window.ownerId === ownerId
+      && result.window.leaseId === ownerId && result.window.active === false
+  } catch { return false }
+}
 
 export class TaskPlanExecutor {
   constructor(private readonly store: ProductStore, private readonly repository: TaskContractRepository,

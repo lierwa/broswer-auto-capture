@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 STARTUP_STAGES = frozenset({'reserve', 'sdk_connect', 'task_target_prepare', 'task_target_focus'})
-STARTUP_ERROR_KINDS = frozenset({'timeout_error', 'os_error', 'runtime_error', 'value_error',
+STARTUP_ERROR_KINDS = frozenset({'connection_error', 'timeout_error', 'os_error', 'runtime_error', 'value_error',
                                 'cancelled_error', 'other_error'})
 STARTUP_CODES = frozenset({'external_error', 'hybrid_attached_window_endpoint_invalid',
     'hybrid_attached_window_endpoint_required', 'hybrid_attached_window_lease_missing',
@@ -24,7 +24,7 @@ STARTUP_SOURCES = frozenset(SOURCE_MODULES.values())
 
 
 def _kind(error):
-    for error_type, kind in ((TimeoutError, 'timeout_error'), (OSError, 'os_error'),
+    for error_type, kind in ((ConnectionError, 'connection_error'), (TimeoutError, 'timeout_error'), (OSError, 'os_error'),
             (RuntimeError, 'runtime_error'), (ValueError, 'value_error'),
             (asyncio.CancelledError, 'cancelled_error')):
         if isinstance(error, error_type):

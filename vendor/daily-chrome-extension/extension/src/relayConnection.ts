@@ -88,8 +88,9 @@ export class RelayConnection {
   // round of `attachTab` invocations. The relay holds CDP traffic from
   // Playwright until it sees this event, so that `Target.setAutoAttach` is
   // answered from a populated tab model.
-  didInitialize(): void {
-    this._sendMessage({ method: 'extension.initialized', params: [] });
+  didInitialize(authorizationToken?: string): void {
+    this._sendMessage({ method: 'extension.initialized',
+      params: authorizationToken ? [{ token: authorizationToken }] : [] });
   }
 
   close(message: string): void {

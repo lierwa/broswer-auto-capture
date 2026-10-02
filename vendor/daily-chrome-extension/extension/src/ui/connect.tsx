@@ -17,7 +17,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from './tabItem';
-import { AuthTokenSection, getOrCreateAuthToken } from './authToken';
+import { getOrCreateAuthToken } from './authToken';
 
 type Status =
   | { type: 'connecting'; message: string }
@@ -26,6 +26,7 @@ type Status =
   | { type: 'error'; versionMismatch: { extensionVersion: string; } };
 
 const SUPPORTED_PROTOCOL_VERSION = 2;
+const persistAuthorization = new URLSearchParams(window.location.search).get('persistAuthorization') === '1';
 
 // Client name comes from the URL and never changes for the lifetime of this page.
 const clientInfo = (() => {
@@ -60,6 +61,8 @@ const ConnectApp: React.FC = () => {
       const response = await chrome.runtime.sendMessage({
         type: 'connectToTab',
         clientName: clientInfo,
+        // WHY：只有明确点允许且宿主请求首次配置时才交接原令牌；自动连接不重复发送。
+        ...(persistAuthorization ? { authorizationToken: getOrCreateAuthToken() } : {}),
       });
 
       if (response?.success) {
@@ -89,15 +92,13 @@ const ConnectApp: React.FC = () => {
 
         {status?.type === 'connecting' && (
           <div className='warning-banner'>
-            连接后，B-A-T 仅控制任务创建的窗口和所属标签页。个人标签页不会因拖入分组而获得控制授权。
+            {persistAuthorization ? '允许后，B-A-T 会保存此 Chrome 的授权，后续连接无需再次确认。' : '正在连接 B-A-T。'}
+            仅控制任务创建的窗口和所属标签页，保留你的日常标签页。
           </div>
         )}
 
         {status?.type === 'connecting' && (
-          <AuthTokenSection />
-        )}
-        {status?.type === 'connecting' && (
-          <Button variant='primary' onClick={() => handleConnectToTab()}>连接任务窗口</Button>
+          <Button variant='primary' onClick={() => handleConnectToTab()}>{persistAuthorization ? '允许并保存授权' : '连接任务窗口'}</Button>
         )}
 
       </div>
@@ -128,7 +129,7 @@ async function initializeConnection(setStatus: (value: Status) => void,
 
   setStatus({
     type: 'connecting',
-    message: `"${clientInfo}" is trying to connect to the Playwright Extension.`
+    message: persistAuthorization ? '允许 B-A-T 连接这个 Chrome？' : '正在连接日常 Chrome…'
   });
 
   const parsedVersion = parseInt(params.get('protocolVersion') ?? '', 10);

@@ -10,6 +10,8 @@ export function BrowserHandoffActions({ execution, connection, onChanged }: {
 }) {
   const busy = connection.snapshot().busy
   const handoff = execution.browserHandoff
+  // WHY：启动预留的 owner 不是已交付现场；没有交付/人工目的时不显示无效窗口操作。
+  if (!handoff.purpose) return null
   const hasLease = Boolean(handoff.leaseId && handoff.ownerId)
   const message = handoff.status === "active"
     ? handoff.purpose === "human_wait" && ["waiting_for_human", "paused"].includes(execution.status)
@@ -55,9 +57,6 @@ export function ExecutionActions({ execution, connection }: {
       && (!execution.release || execution.browserHandoff.status === "active") && <Button size="1" disabled={busy}
       onClick={() => void connection.dispatch({ type: "resume_execution", requestId: crypto.randomUUID(),
         executionId: execution.id, expectedSequence: execution.sequence })}>处理后继续</Button>}
-    {execution.status === "cleanup_required" && <Button size="1" disabled={busy}
-      onClick={() => void connection.dispatch({ type: "cleanup_execution", requestId: crypto.randomUUID(),
-        executionId: execution.id, expectedSequence: execution.sequence })}>重试清理</Button>}
     {["queued", "running", "waiting_for_human", "paused"].includes(execution.status) && <Button size="1" color="red"
       variant="soft" disabled={busy} onClick={() => void connection.dispatch({ type: "cancel_execution",
         executionId: execution.id })}>取消本次运行</Button>}

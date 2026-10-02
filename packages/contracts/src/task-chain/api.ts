@@ -292,6 +292,12 @@ export const taskExecutionDetailSchema = z.object({
   execution: taskExecutionSchema,
   requirement: taskRequirementSchema.nullable(),
   content: taskDraftContentSchema.nullable(),
+  startupFailure: z.object({
+    stage: z.enum(["reserve", "sdk_connect", "task_target_prepare", "task_target_focus"]),
+    occurredAt: z.string().datetime(),
+    errorKind: z.enum(["connection_error", "timeout_error", "os_error", "runtime_error", "value_error", "cancelled_error", "other_error"]),
+    code: z.string().regex(/^[a-z][a-z0-9_]{1,120}$/),
+  }).strict().nullable().optional(),
   calls: z.array(z.object({ stepId: keySchema, run: taskRunSchema.pick({
     binding: true, input: true, outputs: true, status: true, outcome: true, sequence: true,
   }) }).strict()),

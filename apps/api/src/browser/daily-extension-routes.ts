@@ -17,7 +17,13 @@ export function mountDailyChromeExtension(app: FastifyInstance, extension: Daily
   app.post("/api/browser/daily-chrome/authorize", async request => {
     guard(request)
     const input = z.object({ profileDirectory: z.string().min(1) }).strict().parse(request.body)
-    return extension.openAuthorization(input.profileDirectory)
+    return extension.pair(input)
+  })
+  app.post("/api/browser/daily-chrome/connect", async request => {
+    guard(request)
+    z.object({}).strict().parse(request.body ?? {})
+    if (!await extension.connectSaved()) throw new DomainError("daily_chrome_authorization_required", "请先授权连接日常 Chrome。", 409)
+    return { connected: true }
   })
   app.put("/api/browser/daily-chrome", async request => { guard(request); return extension.pair(request.body) })
   app.delete("/api/browser/daily-chrome", async request => { guard(request); return extension.revoke() })

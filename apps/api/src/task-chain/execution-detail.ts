@@ -34,7 +34,8 @@ export function executionRequirement(repository: TaskContractRepository, record:
 }
 
 export function executionDetail(repository: TaskContractRepository, record: TaskExecution,
-  content: import("@browser-capture/contracts").TaskDraftContent | null) {
+  content: import("@browser-capture/contracts").TaskDraftContent | null,
+  startupFailure: import("@browser-capture/contracts").TaskExecutionDetail["startupFailure"] = null) {
   return taskExecutionDetailSchema.parse({ execution: record, content,
-    requirement: executionRequirement(repository, record), calls: executionCalls(repository, record) })
+    startupFailure, requirement: executionRequirement(repository, record), calls: executionCalls(repository, record) })
 }

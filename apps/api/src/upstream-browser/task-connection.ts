@@ -5,7 +5,7 @@ import { cleanupReport, RUNNER_CLEANUP_STAGES,
   type RunnerCleanupReport } from "./cleanup.js"
 
 type TaskRunner = Pick<RunnerProcess, "startHybrid" | "request" | "close" | "envBoolean">
-  & Partial<Pick<RunnerProcess, "handoff">>
+  & Partial<Pick<RunnerProcess, "handoff" | "managedWindowOwner">>
 type RunnerFactory = (root: string, signal: AbortSignal, onDiagnostic?: (line: string) => void) => TaskRunner
 type Borrow = { connectionOwnerId: string; signal: AbortSignal; onDiagnostic?: (line: string) => void;
   closeAfterOperation?: boolean }
@@ -121,6 +121,16 @@ export class TaskConnection {
   private recordFinal(parent: Parent, report: RunnerCleanupReport) {
     if (report.status !== "confirmed") parent.blocked = report
     else if (this.parent === parent) this.parent = undefined
+  }
+
+  acceptClosedWindow(ownerId: string) {
+    const parent = this.parent, report = parent?.blocked
+    // WHY：仅在原 verify_closed 已确认同一窗口后释放死 worker 引用；不停止进程、不重连或继续旧运行。
+    if (!parent || !report || this.active || parent.runner.managedWindowOwner?.() !== ownerId
+      || !report.stages.some(stage => stage.stage === "child_exit" && stage.status === "confirmed")
+      || report.stages.some(stage => stage.stage !== "browser_close" && stage.status === "unconfirmed")) return false
+    this.parent = undefined
+    return true
   }
 
   async close(): Promise<RunnerCleanupReport> {

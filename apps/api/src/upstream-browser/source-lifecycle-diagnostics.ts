@@ -1,6 +1,6 @@
-import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from "node:fs"
+import { closeSync, fsyncSync, mkdirSync, openSync, readSync, writeSync } from "node:fs"
 import path from "node:path"
-import type { AuthoringProgressEvent } from "@browser-capture/contracts"
+import type { AuthoringProgressEvent, TaskExecutionDetail } from "@browser-capture/contracts"
 import type { ModelCallReport } from "@browser-capture/runtime"
 import { z } from "zod"
 import { authorResultIssues } from "./author-result-diagnostics.js"
@@ -46,7 +46,7 @@ const attachedStartupSchema = z.object({
   phase: z.literal("attached_startup"), status: z.enum(["started", "completed", "failed"]),
   stage: z.enum(["reserve", "sdk_connect", "task_target_prepare", "task_target_focus"]),
   causes: z.array(z.object({
-    errorKind: z.enum(["timeout_error", "os_error", "runtime_error", "value_error", "cancelled_error", "other_error"]),
+    errorKind: z.enum(["connection_error", "timeout_error", "os_error", "runtime_error", "value_error", "cancelled_error", "other_error"]),
     code: z.enum(["external_error", "hybrid_attached_window_endpoint_invalid", "hybrid_attached_window_endpoint_required",
       "hybrid_attached_window_lease_missing", "hybrid_attached_window_owner_mismatch", "hybrid_attached_window_profile_changed",
       "hybrid_attached_window_endpoint_changed", "hybrid_attached_window_busy", "hybrid_attached_window_target_missing",
@@ -148,6 +148,28 @@ const runtimeOutcomeSchema = z.object({ phase: z.literal("runtime_outcome"), sta
   bridge: z.object({ status: z.enum(["completed", "failed"]), code: z.string().regex(/^[a-z][a-z0-9_]{1,120}$/).nullable() }).strict(),
 }).strict()
 export type SourceLifecycleProgress = Omit<AuthoringProgressEvent, "sequence">
+
+export function readStartupFailure(directory: string | undefined, ownerId: string | null): TaskExecutionDetail["startupFailure"] {
+  if (!directory || !z.uuid().safeParse(ownerId).success) return null
+  let descriptor: number | undefined
+  try {
+    descriptor = openSync(path.join(directory, "source-lifecycle-diagnostics", `${ownerId}.jsonl`), "r")
+    // WHY：只读同一 owner 的既有脱敏日志前段；不载入长运行正文或推测未记录的底层错误。
+    const buffer = Buffer.alloc(64 * 1024), count = readSync(descriptor, buffer, 0, buffer.length, 0)
+    for (const line of buffer.subarray(0, count).toString("utf8").split("\n")) {
+      if (!line) continue
+      const { schemaVersion, ownerId: owner, occurredAt, source, ...event } = JSON.parse(line)
+      if (schemaVersion !== "bat.source-lifecycle-diagnostic/v1" || owner !== ownerId || source !== "python"
+        || !z.string().datetime().safeParse(occurredAt).success) continue
+      const parsed = attachedStartupSchema.safeParse(event)
+      if (!parsed.success || parsed.data.status !== "failed" || !parsed.data.causes?.length) continue
+      const cause = parsed.data.causes.find(value => value.code !== "external_error") ?? parsed.data.causes.at(-1)!
+      return { stage: parsed.data.stage, occurredAt, errorKind: cause.errorKind, code: cause.code }
+    }
+  } catch { /* 缺失/截断诊断不改写运行，不补造失败原因。 */ }
+  finally { if (descriptor !== undefined) closeSync(descriptor) }
+  return null
+}
 type ProgressPayload = Omit<SourceLifecycleProgress, "occurredAt">
 
 const fixedReadErrors = new Set([

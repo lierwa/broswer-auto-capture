@@ -135,18 +135,48 @@ async def sdk_action(endpoint, fixture_url, facts, profile):
 
 async def lifecycle(relay, loader, extension_id, endpoint, facts, profile):
     facts['stage'] = 'persistent_pair'
-    page = await extension_page(loader, extension_id)
-    token = json.loads(await page.evaluate('() => ({token: localStorage.getItem("auth-token")})'))['token']
-    facts['tokenPresent'] = isinstance(token, str)
-    facts['tokenLength'] = len(token) if isinstance(token, str) else 0
-    result = await request(relay, 'pair', token=token)
+    # WHY：直接消费产品无码授权；测试只模拟一次真实扩展按钮点击，不读取/输入 localStorage 令牌。
+    pending = asyncio.create_task(request(relay, 'pair'))
+    try:
+        async with asyncio.timeout(25):
+            while True:
+                targets = (await loader.cdp_client.send.Target.getTargets()).get('targetInfos', [])
+                page_target = next((target for target in targets if target.get('url', '').startswith(
+                    f'chrome-extension://{extension_id}/connect.html')), None)
+                if page_target:
+                    await loader.get_or_create_cdp_session(page_target['targetId'], focus=True)
+                    page = await loader.get_current_page()
+                    clicked = json.loads(await page.evaluate('''() => {
+                        const button = [...document.querySelectorAll('button')].find(
+                            item => item.textContent === '允许并保存授权');
+                        if (!button) return {clicked: false};
+                        button.click(); return {clicked: true};
+                    }'''))['clicked']
+                    if clicked:
+                        break
+                await asyncio.sleep(0.1)
+        result = await pending
+    except BaseException:
+        pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        raise
     if not result.get('paired') or not result.get('connected') or not result.get('privateCredentials'):
         raise ValueError('persistent_pair_not_confirmed')
-    facts.update({'extensionHandshake': True, 'privateCredentials': True})
+    facts.update({'extensionHandshake': True, 'privateCredentials': True,
+                  'manualTokenReadOrInput': False, 'approvalClicks': 1})
     facts['stage'] = 'consumer_action'
     consumer, window = await sdk_action(result['cdpUrl'], endpoint['fixtureUrl'], facts, profile)
     await ownership_boundary(loader, consumer, window, extension_id, facts)
-    if (await window.close(consumer))['status'] != 'confirmed':
+    original = next(original for _owner, name, original, _replacement in window.scope.restorations if name == 'getTargets')
+    facts['extensionTargetsBeforeCleanup'] = len((await original()).get('targetInfos', []))
+    facts['extensionConnectedBeforeCleanup'] = (await request(relay, 'status'))['connected']
+    owned = set(window._load(window.owner_id).ownedTargets)
+    cleanup = await window.close(consumer)
+    facts['sdkCleanup'] = cleanup['status']
+    facts['extensionConnectedAfterCleanup'] = (await request(relay, 'status'))['connected']
+    native_targets = (await loader.cdp_client.send.Target.getTargets()).get('targetInfos', [])
+    facts['nativeOwnedTargetsRemaining'] = sum(target['targetId'] in owned for target in native_targets)
+    if cleanup['status'] != 'confirmed':
         raise ValueError('sdk_owned_target_cleanup_unconfirmed')
     await disconnect(consumer)
     facts['stage'] = 'runtime_replay'

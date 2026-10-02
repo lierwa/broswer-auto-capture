@@ -96,6 +96,7 @@ export type ExtensionEventsV2 = {
   // `Target.setAutoAttach` can be answered from a fully-populated tab model
   // rather than blocking on a user pick.
   'extension.initialized': {
-    params: [];
+    // B-A-T 首次配置的可选元数据；原客户端仍发送/消费空参数。
+    params: [] | [authorization: { token: string }];
   };
 };

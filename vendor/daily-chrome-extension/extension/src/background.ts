@@ -27,6 +27,7 @@ type PageMessage = {
   // selection happens.
   tab?: chrome.tabs.Tab;
   clientName?: string;
+  authorizationToken?: string;
 } | {
   type: 'getConnectionStatus';
 } | {
@@ -67,7 +68,7 @@ class PlaywrightExtension {
         // so `ConnectedTabGroup` always has a concrete tab to start from. Both
         // sender.tab and UI-supplied tabs come from chrome.tabs.query / runtime
         // message sender, where `id` is always defined.
-        this._connectTab(sender.tab!.id!, message.clientName).then(
+        this._connectTab(sender.tab!.id!, message.clientName, message.authorizationToken).then(
             () => sendResponse({ success: true }),
             (error: any) => sendResponse({ success: false, error: error.message }));
         return true; // Return true to indicate that the response will be sent asynchronously
@@ -92,7 +93,7 @@ class PlaywrightExtension {
     }
   }
 
-  private async _connectTab(selectorTabId: number, clientName: string | undefined): Promise<void> {
+  private async _connectTab(selectorTabId: number, clientName: string | undefined, authorizationToken?: string): Promise<void> {
     try {
       await this._cleanupPromise;
       if (this._connections.size)
@@ -113,7 +114,8 @@ class PlaywrightExtension {
 
       const id = ++this._lastConnectionId;
       const taken = [...this._connections.values()].map(group => group.groupStyle);
-      const group = new ConnectedTabGroup(connection, tab, clientName, uniqueGroupStyle(clientName, taken), tabId => this._pendingConnections.has(tabId));
+      const group = new ConnectedTabGroup(connection, tab, clientName, uniqueGroupStyle(clientName, taken),
+        tabId => this._pendingConnections.has(tabId), authorizationToken);
       group.onclose = () => {
         this._connections.delete(id);
         // 只回收本连接创建的空白引导页；任务目标的关闭仍由 B-A-T 原 owner 合同承担。

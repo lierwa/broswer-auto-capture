@@ -7,9 +7,10 @@ import { ProviderCredentialStore } from "@agent-platform/ai-connect/integration/
 import { CDPRelayServer } from "../../../../vendor/daily-chrome-extension/cdpRelay.js"
 import { DomainError } from "../errors.js"
 
+const tokenSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{43}$/)
 const bindingSchema = z.object({ profileDirectory: z.string().min(1).max(100)
   .refine(value => !value.includes("/") && !value.includes("\\") && value !== "." && value !== ".."),
-  token: z.string().trim().regex(/^[A-Za-z0-9_-]{43}$/) }).strict()
+  token: tokenSchema.optional() }).strict()
 const profileSchema = z.object({ name: z.string().min(1) }).passthrough()
 const metadataSchema = z.object({ profile: z.object({ info_cache: z.record(z.string(), profileSchema) }) }).passthrough()
 const credentialRef = "daily-chrome"
@@ -70,10 +71,10 @@ export class DailyChromeExtension {
       throw new DomainError("daily_chrome_profile_missing", "所绑定的 Chrome Profile 已不存在，请重新连接授权。", 409)
     }
     return new CDPRelayServer("chrome", await this.executable(), this.dataRoot(), profileDirectory,
-      { extensionId: await this.extensionIdentity(), ...(token ? { token } : {}) })
+      { extensionId: await this.extensionIdentity(), ...(token ? { token } : { requestAuthorization: true }) })
   }
 
-  private async connect(profileDirectory: string, token: string, current: () => boolean) {
+  private async connect(profileDirectory: string, token: string | undefined, current: () => boolean) {
     this.relay?.stop()
     const relay = await this.createRelay(profileDirectory, token)
     if (!current()) { await relay.close(); throw this.cancelled() }
@@ -84,7 +85,7 @@ export class DailyChromeExtension {
       return relay.cdpEndpoint()
     } catch {
       relay.stop()
-      throw new DomainError("daily_chrome_extension_not_connected", "扩展未能连接，请确认已在指定 Chrome Profile 加载扩展，并使用当前授权码。", 409)
+      throw new DomainError("daily_chrome_extension_not_connected", "扩展未能连接。请确认已在指定 Chrome 加载 B-A-T 扩展；授权已失效时点击重新授权。", 409)
     }
   }
 
@@ -100,11 +101,20 @@ export class DailyChromeExtension {
     this.assertIdle()
     const binding = bindingSchema.parse(input)
     return this.exclusive(async current => {
+      const record = await this.credentials.get(credentialRef)
+      if (record?.type === "api" && record.env?.PROFILE_DIRECTORY !== binding.profileDirectory) {
+        throw new DomainError("daily_chrome_profile_already_bound", "更换日常 Chrome 前，请先撤销原 Profile 的授权。", 409)
+      }
       await this.connect(binding.profileDirectory, binding.token, current)
       if (!current()) { this.close(); throw this.cancelled() }
+      const received = tokenSchema.safeParse(binding.token ?? this.relay?.authorizationToken())
+      if (!received.success) {
+        this.close()
+        throw new DomainError("daily_chrome_authorization_missing", "未收到扩展的持久授权，请重新加载 B-A-T 扩展后再次授权。", 409)
+      }
       // 只有真实原 token 握手通过才持久化，不能把未连接凭据记作已配对。
       try {
-        await this.credentials.set(credentialRef, { type: "api", key: binding.token,
+        await this.credentials.set(credentialRef, { type: "api", key: received.data,
           env: { PROFILE_DIRECTORY: binding.profileDirectory } })
       } catch {
         this.close()
@@ -114,22 +124,17 @@ export class DailyChromeExtension {
     })
   }
 
-  openAuthorization(profileDirectory: string) {
-    this.assertIdle()
-    return this.exclusive(async () => {
-      const relay = await this.createRelay(profileDirectory)
-      relay.openPage(`chrome-extension://${await this.extensionIdentity()}/status.html`)
-      relay.stop()
-      return { opened: true }
-    })
-  }
-
   async endpoint(): Promise<string | undefined> {
     this.assertStable()
     const record = await this.credentials.get(credentialRef)
     if (record?.type !== "api" || !record.key || !record.env?.PROFILE_DIRECTORY) return undefined
     if (this.relay?.isConnected()) return this.relay.cdpEndpoint()
     return this.exclusive(current => this.connect(record.env!.PROFILE_DIRECTORY!, record.key!, current))
+  }
+
+  connectSaved() {
+    this.assertIdle()
+    return this.endpoint()
   }
 
   revoke() {

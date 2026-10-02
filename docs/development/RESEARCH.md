@@ -1,5 +1,193 @@
 # 技术调研与复用结论
 
+## 2026-10-02 执行失败、再次运行与原因入口（本轮授权，macOS 原任务通过）
+
+用户本轮明确收窄为：失败后再次运行、查看同一次历史失败原因，并核实日常 Chrome 已保存授权。沿用已有侧栏和历史，不删除失败详情，不扩展采集/成果格式。
+
+Product Alignment:
+- natural-language task: 从已发布工作台再次运行失败的任务，并查看之前失败原因。
+- reusable chain boundary: 同一不可变发布版本，每次再跑创建独立 execution；不自动继续旧运行。
+- runtime inputs: 既有输入、运行预设、浏览器环境及持久授权。
+- dynamic task outputs: 原运行输出/错误/清理审计分别保留；不补造旧错误。
+- generic platform capability used: 原 cleanup_execution/verify_closed、run_task、execution detail/history，以及原扩展连接。
+- replay model calls: 0 added；只允许显式 LLM 节点。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 失败原因展示、失败资源自动核验及再次运行。
+- existing implementation in repository: TaskChainService.cleanupExecution、TaskPlanExecutor 的 finally/cleanupResume、AttachedWindow.verify_closed、SourceLifecycleDiagnostics、原 Radix 侧栏/按钮。
+- mature candidates and pinned versions: 继续 Microsoft 扩展0.4.0/8b552173e8d767db29b8baef8f4a1f08cf7f26bf（Apache-2.0），原 BrowserModel/createTarget 与 chrome.tabs.remove；B-U0.13.8、cdp-use1.4.5、原 W-U/LangGraph；Radix Themes3.3.0（MIT）。固定入口/许可见此前记录与 vendor/UPSTREAM.json。
+- selected implementation: 沿用现有生命周期与公开 Chrome/CDP 能力；不建立授权或恢复状态机。
+- reused public surface: 原 run_task、cleanup_execution、verify_closed、Target.createTarget/closeTarget、chrome.tabs.remove；现有执行侧栏与历史。
+- B-A-T-owned adapter and remaining gap: 从同一 owner 的既有脱敏启动诊断展示原失败阶段/错误类别；原 worker 退出后及用户再次运行时分别做一次既有释放核验。已确认旧 createTarget 未发给扩展；真正已发送而回执丢失的场景仍不得确认释放。
+- license/runtime/platform fit: 不换库、不增加依赖；macOS 现场验证；Windows 缺实机阻塞。
+- browser/runtime/state ownership conflicts: 一次运行只占一个控制会话，恢复只检查已证明归属的资源；个人 Chrome 与页面保留。
+- replay model calls: 0 added。
+- rejected candidates and evidence: 不引入第二浏览器驱动/通用状态机。固定原扩展未持久保存无回执窗口所有权；旧断线后不能据新连接空列表证明旧未知窗口消失。
+- focused validation: 原 HTTP 红：cleanup_required 阻断再次运行，原因只有 RuntimeError。原 API 进程只读诊断进一步证实 ExtensionConnection._lastId=0、无 attached session、WebSocket 已以1001结束，唯一引导 tab 已不存在。因此旧任务没有发出窗口创建命令，区别于已发送但无回执的反例。原 verify_closed 同 owner 核验现已通过；旧失败及 digest 未改变。最终所属 TS47项、Python10项、API/UI/Contracts 类型检查通过；真实工作台原V5成功、0模型、清理确认，旧失败历史仍可查看。详见 PROGRESS 最新节。
+
+原 endpoint 的只读释放证明仍走 B-U/cdp-use/AttachedWindow：CDP 初始化先读取 Browser.getVersion，再 Target.getTargets；只允许未派发任务窗口创建的原断线 relay 回答本地版本元数据和空的任务目标集合，所有浏览器动作仍拒绝。已派发而无 ACK 的断线反例继续拒绝，不更换 endpoint，不发现/接管个人页。开发现场仅临时把这几个原 relay 方法更新到持有原连接事实的 API 进程；随后通过现有 cleanup_execution 取得真实释放确认，未直接修改数据库或删除租约，最终已关闭 inspector 并加载正常源码服务。
+
+**已保存授权的空闲连接反例及修补**：服务刷新后原授权直接连接，但125.4秒后的真实 GET 为 paired=true/connected=false。固定扩展的批准页面原来提供定时 keepalive，B-A-T 关闭该页面后，原 relay 在尚未附着 owned 引导页 debugger 时即报告就绪。Chrome 官方 [MV3 生命周期](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) 说明 active chrome.debugger session 可维持 worker。复用原 BrowserModel Target.setAutoAttach 与 Target.getTargets，先对唯一 owned 引导页完成接入再报告连接，不增加心跳、恢复或授权协议。修补后实际日常 Chrome154 空闲131.5秒仍连接，随后原V5完整运行通过；不要求用户满足开发固定版本，也没有再次改扩展 worker 或要求重载。
+
+旧03:33失败的确定事实是创建任务窗口阶段 CDP 通信异常、原连接断开且没有向扩展发送命令。原诊断只保存 os_error 而未区分 ConnectionError，断开的具体触发原因未记录，不能把后续空闲反例写成旧失败的唯一根因。新增错误类别仅保存固定 connection_error，无原始异常消息、URL、凭据或页面内容。
+
+## 2026-10-02 浏览器环境弹窗整理（用户明确授权）
+
+用户现场指出环境选择、持久授权/连接状态和按钮层级混乱，授权修改实际弹窗。当前真实状态为已保存授权、绑定用户1、未连接；不得把未连接写成未授权，也不得把连接状态写成原 V5 已恢复。
+
+Reuse Assessment:
+- capability: 三环境选择、授权状态和管理动作的可读组合。
+- existing implementation in repository: `BrowserEnvironmentSelect`、`useBrowserEnvironment` 的原 CAS 保存；`DailyChromeAuthorization` 的状态轮询、操作序号与原 authorize/connect/revoke；已有 Radix Themes3.3.0。
+- mature candidates and pinned versions: Radix Themes3.3.0 / `7300f2a9be4309e04b2c1b4e43b5d7cf4a58eb43`，原 [RadioCards](https://github.com/radix-ui/themes/blob/7300f2a9be4309e04b2c1b4e43b5d7cf4a58eb43/packages/radix-ui-themes/src/components/radio-cards.tsx) 直接包装 RadioGroup primitive；原 [DropdownMenu](https://github.com/radix-ui/themes/blob/7300f2a9be4309e04b2c1b4e43b5d7cf4a58eb43/packages/radix-ui-themes/src/components/dropdown-menu.tsx)；[LICENSE](https://github.com/radix-ui/themes/blob/7300f2a9be4309e04b2c1b4e43b5d7cf4a58eb43/LICENSE) MIT。tag 已核对实际 peeled commit；不读取 node_modules。
+- selected implementation: 沿用已安装 Radix 原组件，增加原环境选择器的说明式显示；运行设置仍用原紧凑 Select。
+- reused public surface: RadioCards.Root/Item 的受控 value/onValueChange/disabled 和原键盘选择、DropdownMenu.Trigger/Item、Dialog/Button/Badge；不自写选项键盘逻辑或菜单。
+- B-A-T-owned adapter and remaining gap: 中文用途、已有授权/连接事实的展示和原 API 动作组合。已授权管理动作收进菜单；首次安装说明渐进展开。
+- license/runtime/platform fit: MIT、现有 React19/TypeScript/浏览器入口，不新增依赖。macOS 现场验证后结算；Windows 实机仍阻塞。
+- browser/runtime/state ownership conflicts: 不改浏览器驱动、Profile、凭据、租约或恢复合同；只读状态失败禁止按旧状态继续授权操作；初始化读取不显示撤销动作。
+- replay model calls: 不增加模型调用，三环境选择仍不新增链路复验。
+- rejected candidates and evidence: 无需替换现有可用成品组件，不新增框架。
+- focused validation: 所属 workbench 类型检查通过；实际工作台三选项、绑定用户1、已授权/未连接、单一连接主按钮、管理菜单、关闭和刷新重开通过。真实页面 viewport1840×979，弹窗560×638，scrollHeight/clientHeight同为638，无内容裁切。首读过程实见“读取中”，未出现撤销按钮。当前服务器状态 paired=true/connected=false/busy=false，与 UI 一致。没有为验证 UI 撤销现有授权或切换真实环境；原 V5 清理阻塞独立保留。用户本轮已确认重新加载扩展。
+
+Product Alignment:
+- natural-language task: 用户选择执行任务的浏览器，理解当前授权与连接，并完成最少必要的授权操作。
+- reusable chain boundary: 不修改已发布任务链路。
+- runtime inputs: 原 BrowserMode 和指定 Chrome Profile。
+- dynamic task outputs: 不修改成果内容或展示合同。
+- generic platform capability used: 既有环境保存和扩展授权管理。
+- replay model calls: 0 added。
+- site/task-specific code added: no。
+
+## 2026-10-02 采集内容与成果展示调研（未冻结产品或选型）
+
+用户要求先看成熟产品和开源实现，再决定采集/展示；本节只提交调研证据，不修改采集合同、旧任务或成果 UI。官方文档于本日读取；商业产品的登录后控制台、付费 API、导出下载没有实测，不把文档或截图当作 B-A-T 验收。公开 GitHub 样本只用于离线比较，不采集登录态、Cookie 或私人页面。
+
+### 成熟产品怎样组织成果
+
+| 参考对象 | 已核对的实际产品入口与做法 | 可借鉴之处与边界 |
+| --- | --- | --- |
+| [Apify Dataset schema / Output tab](https://docs.apify.com/storage/dataset-schema) | `fields` 描述记录，`views.transformation` 控制字段/嵌套展开，`views.display` 描述表格和 URL/图片等格式；同一数据可有不同视图。文档明确视图不决定 JSON/CSV/Excel 的导出格式。 | 值、界面投影、下载格式分别有事实源。适用于结构化记录，不据此把所有浏览器任务强制变成表格。 |
+| [Browse AI 数据结构](https://help.browse.ai/en/articles/13171414-understanding-your-data-structure)、[管理/导出](https://help.browse.ai/en/articles/10477537-how-to-view-manage-and-export-your-scraped-data)、[JSON 导出](https://help.browse.ai/en/articles/13187052-how-to-export-your-data-as-a-json) | 文本字段进入列，列表有各自列表页；记录包含采集时间、来源及运行输入等上下文。JSON 保留嵌套列表，CSV 需要扁平化；截图有独立展示。 | 单条长正文和多条记录不是同一种浏览体验；导出需明示嵌套与扁平化的差别。文档称抓取值默认按网站呈现为字符串，不能据此替 B-A-T 决定数值类型。 |
+| [Firecrawl Scrape](https://docs.firecrawl.dev/features/scrape) | 明确选择 Markdown、HTML、rawHtml、JSON、截图等输出，并返回 metadata；正文筛选、包含/排除区域与输出格式各有入口。 | HTML、可读正文和结构化 JSON 是不同采集结果。`onlyMainContent` 或自动清洗会改变内容范围，不能直接继承为 B-A-T 通用默认。 |
+| [Crawl4AI Fit Markdown](https://docs.crawl4ai.com/core/fit-markdown/) | `raw_markdown`、含引用版本、references、`fit_markdown`/`fit_html` 分别保存；Fit 输出先经过 Pruning/BM25 等过滤。 | “保留正文结构”和“挑选重要内容”应能区分；过滤后的版本不能伪装成完整原文。它是采集框架/工具，未提供已验收的 B-A-T 成果界面。 |
+
+上述产品做法没有收敛为唯一显示方式。Apify 的视图和导出相互独立；Browse AI 的导出也可能受当前过滤/列选择影响；Firecrawl/Crawl4AI 明确区分格式和过滤结果。不能把这些差异统一写成未经确认的 B-A-T 规则。
+
+### 固定开源源码与实际复用入口
+
+每项均核对固定源码与许可证，下载文件的 SHA-256 保存在 ignored `work/collection-research-20261002/sources.json`。本轮没有安装产品依赖、接入云服务或更换 B-U/W-U。
+
+| 实现 / 固定版本与 commit | 实际源码入口 | 许可证、运行时与维护观察 | 本轮证据与职责限制 |
+| --- | --- | --- | --- |
+| Crawlee v3.18.2 / `78da0622762e1b569b5cb0b56e8eb06a0a010d93` | [Dataset](https://github.com/apify/crawlee/blob/78da0622762e1b569b5cb0b56e8eb06a0a010d93/packages/core/src/storages/dataset.ts)：`pushData/getData/exportToJSON/exportToCSV` | Apache-2.0；TypeScript/Node，core manifest 为 Node >=16；release 2026-09-29。 | 核验了源码和模型；未启动存储/抓取框架或验证 Windows。整体引入会增加已有存储、调度和浏览器所有权，不能替换 B-A-T 链路主线。 |
+| Firecrawl v2.11.0 / `ef12eb36b2f3382838dfe0a0c1a5add3d5df7fe5` | [parseMarkdown](https://github.com/firecrawl/firecrawl/blob/ef12eb36b2f3382838dfe0a0c1a5add3d5df7fe5/apps/api/src/lib/html-to-markdown.ts)、Go `ConvertHTMLToMarkdown`：GitHubFlavored/RobustCodeBlock 插件 | 根 LICENSE 为 AGPL-3.0；API manifest 另写 ISC，不能仅按该字段认定服务源码为 ISC。TypeScript + Go/CGO + Rust 原生组件；release 2026-06-19。 | 核验了实际转换与原生/HTTP 调用入口；服务/模型提取与 Windows 原生部署未测。不能为了格式转换整体接入另一套抓取服务。 |
+| Crawl4AI v0.9.4 / `133e1d92e37885dfccc03ea2e3687d06c98b7ceb` | [DefaultMarkdownGenerator.generate_markdown](https://github.com/unclecode/crawl4ai/blob/133e1d92e37885dfccc03ea2e3687d06c98b7ceb/crawl4ai/markdown_generation_strategy.py)、`MarkdownGenerationResult` / `CrawlResult` | LICENSE 含 Apache-2.0 正文及额外 Attribution Requirement，要求显著署名；Python >=3.10、Playwright >=1.49.0；release 2026-09-23。 | 源码将 raw、citations、fit、extracted_content、metadata 分开。未运行其浏览器/过滤器或验证 Windows；整套 crawler 会与既有 driver/执行器重叠。 |
+| Mozilla Readability 0.6.0 / `04fd32f72b448c12b02ba6c40928b67e510bac49` | [Readability.parse](https://github.com/mozilla/readability/blob/04fd32f72b448c12b02ba6c40928b67e510bac49/Readability.js)，返回 `content` HTML、`textContent`、title/byline/excerpt/lang/publishedTime 等 | Apache-2.0；JavaScript + DOM，Node >=14；固定 tag，非浏览器驱动。 | 用同一固定 JSDOMParser 在公开正文片段执行通过，结构保留见下表。文章选择启发式尚未做真实整页/列表任务准入；一份合成表格样本也保留全部9行，不能捏造“列表必败”的反例。 |
+| Turndown v7.2.4 / `fb7a865ef5eba4081dfd4e20a894a61ef7a2edca` | [commonmark-rules](https://github.com/mixmark-io/turndown/blob/fb7a865ef5eba4081dfd4e20a894a61ef7a2edca/src/commonmark-rules.js)：heading/list/code/link 的确定性转换 | MIT；JavaScript/DOM，Node >=18、npm >=9；Node 依赖 Domino；release 2026-04-03。 | 源码已核验，未跑该库或 GFM 插件。基本规则不提供 Markdown 表格转换入口；若后续选用须核验所需插件，不自行重写转换器。 |
+| 现有 B-U0.13.8 / `eb4126921bea3373f91afc49fb4b59d6eda7fed6` + markdownify1.2.2 / `241ed02bc1a5d567ecf486de7d84bb74db0068d2` | [convert_html_to_markdown / _preprocess_markdown_content](https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/dom/markdown_extractor.py)；已安装 markdownify 公共函数 | 两者固定 LICENSE 均为 MIT；当前 Python 环境实读版本；不新增依赖或浏览器。 | 两个实际入口都已执行。原 wrapper 针对模型上下文删除 JSON 片段，不等价于保真成果；`tools.extract` 自带模型调用，不可进入普通复跑。若后续决定 Markdown，应优先验证既有确定性转换入口而非引入第二驱动。 |
+
+### 阅读视图、表格与文件的现成组件
+
+已核对当前 workbench manifest：已有 React19.1.1、Radix Themes3.3.0，没有 Markdown 阅读器、数据网格或 Excel 写入库。实际 `SavedResultDialog` → `ExecutionPresentation.TaskOutputView` 按绑定合同显示值；长字符串成为普通段落，数组成为分页折叠记录；`ArtifactList` 只显示 mediaType、artifactId、digest，尚不是可下载/可预览的文件交付入口。这些是当前实现事实，不能把 artifact 元数据展示说成 Excel 已交付。
+
+| 固定候选 / commit | 实际入口与许可 | 已有证据 / 尚缺证据 |
+| --- | --- | --- |
+| react-markdown10.1.0 / `44d2e4a44b37461ab7778d6870c1a9eb36393ad2` | [lib/index.js](https://github.com/remarkjs/react-markdown/blob/44d2e4a44b37461ab7778d6870c1a9eb36393ad2/lib/index.js) 的 `Markdown`、components、`defaultUrlTransform`；MIT，React peer >=18。原实现默认将 raw HTML 转为文字，默认转换 URL。 | 与现有 React 版本的声明匹配；未安装、未做真实工作台阅读/链接/代码块视觉验收。若选择 Markdown 阅读，可复用其 parser/rendering；不能把旧纯文本按字段名猜成 Markdown。GFM 表格需另核验原插件。 |
+| AG Grid36.2.0 / `release-36.2.0` / `0fee5b7b1e839ae23fe860e404042448f3c1375d` | [Community CsvExportModule](https://github.com/ag-grid/ag-grid/blob/0fee5b7b1e839ae23fe860e404042448f3c1375d/packages/ag-grid-community/src/csvExport/csvExportModule.ts)：`getDataAsCsv/exportDataAsCsv`；Community/React 包 MIT。`ExcelExportModule` 位于 Enterprise，并依赖 EnterpriseCoreModule，商业许可。release 2026-09-16。 | 固定源码和许可证已核验；未运行网格。官方 [CSV](https://www.ag-grid.com/react-data-grid/csv-export/) 文档说明取值/格式化和实际 cell renderer 的区别；[Excel](https://www.ag-grid.com/react-data-grid/excel-export/) 是另一入口。不能声称 Community 同时免费提供原生 XLSX，也不为少量单条正文默认引入整套网格。 |
+| ExcelJS4.4.0 / `ac96f9a61e9799c7776bd940f05c4a51d7200209` | [Workbook](https://github.com/exceljs/exceljs/blob/ac96f9a61e9799c7776bd940f05c4a51d7200209/lib/doc/workbook.js) 与 [XLSX.writeBuffer/load](https://github.com/exceljs/exceljs/blob/ac96f9a61e9799c7776bd940f05c4a51d7200209/lib/xlsx/xlsx.js)；MIT；固定 manifest Node >=8.3.0，提供浏览器 bundle；固定 tag commit 日期2023-10-19，不冒称新版本。 | 下载固定 npm 4.4.0 bundle（SHA-256 `7e49da68588e250dbb8bba190d2caa8ab3787cc0284bda1d8b2f805c4df742c9`），在 ignored 调研目录执行真实写入/回读。未安装为产品依赖；没有浏览器、Agent 或模型调用。实际 Excel/Numbers、Windows 与工作台下载/文件预览未测。 |
+
+ExcelJS 最小文件样本：将同一公开 issue 原 Markdown 保存为 string 单元格，保留1740字符/47个换行，中文/引号/换行合成字段回读一致。另用 Python 标准库 zipfile/ElementTree 独立读取 OOXML，正文内容与 string 类型一致，合成字段没有 formula 节点。样本 `work/collection-research-20261002/exceljs-sample.xlsx`；`exceljs-sample-proof.json` 与 `exceljs-ooxml-proof.json` 通过。它只证明这个编码样本，不能证明完整 Excel 产品交付或未知大文件/富文本的兼容性。
+
+可供取舍的组合是：少量记录沿用现有 Radix/合同组合，正文格式明确时复用 Markdown 阅读器；大量同构记录才评估现成网格；XLSX 复用确定性写入库。抓取格式、默认视图和文件交付仍待用户决定，本轮不接入这些库、不添加采集字段、不创建第二份输出事实源。下载候选源码时错误 tag/path 的404仍保留在调研日志；AG Grid 最终锁定其实际 `release-36.2.0` tag，没有把官网版本文字直接当作可用源码。
+
+### 实际样本：结构在哪一层丢失
+
+样本为公开 [LangGraph issue #9075](https://github.com/langchain-ai/langgraph/issues/9075)，GitHub API 提供原 Markdown 与渲染 HTML，updated_at=`2026-09-25T12:59:22Z`。这是离线字段片段测试，不是通过 API 替代 B-A-T 原浏览器任务，不改变旧发布数据。
+
+| 同一片段的处理方式 | 长度 / 换行 | 标题 / 列表 / fenced code | 事实结论 |
+| --- | --- | --- | --- |
+| GitHub 原 Markdown | 1740 / 47 | 5 / 2 / 1块 | 有真实可读结构。标题计数包括代码行中的 Markdown 标记，不作为 HTML 语义标题数。 |
+| 渲染 HTML | 6900字符 | HTML h 标签4、li2、pre1、链接3 | 保留语义结构，也有渲染附加标记。不能把全部 HTML 都展示或永久采集。 |
+| HTML 文本再压平空白 | 1723 / 0 | 行结构0 / 0 / 0 | 已丢段落、代码围栏和列表标记，UI 无法事后还原可靠层级。此文本转换与浏览器 innerText 不是同一 API，不混用数值。 |
+| 现有 markdownify1.2.2 直接转换 | 1903 / 47 | 5 / 2 / 1块、链接3 | 此公开样本保留可读格式；非逐字复原原 Markdown，仍需确认字段范围/清洗策略。 |
+| B-U0.13.8 wrapper | 1887 / 31 | 5 / 2 / 1块、链接3 | 本样本被过滤16字符/空行；另一个技术配置反例中，原转换保留的长 JSON 示例被 wrapper 删除231字符。不能把它默认用于成果保真。 |
+| Readability0.6.0 / 同源 JSDOMParser | HTML5178、text1657 | HTML标题4、pre1、链接3 | 指定正文片段执行通过；未证明从整页挑选正文的正确性，也未冻结选择该库。 |
+
+实际旧 V5 的 `ReadField` 正文是 rendered text 且 `normalizeWhitespace=true`；2026-10-02 已成功运行的存量正文1630字符、换行0。旧值只有普通文本，不补造 HTML、标题层级或未保存的来源事实。新采集若需要 Markdown/HTML 层次，必须在读取/编译/字段合同处保留相应信息，再用成熟转换或渲染组件展示；仅换成果弹窗无法实现。
+
+证据：`format-comparison.json`、`readability-comparison.json`、`readability-table-counterexample.json`；公开样本/转换文件在同一 ignored 研究目录。JSON 配置反例为明确标记的合成技术片段，不冒充真实网页现场或生产验收。
+
+### 交用户选择的范围与建议（尚未实施）
+
+建议参考 Apify 的“记录 / 视图 / 导出”区分和 Firecrawl/Crawl4AI 的“格式 / 过滤”区分：单条正文考虑文档阅读，多条字段考虑表格和详情，文件成果考虑预览及下载。采集的确切字段、是否保留链接/代码/图片，以及最终 Markdown/Excel 等目标格式由任务需求与后续确认决定；不能统一强制表格、Markdown 或原始 HTML。
+
+元数据候选也分清用途：来源 URL、采集时间、字段类型/内容格式帮助读者理解；运行/发布版本和读取来源引用支持审计；内部 selector/ID/digest 留在高级信息。无需为层级展示保存整页 DOM、全部 HTML 属性、Cookie 或登录态。格式信息只描述已经实际保存的值，不能按字段名猜“正文”就是 Markdown，也不能让 UI 用模型给旧纯文本虚构章节。
+
+后续待用户判断的是内容保真度与允许的清洗范围、默认阅读视图，以及文件交付范围。暂不更改公共契约、不添加 HTML/Markdown 抓取字段、不接入导出库、不重写旧任务；Windows 上的候选执行也未测。
+
+## 2026-10-02 首次授权自动配置：已获实施授权，采集体验仅调研
+
+用户确认开发“安装后首次允许、自动保存原授权、后续自动连接”，尽量减少人工操作；采集方式和成果展示须先调研成熟产品/开源实现，不能自行冻结默认格式或抓取规则。当前基线为 master / 0a904506255986f30b13d0658aa29bbcc6c2d89f，工作区干净。之前提交时跳过检查的要求已完成，本轮只执行授权接线所属的最小验证，不运行根级/全量测试。
+
+```text
+Product Alignment:
+- natural-language task: 在指定日常 Chrome 安装扩展后，首次点击允许即保存授权，后续主动连接/运行无需复制码。
+- reusable chain boundary: 原 TaskChain、B-U/W-U、TaskConnection 和任务专属窗口保持原合同。
+- runtime inputs: 指定 Profile；原扩展的 Profile-local token；原 loopback relay。
+- dynamic task outputs: 公开的已授权/已连接/处理中状态；不返回凭据。
+- generic platform capability used: 原 extension Allow、原初始化事件、原 token 校验、现有凭据存储及撤销队列。
+- replay model calls: 0 新增；只允许原显式 llm 节点。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 首次明确批准后自动配置既有长期令牌，以及刷新后准确展示持久授权。
+- existing implementation in repository: DailyChromeExtension、CDPRelayServer、extension connectToTab/extension.initialized、ProviderCredentialStore、Radix Dialog。
+- mature candidates and pinned versions: Microsoft Playwright 8b552173e8d767db29b8baef8f4a1f08cf7f26bf / extension 0.4.0；现有 ws 8.21.3、Zod 4.1.8、Radix Themes 3.3.0。
+- selected implementation: 沿用当前固定扩展；用户已批准一处首次配置适配，不替换浏览器组件。
+- reused public surface: 原 Allow 消息、获准后才建立的原 loopback WebSocket、原 initialization handshake；原凭据 set/get/remove。
+- B-A-T-owned adapter and remaining gap: 仅在宿主显式请求首次配置且用户点允许时交接原 token；初始化完成才保存。初始化携带的凭据由宿主消费，不进入 CDP/运行事实。
+- license/runtime/platform fit: Apache-2.0/MIT 保留；不增加库或原生安装器；Windows 实机仍单列阻塞。
+- browser/runtime/state ownership conflicts: 扩展 Origin 和原随机路径限制；沿用单连接及 revoke 胜过迟到授权；不关闭用户 Chrome、不复制 Profile、不控制个人页。
+- replay model calls: 0。
+- rejected candidates and evidence: 原上游 README 明确要求复制 PLAYWRIGHT_MCP_EXTENSION_TOKEN；原 connect.tsx 的 Allow 仅建立当次连接，pair 必须人工提供 token。这一具体缺口已交用户确认最小适配，不另造 token、授权状态机或恢复机制。
+- focused validation: 无码首次保存、撤销/迟到批准、重建宿主保留、凭据不进入状态或 CDP；真实 owned Chromium 的一次批准→持久连接→原零模型运行→重启/撤销；实际日常 Profile 的现有授权兼容和刷新状态分别记账。
+```
+
+源码入口：[固定上游扩展说明](https://github.com/microsoft/playwright/blob/8b552173e8d767db29b8baef8f4a1f08cf7f26bf/packages/extension/README.md#bypassing-the-connection-approval-dialog)。固定版本和必要适配仍登记在 vendor/daily-chrome-extension/UPSTREAM.json。实施后证据见本节末的分项结算。
+
+首次授权真实兼容测试已走通一次 Allow、权限0600保存、B-U导航/DOM及非任务目标拒绝；首次脚本返回布尔序列化失败已修正并保留日志。第二/三次在任务关闭后枚举失败：原生 fixture CDP 证实 ownedTargetsRemaining=0，扩展仍 connected=true，故不能把此错误归为断线或未关闭。既有 BrowserModel.closeTarget 等原 chrome.tabs.remove ACK 返回，但 getTargets 新鲜事实适配此时仍可能向尚未收到 detach 的旧 tab 发 Target.getTargetInfo。最小回归将原 remove ACK 与稍后的原 onRemoved 分开；修补仅在成功 ACK 后调用上游已有 onTabRemoved/幂等 detach，不增加目标发现、恢复或清理权限；remove 失败继续传播。此为授权生命周期所属适配修补，完整运行和原窗口清理合同保持不变。
+
+```text
+Reuse Assessment:
+- capability: 原 Chrome remove 已成功、异步目标移除事件尚未送达时的 CDP 枚举一致性。
+- existing implementation in repository: 原 BrowserModel.closeTarget/onTabRemoved/_detachTab，以及现有 owned lease 核验。
+- mature candidates and pinned versions: 同一 Microsoft 8b552173/extension0.4.0；Chrome tabs.remove Promise 公共入口。
+- selected implementation: 原移除回调在成功 remove ACK 后消费同一原生事实，迟到事件仍走原幂等入口。
+- reused public surface: chrome.tabs.remove、BrowserModel.onTabRemoved；无新状态机或驱动。
+- B-A-T-owned adapter and remaining gap: 仅对齐既有新鲜 Target 读取与 ACK/事件间隙，不吞未知错误、不把断线当清理通过。
+- license/runtime/platform fit: 原 Apache-2.0/TypeScript；Windows 实机仍阻塞。
+- browser/runtime/state ownership conflicts: 只处理原映射已拥有的 target；失败 remove 不删除映射，不关闭用户进程。
+- replay model calls: 0。
+- rejected candidates and evidence: 不退回旧 URL 缓存、不补建应急页、不加恢复重试；真实 v2/v3 的失败与连接/原生关闭事实分开保留。
+- focused validation: 同一已有协议测试构造成功 remove ACK、延迟 onRemoved 的先红后绿；真实生命周期继续验证。
+```
+
+### 本轮授权验证结算与额外正式运行反例
+
+| 状态 | 证据 |
+| --- | --- |
+| 通过 | 所属 `daily-chrome-relay-compat.test.ts` 10/10；API、workbench 类型检查；最终解压扩展构建。没有根级/全量测试，没有新增产品依赖或 tracked 文件。 |
+| 通过 | 独立真实 Chromium134/全新测试 Profile：只点一次原 Allow，不读/复制/提交授权码；0600保存，原 SDK 导航/DOM，非任务目标拒绝；两次 W-U/LangGraph 普通运行、0模型、清理确认；重建宿主与测试 Chrome 重启复用保存授权；扩展撤销立即断开、旧 token 拒绝、宿主凭据移除。日志 `first-approval-consumer-20261002-v4.log`。撤销后的产品连接无法自恢复而 cleanup 未确认，与 fixture 所有者最终回收自身进程通过，分别保留。 |
+| 通过 | 实际日常 Chrome154/用户1 的已有授权兼容：两次独立最小普通运行均 completed、0模型、auditComplete=true、cleanup confirmed；其中第二次只针对“手动连接后闲置”的差异等待5秒，未复现下面的失败。`actual-saved-first-approval-20261002.log`、`actual-saved-warm-20261002-v2.log`。此成功不证明原 V5 失败根因。 |
+| 通过 | 原拥有的开发服务经既有 shutdown 退出并加载本轮补丁；工作台显示“授权已保存/已绑定用户1”，主动连接即时 busy，成功后显示已连接；刷新/重开弹窗仍保留。最终截图 `first-approval-ui-final-20261002.png` 显示失败后授权仍保存、当前未连接，准确区分两种事实。用户 Chrome PID657 未结束。 |
+| 失败，保留 | 早期 fixture 的布尔 evaluate 序列化错误；v2/v3 的 remove ACK/异步事件间隙；一次临时诊断 wrapper 漏掉 async，修正后第二次 warm 样本通过。最终入口已移除临时 private monkeypatch/延迟开关；这些失败不冒充产品验证通过。 |
+| 失败，未解决 | 从实际工作台重新执行原 V5，execution `7634032b-2ebe-41d4-8d55-699bbc4c2f02` 在启动创建任务窗口时失败：0节点推进/0命令计账/0模型。`task_target_prepare` 的 `Target.createTarget` 等待回复处报 os_error，SDK 包装为 `hybrid_runner_failed:RuntimeError`。没有到达 GitHub 搜索点击，因此不能把它说成原首步点击回归复发。真实失败的原 CDP 异常文本未留存；具体断开原因仍未知。 |
+| 阻塞 | 原同次租约 owner/lease `118646fb-aab0-48a6-8d1f-6bc28e1e7862` 保留 starting、ownedTargets=[]；原 relay 由当前 API 所有，但扩展连接已断开。按既有 `cleanup_execution` 请求一次，结果 `cleanup_owner_verification_unavailable`，execution 继续 cleanup_required。没有猜目标、换 endpoint 核验、删除租约或改写历史。该任务正式复跑门当前不能计为通过。 |
+| 阻塞 | Windows 没有实机，安装/ACL/启动复用/重启/撤销不能验收。 |
+| 未测 | 实际日常 Profile 使用新版包重新加载后的“全新无码第一次批准”（保留现有真实授权，不为测试撤销）；日常 Chrome 冷启动/重启/卸载/重新生成授权；首次完整 LLM 探索→编译→发布；iframe/popup/下载额外样本；商业产品登录后 UI/导出及候选组件工作台接入。 |
+
+正式运行反例定位：[AttachedWindow._create](../../apps/api/python/browser_use_runner/attached_window.py) 先创建，再保存收到的 targetId；创建响应丢失时，本次 lease 没有能证明所有权的目标。[固定 relay](https://github.com/microsoft/playwright/blob/8b552173e8d767db29b8baef8f4a1f08cf7f26bf/packages/playwright-core/src/tools/mcp/cdpRelay.ts) 的扩展断线/单连接与当前保留 original endpoint 的 `verify_closed` 合同不能从新连接反推旧目标。当前接口返回的清理阻塞是实际反例；下一步若需要增加“创建响应丢失”的核验方式，必须先给用户现成实现及具体冲突取舍，不擅自增加恢复发现、重试或状态机。旧 V5 的上次完整成功和本次启动失败都保留。
+
 ## 2026-10-02 搜索首步回归：任务窗口实际激活（实施前记录与修后结算）
 
 同一 V5 可执行摘要的六次历史运行均通过 `s-a-0002`，四次完整成功；扩展接入后 execution `88c57009-f73a-4355-8c85-ab16a74517ca` 首次停在该点击。原失败诊断 `data/source-lifecycle-diagnostics/7c82e11a-459f-4309-82c8-8804bfbf1cb0.jsonl:9` 已确认同一 target/document、单次 trusted 点击命中目标后代，94次检查仍 expanded=false、focused=false，非派发异常。W-U 与 TaskChainRuntime 未改动。

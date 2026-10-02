@@ -2,10 +2,43 @@ import {
   parseTaskValue,
   type ArtifactReference, type JsonValue, type TaskDataContract, type TaskExecutionResult,
   type TaskOutput, type ValueSchema,
+  type TaskExecution, type TaskExecutionDetail,
 } from "@browser-capture/contracts"
 import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react"
 import { Button } from "@radix-ui/themes"
 import { useState } from "react"
+
+type ExecutionSummary = Pick<TaskExecution, "status" | "result"> & Partial<Pick<TaskExecution, "reason" | "cleanupResume">>
+
+export function executionOutcome(execution: ExecutionSummary) {
+  return { status: execution.cleanupResume?.status ?? (execution.status === "cleanup_required"
+    ? execution.result?.status ?? execution.status : execution.status),
+    reason: execution.cleanupResume?.reason ?? execution.reason,
+    result: execution.cleanupResume?.result ?? execution.result }
+}
+
+export function executionFailureReason(execution: ExecutionSummary, startup?: TaskExecutionDetail["startupFailure"]) {
+  const outcome = executionOutcome(execution)
+  if (startup) {
+    const stage = ({ reserve: "无法启动浏览器任务", sdk_connect: "无法连接浏览器",
+      task_target_prepare: "无法创建任务窗口", task_target_focus: "无法打开任务窗口" })[startup.stage]
+    const cause = startup.errorKind === "connection_error" ? "浏览器连接已断开。"
+      : startup.errorKind === "timeout_error" ? "等待浏览器响应超时。"
+      : startup.errorKind === "os_error" ? "浏览器通信异常。" : "具体的底层错误未记录。"
+    return `${stage}。${cause}`
+  }
+  return outcome.result?.failure?.code === "hybrid_runner_failed" && outcome.result.failure.runId === null
+    ? startup === null ? "浏览器启动失败，具体错误未记录。" : "浏览器启动失败。"
+    : outcome.result?.failure?.reason ?? outcome.reason ?? "未记录失败原因。"
+}
+
+export function ExecutionFailure({ execution, startup }: {
+  execution: ExecutionSummary; startup?: TaskExecutionDetail["startupFailure"]
+}) {
+  return <section className="context-alert"><AlertTriangle size={15} /><div>
+    <p>{executionFailureReason(execution, startup)}</p>
+  </div></section>
+}
 
 export function StatusIcon({ status }: { status: string }) {
   if (status === "completed") return <CheckCircle2 size={18} />

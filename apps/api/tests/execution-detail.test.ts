@@ -2,12 +2,33 @@ import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import test from "node:test"
 import { CONTRACT_VERSION, taskRunSchema, taskExecutionCandidateSchema } from "@browser-capture/contracts"
-import { digestJson } from "@browser-capture/runtime"
+import { digestJson, stableUuid } from "@browser-capture/runtime"
 import { extractionFixture } from "../../../packages/contracts/tests/task-chain-fixtures.js"
 import { createTaskDraft, draftReference } from "../src/task-chain/chain-revision.js"
 import { queuedDraftExecution } from "../src/task-chain/queued-runs.js"
 import { TaskChainService } from "../src/task-chain/service.js"
 import { DomainError } from "../src/errors.js"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { SourceLifecycleDiagnostics } from "../src/upstream-browser/source-lifecycle-diagnostics.js"
+
+test("released startup failure remains readable after its browser handoff owner has been cleared", () => {
+  const f = fixture(), directory = mkdtempSync(path.join(tmpdir(), "bat-failure-detail-"))
+  f.execution.release = f.execution.plan; delete f.execution.draft
+  const diagnostic = new SourceLifecycleDiagnostics(directory, stableUuid(f.execution.id, "managed-window"))
+  try {
+    diagnostic.acceptPythonLine(JSON.stringify({ phase: "attached_startup", stage: "task_target_prepare", status: "failed",
+      causes: [{ errorKind: "connection_error", code: "external_error", locations: [] }] }))
+    const service = Object.assign(Object.create(TaskChainService.prototype),
+      { repository: f.repository, diagnosticsDirectory: directory }) as TaskChainService
+    assert.equal(f.execution.browserHandoff.ownerId, null)
+    const detail = service.executionDetail(f.execution.taskId, f.execution.id, false)
+    assert.equal(detail.startupFailure?.stage, "task_target_prepare")
+    assert.equal(detail.startupFailure?.errorKind, "connection_error")
+    assert.equal(detail.execution.id, f.execution.id)
+  } finally { diagnostic.close(); rmSync(directory, { recursive: true, force: true }) }
+})
 
 function fixture() {
   const requirement = structuredClone(extractionFixture.requirement)

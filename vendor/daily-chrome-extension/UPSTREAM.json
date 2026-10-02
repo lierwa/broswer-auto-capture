@@ -69,7 +69,12 @@
     "Token URL uses private loopback redirect, never Chrome argv",
     "Declare only connect.html web-accessible to http://127.0.0.1/* for the original loopback redirect; retain original token checks",
     "Retain original approved extension mapping across sequential SDK clients; never auto-reconnect the extension",
-    "Refresh owned Target facts through original chrome.debugger Target.getTargetInfo; stale attach-time URL is not a postcondition fact"
+    "Refresh owned Target facts through original chrome.debugger Target.getTargetInfo; stale attach-time URL is not a postcondition fact",
+    "Explicit first Allow optionally carries the original token on extension.initialized for host configuration; host strips it before CDP and persists only after readiness",
+    "Require exact extension Origin on the extension WebSocket; retain original token checks and empty initialization for ordinary reconnects",
+    "After successful native tabs.remove ACK, reuse original idempotent onTabRemoved before answering closeTarget; preserve failed remove and late-event behavior",
+    "Readiness uses the original BrowserModel auto-attach to the owned bootstrap before reporting connected; no worker heartbeat or reconnection protocol",
+    "Disconnected original relay permits read-only task closure proof only when target creation was never dispatched; creation with a lost ACK remains unconfirmed"
   ],
   "ioAdapter": {
     "library": "ws",

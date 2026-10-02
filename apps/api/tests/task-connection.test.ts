@@ -27,9 +27,11 @@ function harness() {
   let releaseFailure = false, finalFailure = false, wrongRetainedOwner = false
   const connection = new TaskConnection(process.cwd(), (_root, signal) => {
     creates++
+    let windowOwner: string | null = null
     return {
+      managedWindowOwner: () => windowOwner,
       envBoolean: (_name: string, fallback: boolean) => fallback,
-      startHybrid: async (value) => { signal.throwIfAborted(); starts.push(value) },
+      startHybrid: async (value) => { signal.throwIfAborted(); windowOwner = value.managedWindow?.ownerId ?? null; starts.push(value) },
       request: async (request) => {
         assert.equal(request.type, "hybrid_release")
         releases++
@@ -117,6 +119,21 @@ test("unconfirmed final cleanup blocks further borrowing and preserves its owner
       && "ownerId" in error && error.ownerId === parent)
   await b.close()
   assert.deepEqual(h.counts(), { creates: 1, finalCloses: 1, releases: 1 })
+})
+
+test("confirmed same-owner closure releases a dead worker reference without losing the old outcome", async () => {
+  const h = harness(), signal = new AbortController().signal
+  const a = h.connection.borrow({ connectionOwnerId: parent, signal })
+  await a.startHybrid(config(first))
+  assert.equal(h.connection.acceptClosedWindow(first), false, "active workers cannot be discarded")
+  h.failRelease(); h.failFinal()
+  const original = await a.close()
+  assert.equal(h.connection.acceptClosedWindow(second), false, "another owner is not closure proof")
+  assert.equal(h.connection.acceptClosedWindow(first), true)
+  assert.deepEqual(await a.close(), original, "original cleanup report remains unchanged")
+  const b = h.connection.borrow({ connectionOwnerId: parent, signal })
+  await b.startHybrid(config(second)); await b.close()
+  assert.equal(h.counts().creates, 2)
 })
 
 test("a response naming another parent is not accepted as retained cleanup proof", async () => {

@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from browser_use_runner.attached_window import AttachedWindow
 from browser_use_runner.diagnostic_channel import DiagnosticChannel
+from browser_use_runner.startup_diagnostics import startup_causes
 
 
 def wrapped_timeout():
@@ -24,6 +25,14 @@ def wrapped_timeout():
 
 
 class AttachedStartupDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
+    def test_connection_error_is_distinct_from_os_error_without_retaining_private_message(self):
+        cause = ConnectionError('private websocket endpoint and authorization')
+        error = RuntimeError('private SDK wrapper')
+        error.__cause__ = cause
+        causes = startup_causes(error)
+        self.assertEqual([item['errorKind'] for item in causes], ['runtime_error', 'connection_error'])
+        self.assertNotIn('private', json.dumps(causes))
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory(prefix='bat-attached-diagnostic-')
         self.addCleanup(directory.cleanup)

@@ -5,9 +5,55 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { CONTRACT_VERSION } from "@browser-capture/contracts"
-import { digestJson } from "@browser-capture/runtime"
+import { digestJson, stableUuid } from "@browser-capture/runtime"
 import { ProductStore } from "../src/database/store.js"
 import { TaskContractRepository } from "../src/task-chain/repository.js"
+import { TaskChainService } from "../src/task-chain/service.js"
+import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
+
+// WHY：再次运行只做一次原 owner 释放核验；必须先持久化旧失败，不能复用/覆盖原 execution。
+for (const trigger of ["worker_exit", "rerun"] as const) test(`${trigger} verifies the old owner once and retains the original failure`, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-cleanup-rerun-")), store = await ProductStore.open(directory)
+  try {
+    const taskId = store.taskAction({ type: "create", requestId: randomUUID() }), repository = new TaskContractRepository(store)
+    const original = saveTerminal(repository, taskId, "failed").execution, owner = stableUuid(original.id, "managed-window")
+    const resume = { status: original.status, reason: original.reason, result: original.result }
+    const pending = repository.saveExecution({ ...original, status: "cleanup_required", cleanupResume: resume,
+      cleanup: { ...original.cleanup, status: "unconfirmed", code: "runner_close_unconfirmed", evidenceDigest: "b".repeat(64) },
+      browserHandoff: { status: "unavailable", purpose: null, ownerId: owner, leaseId: owner,
+        targetDigest: null, reason: null, updatedAt: original.updatedAt } })
+    const report = cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => stage === "browser_close"
+      ? { stage, status: "unconfirmed" as const, code: "cleanup_browser_close_failed" as const }
+      : { stage, status: "confirmed" as const, code: null }), null)
+    repository.saveCleanupAudit({ id: randomUUID(), taskId, executionId: pending.id, ownerId: owner,
+      source: "runner", attempt: 1, ...report, createdAt: original.updatedAt })
+    let checks = 0, accepted = 0
+    const service = Object.assign(Object.create(TaskChainService.prototype), {
+      store, repository, controllers: new Map(), cleanupInFlight: new Set(), activeWork: new Set(),
+      queue: [{ taskId, id: pending.id }], draining: false, closing: false,
+      executor: { execute: async () => pending },
+      preparation: { onExecutionSettled: () => {} }, snapshot: () => ({ taskId }),
+      upstream: { managedWindowAction: async (input: { action: string; ownerId: string; leaseId: string }) => {
+        checks++; assert.deepEqual(input, { action: "verify_closed", ownerId: owner, leaseId: owner })
+        return { report: { status: "confirmed" }, window: { ownerId: owner, leaseId: owner, active: false } }
+      } }, dispatch: () => {
+        accepted++; const old = repository.execution(taskId, original.id)
+        assert.equal(old.status, "failed"); assert.equal(old.cleanup.status, "confirmed")
+        assert.deepEqual(old.result, original.result)
+        return { snapshot: { taskId }, acceptedExecution: null }
+      },
+    }) as TaskChainService
+    if (trigger === "rerun") await service.dispatchAsync(taskId, { type: "run_task", requestId: randomUUID(), release: original.plan,
+      input: null, pacing: { nodeDelayMs: 0 } })
+    else await (service as unknown as { drain(): Promise<void> }).drain()
+    assert.equal(checks, 1); assert.equal(accepted, trigger === "rerun" ? 1 : 0)
+    assert.equal(repository.execution(taskId, pending.id).status, "failed")
+    assert.deepEqual(repository.execution(taskId, pending.id).result, original.result)
+    assert.equal(repository.executionHistory(taskId, 0, 10).length, 1)
+    assert.deepEqual(repository.run(taskId, original.steps[0]!.runIds[0]!).outcome,
+      { status: "failed", code: "target_missing", reason: original.reason, evidence: [] })
+  } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
+})
 
 test("终态 pending 重启保留业务结论并进入同次清理，confirmed 不变且重复恢复幂等", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-cleanup-terminal-"))

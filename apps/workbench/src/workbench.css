@@ -40,12 +40,55 @@
 .browser-profile-error { margin: 0 24px; padding: 10px 12px; border: 1px solid var(--red-7); border-radius: 7px;
   background: var(--red-3); color: var(--red-11); font-size: 12px; }
 .browser-profile-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 24px 20px; }
+/* WHY：环境、持久授权、实时连接分层显示；所有样式只作用于设置弹窗，沿用 Radix 主题与交互。 */
+.browser-environment-dialog.rt-DialogContent { padding: 0; }
+.browser-environment-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding: 22px 24px 18px; }
+.browser-environment-heading .rt-DialogTitle { margin: 0 0 6px; font-size: 20px; }
+.browser-environment-heading .rt-DialogDescription { margin: 0; color: var(--sand-11); font-size: 14px; }
+.browser-environment-heading > button { margin: 2px 0 0; }
+.browser-environment-body { padding: 0 24px 22px; display: grid; gap: 18px; }
+.browser-environment-dialog p { margin: 0; font-size: 14px; line-height: 1.6; }
+.browser-environment-choices .rt-RadioCardsItem { justify-content: flex-start; gap: 14px; text-align: left; min-height: 74px; padding: 14px 16px; }
+.browser-environment-choices .rt-RadioCardsItem > svg { flex-shrink: 0; color: var(--sand-11); }
+.browser-environment-choice-copy { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.browser-environment-choice-copy strong { font-size: 15px; font-weight: 600; }
+.browser-environment-choice-copy > span { font-size: 13px; line-height: 1.5; color: var(--sand-11); }
+.browser-environment-choice-indicator { width: 17px; height: 17px; border: 1px solid var(--sand-8); border-radius: 50%; flex-shrink: 0; }
+.browser-environment-choices [data-state="checked"] .browser-environment-choice-indicator { border: 5px solid var(--amber-9); }
+.browser-connection-panel { padding: 16px; border: 1px solid var(--sand-6); border-radius: var(--radius-3); background: var(--sand-2); }
+.browser-connection-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.browser-connection-heading > strong, .browser-connection-panel > strong { font-size: 14px; font-weight: 600; }
+.browser-connection-panel p { color: var(--sand-11); }
+.browser-connection-panel > strong + p { margin: 8px 0 14px; }
+.browser-connection-facts { display: grid; gap: 8px; margin: 0 0 12px; font-size: 14px; }
+.browser-connection-facts > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; }
+.browser-connection-facts dt { color: var(--sand-11); }
+.browser-connection-facts dd { margin: 0; overflow-wrap: anywhere; }
+.browser-connection-facts [data-connected="true"] { color: var(--green-11); }
+.browser-connection-actions { margin-top: 18px; flex-wrap: wrap; }
+.browser-chrome-installation { margin-top: 14px; display: grid; gap: 14px; }
+.browser-chrome-installation label { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+.browser-chrome-installation label > span { color: var(--sand-11); }
+.browser-chrome-installation summary { font-size: 13px; color: var(--sand-11); cursor: pointer; }
+.browser-chrome-installation details p { margin: 12px 0 8px; }
+.browser-extension-directory { display: block; padding: 9px 10px; margin-bottom: 10px; border-radius: var(--radius-2);
+  background: var(--sand-3); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; user-select: text; }
+.browser-environment-footer { padding: 16px 24px; border-top: 1px solid var(--sand-6); display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.browser-environment-footer > span { display: flex; align-items: center; gap: 6px; color: var(--sand-11); font-size: 12px; }
+.browser-environment-dialog .browser-environment-error { margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-2);
+  color: var(--red-11); background: var(--red-3); font-size: 13px; }
+.browser-environment-dialog .browser-environment-feedback { margin-top: 12px; color: var(--sand-11); font-size: 13px; }
 @media (max-width: 560px) {
   .browser-profile-heading { grid-template-columns: auto minmax(0, 1fr); padding: 18px; }
   .browser-profile-heading > .rt-Badge { grid-column: 2; justify-self: start; }
   .browser-profile-error { margin: 0 18px; }
   .browser-profile-actions { padding: 14px 18px 18px; flex-direction: column-reverse; }
   .browser-profile-actions .rt-Button { width: 100%; }
+  .browser-environment-heading { padding: 20px 18px 16px; }
+  .browser-environment-body { padding: 0 18px 18px; }
+  .browser-environment-footer { padding: 14px 18px; }
+  .browser-environment-choices .rt-RadioCardsItem { padding: 12px; gap: 10px; }
 }
 .task-run-dialog form { margin-top: 22px; }
 .run-dialog-version { padding-bottom: 16px; border-bottom: 1px solid var(--sand-6); color: var(--sand-11); font-size: 12px; }

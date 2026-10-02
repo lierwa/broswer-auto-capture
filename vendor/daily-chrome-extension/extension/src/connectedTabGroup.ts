@@ -66,7 +66,7 @@ export class ConnectedTabGroup {
 
   onclose?: () => void;
 
-  constructor(connection: RelayConnection, selectedTab: chrome.tabs.Tab, clientName: string | undefined, groupStyle: GroupStyle, isTabReserved: (tabId: number) => boolean) {
+  constructor(connection: RelayConnection, selectedTab: chrome.tabs.Tab, clientName: string | undefined, groupStyle: GroupStyle, isTabReserved: (tabId: number) => boolean, authorizationToken?: string) {
     this.clientName = clientName;
     this.groupStyle = groupStyle;
     this._isTabReserved = isTabReserved;
@@ -83,7 +83,7 @@ export class ConnectedTabGroup {
     // `didInitialize` arrives, so it sees a fully populated tab model by the
     // time it handles `Target.setAutoAttach`.
     this._connection.attachTab(selectedTab);
-    this._connection.didInitialize();
+    this._connection.didInitialize(authorizationToken);
   }
 
   connectedTabIds(): number[] {

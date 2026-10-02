@@ -58,7 +58,7 @@ export async function createApplication(options: AppOptions) {
     upstream = options.upstreamBrowserRuntime ?? new PythonUpstreamBrowserRuntime({ root: options.root,
       directory: options.directory, subject: ai.forSubject(SHARED_AI_SUBJECT),
       browserMode: () => store.browserEnvironment().mode, dailyChromeEndpoint: () => dailyChrome.endpoint() })
-    taskChain = new TaskChainService(store, browser, aiModel, upstream, options.taskChainCapabilities)
+    taskChain = new TaskChainService(store, browser, aiModel, upstream, options.taskChainCapabilities, options.directory)
   }
   catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   const browserProfile = new BrowserProfileService(options.root, options.directory)

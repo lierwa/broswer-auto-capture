@@ -92,6 +92,7 @@ export class RunnerProcess {
     const value = this.envValue(name)
     return value === undefined ? fallback : value === "true" || value === "1"
   }
+  managedWindowOwner() { return this.managedWindow?.ownerId ?? null }
 
   async start(config: Omit<ReturnType<typeof runnerStartRequestSchema.parse>, "id" | "type">["config"]) {
     retireWorkflowV1()

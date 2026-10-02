@@ -10,7 +10,7 @@ import { SavedResultDialog } from "./SavedResultDialog.js"
 import { eventsForStep } from "./chainWorkbenchProjection.js"
 import { ValueSchemaForm, initialValue } from "./ValueSchemaForm.js"
 import { ExecutionActions, HistoricalBrowserHandoffActions } from "./ExecutionActions.js"
-import { ExecutionResultView, StatusIcon, executionStatus, cleanupStatus,
+import { ExecutionResultView, StatusIcon, executionStatus, cleanupStatus, executionOutcome, executionFailureReason, ExecutionFailure,
   historicalEventStatus, formatTime } from "./ExecutionPresentation.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 import { preparationActivityLabel, type LiveChainModel } from "./useLiveChain.js"
@@ -137,10 +137,11 @@ function HistoryContext({ model, connection, onClose }: {
     {selected ? <HistoricalExecutionDetail key={selected.id} execution={selected} connection={connection}
       onBack={() => setSelectedId(null)} />
       : <div className="history-list">{page?.items.map((item) => "status" in item
-        ? <article key={item.id}><span>{executionStatus(item.status)} · {item.release ? `已发布 V${item.release.version}`
-          : item.draft ? "工作草稿试跑" : "历史运行"}</span><strong>{item.result?.summary ?? item.reason}</strong>
-          <time>{formatTime(item.updatedAt)}</time><Button size="1" variant="ghost"
-            onClick={() => setSelectedId(item.id)}>查看结果</Button></article>
+        ? <article key={item.id}><span>{executionStatus(executionOutcome(item).status)} · {item.release ? `已发布 V${item.release.version}`
+          : item.draft ? "工作草稿试跑" : "历史运行"}</span><strong>{executionOutcome(item).status === "failed"
+            ? executionFailureReason(item) : executionOutcome(item).result?.summary ?? item.reason}</strong>
+          <time>开始于 {formatTime(item.createdAt)}</time><Button size="1" variant="ghost"
+            onClick={() => setSelectedId(item.id)}>{executionOutcome(item).status === "failed" ? "查看失败原因" : "查看结果"}</Button></article>
         : <article key={`${item.id}:${item.version}`}><span>已发布 V{item.version}</span>
           <strong>{item.content.plan.summary}</strong><time>{formatTime(item.createdAt)}</time></article>)}</div>}
     {!page && <p>{model.view.historyBusy ? "正在读取…" : "暂无历史记录。"}</p>}
@@ -165,24 +166,28 @@ function HistoricalExecutionDetail({ execution, connection, onBack }: {
     })
     return () => controller.abort()
   }, [connection, execution.id])
-  const result = detail?.execution.cleanupResume?.result ?? detail?.execution.result ?? execution.result
+  const recorded = detail?.execution ?? execution, outcome = executionOutcome(recorded), result = outcome.result
   return <>
     <div className="context-actions"><Button size="1" variant="ghost" onClick={onBack}>返回运行历史</Button></div>
-    <div className="context-status" data-tone={execution.status}><StatusIcon status={execution.status} />
-      <div><strong>{result?.summary ?? executionStatus(execution.status)}</strong>
-        <small>{formatTime(execution.updatedAt)}</small></div></div>
+    <div className="context-status" data-tone={outcome.status}><StatusIcon status={outcome.status} />
+      <div><strong>{executionStatus(outcome.status)}</strong>
+        <small>开始于 {formatTime(execution.createdAt)}</small></div></div>
+    <p>本次浏览器：{recordedBrowserLabel(execution.browser)}</p>
+    {outcome.status === "failed" && (detail ? <ExecutionFailure execution={recorded} startup={detail.startupFailure} />
+      : <p role={loading ? "status" : "alert"}>{loading ? "正在读取失败原因…" : "失败原因暂时无法读取，请返回列表后重试。"}</p>)}
     <HistoricalBrowserHandoffActions execution={execution} connection={connection} />
     <dl><dt>使用版本</dt><dd>{execution.release ? `已发布 V${execution.release.version}`
       : execution.draft ? `工作草稿 · 修订 ${execution.draft.revision}` : "历史运行（无发布引用）"}</dd>
       <dt>运行用途</dt><dd>{execution.mode === "sample" ? "草稿试跑"
         : execution.mode === "verification" ? "独立复跑检查" : "正式运行"}</dd>
       {execution.cleanup.status !== "confirmed" && <><dt>资源清理</dt><dd>{cleanupStatus(execution.cleanup.status)}</dd></>}</dl>
-    <section className="context-result"><h4>本次结果</h4>
-      {result ? <SavedResultDialog result={result} outputContract={detail?.content?.plan.outputContract ?? null} />
-        : <p>{execution.reason}</p>}</section>
+    {(outcome.status !== "failed" || recorded.steps.some(step => step.runIds.length > 0)) && <section className="context-result"><h4>本次结果</h4>
+      {result ? <SavedResultDialog result={outcome.status === "failed" ? { ...result, failure: null } : result}
+        outputContract={detail?.content?.plan.outputContract ?? null} />
+        : <p>{execution.reason}</p>}</section>}
     {execution.cleanup.status === "unconfirmed" && <section className="context-alert"><AlertTriangle size={15} />
       <div><strong>资源清理尚未确认</strong><p>{execution.cleanup.code ?? "请查看原执行的清理记录。"}</p></div></section>}
-    <details className="context-technical"><summary>本次节点事件 · {loading ? "读取中" : events?.events.length ?? 0} 条</summary>
+    {(loading || eventsFailed || Boolean(events?.events.length)) && <details className="context-technical"><summary>本次节点事件 · {loading ? "读取中" : events?.events.length ?? 0} 条</summary>
       {loading ? <p role="status">正在读取本次运行的节点事件…</p> : eventsFailed ? <p>事件暂时无法读取，请返回列表后重试。</p>
         : events?.events.length ? <ol>{events.events.map((item) => <li key={item.sequence}>
           <strong>{item.sequence}. {item.nodeTitle ?? "未记录动作名称"} · {historicalEventStatus(item.event.status, item.event.outcome)}</strong>
@@ -192,9 +197,9 @@ function HistoricalExecutionDetail({ execution, connection, onBack }: {
             <ChainNodeExecution event={item} batch={eventsForStep(item.stepId, execution.id, events, item.runId)}
               chain={detail?.content?.steps.find(step => step.stepId === item.stepId)?.chain ?? { nodes: [], edges: [] }} /></details>}
         </li>)}</ol> : <p>这次运行没有保存节点事件。</p>}
-    </details>
-    <details className="context-technical"><summary>原始记录</summary>
-      <pre>{JSON.stringify({ execution, events }, null, 2)}</pre></details>
+    </details>}
+    {outcome.status !== "failed" && <details className="context-technical"><summary>原始记录</summary>
+      <pre>{JSON.stringify({ execution, events }, null, 2)}</pre></details>}
   </>
 }
 

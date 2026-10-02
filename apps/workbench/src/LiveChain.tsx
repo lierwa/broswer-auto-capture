@@ -5,7 +5,7 @@ import { DraftControls } from "./ChainRevisionEditor.js"
 import { ChainRunDialog } from "./ChainRunDialog.js"
 import { LiveChainCanvas, LiveChainCanvasToolbar } from "./LiveChainCanvas.js"
 import { WorkbenchContext } from "./WorkbenchContext.js"
-import { executionStatus } from "./ExecutionPresentation.js"
+import { executionStatus, executionOutcome, executionFailureReason } from "./ExecutionPresentation.js"
 import { preparationActivityLabel, useLiveChain, type LiveChainModel } from "./useLiveChain.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 import type { TaskExecutionReviewReceipt } from "@browser-capture/contracts"
@@ -83,8 +83,10 @@ function WorkbenchToolbar({ model, connection, onInterview, onPublish }: {
         onClick={() => model.openContext("preparation")}>查看原因与继续操作</Button>}
       {draft && <DraftControls readiness={workspace.draftReadiness} busy={view.busy || activityRunning || Boolean(model.build)} running={executionRunning}
         onTrial={() => model.setRunDialogMode("trial")} onPublish={onPublish} />}
-      {!draft && release && <Button size="1" disabled={view.busy || activityRunning || executionRunning || Boolean(model.build)}
-        onClick={() => model.setRunDialogMode("run")}><Play size={13} fill="currentColor" />运行</Button>}
+      {!draft && release && <Button size="1" disabled={view.busy || activityRunning
+        || executionRunning && model.selectedExecution?.status !== "cleanup_required" || Boolean(model.build)}
+        onClick={() => model.setRunDialogMode("run")}><Play size={13} fill="currentColor" />
+        {model.selectedExecution ? "再次运行" : "运行"}</Button>}
       <DropdownMenu.Root><DropdownMenu.Trigger><Button size="1" variant="ghost" color="gray" aria-label="更多操作">
         <Ellipsis size={15} /></Button></DropdownMenu.Trigger><DropdownMenu.Content align="end">
         {draft && release && <DropdownMenu.Item disabled={activityRunning || executionRunning || Boolean(model.build)} onSelect={() => model.setRunDialogMode("run")}>
@@ -104,13 +106,13 @@ function ExecutionStrip({ model }: { model: LiveChainModel }) {
   const execution = model.selectedExecution
   const accepted = model.acceptedExecutionId
   if (!execution && !accepted) return null
-  return <button className="execution-strip" data-tone={execution?.status ?? "accepted"}
+  const outcome = execution ? executionOutcome(execution) : null
+  return <button className="execution-strip" data-tone={outcome?.status ?? "accepted"}
     onClick={() => model.openContext("execution")} aria-live="polite">
-    <i aria-hidden="true" /><span><strong>{execution ? executionStatus(execution.status) : "已提交"}</strong>
-      <small>{model.detail && !model.detail.execution.steps.some(step => step.runIds.length)
-        && ["failed", "blocked", "cancelled"].includes(model.detail.execution.status) ? "在步骤开始前结束，查看原因"
-        : execution?.result?.summary ?? (execution ? "查看本次结果" : "排队中")}</small></span>
-    <span className="execution-strip-action">查看</span>
+    <i aria-hidden="true" /><span><strong>{outcome ? executionStatus(outcome.status) : "已提交"}</strong>
+      <small>{outcome?.status === "failed" && execution ? executionFailureReason(execution, model.detail?.startupFailure)
+        : outcome?.result?.summary ?? (execution ? "查看本次结果" : "排队中")}</small></span>
+    <span className="execution-strip-action">{outcome?.status === "failed" ? "查看失败原因" : "查看结果"}</span>
   </button>
 }
 

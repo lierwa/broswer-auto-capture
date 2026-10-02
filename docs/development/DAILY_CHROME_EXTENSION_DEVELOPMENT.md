@@ -1,10 +1,20 @@
 # 日常 Chrome 扩展接入与权限管理开发方案
 
+## 2026-10-02 本轮失败复跑与授权验收更新
+
+实际日常Chrome已保存授权可直接复用；本轮修改的是host就绪/释放确认与工作台入口，扩展worker未再改，无需再复制授权码、重新Allow或重载扩展。macOS Default（用户1）Profile现场：空闲131.5秒连接保持，原已发布GitHub V5完整完成，0模型，清理确认；服务与页面刷新后仍可连接。
+
+用户操作：画布右上“再次运行”→“开始运行”。当前失败点击“查看失败原因”；新运行之后通过“更多操作”→“历史记录”→该次“查看失败原因”查看旧失败。复跑创建新记录，原原因/时间/版本独立保留；不要求用户操作手动清理按钮。原worker退出或用户再跑时只调用一次既有释放核验；没有真实关闭证明时不伪报确认。
+
+旧03:33失败已由原未派发窗口创建的relay事实及AttachedWindow.verify_closed释放，原因可读为创建任务窗口阶段浏览器通信异常；具体断线触发原因未记录，不以本轮空闲反例推断为旧唯一根因。已发送而ACK丢失的反例仍拒绝空集合确认。复用入口、固定版本、许可证、所属验证与未测门见RESEARCH/PROGRESS最新节；Windows仍缺实机。
+
 ## 2026-10-02 当前实现与本地交付入口
 
-**产品接线及实际日常Chrome154的首次配对、保存授权复用、最小普通运行已完成；双平台完整验收未完成。** 当前真实证据见PROGRESS最新节。持久授权、三环境和权限UI已开发；Windows缺实机，实际Chrome冷启动/重启等未测项独立记录。固定源码/依赖是构建复现与许可证依据，不要求用户安装对应Chrome版本或降级；实际版本覆盖不等于所有Chrome/CDP能力均兼容。
+本轮用户已确认重新加载扩展，现有用户1授权保留，没有新的人工授权步骤。环境弹窗已改成三项说明式选择，并把“已授权”和“连接状态”分别显示；已授权时主要操作是“连接 Chrome”，重新授权/撤销位于“授权管理”菜单。运行时仍自动连接；切换模式沿原保存合同，不增加链路复验。弹窗修改的通过/未测以及原 V5 的独立清理阻塞见 PROGRESS 最新节。
 
-后续实际任务门已通过：修复新任务窗口实际激活缺失后，真实工作台完整复跑原 GitHub V5，release/digest 不变，首页搜索至第二页首项标题/正文完成，20 transitions / 23 browserCommands / 0 llmCalls，审计完整、清理确认。修补仅调用已登记目标的原 Target.activateTarget，不修改链路或放宽检查；无需重新加载扩展或重填授权。当前因果、原失败与阻塞/未测分列见 RESEARCH/PROGRESS；Windows与冷启动等门仍未完成。
+**首次批准自动保存授权已开发，工作台不再要求复制/粘贴码。** 原扩展 Allow 和 token、既有凭据存储/撤销队列继续复用。独立 owned Chromium 的一次批准、重启复用、两次零模型运行、隔离与撤销通过；实际日常Chrome154的原授权自动连接、刷新状态及最小普通运行通过。实际日常 Profile 的新首次批准及 Windows 尚未验收，真实任务的新失败单列在 PROGRESS。固定源码/依赖用于构建复现与许可证，不要求用户安装开发时的 Chrome 版本或降级。
+
+原 GitHub V5 在窗口激活修复后曾完整通过，release/digest 不变，20 transitions / 23 browserCommands / 0 llmCalls、审计完整、清理确认。此次加载新版 API 后的另一次工作台运行在创建任务目标处失败，尚未派发业务节点；不得用原成功或最小样本改判。本轮具体事实与清理状态以 PROGRESS 最新节为准。
 
 构建前从实际 checkout 根目录执行：
 
@@ -13,13 +23,13 @@ npm run upstream:setup
 node scripts/build-daily-chrome-extension.mjs --prepare-tools
 ```
 
-已有原固定工具时，最小构建只需 `node scripts/build-daily-chrome-extension.mjs`。构建器使用固定源码、上游原 Vite 配置，核验原 archive/文件摘要及固定 npm 包 integrity；不依赖 tests/VM helper，不安装或关闭 Chrome。产物是 `work/daily-chrome-extension/extension`，内含 manifest、MV3 service worker、原授权 UI、LICENSE、THIRD_PARTY_LICENSES 和 UPSTREAM。manifest 中固定公共 key 保持 B-A-T 扩展身份，与微软原商店扩展身份区分；该 key 是公开标识，不是授权凭据。
+已有原固定工具时，最小构建只需 `node scripts/build-daily-chrome-extension.mjs`。构建器使用固定源码、上游原 Vite 配置，核验原 archive/文件摘要及固定 npm 包 integrity；不依赖 tests/VM helper，不安装或关闭 Chrome。产物是 `work/daily-chrome-extension/extension`，内含 manifest、MV3 service worker `lib/background.mjs`、原授权 UI、LICENSE、THIRD_PARTY_LICENSES.txt 和 UPSTREAM.json。manifest 中固定公共 key 保持 B-A-T 扩展身份，与微软原商店扩展身份区分；该 key 是公开标识，不是授权凭据。
 
 macOS 与 Windows 的首次使用操作相同：
 
-1. 在指定日常Chrome Profile的扩展管理页启用开发者模式，加载上述完整解压目录。此步骤由用户在Chrome完成；本会话用户已安装并确认重新加载。浏览器工具不允许打开该管理页，未代点或绕过。
-2. 工作台“浏览器环境”选择“日常 Chrome”和该 Profile，打开扩展授权页，复制原扩展生成的授权码，使用“连接并保存授权”。真实 token 握手通过才保存，之后用户主动运行时原启动器自动打开/复用该 Profile。
-3. 工作台保存的授权可以查看和删除，删除立即断开 B-A-T 当前连接。要使旧授权码本身失效，在扩展授权页使用“撤销并生成新授权码”，沿原消息立即结束已有连接；新码需要重新保存。扩展 token 不跨 Profile 同步，B-A-T 不复制 Profile。
+1. 在指定日常Chrome Profile的扩展管理页启用开发者模式，加载上述完整解压目录。此步骤由用户在Chrome完成；本会话用户此前已为 manifest 修补安装并确认重新加载，本轮又明确确认自动保存新版包已重新加载。现有真实授权仍可复用；后续原地更新时按同一扩展卡片重新加载，无需卸载、复制码或重选 Profile。
+2. 工作台“浏览器环境”选择“日常 Chrome”和该 Profile，点“授权并连接”；在自动打开的扩展页点一次“允许并保存授权”。宿主收到原初始化及有效原 token 才保存；以后主动连接/运行自动打开或复用该 Profile，无需输入码。
+3. 工作台分别显示“未授权/已授权”和实时连接状态，刷新后从持久记录恢复。已授权界面显示绑定名称，隐藏首次安装和码输入；未连接时点“连接 Chrome”，需要更新授权时从“授权管理”选择“重新授权”再批准一次。从该菜单选择“撤销授权”沿原队列立即断开并删除宿主凭据；等待首次批准可点“取消授权”，重新授权过程取消则明确标注“取消并撤销授权”。普通连接不暗中把取消操作变成删除凭据。若在原扩展授权页撤销并生成新码，仍通过工作台重新授权，不复制码。扩展 token 不跨 Profile 同步，B-A-T 不复制 Profile。
 4. 更新时在原目录重新构建，停止当前任务并核验资源后，在同一Profile的扩展管理页“重新加载”；原key、协议和权限不变时保留原Profile-local token。身份/权限变化不能静默继承信任。本次补原connect.html对loopback的资源声明后，用户重新加载，Chrome154真握手/保存成功，未重新生成授权码；其他升级路径未测。
 5. 禁用/卸载前停止并核验当前运行，再删除 B-A-T 保存的授权并在扩展页使旧码失效；随后使用 Chrome 原扩展管理操作。禁用/断开不自动恢复任务，沿既有失败/cleanup_required处理。卸载实机未测。
 
@@ -43,11 +53,11 @@ BAT_SAVED_DAILY_PROOF=1 BROWSER_USE_SETUP_LOGGING=false ANONYMIZED_TELEMETRY=fal
   node --import tsx apps/api/tests/fixtures/daily-chrome-playwright-relay.ts
 ```
 
-此模式仅读取现有保存授权，创建并回收合成页面的任务窗口，复用原W-U/LangGraph执行一次；不配对、撤销或改变产品发布记录。Chrome154实际退出0、modelCalls=0、auditComplete=true、cleanup=confirmed。GitHub V5的真实点击后状态失败仍单列，不能由此改判通过。
+此模式仅读取现有保存授权，创建并回收合成页面的任务窗口，复用原W-U/LangGraph执行一次；不配对、撤销或改变产品发布记录。本轮 Chrome154 退出0、modelCalls=0、auditComplete=true、cleanup=confirmed。完整旧任务的新失败仍单列，不能由此改判通过。
 
 Python consumer入口只创建新的合成测试Profile，使用真实最终扩展、原launcher/relay、持久凭据和B-U/W-U/LangGraph；无模型调用，不控制个人Profile。它在退出后回收自身进程/资料；撤销造成的产品控制清理未确认与fixture最终回收确认分别报告。测试Profile名称列表是合成元数据，不能替代真实Profile证据；上述显式BAT_SAVED_DAILY_PROOF入口才消费实际保存的日常绑定。
 
-当前 **通过**：独立Profile的限定生命周期/所有权反例、原11所属用例和本次redirect/manifest4例、API/工作台检查与构建、真实工作台权限入口；实际Chrome154首次配对、保存授权复用、一次合成页面原运行时完成/0模型/清理确认。**失败**：GitHub V5实际点击后目标状态合同失败、根因未证明。**阻塞**：Windows实机。**未测**：实际日常冷启动/重启、其他升级与卸载/旧码撤销、首次探索编译发布全链、额外iframe/popup/下载样本。原版discovery与缓存URL后置条件的失败及夹具失败均保留，详见最新进度。
+当前 **通过**：本轮授权/relay所属10项、API/工作台检查和最终扩展构建；独立真实 Chromium 一次批准自动配置、服务/浏览器重启复用、两次普通运行、个人页隔离及撤销/旧码拒绝；实际Chrome154原授权连接、刷新显示和一次最小原运行时样本。**失败**：本轮另一次原 V5 工作台运行在创建任务目标处失败，并进入 cleanup_required。**阻塞**：Windows实机。**未测**：实际日常 Profile 的无码首次批准、冷启动/重启、新包重新加载/卸载/扩展撤销、首次完整探索编译发布、额外iframe/popup/下载。原首败、夹具序列化失败与关闭 ACK/枚举竞争失败均保留，详见最新进度。
 
 以下为已确认合同与历史阶段计划；本节覆盖其中旧状态，不改变产品取舍。
 
