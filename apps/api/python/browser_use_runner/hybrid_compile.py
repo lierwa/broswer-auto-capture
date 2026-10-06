@@ -74,10 +74,10 @@ async def compile_offline(request):
 
 def matching_registry(output_model, request):
     # WHY：新工具不得使既有来源失效；仅匹配原公开 schema 的精确 digest，不扩张旧动作合同。
-    for human in (True, False):
-        for selection in (False, True):
-            registry = ActionRegistry.from_tools(author_tools_for_result_spec(output_model, request.plan.resultSpec,
-                selection_methods=selection, human_intervention=human))
-            if registry.schemaDigest == request.actionRegistryVersion:
-                return registry
+    from itertools import product
+    for legacy_fields, human, selection in product((False, True), (True, False), (False, True)):
+        registry = ActionRegistry.from_tools(author_tools_for_result_spec(output_model, request.plan.resultSpec,
+            selection_methods=selection, human_intervention=human, legacy_model_fields=legacy_fields))
+        if registry.schemaDigest == request.actionRegistryVersion:
+            return registry
     raise ValueError('hybrid_action_registry_mismatch')

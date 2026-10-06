@@ -16,7 +16,6 @@ import {
   cardFromAuthoringBlock,
   createInterviewMainAuthoring,
   interviewCanonicalMessages,
-  parseInterviewAuthoringOutput,
   parseInterviewUIAuthoringCapabilities,
   questionFromAuthoringBlock,
 } from "./protocol.js"
@@ -28,6 +27,8 @@ import {
   sourceResolutionOutput,
 } from "./source-resolution.js"
 import type { SourceResolution } from "@browser-capture/contracts/interview"
+import { InterviewSourceReferences } from "./source-references.js"
+import { settleInterviewAuthoring } from "./authoring-repair.js"
 
 interface Job {
   taskId: string
@@ -126,9 +127,12 @@ export class InterviewCoordinator {
   }
   private async run(job: Job) {
     let output: InterviewOutput | undefined, sourceResolutions: SourceResolution[] = [], reason: string | undefined
+    let failureCode: string | undefined
     let model: PreparedMainAIModel | undefined
     let confirmAcceptedStep: (() => Promise<boolean>) | undefined
     let committed = false
+    let acceptedInvocationId: string | undefined
+    let closeRepair: (() => Promise<void>) | undefined
     try {
       // WHY：一次访谈冻结设置中已保存的模型；缺少选择时保留明确设置提示，不回退到第二套模型入口。
       const signal = AbortSignal.any([job.controller.signal, AbortSignal.timeout(190_000)])
@@ -138,19 +142,32 @@ export class InterviewCoordinator {
       output = result.output
       sourceResolutions = result.sourceResolutions
       confirmAcceptedStep = result.confirmAcceptedStep
-    } catch (error) { output = undefined; reason = failureReason(error) }
+      acceptedInvocationId = "acceptedInvocationId" in result ? result.acceptedInvocationId : undefined
+      closeRepair = "closeRepair" in result ? result.closeRepair : undefined
+    } catch (error) {
+      output = undefined; reason = failureReason(error)
+      if (error instanceof Error && /^(interview_|preparation_)[a-z0-9_]{1,100}$/u.test(error.message)) failureCode = error.message
+    }
     finally {
       try {
         this.store.mutate(job.taskId, (state) => {
           finishRound(state, job.turnId,
             job.controller.signal.aborted ? "cancelled" : output ? "succeeded" : "failed", output, reason, sourceResolutions)
+          const turn = state.turns.find((turn) => turn.id === job.turnId)!
+          if (failureCode && turn.status === "failed") {
+            state.messages.find((message) => message.id === turn.assistantMessageId)!.failureCode = failureCode
+          }
           committed = state.turns.find((turn) => turn.id === job.turnId)?.status === "succeeded"
+          if (committed && acceptedInvocationId) {
+            state.messages.find((message) => message.id === turn.assistantMessageId)!.acceptedInvocationId = acceptedInvocationId
+          }
         })
         // WHY：持久化终态已经是下一轮的唯一并发门；Pi 确认与模型关闭属于本轮收尾，不能让 UI 读到 idle 后又被旧 job 拒绝。
         if (this.job === job) this.job = null
         // WHY：Pi candidate 只有在领域校验与 ProductStore 事务都完成后才可续接；确认失败不反写已提交业务事实。
         if (committed && confirmAcceptedStep) await confirmAcceptedStep().catch(() => false)
       } finally {
+        await closeRepair?.().catch(() => undefined)
         await model?.close().catch(() => undefined)
       }
     }
@@ -158,12 +175,13 @@ export class InterviewCoordinator {
   private async runShared(job: Job, model: PreparedMainAIModel, signal: AbortSignal) {
     const state = this.store.snapshot(job.taskId)
     const assistantMessageId = state.turns.find((turn) => turn.id === job.turnId)!.assistantMessageId
-    const { session: authoring, prompt } = createInterviewMainAuthoring(state, this.interviewSkill, job.ui)
+    const references = new InterviewSourceReferences(state.revision, state)
+    const { session: authoring, prompt } = createInterviewMainAuthoring(state, this.interviewSkill, job.ui, references)
     const sourceResolutions: SourceResolution[] = []
     const piSearches = new PiSourceSearchObserver()
     const sourceTools = createSourceResolutionTools({ resolver: this.sourceResolver, revision: state.revision,
       onSearch: () => undefined,
-      piSearches, questionId: assistantMessageId, onResolution: (value) => { sourceResolutions.push(value) } })
+      piSearches, references, questionId: assistantMessageId, onResolution: (value) => { sourceResolutions.push(value) } })
     let streamedText = ""
     let pendingQuestion: InterviewOutput["question"] = null
     const parts: InterviewMessagePart[] = []
@@ -235,12 +253,26 @@ export class InterviewCoordinator {
     // WHY：候选只在本轮解析副本中可见；失败/取消不能泄漏为已接受的来源事实。
     const projected = this.store.snapshot(job.taskId)
     for (const value of sourceResolutions) recordSourceResolution(projected, value)
-    const object = parseInterviewAuthoringOutput(result, projected, parts, job.turnId,
-      assistantMessageId)
+    const settled = await settleInterviewAuthoring({ result, state: projected, parts, runId: job.turnId,
+      questionId: assistantMessageId, references, rejected: returnedText, skill: this.interviewSkill, ui: job.ui,
+      provider: this.aiModel, selection: model.selection, signal, onEvent: (event) => this.appendAIEvent(job, event),
+      ...this.repairCallbacks(job, assistantMessageId, model),
+    })
+    sourceResolutions.push(...references.draftResolutions)
     return {
-      output: object,
+      ...settled,
       sourceResolutions,
-      ...(generated.confirmAcceptedStep ? { confirmAcceptedStep: generated.confirmAcceptedStep } : {}),
+      confirmAcceptedStep: settled.acceptedInvocationId ? settled.confirmAcceptedStep : generated.confirmAcceptedStep,
+    }
+  }
+  private repairCallbacks(job: Job, assistantMessageId: string, model: PreparedMainAIModel) {
+    return {
+      onRepair: (reason: string) => this.store.mutate(job.taskId, (state) => {
+        state.messages.find((message) => message.id === assistantMessageId)!.authoringRepair = { reason }
+      }),
+      onCompleted: () => this.store.mutate(job.taskId, (state) => state.audits.push({
+        revision: state.revision, model: model.selection.modelId, effort: model.selection.reasoningEffort, invocations: 1,
+      })),
     }
   }
   private appendProjection(job: Job, text: string, question?: InterviewOutput["question"]) {

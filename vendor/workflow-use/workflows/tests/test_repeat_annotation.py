@@ -77,6 +77,23 @@ def method_response():
 
 
 class RepeatAnnotationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_host_binds_unique_path_without_model_copy_or_unused_reason(self):
+        schema = RepeatAnnotation.model_json_schema()
+        self.assertNotIn('reason', schema['properties'])
+        self.assertNotIn('outputPath', schema['$defs']['RepeatMethod']['properties'])
+        method = {key: value for key, value in METHOD.items() if key != 'outputPath'}
+        model = response({'outcome': 'method', 'method': method})
+        with patch('workflow_use.hybrid.repeat_annotation._validate_method', side_effect=lambda _trace, value, _digest: value):
+            updated, gaps, advances = await annotate_repeat_method(REQUEST, fixture(), model)
+        self.assertEqual(gaps, [])
+        saved = [fact.value for observation in updated.observations for fact in observation.facts if fact.kind == 'repeat_method']
+        self.assertEqual(saved[0]['outputPath'], ['records'])
+        self.assertEqual(advances, {'a-0003'})
+        self.assertEqual(model.ainvoke.await_count, 1)
+        refusal = response({'outcome': 'insufficient_evidence', 'method': None})
+        _, gaps, _ = await annotate_repeat_method(REQUEST, fixture(), refusal)
+        self.assertEqual([item.reason for item in gaps], ['repeat_annotation_insufficient_evidence'])
+
     async def test_content_region_correction_is_not_array_pagination(self):
         trace = fixture()
         for ordinal, index in enumerate((1, 7)):

@@ -63,7 +63,7 @@ export type AIModelResolver = () => Promise<PreparedAIModel>
 export type AIModelProvider = Readonly<{
   selection(): ModelSelection
   prepare(selection: ModelSelection, signal: AbortSignal): Promise<PreparedAIModel>
-  prepareMain(selection: ModelSelection, purpose?: "interview" | "exploration"): Promise<PreparedMainAIModel>
+  prepareMain(selection: ModelSelection, purpose?: "interview" | "interview-repair" | "exploration"): Promise<PreparedMainAIModel>
   strongerSelection?(selection: ModelSelection, signal: AbortSignal): Promise<ModelSelection | null>
 }>
 
@@ -114,7 +114,8 @@ export function createAIModelProvider(
       await requireAgentSessionSelection(ai, subjectId, selection)
       const binding = await subject.bindAgentSession({ scope: "platform", ...selection })
       const adapter = createPiAgentSessionAdapter({
-        agentId: purpose === "exploration" ? "browser-capture.task-exploration" : "browser-capture.requirement-interview",
+        agentId: purpose === "exploration" ? "browser-capture.task-exploration"
+          : purpose === "interview-repair" ? "browser-capture.requirement-interview-repair" : "browser-capture.requirement-interview",
         binding,
         stateDir: options.stateDir,
         ...(purpose === "interview" ? { extensionTools: interviewExtensionTools() } : {}),

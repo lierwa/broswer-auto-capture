@@ -83,6 +83,9 @@ async def captured_reads(count=2):
     results, arguments, verified = [], [], []
     first = parameters(maxItems=300, fields={'count': {'selector': '.count', 'normalizeWhitespace': True},
                                             'labels': {'selector': '.label'}})
+    raw = first.model_dump(mode='json')
+    del raw['outputPath']
+    first = tools.registry.registry.actions['bat_read_fields'].param_model.model_validate(raw)
     for index in range(count):
         params = first if index == 0 else MethodReadToolParams(readRef='r' + str(index))
         action = registry.validate_action('bat_read_fields', params.model_dump(mode='json', exclude_unset=True))

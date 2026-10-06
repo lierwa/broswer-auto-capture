@@ -19,9 +19,9 @@ test("同词两次后备搜索只接受指定可见调用的结果", async () =>
     onSearch: () => undefined, onResolution: (value) => { resolution = value } })
   const first = await tools[0]!.execute("first", { subject: "Acme", query: "Acme" }) as ToolView
   const second = await tools[0]!.execute("second", { subject: "Acme", query: "Acme" }) as ToolView
-  const visibleFirst = JSON.parse(first.content[0]!.text) as { searchId: string; results: Array<{ id: string }> }
-  assert.equal(visibleFirst.searchId, first.details.id)
-  assert.equal(visibleFirst.results[0]!.id, first.details.candidates[0]!.id)
+  const visibleFirst = JSON.parse(first.content[0]!.text) as { results: Array<{ ref: string; url: string }> }
+  assert.match(visibleFirst.results[0]!.ref, /^source-/u)
+  assert.equal(visibleFirst.results[0]!.url, first.details.candidates[0]!.url)
   const proposal = { subject: "Acme", query: "Acme", searchId: second.details.id,
     candidateIds: [first.details.candidates[0]!.id] }
   await assert.rejects(tools[1]!.execute("wrong-call", proposal), /candidate_reference_invalid/)
@@ -55,9 +55,9 @@ test("原生搜索的旁听 ID 先经公开工具展示，才允许精确提案"
     candidateIds: [candidateId("https://acme.example/")] }
   await assert.rejects(tools[1]!.execute("hidden", proposal), /search_reference_invalid/)
   const visible = await tools[2]!.execute("list", {}) as { content: Array<{ text: string }> }
-  const listed = JSON.parse(visible.content[0]!.text) as { searches: Array<{ searchId: string; results: Array<{ id: string }> }> }
-  assert.equal(listed.searches[0]!.searchId, proposal.searchId)
-  assert.equal(listed.searches[0]!.results[0]!.id, proposal.candidateIds[0])
+  const listed = JSON.parse(visible.content[0]!.text) as { searches: Array<{ results: Array<{ ref: string; url: string }> }> }
+  assert.match(listed.searches[0]!.results[0]!.ref, /^source-/u)
+  assert.equal(listed.searches[0]!.results[0]!.url, "https://acme.example/")
   await tools[1]!.execute("proposal", proposal)
   assert.equal(resolution?.searchId, "pi:call-pi")
   assert.equal(resolution?.provider, "pi-web-access:web_search")

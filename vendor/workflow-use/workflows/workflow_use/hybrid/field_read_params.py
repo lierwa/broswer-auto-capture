@@ -6,6 +6,12 @@ from .read import ReadSpec
 
 _SCALAR_TYPES = frozenset({'string', 'number', 'integer', 'boolean'})
 
+# WHY：仅供历史注册表精确重建，当前模型不再填写固定根路径。
+LEGACY_ROOT_ARRAY_PATH_GUIDANCE = (
+    'The confirmed business output is a root array. Read the record list with outputPath=[]. '
+    'Do not use outputPath=["value"] or ["value",0]: value is the structured-response wrapper, '
+    'not a location in this business output contract. Put record property names in fields.')
+
 
 class FieldReadNodeRefs(Contract):
     refs: list[str] = Field(min_length=1, max_length=300)
@@ -161,3 +167,10 @@ def _value_wrapper(target_schema):
         'required': ['value'],
         'additionalProperties': False,
     }
+def bind_root_read_path(arguments, output_schema):
+    # WHY：固定根路径由确认合同唯一确定；所有公开动作/证据消费者共用，旧显式值不能被静默改写。
+    if (isinstance(arguments, dict) and isinstance(output_schema, dict)
+            and output_schema.get('type') == 'array' and 'fields' in arguments
+            and 'readRef' not in arguments and 'outputPath' not in arguments):
+        return {**arguments, 'outputPath': []}
+    return arguments

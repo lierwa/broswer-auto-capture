@@ -13,7 +13,8 @@ from pydantic.json_schema import SkipJsonSchema
 from typing import Literal
 
 from .evidence import Contract
-from .field_read_params import FieldReadMapping, _expanded_field, _read_shape
+from .field_read_params import FieldReadMapping, _expanded_field, _read_shape, bind_root_read_path
+from .field_read_params import LEGACY_ROOT_ARRAY_PATH_GUIDANCE
 from .natural_reads import NaturalReadFailure, schema_at_path, value_at_path
 from .read import ReadField
 from .read_sampling import ReadSample, sample_read_fields
@@ -23,14 +24,12 @@ from .element_entry import entry_field
 from .entry_selection import EntryObservation, EntrySelection, assert_entry_sample, capture_entry_indices, select_entry_container
 from .content_read_params import ContentReadToolParams
 
-
 # WHY：字段类型与多值形状只有最终合同一个事实源；复用投影配置，避免默认值经持久化变成模型声明。
 MethodReadField = create_model('MethodReadField', __base__=Contract, **{
     name: (field.annotation, copy.deepcopy(field))
     for name, field in ReadField.model_fields.items()
     if name not in {'valueType', 'multiple', 'maxValues', 'allowMissing', 'contentSource'}
 })
-
 
 class MethodReadToolParams(Contract):
     captureContent: bool = False
@@ -82,7 +81,6 @@ class MethodReadToolParams(Contract):
         return {key: value for key, value in handler(self).items()
                 if key not in {'readRef', 'captureContent'} and (key not in {'take', 'indices', 'regions', 'regionMode'} or value is not None)}
 
-
 class EntryReadToolParams(Contract):
     container: str | None = Field(default=None, min_length=1, max_length=2000)
     indices: list[PositiveInt] | None = Field(default=None, min_length=1, max_length=300,
@@ -101,7 +99,6 @@ class EntryReadToolParams(Contract):
     def omit_absent(self, handler):
         return {key: value for key, value in handler(self).items() if value is not None}
 
-
 class AuthorMethodReadToolParams(MethodReadToolParams):
     # WHY：模型只决定业务选择，300 项技术预算由宿主持有；旧来源的显式预算仍可解析和离线校验。
     maxItems: SkipJsonSchema[Literal[300]] = Field(default=300, exclude=True)
@@ -109,21 +106,30 @@ class AuthorMethodReadToolParams(MethodReadToolParams):
     regions: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
     regionMode: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
 
+ROOT_ARRAY_PATH_GUIDANCE = ('The confirmed business output is a root array. The host binds its output path. '
+    'Return only the record container and field projections, or reuse a readRef.')
 
-ROOT_ARRAY_PATH_GUIDANCE = (
-    'The confirmed business output is a root array. Read the record list with outputPath=[]. '
-    'Do not use outputPath=["value"] or ["value",0]: value is the structured-response wrapper, '
-    'not a location in this business output contract. Put record property names in fields.')
+class RootArrayMethodReadToolParams(AuthorMethodReadToolParams):
+    outputPath: SkipJsonSchema[list[str | int] | None] = Field(default=None, max_length=40, exclude=True)
 
+    @model_validator(mode='before')
+    @classmethod
+    def bind_root_path(cls, value):
+        if not isinstance(value, dict) or 'readRef' in value:
+            return value
+        # WHY：根数组的固定路径来自确认合同；旧显式错误仍拒绝，不能默默修正来源证据。
+        if value.get('outputPath') not in (None, []):
+            raise ValueError('root_array_output_path_invalid')
+        return {**value, 'outputPath': []} if 'fields' in value else value
 
-def method_read_params_for(output_schema):
+def method_read_params_for(output_schema, legacy_model_fields=False):
     if output_schema.get('type') != 'array':
         return AuthorMethodReadToolParams
-    # WHY：响应模型的 value 包装不属于业务合同；只明确根路径，禁止自动改写模型提交的路径。
-    return create_model('RootArrayMethodReadToolParams', __base__=AuthorMethodReadToolParams,
-        outputPath=(list[str | int] | None, Field(default=None, max_length=40,
-            description=ROOT_ARRAY_PATH_GUIDANCE, examples=[[]])))
-
+    if legacy_model_fields:
+        return create_model('RootArrayMethodReadToolParams', __base__=AuthorMethodReadToolParams,
+            outputPath=(list[str | int] | None, Field(default=None, max_length=40,
+                description=LEGACY_ROOT_ARRAY_PATH_GUIDANCE, examples=[[]])))
+    return RootArrayMethodReadToolParams
 
 class MethodReadRecord(Contract):
     readRef: str = Field(pattern=r'^r[1-9][0-9]*$')
@@ -131,7 +137,6 @@ class MethodReadRecord(Contract):
     mapping: FieldReadMapping
     sample: ReadSample
     selection: EntrySelection | None = None
-
 
 class MethodReadRecords:
     def __init__(self, output_schema=None, *, capture_content=False):
@@ -173,7 +178,8 @@ class MethodReadRecords:
             inherited = getattr(self, 'input_value', None)
             schema = getattr(self, 'input_schema', None)
             names = list(schema.get('properties', {})) if isinstance(schema, dict) and schema.get('type') == 'object' else []
-            parameters = MethodReadToolParams.model_validate(params.model_dump(mode='json'))
+            raw_parameters = bind_root_read_path(params.model_dump(mode='json'), self.output_schema)
+            parameters = MethodReadToolParams.model_validate(raw_parameters)
             mapping_params = parameters
             if parameters.indices is not None:
                 if not isinstance(selection, EntrySelection) or selection.indices != parameters.indices \
@@ -246,7 +252,6 @@ class MethodReadRecords:
                 value['historicalQueries'] = candidates
         return json.dumps(value, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
 
-
 def expand_method_read_params(params: MethodReadToolParams, output_schema, *, inherit_fields=(), input_schema=None):
     """Derive one runtime method from the selected output-contract shape."""
     if params.readRef is not None:
@@ -316,8 +321,7 @@ def expand_method_read_params(params: MethodReadToolParams, output_schema, *, in
         'outputPath': params.outputPath, 'readPath': read_path,
     })
 
-
-def register_method_read_tool(tools, *, output_schema, capture_content=False):
+def register_method_read_tool(tools, *, output_schema, capture_content=False, legacy_model_fields=False):
     Draft202012Validator.check_schema(output_schema)
     successful = MethodReadRecords(output_schema, capture_content=capture_content)
 
@@ -363,12 +367,16 @@ def register_method_read_tool(tools, *, output_schema, capture_content=False):
         'reference; never repeat or override its fields, container, outputPath or maxItems. '
         'The host preserves the exact method and returns a new readRef for the new sample. '
         'Select the intended readRef when finishing. '
-        + (ROOT_ARRAY_PATH_GUIDANCE if output_schema.get('type') == 'array' else '')),
+        + ((LEGACY_ROOT_ARRAY_PATH_GUIDANCE if legacy_model_fields else ROOT_ARRAY_PATH_GUIDANCE)
+           if output_schema.get('type') == 'array' else '')).replace(
+               'For object or root array results, use outputPath=[];',
+               'For object or root array results, use outputPath=[];' if legacy_model_fields else
+               'For object results, use outputPath=[]; root array paths are host-bound.'),
         param_model=EntryReadToolParams if entry_field(output_schema) else
-            ContentReadToolParams if capture_content else method_read_params_for(output_schema),
+            ContentReadToolParams if capture_content else method_read_params_for(output_schema, legacy_model_fields),
     )
     async def bat_read_fields(params: MethodReadToolParams, browser_session: BrowserSession) -> ActionResult:
-        params = MethodReadToolParams.model_validate(params.model_dump(mode='json'))
+        params = MethodReadToolParams.model_validate(bind_root_read_path(params.model_dump(mode='json'), output_schema))
         field_names = params.fields or {}
         phase = 'entry_selection'
         try:
@@ -405,7 +413,6 @@ def register_method_read_tool(tools, *, output_schema, capture_content=False):
 
     return successful
 
-
 def method_read_model_result(record: MethodReadRecord):
     """Show representative values; keep identity, digests and document proof in the host record."""
     sample = record.sample
@@ -417,7 +424,6 @@ def method_read_model_result(record: MethodReadRecord):
                      'sampled': sample.coverage.sampled},
         'coverageNote': 'Current DOM matches only; this does not prove the full business collection.',
     }
-
 
 _READ_ERRORS = frozenset({
     'native_entry_indices_invalid', 'native_entry_selector_unavailable',
@@ -439,7 +445,6 @@ _READ_ERRORS = frozenset({
     'read_input_limit', 'read_number_not_finite', 'read_number_invalid', 'read_text_affix_invalid',
 }) | SAFE_CONTENT_FAILURE_CODES
 
-
 _READ_ERROR_REASONS = frozenset({
     'complete_collection_required', 'container_not_resolved', 'exceeded_max_values',
     'expected_exactly_one_match', 'expected_exactly_one_record', 'invalid_boolean_text', 'invalid_number_text',
@@ -449,7 +454,6 @@ _READ_ERROR_REASONS = frozenset({
     'page_unavailable', 'selector_mapping_changed',
     'image_scheme_http', 'image_scheme_https', 'image_scheme_blob', 'image_scheme_other',
 })
-
 
 def _safe_read_error(error, field_names, *, phase=None):
     code = str(error)
@@ -472,7 +476,6 @@ def _safe_read_error(error, field_names, *, phase=None):
     if isinstance(error.reason, str) and error.reason in _READ_ERROR_REASONS:
         detail['reason'] = error.reason
     return code + ': ' + json.dumps(detail, ensure_ascii=False, separators=(',', ':')) if detail else code
-
 
 def _safe_failure_detail(error):
     # WHY：宿主错误必须能定位，禁止异常正文、页面值、局部变量或完整路径进入诊断。

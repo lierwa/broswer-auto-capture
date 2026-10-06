@@ -1,6 +1,6 @@
 """Resolve a captured method reference through earlier successful actions in the same trace."""
 from .evidence import digest
-from .field_read_params import FieldReadMapping
+from .field_read_params import FieldReadMapping, bind_root_read_path
 from .method_read_tool import MethodReadToolParams, expand_method_read_params
 from .natural_reads import VerifiedNaturalRead, validate_compiled_read_identity
 
@@ -17,7 +17,7 @@ def referenced_method_mapping(reference, action, trace, output_schema, input_sch
         if expected is not None and digest(expected) != digest(mapping):
             raise ValueError('verified_read_mapping_mismatch')
         expected = mapping
-        params = MethodReadToolParams.model_validate(prior.args)
+        params = MethodReadToolParams.model_validate(bind_root_read_path(prior.args, output_schema))
         if params.readRef is None:
             if digest(expand_method_read_params(params, output_schema,
                     inherit_fields=value.specification.inheritFields, input_schema=input_schema)) != digest(mapping):

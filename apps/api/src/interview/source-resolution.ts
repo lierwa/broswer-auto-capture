@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto"
 import { getDomain } from "tldts"
 import { z } from "zod"
 import { createCommonQuestionFromPanel } from "@agent-platform/ai-connect/integration/authoring/question"
-import { type MainModelTool } from "@agent-platform/pi-agent-session"
 import {
   sourceResolutionSchema,
   type InterviewOutput,
@@ -16,13 +15,6 @@ export { PiSourceSearchObserver } from "./source-search-evidence.js"
 const searchInputSchema = z.object({
   subject: z.string().trim().min(1).max(200),
   query: z.string().trim().min(1).max(500),
-}).strict()
-const proposalInputSchema = z.object({
-  subject: z.string().trim().min(1).max(200),
-  query: z.string().trim().min(1).max(500),
-  searchId: z.string().trim().min(1).max(300),
-  candidateIds: z.array(z.string().trim().min(1).max(200)).max(2),
-  confirmation: z.enum(["question", "draft"]).default("question"),
 }).strict()
 type Fetcher = typeof fetch
 export type SourceSearch = {
@@ -59,103 +51,7 @@ export class ReadOnlySourceResolver {
   }
 }
 
-export function createSourceResolutionTools(input: {
-  resolver: ReadOnlySourceResolver
-  piSearches?: PiSourceSearchObserver
-  revision: number
-  questionId: string
-  onSearch(): void
-  onResolution(value: SourceResolution): void
-}): MainModelTool[] {
-  const searches: SourceSearch[] = []
-  let resolved = false
-  let proposals = 0
-  const searchTool: MainModelTool = {
-    name: "search_sources",
-    label: "通用只读搜索后备",
-    description: "活动搜索工具不可用或失败时的通用只读后备。按完整对话需要调查来源或其他公开业务事实时使用；可有界追加查询并比较相反证据。只返回原始结果，宿主不判断业务相关性。",
-    parameters: {
-      type: "object", additionalProperties: false, required: ["subject", "query"], properties: {
-        subject: { type: "string", description: "需要调查的用户可读业务对象" },
-        query: { type: "string", description: "你根据完整对话自行确定的公开搜索词" },
-      },
-    },
-    async execute(_callId: string, params: unknown, signal?: AbortSignal) {
-      // WHY：一次搜索可能只覆盖一个假设；允许同轮有界核查反证或其他业务事实，不把首条结果当全集。
-      if (searches.length >= 6) throw new Error("interview_source_search_budget_exhausted")
-      const search = await input.resolver.search(searchInputSchema.parse(params), signal)
-      searches.push(search)
-      input.onSearch()
-      return { content: [{ type: "text", text: sourceSearchResult(search) }], details: search }
-    },
-  }
-  const piReferenceTool: MainModelTool = {
-    name: "source_search_references",
-    label: "查看原生搜索引用",
-    description: "使用 web_search 后调用，取得本轮已完成搜索的可引用 searchId、原样查询和结果 ID；仍以原生搜索正文判断相关性。",
-    parameters: { type: "object", additionalProperties: false, required: [], properties: {} },
-    async execute() {
-      return { content: [{ type: "text", text: JSON.stringify({
-        searches: input.piSearches?.expose() ?? [],
-        instruction: "仅引用本结果中可见的 searchId 和该调用下的结果 ID；没有可靠候选时提交空 candidateIds。",
-      }) }] }
-    },
-  }
-  const proposalTool: MainModelTool = {
-    name: "present_source_candidates",
-    label: "提交来源候选判断",
-    description: "新增或改选业务来源、试做入口时调用。仍有重要来源取舍用 confirmation=question；用户已明确指定或委托、证据足以确定来源时用 draft，将唯一候选随同草案确认，不重复提问。来源依据不等于执行起点，不得用目标深链替换用户指定起点。web_search 后先调用 source_search_references；其他业务事实的搜索不调用本工具。",
-    parameters: {
-      type: "object", additionalProperties: false,
-      required: ["subject", "query", "searchId", "candidateIds"], properties: {
-        subject: { type: "string", description: "来源对象或试做起点；不同对象分别提交" },
-        query: { type: "string", description: "传给该搜索工具的原样搜索词" },
-        searchId: { type: "string", description: "实际看到的指定搜索调用 ID" },
-        candidateIds: { type: "array", maxItems: 2, items: { type: "string" },
-          description: "按推荐顺序引用同一搜索调用中真实可见的结果 ID；没有可靠候选时留空" },
-        confirmation: { type: "string", enum: ["question", "draft"],
-          description: "question：尚需用户选择，结束本轮；draft：已明确或受托决定，仅一个候选，继续形成草案并写明依据" },
-      },
-    },
-    async execute(_callId: string, params: unknown) {
-      if (resolved) throw new Error("interview_source_proposal_already_submitted")
-      if (proposals >= 6) throw new Error("interview_source_proposal_budget_exhausted")
-      const proposal = proposalInputSchema.parse(params)
-      if (proposal.confirmation === "draft" && proposal.candidateIds.length !== 1) {
-        throw new Error("interview_source_draft_candidate_required")
-      }
-      const fallback = searches.find((search) => search.id === proposal.searchId)
-      const native = input.piSearches?.findById(proposal.searchId)
-      if ((!fallback && !native) || (fallback && fallback.query !== proposal.query)
-        || (native && !native.queries.includes(proposal.query))) {
-        throw new Error("interview_source_search_reference_invalid")
-      }
-      if (new Set(proposal.candidateIds).size !== proposal.candidateIds.length) {
-        throw new Error("interview_source_candidate_count_invalid")
-      }
-      const evidence = fallback ?? native!
-      if (proposal.confirmation === "draft" && evidence.status !== "ok") {
-        throw new Error("interview_source_search_reference_invalid")
-      }
-      const candidates = proposal.candidateIds.map((id) => evidence.candidates.find((candidate) => candidate.id === id))
-      if (candidates.some((candidate) => !candidate)) throw new Error("interview_source_candidate_reference_invalid")
-      const outcome = candidates.length === 0 ? "none" : candidates.length === 1 ? "unique" : "multiple"
-      const value = sourceResolutionSchema.parse({
-        id: randomUUID(), revision: input.revision, subject: proposal.subject, query: proposal.query,
-        searchId: proposal.searchId, provider: native ? "pi-web-access:web_search" : "bing_rss",
-        searchStatus: evidence.status, outcome, status: "open",
-        candidates, questionId: proposal.confirmation === "question" ? input.questionId : null,
-        selectedCandidateId: null, answerMessageId: null,
-        createdAt: new Date().toISOString(),
-      })
-      resolved = proposal.confirmation === "question"; proposals += 1; input.onResolution(value)
-      return { content: [{ type: "text", text: resolved
-        ? "候选引用已校验；宿主会生成来源确认 Question，本轮不要再生成问题或草稿。"
-        : "引用已校验，尚未由用户确认。继续形成同版草案；将该 URL 写作来源依据或实际试做入口，不得替换用户明确路径。" }], details: value }
-    },
-  }
-  return [searchTool, proposalTool, piReferenceTool]
-}
+export { createSourceResolutionTools } from "./source-tools.js"
 
 export function sourceResolutionOutput(value: SourceResolution, runId: string, output?: InterviewOutput): InterviewOutput {
   // WHY：候选和待决方式由宿主事实决定，不能让模型正文反向要求用户填写 URL、selector 或其他技术参数。
@@ -286,9 +182,9 @@ function draftEntryUrls(markdown: string) {
   if (!lines.length) throw new Error("interview_entry_required")
   const seen = new Set<string>()
   return lines.map((line, index) => {
-    const match = line.match(/^(\d+)\.\s+(https?:\/\/\S+)$/u)
+    const match = line.match(/^(\d+)\.\s+(?:(https?:\/\/\S+)|<(https?:\/\/[^<>\s]+)>)$/u)
     if (!match || Number(match[1]) !== index + 1) throw new Error("interview_entry_order_invalid")
-    const url = new URL(match[2]!).href
+    const url = new URL((match[2] ?? match[3])!).href
     if (seen.has(url)) throw new Error("interview_entry_reference_invalid")
     seen.add(url)
     return url
@@ -296,9 +192,10 @@ function draftEntryUrls(markdown: string) {
 }
 
 function markdownUrls(markdown: string) {
-  // WHY：反引号是 Markdown 代码边界，不是 URL 字节；保留真实 %60 路径与严格来源匹配。
-  return [...markdown.matchAll(/https?:\/\/[^\s<>"'`，。；]+/gu)].map((match) => {
-    const raw = match[0].replace(/[),.;\]，。；）]+$/u, "")
+  // WHY：宿主回填使用 Markdown autolink，尖括号内的 URL 字节必须完整保留；不能把括号路径或查询值当标点剥离。
+  // 旧手写草案的裸 URL 仍按原兼容规则读取，不扩大已确认来源授权。
+  return [...markdown.matchAll(/<(https?:\/\/[^<>\s]+)>|https?:\/\/[^\s<>"'`，。；]+/gu)].map((match) => {
+    const raw = match[1] ?? match[0].replace(/[),.;\]，。；）]+$/u, "")
     try { return new URL(raw).href } catch { throw new Error("interview_draft_url_invalid") }
   })
 }
@@ -340,12 +237,6 @@ function sourceSummaryPreview(description: string) {
   return characters.length > 88
     ? `${characters.slice(0, 88).join("")}…（完整摘要见上方搜索记录）`
     : text
-}
-
-function sourceSearchResult(value: SourceSearch) {
-  return JSON.stringify({ searchId: value.id, status: value.status, results: value.candidates.map((item) => ({
-    id: item.id, title: item.title, url: item.url, domain: item.domain, description: item.description,
-  })), instruction: "你负责判断原始结果的相关性。仅在本轮需要确认或改选来源时，才调用 present_source_candidates 并引用本次 searchId 与相关结果 ID。" })
 }
 
 function sourceLead(value: SourceResolution) {

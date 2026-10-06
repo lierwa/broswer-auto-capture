@@ -4056,3 +4056,30 @@ Reuse Assessment:
 
 ## 2026-10-06 基础契约整改（当前范围）
 用户要求仅独立 headless/本地样本验证底层，不运行京东或接管日常浏览器。已复用 B-U Page/Element/原生 DOM/CDP、原 Playwright owner relay、LangGraph 与 Python traceback，修正来源存活准入、数量绑定、精确选区及安全诊断；新增通用基础库为零。真实 runner 重建暴露异步缓存标题污染恢复摘要，改用原生实时标题后同 run、SQLite 重开、数量 1/3、0LLM、owned 清理验证通过。DOM 编译适配与浏览器原生查询职责、四项 review P2、全部首败与未测范围见 [基础整改记录](FOUNDATION_CONTRACT_REPAIR_20261006.md)。
+
+## 2026-10-06 LLM 字段归属与需求来源首败
+
+真实首败不是搜索不可用，而是重复要求模型填写已知 URL/来源身份。复用 Pi 搜索事实与公共 Authoring，宿主展开引用；同时审查活跃模型边界，删除重复方法固定路径/无消费解释、执行型固定空引用、根数组固定输出路径。真实UI首轮另外暴露起点与最终目标/访问条件混淆；第二轮收紧职责说明，并把无候选判断绑定实际调查集合。没有新增模型字段、通用解析器、Agent loop 或 judge。Product Alignment、Reuse Assessment、字段归属、旧摘要兼容及全部首败见 [整改记录](INTERVIEW_SOURCE_BINDING_20261006.md)。第二轮定点验证/复审已完成，正常UI验收仍待结算。
+# 2026-10-06：需求输出的一次定向修复
+
+Product Alignment:
+- natural-language task: 任意来源检索、浏览器操作需求的对话与准备草案。
+- reusable chain boundary: 需求输出准入，失败候选不进入已确认计划。
+- runtime inputs: 原对话、原输出、公共解析诊断、同轮真实来源引用。
+- dynamic task outputs: 原有 Question 或 Markdown 草案，无新增模型字段。
+- generic platform capability used: AI Connect 注册、buffered scope、同一 parser；Pi AgentSession。
+- replay model calls: 正式复跑不变；只在需求输出校验失败时额外一次同模型调用。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 非法需求输出的有限修复。
+- existing implementation in repository: protocol.ts 已注册 directive；coordinator 缺少校验失败修复。
+- mature candidates and pinned versions: 已安装 ai-connect 0.3.4、pi-agent-session 0.1.0（vendor/release 固定快照）。
+- selected implementation: 保持同一 compileAuthoringProtocol / resolveAuthoringTurn / createAuthoringTurnSession；buffered repair 不安装视觉内容和搜索工具。
+- reused public surface: 公共 Authoring 和 Pi adapter API。
+- B-A-T-owned adapter and remaining gap: 一次领域准入修复、引用事务、原始事件与最终接受 invocation 的关联。
+- license/runtime/platform fit: 不新增/替换依赖，沿用已验证 Windows TypeScript 运行时。
+- browser/runtime/state ownership conflicts: 不启动浏览器，不重做搜索，不接受失败候选，不改变已确认业务。
+- replay model calls: 0 个新增隐式执行调用。
+- rejected candidates and evidence: 不造 XML 容错解析器，不自动补闭合标签；公共 parser 已能提供 unclosed_tag 诊断。上游 authoring-registry.ts 的 buffered scope 直接覆盖所需能力。
+- focused validation: 10 项定点与 API 类型检查通过；入口编号补充样本通过；headless round-3 真实首败经一次修复后成功，UI 确认和刷新持久化通过（见 PROGRESS 最新条目）。

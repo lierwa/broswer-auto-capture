@@ -47,8 +47,13 @@ export const draftSchema = z.object({ version: z.number().int().positive(), revi
 export const messageSchema = z.object({
   id: text, role: z.enum(["user", "assistant"]), text: z.string(),
   status: z.enum(["complete", "running", "failed", "cancelled"]),
+  // WHY：用户正文保持可读；协议首败另存稳定码，不能每次靠重建模型输出定位，也不保存原始异常/凭据。
+  failureCode: z.string().regex(/^(interview_|preparation_)[a-z0-9_]{1,100}$/u).optional(),
   question: questionSchema.nullable(), draftVersion: z.number().int().nullable(),
   aiEvents: z.array(aiEventSchema).default([]),
+  // WHY：主输出失败后修复仍保留全部事件；续聊只消费实际接受的那次输出。
+  acceptedInvocationId: z.string().optional(),
+  authoringRepair: z.object({ reason: z.string().max(2_000) }).optional(),
   parts: z.array(interviewMessagePartSchema).optional(),
   interactionReply: commonSurfaceReplyPayloadSchema.optional(),
 })
@@ -77,6 +82,8 @@ export const sourceResolutionSchema = z.object({
   id: text, revision, subject: text, query: text,
   // WHY：历史来源仍可读；新来源固定模型实际可见的搜索调用身份，避免同词多次搜索串证据。
   searchId: z.string().trim().min(1).max(300).optional(),
+  // WHY：无候选是对可见调查集合的判断，不能伪称来自最后一次搜索；这些身份由宿主填写。
+  searchIds: z.array(z.string().trim().min(1).max(300)).min(1).optional(),
   // WHY：来源工具由 Pi extension registry 决定，公共事实只保存实际工具/证据来源标识，不能冻结供应商枚举。
   provider: z.string().trim().min(1).max(200),
   searchStatus: z.enum(["ok", "unavailable"]).default("ok"),

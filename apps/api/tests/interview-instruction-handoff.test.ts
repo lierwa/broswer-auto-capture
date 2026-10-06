@@ -115,7 +115,7 @@ test("明确指令：同轮多个来源随草案确认，原话与最新修正�
   await fixture(async (input) => {
     count += 1
     assert.match(input.activeTask, /起点、字面输入、动作、顺序/)
-    assert.match(input.activeTask, /confirmation=draft/)
+    assert.match(input.activeTask, /直接在草案引用所选 ref，不调用工具重复登记/)
     assert.match(input.activeTask, /识别拼写错误是增强能力/)
     await sources(input, "draft")
     return output(body(count === 1 ? explicit : explicit.replace("LangGragh", "LangGraph")))

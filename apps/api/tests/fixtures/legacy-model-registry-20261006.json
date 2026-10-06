@@ -1,0 +1,50 @@
+[
+  {
+    "mode": "execution",
+    "human": true,
+    "selection": false,
+    "exactLegacyDigest": "355333f1803b4d98c5ad248662d188d5e8539aa5143bfe85988fd94f23bf310c"
+  },
+  {
+    "mode": "execution",
+    "human": true,
+    "selection": true,
+    "exactLegacyDigest": "80e8ef2c050fa9ffe515492a3e74f0a1b7db3ab1ab8aa50b8b5da065411d382e"
+  },
+  {
+    "mode": "execution",
+    "human": false,
+    "selection": false,
+    "exactLegacyDigest": "8d95bdb6ded31da2f6caf371ef6da8b8147d381bdc0ee4d01b6c6b9a274ce6f9"
+  },
+  {
+    "mode": "execution",
+    "human": false,
+    "selection": true,
+    "exactLegacyDigest": "4f456b49c022fc060040ad73cd1777ba324ea196af4ff7a2e1d09d9c3c0e3985"
+  },
+  {
+    "mode": "data",
+    "human": true,
+    "selection": false,
+    "exactLegacyDigest": "3a0a068b9e2a160021f1e45445bccf40a5a33d1e8f97fb64f43897db3f006916"
+  },
+  {
+    "mode": "data",
+    "human": true,
+    "selection": true,
+    "exactLegacyDigest": "9bb92e5b2c2dba942517807568afef24a1bc413c4700eb1d7d79ec83f8c928f2"
+  },
+  {
+    "mode": "data",
+    "human": false,
+    "selection": false,
+    "exactLegacyDigest": "b6e29403a6e15ac462e5c008fabbc0670ca81355e45f9a47181ede9b105beca2"
+  },
+  {
+    "mode": "data",
+    "human": false,
+    "selection": true,
+    "exactLegacyDigest": "70e5654bc493037089d440a03d32a5cb87a1bae664d9c8ea3a4312cd95f3833c"
+  }
+]

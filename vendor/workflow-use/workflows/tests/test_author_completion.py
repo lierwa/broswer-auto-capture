@@ -42,7 +42,7 @@ class AuthorCompletionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(agent.task, 'Capture the requested region.')
             self.assertIsNone(agent.output_model_schema)
             properties = tools.registry.registry.actions['done'].param_model.model_json_schema()['properties']
-            self.assertEqual(set(properties), {'success', 'reason', 'readRefs'})
+        self.assertEqual(set(properties), {'success', 'reason'})
 
     def test_native_done_root_json_values_are_plain_json_values(self):
         class History:
@@ -73,13 +73,14 @@ class AuthorCompletionTests(unittest.IsolatedAsyncioTestCase):
     def test_success_and_reason_are_required_and_visible_to_the_model(self):
         model = self.tools.registry.registry.actions['done'].param_model
         schema = model.model_json_schema()
-        self.assertEqual(set(schema['required']), {'success', 'reason', 'readRefs'})
+        self.assertEqual(set(schema['required']), {'success', 'reason'})
+        self.assertNotIn('readRefs', schema['properties'])
+        self.assertEqual(model.model_validate({'success': True, 'reason': 'Observed.'}).readRefs, [])
         self.assertEqual(schema['properties']['success']['type'], 'boolean')
         self.assertNotIn('default', schema['properties']['success'])
         self.assertNotIn('data', schema['properties'])
         for invalid in ({'reason': 'blocked', 'readRefs': []},
                         {'success': False, 'readRefs': []},
-                        {'success': False, 'reason': 'blocked'},
                         {'success': 'false', 'reason': 'blocked', 'readRefs': []},
                         {'success': True, 'reason': 'Observed.', 'readRefs': [], 'data': {'value': None}}):
             with self.subTest(invalid=invalid), self.assertRaises(ValidationError):
@@ -126,7 +127,7 @@ class AuthorCompletionTests(unittest.IsolatedAsyncioTestCase):
             for index in range(1, 5)]
         def record(step, pre, post):
             return HistoryRecord(stepIndex=step, actions=[{'done': {
-                'success': True, 'reason': 'Observed.', 'readRefs': []}}],
+                'success': True, 'reason': 'Observed.'}}],
                 results=[ResultEvidence(errorPresent=False, is_done=True, success=True, ref=reference)],
                 preObservationRef=pre, postObservationRefs={'0': post})
         trace, gaps = normalize_history(HistoryInput(

@@ -6,6 +6,7 @@ from jsonschema import Draft202012Validator
 
 from .evidence import digest
 from .field_read_evidence import FieldReadEvidenceFailure
+from .field_read_params import bind_root_read_path
 from .method_read_tool import MethodReadRecord, MethodReadToolParams, expand_method_read_params, method_read_model_result
 from .natural_reads import VerifiedNaturalRead, schema_at_path, value_at_path
 from .read import ReadSampleCoverage
@@ -46,7 +47,7 @@ def verified_method_read(*, records, start, arguments, results, result_ref, acti
 
 def _validated_record(record, arguments, records, start):
     try:
-        params = MethodReadToolParams.model_validate(arguments)
+        params = MethodReadToolParams.model_validate(bind_root_read_path(arguments, records.output_schema))
         checked = MethodReadRecord.model_validate(record.model_dump(mode='json'))
         expanded, expected = records.resolve(params, before=start, selection=checked.selection)
         assert_entry_sample(checked.selection, checked.sample)
@@ -121,7 +122,7 @@ def validate_method_read_mapping(value, output_schema, action, trace=None, input
     if action.name != 'bat_read_fields':
         raise ValueError('verified_read_action_mismatch')
     try:
-        params = MethodReadToolParams.model_validate(action.args)
+        params = MethodReadToolParams.model_validate(bind_root_read_path(action.args, output_schema))
         if params.readRef is None:
             if params.indices is not None:
                 from .entry_selection import proven_entry_container

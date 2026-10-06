@@ -55,6 +55,16 @@ class ToolsStub:
 
 
 class MethodReadMappingTests(unittest.TestCase):
+    def test_root_array_path_is_bound_by_host_and_reference_reuse_stays_exclusive(self):
+        model = method_read_params_for(OUTPUT)
+        self.assertNotIn('outputPath', model.model_json_schema()['properties'])
+        params = model.model_validate({'container': '.row', 'fields': {'name': {'selector': '.name'}}})
+        self.assertEqual(params.outputPath, [])
+        self.assertNotIn('outputPath', params.model_dump())
+        self.assertEqual(model.model_validate({'readRef': 'r1'}).model_dump(), {'readRef': 'r1'})
+        with self.assertRaises(ValidationError):
+            model.model_validate({'outputPath': ['value'], 'container': '.row', 'fields': {'name': {'selector': '.name'}}})
+
     def test_internal_content_mode_is_absent_from_field_tool_schema(self):
         for schema in ({'type': 'object'}, {'type': 'array'}):
             properties = method_read_params_for(schema).model_json_schema()['properties']
@@ -169,7 +179,10 @@ class MethodReadToolTests(unittest.IsolatedAsyncioTestCase):
         tools = ToolsStub()
         records = register_method_read_tool(tools, output_schema=OUTPUT)
         self.assertEqual(list(tools.actions), ['bat_read_fields'])
-        browser, params = object(), parameters()
+        raw = parameters().model_dump(mode='json')
+        del raw['outputPath']
+        browser, params = object(), tools.param_model.model_validate(raw)
+        self.assertNotIn('outputPath', params.model_dump(mode='json'))
         sampler = AsyncMock(side_effect=lambda _browser, spec, **_kwargs: sample_for(spec))
         with patch('workflow_use.hybrid.method_read_tool.sample_read_fields', sampler):
             first = await tools.actions['bat_read_fields'](params, browser)

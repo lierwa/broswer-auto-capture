@@ -4,6 +4,7 @@ from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.filesystem.file_system import FileSystem
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, create_model
+from pydantic.json_schema import SkipJsonSchema
 from .method_completion import complete_from_read_refs, content_read_refs
 from .page_content import content_result
 
@@ -24,7 +25,8 @@ COMPLETION_FAILURES = {
 
 class AuthorTools(Tools):
     def __init__(self, *, output_model: type[BaseModel], exclude_actions=None,
-                 display_files_in_done_text=True, output_schema=None, result_spec=None):
+                 display_files_in_done_text=True, output_schema=None, result_spec=None, legacy_model_fields=False):
+        self._bat_legacy_model_fields = legacy_model_fields
         self._bat_output_schema = output_schema or {'type': 'null'}
         self._bat_result_spec = result_spec
         self._bat_field_read_records = None
@@ -49,7 +51,10 @@ class AuthorTools(Tools):
             success=(StrictBool, Field(description='Whether the requested task was completed successfully.')),
             reason=(str, Field(min_length=1, max_length=4000,
                                description='Observed reason for completion or inability to complete.')),
-            readRefs=(list[str], Field(default=[] if content_result(self._bat_result_spec) else ...,
+            # WHY：执行型 null 合同没有数据来源选择，空引用由宿主填写，不交给模型抄固定值。
+            readRefs=(SkipJsonSchema[list[str]] if self._host_owned_read_refs() else list[str],
+                Field(default=[] if content_result(self._bat_result_spec) or self._host_owned_read_refs() else ...,
+                exclude=self._host_owned_read_refs(),
                 max_length=100, description=(
                 'References returned by successful bat_read_fields calls that supply the result. '
                 'Do not copy page values. For execution-only or unsuccessful preparation use an empty list.'))))
@@ -83,3 +88,6 @@ class AuthorTools(Tools):
             result.metadata = {**(result.metadata or {}), 'batCompletion': {
                 'success': params.success, 'reason': params.reason}}
             return result
+
+    def _host_owned_read_refs(self):
+        return self._bat_output_schema.get('type') == 'null' and not self._bat_legacy_model_fields

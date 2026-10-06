@@ -48,6 +48,14 @@ def refresh_result(case):
 
 
 class MethodReadEvidenceTests(unittest.TestCase):
+    def test_host_root_path_flows_from_public_action_through_online_and_offline_evidence(self):
+        case = fixture()
+        del case['arguments']['outputPath']
+        verified = verified_method_read(**case)
+        self.assertEqual(verified.outputPath, [])
+        validate_method_read_mapping(verified, SCHEMA,
+                                     SimpleNamespace(name='bat_read_fields', args=case['arguments']))
+
     def test_host_sample_becomes_current_method_evidence_without_final_count_validation(self):
         case = fixture()
         verified = verified_method_read(**case)

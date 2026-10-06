@@ -258,7 +258,7 @@ def _reject_navigation_scope_retry(agent):
             raise NavigationScopeViolation('hybrid_navigation_outside_authorized_scope')
 
 def author_tools(output_model, output_schema=None, *, summary_model=None, summary_context_provider=None,
-                 exclude_extract=False, result_spec=None):
+                 exclude_extract=False, result_spec=None, legacy_model_fields=False):
     # WHY：原生 Agent 继续拥有探索；唯一方法读取工具复用正式 ReadSpec，
     # done 只引用宿主记录，不让模型重抄业务值或另建一套执行图。
     excluded = ['evaluate', 'read_file', 'write_file', 'replace_file',
@@ -272,19 +272,21 @@ def author_tools(output_model, output_schema=None, *, summary_model=None, summar
         # 零模型复跑节点；动态列表读取必须走可证明的 find_elements/read-fields 合同。
         excluded.append('extract')
     tools = AuthorTools(output_model=output_model, exclude_actions=excluded,
-                        output_schema=output_schema, result_spec=result_spec)
+                        output_schema=output_schema, result_spec=result_spec, legacy_model_fields=legacy_model_fields)
     tools._bat_target_scroll_records = None
     tools._bat_visible_wait_records = None
     tools._bat_field_read_records = (register_method_read_tool(tools, output_schema=output_schema,
-                                    capture_content=content_result(result_spec))
+                                    capture_content=content_result(result_spec), legacy_model_fields=legacy_model_fields)
                                     if output_schema and output_schema != {'type': 'null'} else None)
     tools._bat_summary_records = None
     return tools
 
-def author_tools_for_result_spec(output_model, result_spec, *, selection_methods=False, human_intervention=True):
+def author_tools_for_result_spec(output_model, result_spec, *, selection_methods=False, human_intervention=True,
+                                 legacy_model_fields=False):
     """Build the one registry shared by live authoring and offline recompilation."""
     schema = result_spec.schemaValue if result_spec.mode == 'data' else {'type': 'null'}
-    tools = author_tools(output_model, schema, exclude_extract=False, result_spec=result_spec)
+    tools = author_tools(output_model, schema, exclude_extract=False, result_spec=result_spec,
+                         legacy_model_fields=legacy_model_fields)
     if human_intervention:
         register_human_wait_tool(tools)
     # WHY：旧来源注册表仍可精确重建；实际探索不再向 B-U 暴露编译函数工具。
