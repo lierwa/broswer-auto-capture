@@ -21,8 +21,15 @@ export class AccountWindows {
     this.assertControl(identity.kind)
     let session = this.repository.active(identity.id)
     if (session?.status === "cleanup_required") {
-      const inspected = await this.action("inspect", session)
-      session = inspected.window.active ? this.update(session, "open") : (this.update(session, "closed"), null)
+      const inspected = await this.action("inspect", session).catch(() => null)
+      if (inspected?.window.active) session = this.update(session, "open")
+      else {
+        // WHY：未知枚举不是已关闭。仅原生 owner 关闭确认后才允许创建下一页。
+        await this.finish(session)
+        if (this.repository.get("maintenance", session.id).status !== "closed")
+          throw new DomainError("account_window_unconfirmed", "原检查窗口关闭尚未确认，请重试。", 409)
+        session = null
+      }
     }
     if (session && session.status !== "open") throw new DomainError("account_operation_busy", "该浏览器正在维护，请等待。", 409)
     if (!session) {

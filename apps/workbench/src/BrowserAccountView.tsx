@@ -87,6 +87,7 @@ function AccountDetail({ item, state, working, remove, failure, narrow, back, se
             <DropdownMenu.Root><DropdownMenu.Trigger><IconButton size="2" variant="soft" color="gray" aria-label="更多账号操作" disabled={working}><MoreHorizontal size={18} /></IconButton></DropdownMenu.Trigger>
               <DropdownMenu.Content align="end">
                 {!item.custom && <DropdownMenu.Item onSelect={() => command("switch")}>切换账号</DropdownMenu.Item>}<DropdownMenu.Separator /><DropdownMenu.Item color="red" onSelect={() => setRemove(true)}>移除账号</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Root></>}
-        </div>{failure && <div className="feedback-slot" aria-live="polite"><span className="feedback error"><CircleAlert size={14} /><span title={failure}>{failure}</span></span></div>}</>}
+        </div>{failure && <div className="feedback-slot" aria-live="polite"><span className="feedback error"><CircleAlert size={14} /><span title={failure}>{failure}</span></span></div>}
+        {state.notice && op?.platformId === item.platform.id && <div className="feedback-slot" role="status"><span className="feedback"><CircleAlert size={14} /><span>{state.notice}</span></span></div>}</>}
     </div></section>
 }

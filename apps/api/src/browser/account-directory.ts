@@ -64,14 +64,21 @@ export class AccountDirectory {
     const bindings = this.repository.list("binding").filter(b => !b.deletedAt)
     const binding = bindings.find(b => b.id === this.customBindingId)
     const marker = this.custom.markerSelection()
+    const currentOperation = this.repository.list("directoryOperation").at(-1)
     const { sourceIdentityId: _identity, sourceBinding: _binding, ownerId: _owner, leaseId: _lease, ...operation } =
-      this.repository.list("directoryOperation").at(-1) ?? {} as DirectoryOperation
+      currentOperation ?? {} as DirectoryOperation
+    const pendingCleanup = currentOperation?.intent === "check" && this.repository.list("maintenance").some(window =>
+      window.ownerId === currentOperation.ownerId && window.leaseId === currentOperation.leaseId && window.status === "cleanup_required")
+    // WHY：有效检查可已入库，但原操作还在收尾时，UI 不能提前允许第二次操作。
+    const finishing = operation.intent === "check" && operation.status === "completed" && this.repository.list("platformOperation")
+      .some(item => item.id === operation.requestId && item.status === "running")
     return accountDirectorySchema.parse({ items: [
       ...this.platforms.map(platform => { const account = this.current(platform.id)
         return { platform: { id: platform.id, name: platform.name, url: platform.url }, account: this.projected(account), revision: account?.revision ?? 0, custom: false } }),
       ...bindings.map(b => ({ platform: { id: b.id, name: b.name, url: b.url }, account: this.projected(this.current(b.id)),
         revision: this.current(b.id)?.revision ?? 0, custom: true })),
-    ], operation: operation.id ? operation : null, notice: null,
+    ], operation: operation.id ? finishing ? { ...operation, status: "running", phase: "saving", finishedAt: null } : operation : null,
+      notice: pendingCleanup ? "检查窗口关闭尚未确认，账号检查结果已保留；可重试检查以重新核验窗口。" : null,
       marker: marker ? { reference: marker.reference, platformId: marker.bindingId, preview: marker.preview } : null,
       customPage: binding ? { bindingId: binding.id, revision: binding.revision, name: binding.name, url: binding.url, hasChain: Boolean(binding.chain) } : null,
       customWindow: Boolean(this.customSessionId && this.repository.get("maintenance", this.customSessionId).status === "open") })
@@ -171,7 +178,9 @@ export class AccountDirectory {
       if (this.repository.get("directoryOperation", operation.id).status === "completed") return
       this.repository.save("directoryOperation", { ...this.repository.get("directoryOperation", operation.id), phase: "finished",
         status: signal.aborted && signal.reason?.name !== "TimeoutError" ? "cancelled" : "failed", finishedAt: now(),
-        reason: signal.aborted ? signal.reason?.name === "TimeoutError" ? "等待超时，可在网站完成登录后重试" : "等待已结束，原账号保留" : error instanceof DomainError ? error.message : safeReason(error) })
+        reason: signal.aborted ? signal.reason?.name === "TimeoutError"
+          ? command.type === "check" ? "账号检查超时，已保存的账号保留。请重试检查。" : "等待超时，可在网站完成登录后重试"
+          : "等待已结束，原账号保留" : error instanceof DomainError ? error.message : safeReason(error) })
       throw error
     }
   }
@@ -198,12 +207,12 @@ export class AccountDirectory {
     }
     if (command.type === "open") return
     if (command.type === "check") {
-      this.patch(operation, { phase: "checking" }, signal)
-      check = await this.checks.run(platform, identity, window, operation.id, signal, "observe")
-    } else if (command.type === "relogin") check = await this.checks.run(platform, identity, window, operation.id, signal, "observe")
-    if (account && check?.result?.status === "unauthenticated" && ["check", "relogin"].includes(command.type))
+      return this.checkAccount(platform, identity, window, operation, account!, signal)
+    }
+    if (command.type === "relogin") check = await this.checks.run(platform, identity, window, operation.id, signal, "observe")
+    if (account && check?.result?.status === "unauthenticated" && command.type === "relogin")
       check = await this.restoreLogin?.(account, identity, window, check, signal) ?? check
-    if (command.type !== "check" && check?.result?.status !== "authenticated") {
+    if (check?.result?.status !== "authenticated") {
       this.patch(operation, { phase: "waiting" }, signal)
       const observed = await this.checks.run(platform, identity, window, operation.requestId, signal, "wait", {
         expectedIdentityKey: account?.identityKey ?? "", expectedDisplayIdentity: account?.displayIdentity ?? "", switching: command.type === "switch" })
@@ -216,12 +225,26 @@ export class AccountDirectory {
         || check.result?.displayIdentity !== observed.result.displayIdentity))
         throw new DomainError("account_identity_changed", "网站账号又发生变化，请重试。", 409)
     }
-    if (command.type !== "check" && check?.result?.status !== "authenticated")
+    if (check?.result?.status !== "authenticated")
       throw new DomainError("account_login_unconfirmed", "暂未确认登录，网站窗口已保留，可继续登录后重试", 409)
     await this.windows.finish(window)
     if (this.repository.get("maintenance", window.id).status !== "closed")
       throw new DomainError("account_window_unconfirmed", "窗口释放暂未确认，请重试", 409)
     this.save(operation, identity, check!, signal)
+  }
+  private async checkAccount(platform: Platform, identity: BrowserIdentity, window: AccountMaintenance,
+    operation: DirectoryOperation, account: LogicalAccount, signal: AbortSignal) {
+    try {
+      this.patch(operation, { phase: "checking" }, signal)
+      let check = await this.checks.run(platform, identity, window, operation.id, signal, "observe")
+      if (check.result?.status === "unauthenticated")
+        check = await this.restoreLogin?.(account, identity, window, check, signal) ?? check
+      // WHY：检查的有效结果先入库；之后关窗失败属于清理事实，不能覆盖已确认登录。
+      this.save(operation, identity, check, signal)
+    } finally {
+      // WHY：只读检查没有待人工输入的现场。失败/取消同样沿原 owner 收尾；待回滚仍由 finish 拦截保留。
+      await this.windows.finish(window)
+    }
   }
   async checkCustomSource(account: LogicalAccount, signal: AbortSignal) {
     await this.custom.run(account.platformId, randomUUID(), signal, await this.source(account))

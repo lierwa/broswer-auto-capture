@@ -40,6 +40,7 @@ export interface UpstreamBrowserSession {
     outputSchema: ValueSchema; artifactKey: string; onModelCall?(report: ModelCallReport): Promise<void> }): Promise<UpstreamReplayResult>
 }
 export interface UpstreamBrowserRuntime {
+  withAccountOperation?<T>(work: () => Promise<T>): Promise<T>
   accountSession?(input: Omit<ReturnType<typeof accountSessionRequestSchema.parse>, "id" | "type" | "profilePath">,
     signal: AbortSignal): Promise<JsonValue>
   close?(): Promise<RunnerCleanupReport>

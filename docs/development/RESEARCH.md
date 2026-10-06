@@ -1,5 +1,31 @@
 # 技术调研与复用结论
 
+## 2026-10-07 账号检查整次操作与收尾
+
+现场操作 d15feffd：120 秒期限包含建窗、检查与跨 Profile 登录复用；目标在 16:01:53Z 已确认登录，随后备份删除撞到期限，事务回滚，目标维护页没有进入 finally 收尾。每次 accountSession 都重启完整 Python runner，之前测试替换了该真实传输，因此没有覆盖累计开销。
+
+Product Alignment:
+- natural-language task: 检查任意已登记网站的登录，必要时复用已确认账号。
+- reusable chain boundary: 一次账号操作；不修改业务任务链。
+- runtime inputs: 已登记身份、owner、lease 与取消信号。
+- dynamic task outputs: 真实账号检查、登录复用及各自清理事实。
+- generic platform capability used: 原 RunnerProcess 多请求协议、Node AsyncLocalStorage、原 AccountWindows.finish。
+- replay model calls: 0。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 同次账号操作复用已启动进程，按原信号取消；检查页 finally 收尾。
+- existing implementation in repository: RunnerProcess.request/close、Python AuthorRequestLoop、AccountService.exclusive 和 AccountWindows.finish。
+- mature candidates and pinned versions: Node 24.14.1 AsyncLocalStorage；现有 Python 3.12 asyncio 与固定 B-U 0.13.8/CDP 1.4.5。
+- selected implementation: 只扩展原进程生命周期适配，不建进程池、重试或浏览器驱动。
+- reused public surface: AsyncLocalStorage.run/getStore；原 runner 的多条 account_session 请求和关闭协议。
+- B-A-T-owned adapter and remaining gap: 操作作用域和一次请求取消后原进程废弃；保持每条请求的 owner 校验。
+- license/runtime/platform fit: 已安装 Node/Python、Windows 既有实现，无新库。
+- browser/runtime/state ownership conflicts: 同一时刻仍只借用一个 owner 页；操作结束必关本次无浏览器控制权的 Python runner，取消后恢复使用新进程。
+- replay model calls: 0。
+- rejected candidates and evidence: 不以单纯增大超时掩盖重复进程开销；不把保留人工登录页套用于只读检查失败。
+- focused validation: 最终冻结 round-4 完整 UI 检查操作通过，原 native runner/隔离 headless 双 Profile/原扩展/本地认证站，20.121 秒，12 次账号请求仅 1 次 compiler 启动，0 模型；物理新增残留页 0。关闭失败的独立 UI notice、刷新及手动关页后 prepareStartup 恢复通过；后者直接复用原精确 owner finish，移除阻止其运行的 inspect 前置条件，不把空枚举视为已关闭。7 定点、API 检查、Workbench 构建通过；对抗发现的清理事实隐藏 P2 已修复并复审，恢复路径补审无新增 P1/P2。首败和未测范围见 [完整记录](ACCOUNT_OPERATION_FIX_20261007.md)。
+
 ## 2026-10-06 冻结版本 GitHub 主流程验收
 
 本轮未引入或替换组件。用户明确不强制接入 BrowserSkill，沿现有 Playwright 扩展/B-U 生产路径，从简短新需求检验系统自主澄清、计划、输出及执行。连接和本次自动清理有事实，但准备失败：单 once 计划、4 个动态条目选择证据缺口、字段读取失败，未进入正式运行。实际轨迹和未测范围见[验收记录](GITHUB_MAINLINE_ACCEPTANCE_20261006.md)。后续修复须针对计划和编译衔接取固定源码依据，不把单站选择器补丁、底层连接成功或开发救场当作通用主流程交付。

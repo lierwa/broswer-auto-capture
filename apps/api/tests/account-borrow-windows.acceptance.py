@@ -37,7 +37,7 @@ async def dedicated():
         window.end(owner, allow_controlled=True)
 
 
-async def daily(probe=None):
+async def daily(probe=None, product_probe=None):
     owner = str(uuid4())
     profile = OUTPUT / 'daily'
     profile.mkdir(exist_ok=True)
@@ -55,7 +55,7 @@ async def daily(probe=None):
     process, client, window = None, None, None
     try:
         proof['dailyStage'] = 'fixture_start'
-        await asyncio.wait_for(relay.stdout.readline(), 20)
+        ready = json.loads(await asyncio.wait_for(relay.stdout.readline(), 20))
         proof['dailyStage'] = 'chrome_launch'
         (profile / 'DevToolsActivePort').unlink(missing_ok=True)
         process = await asyncio.create_subprocess_exec(binary, f'--user-data-dir={profile}',
@@ -85,6 +85,9 @@ async def daily(probe=None):
             paired = json.loads(await asyncio.wait_for(relay.stdout.readline(), 35))
             assert paired.get('paired'), paired
             await cdp.detach()
+        if product_probe:
+            await product_probe(ready['endpointPort'], profile, port)
+            return
         proof['dailyStage'] = 'original_owner_start'
         window = AttachedWindow(OUTPUT / 'daily-owner/default', owner, paired['cdpUrl'])
         browser = await window.start(resume=False, allowed_domains=None)

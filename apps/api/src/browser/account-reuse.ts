@@ -148,9 +148,8 @@ export class AccountReuse {
     if (this.directory.repository.list("transfer").some(v => v.rollbackRef))
       throw new DomainError("account_target_recovery_pending", "登录恢复尚未确认，原窗口已保留。", 409)
     for (const window of this.directory.repository.list("maintenance").filter(v => v.status !== "closed")) {
-      const inspected = await this.windows.action("inspect", window)
-      if (inspected.window.active) await this.windows.finish(window)
-      else this.windows.update(window, "closed")
+      // WHY：空 relay 枚举无法证明物理页已关，但也不能堵住原生精确 owner 的幂等关闭核验。
+      await this.windows.finish(window)
       if (this.directory.repository.get("maintenance", window.id).status !== "closed")
         throw new DomainError("account_window_unconfirmed", "账号窗口释放未确认，请重试。", 409)
     }

@@ -1,5 +1,13 @@
 # 开发进度
 
+## 最新：完整“检查登录”流程通过隔离真实 UI 验收（10/7）
+
+此前局部借用验收漏掉真实传输开销：12 次账号请求各重启 Python，目标已认证后整次操作超时回滚，并遗留自动检查页。本轮按一次操作复用原进程，失败 finally 关检查页，登录结果与清理 notice 分开，收尾保持 busy。另修旧页已关时 inspect 堵住 finish、导致新准备/运行失败的共性恢复问题。7 定点、API 类型检查、Workbench 构建通过；对抗 P2 已闭合，恢复路径补审无新增 P1/P2。
+
+最终冻结 round-4 从真实 UI 按钮完成双 Profile 登录复用与刷新，20.121 秒，1 次 compiler runner 启动、0 模型；关闭故障注入时登录保留且 notice 可见，手动关闭测试页后原 prepareStartup 恢复通过。5 个维护 owner 均 closed，物理新增残留页 0、原有页保留。仅本地认证站与隔离 headless Profile，未操作个人浏览器或验证 B 站播放。见[完整证据、首败与限制](ACCOUNT_OPERATION_FIX_20261007.md)。以下各“最新”保留为历史。
+
+修复已原位加载，当前唯一服务 PID16604（4173/4175），headless 只读打开账号面板通过、pageerror 0。旧 PID22352 已退出；未重跑用户任务。仅本地提交，保留无关 `unused-owned-fixture/`。
+
 ## 最新：账号检查的 owner 连接故障已修复
 
 用户现场准备在账号前置检查停止，B-U 动作/模型调用 0。生产 owner URL 的 Playwright 握手和重连通知存在两处接线缺陷；旧 borrow 验收使用无 owner URL，未覆盖该路径。本轮已修复并以真实隔离 headless Chrome/原扩展通过；账号中断也不再归到 B-U 探索。3 项 relay/协议、3 项账号失败/提示及 API 类型检查通过；另 2 项旧 startup 测试在 HEAD 同样失败，单独保留基线证据。对抗 P2 已关闭。未操作个人浏览器，未重跑 B 站播放，不宣称完整业务通过。详见[修复与证据](ACCOUNT_SCOPED_BORROW_FIX_20261006.md)。下方“最新”均为历史记录。

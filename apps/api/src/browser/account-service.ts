@@ -27,7 +27,7 @@ export class BrowserAccountService {
   readonly directory: AccountDirectory
   private readonly reuse: AccountReuse
   constructor(readonly repository: AccountRepository, private identities: AccountIdentities,
-    upstream: UpstreamBrowserRuntime, assertAvailable: (kind: BrowserIdentity["kind"]) => void,
+    private upstream: UpstreamBrowserRuntime, assertAvailable: (kind: BrowserIdentity["kind"]) => void,
     private catalog: Catalog,
     private access?: { snapshot(): AccountSnapshot["availability"]; verify(kind: BrowserIdentity["kind"]): Promise<void>;
       releasedOwners?(kind: BrowserIdentity["kind"]): string[] }) {
@@ -102,7 +102,10 @@ export class BrowserAccountService {
     const controller = new AbortController(); this.controller = controller
     this.operation = { requestId, label, startedAt: new Date().toISOString() }
     const record = this.repository.save("platformOperation", { id: requestId, label, startedAt: this.operation.startedAt, finishedAt: null, status: "running", reason: null })
-    this.work = Promise.resolve().then(() => work(AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])))
+    this.work = Promise.resolve().then(() => {
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
+      return this.upstream.withAccountOperation ? this.upstream.withAccountOperation(() => work(signal)) : work(signal)
+    })
       .then(() => { this.repository.save("platformOperation", { ...record, status: "completed", finishedAt: new Date().toISOString() }) })
       .catch(error => {
         const reason = error instanceof Error && error.message === "account_marker_cleanup_unconfirmed" ? safeReason(error)

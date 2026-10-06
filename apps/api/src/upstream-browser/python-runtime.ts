@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto"
 import type { AccountStartup } from "../browser/account-reuse.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "./cleanup.js"
 import { dailyWindowTransport } from "./daily-window-transport.js"
+import { AccountRunner } from "./account-runner.js"
 
 type AuthoringInput = Parameters<NonNullable<UpstreamBrowserRuntime["withAuthoring"]>>[0]
 type CapabilitiesInput = Parameters<NonNullable<UpstreamBrowserRuntime["withCapabilities"]>>[0]
@@ -24,6 +25,15 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
   private prepareAccounts: ((input: AccountStartup) => Promise<unknown>) | null = null
   private accountPreparation: Promise<unknown> = Promise.resolve()
   private runners = new Set<RunnerProcess>()
+  private accountRunner = new AccountRunner(signal => {
+    const runner = new RunnerProcess(this.options.root, signal)
+    this.runners.add(runner); return runner
+  }, async runner => {
+    const report = await runner.close()
+    if (report.status === "confirmed") this.runners.delete(runner)
+    return report
+  })
+  withAccountOperation<T>(work: () => Promise<T>) { return this.accountRunner.run(work) }
   private verifyLegacyDailyOwner: ((ownerId: string) => Promise<boolean>) | undefined
   private releasedAccountOwners: ((kind: "daily" | "dedicated") => Promise<string[]>) | undefined
   setAccountPreparation(handler: (input: AccountStartup) => Promise<unknown>) { this.prepareAccounts = handler }
@@ -43,14 +53,11 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
       code: reports.find(report => report.code)?.code ?? null })), reports.some(report => report.activeResources !== false) ? null : false)
   }
   async accountSession(input: Parameters<NonNullable<UpstreamBrowserRuntime["accountSession"]>>[0], signal: AbortSignal) {
-    const runner = new RunnerProcess(this.options.root, signal)
     try {
       const transport = input.kind === "daily" ? await this.dailyTransport(input.ownerId) : {}
-      await runner.startCompiler()
-      return await runner.request(accountSessionRequestSchema.parse({ ...input, ...transport, id: randomUUID(), type: "hybrid_account_session",
-        profilePath: path.join(this.options.directory, "browser-profile", "default") }))
+      return await this.accountRunner.use(signal, runner => runner.request(accountSessionRequestSchema.parse({ ...input, ...transport,
+        id: randomUUID(), type: "hybrid_account_session", profilePath: path.join(this.options.directory, "browser-profile", "default") })))
     } finally {
-      await runner.close()
       // WHY：取消可能先终止原runner；用新短时借用退出原生选取，仍只操作原owner页面。
       if (input.action === "pick_marker" && signal.aborted) {
         try { await this.accountSession({ ...input, action: "clear_marker", payload: null }, AbortSignal.timeout(15000)) }
