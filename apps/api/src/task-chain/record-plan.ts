@@ -61,7 +61,8 @@ export function sourceEntryStep(step: Step, selectionGoal: string, maximum: numb
 export function entryItemGoal(goal: string) {
   return goal
     + "本步骤只处理本次输入的一个条目。输入 __batRecordEntry 是宿主从真实列表读取的入口，"
-    + "第一步必须原生 switch(tab_id=入口.tabId)，即使代表试做已经在该页也执行一次，形成每次逐项运行的入口；"
+    + "若入口含 navigationUrl，它是实际选中链接的浏览器原生地址；第一步原生 navigate(url=入口.navigationUrl,new_tab=false)，原样使用输入地址，在当前页处理。"
+    + "若没有 navigationUrl，第一步原生 switch(tab_id=入口.tabId)，即使代表试做已在该页也执行；"
     + "再依据入口.selector 的当前原生候选及 backendNodeId 找到本次条目的实际索引并原生 click；文档身份由宿主核验。"
     + "text 仅用于展示，允许空值或同名；ordinal 只描述来源顺序，不替代实际元素身份。"
     + "列表已经完成确认的排序/筛选，不重新导航列表，不对没有历史的新页使用 go_back。"

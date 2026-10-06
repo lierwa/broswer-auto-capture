@@ -17,6 +17,30 @@ export function CallSelection({ model }: { model: LiveChainModel }) {
     </Select.Root></div>
 }
 
+/** WHY：计划边界读取整次 execution；逐项步骤的 selectedCall 不能充当全任务结果。 */
+export function PlanBoundaryContext({ model, boundary, onRequirementView, children }: {
+  model: LiveChainModel; boundary: "start" | "end"; onRequirementView(version: number): void; children?: ReactNode
+}) {
+  const plan = model.plan
+  if (!plan) return null
+  const execution = model.detail?.execution ?? model.selectedExecution
+  const outcome = execution ? executionOutcome(execution) : null
+  const start = boundary === "start"
+  return <aside className="chain-inspector workspace-context" aria-label={start ? "任务开始说明" : "任务结束说明"}>
+    <BoundaryHeader title={start ? "任务开始" : "任务结束"} onClose={model.closeContext} />
+    <p>{model.requirement?.goal ?? "查看本次任务的输入与结果。"}</p>
+    <Button size="1" variant="soft" onClick={() => onRequirementView(plan.requirement.version)}>查看对应需求</Button>
+    {start ? <section><h4>本次任务输入</h4>{model.detail ? <ResultValue value={model.detail.execution.input} />
+      : <p>{execution || model.acceptedExecutionId ? "正在读取本次运行的输入记录。" : "尚未运行，没有实际输入记录。"}</p>}</section>
+      : <><p>{outcome?.status === "completed" ? "本次任务已到达结束节点。"
+        : execution ? `本次运行${executionStatus(outcome!.status)}，尚未到达正常结束。`
+          : model.acceptedExecutionId ? "运行已受理，正在读取运行记录。" : "尚未运行。"}</p>
+        {execution?.status === "cleanup_required" && <p>任务结果已保留，运行资源仍待清理。</p>}
+        <SavedResultDialog result={outcome?.result ?? null} outputContract={plan.outputContract} />
+        {children}</>}
+  </aside>
+}
+
 export function ChainStartContext({ model, onRequirementView }: {
   model: LiveChainModel; onRequirementView(version: number): void
 }) {

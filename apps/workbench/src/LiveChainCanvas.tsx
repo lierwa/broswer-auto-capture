@@ -31,6 +31,9 @@ export function LiveChainCanvas({ model, active, theme }: { model: LiveChainMode
   const start = useCallback(() => {
     setSelectedNodeId(null); setSelectedStageId(null); setContextMode("start")
   }, [setContextMode, setSelectedStageId, setSelectedNodeId])
+  const inspectBoundary = useCallback((boundary: "start" | "end") => {
+    setSelectedNodeId(null); setSelectedStageId(null); setContextMode(boundary === "start" ? "plan-start" : "plan-end")
+  }, [setContextMode, setSelectedStageId, setSelectedNodeId])
   const project = useMemo(() => shareCanvasGraph(), [])
   const requirement = model.plan?.requirement
   const summary = `需求 v${requirement?.version ?? "未记录"} · ${model.requirement?.goal ?? model.chain?.name ?? "入口"}`
@@ -43,12 +46,12 @@ export function LiveChainCanvas({ model, active, theme }: { model: LiveChainMode
   const fullPlan = Boolean(model.plan && model.plan.steps.length > 1)
   const graph = useMemo(() => project(fullPlan && model.plan ? buildPlanCanvasGraph(model.plan, model.steps, model.build,
     model.selectedExecution?.id ?? model.acceptedExecutionId, model.view.eventBatch, inspectStep, selectStep,
-    model.step ? { stepId: model.step.stepId, runId: model.selectedRunId } : undefined, model.completedBuilds, model.detail)
+    model.step ? { stepId: model.step.stepId, runId: model.selectedRunId } : undefined, model.completedBuilds, model.detail, inspectBoundary)
     : model.build ? buildPreparationGraph(model.build, inspect, select)
     : displayChain && presentation ? buildCanvasGraph(displayChain, presentation, chainEvents,
       inspect, select, null, { summary, status, call, onStart: start }) : { nodes: [] as FlowNode[], edges: [] as Edge[] }),
     [fullPlan, model.plan, model.steps, model.build, model.completedBuilds, model.detail, model.selectedExecution?.id, model.acceptedExecutionId,
-      model.view.eventBatch, model.step?.stepId, model.selectedRunId, inspectStep, selectStep,
+      model.view.eventBatch, model.step?.stepId, model.selectedRunId, inspectStep, selectStep, inspectBoundary,
       displayChain, presentation, chainEvents, inspect, select, start, summary, status, call, project])
   const selectedStepId = model.scopeStepId ?? model.step?.stepId ?? model.build?.stepId
   const canvasStageId = fullPlan && selectedStepId && selectedStageId ? planCallId(selectedStepId) : selectedStageId

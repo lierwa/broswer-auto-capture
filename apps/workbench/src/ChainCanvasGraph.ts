@@ -190,6 +190,8 @@ export function selectCanvasNodes(nodes: FlowNode[], nodeId: string | null, stag
     const selected = node.id === stageId || node.id === terminalCanvasId(nodeId ?? "")
       || node.type === "chain-terminal" && node.data.scopeStepId === stepId && node.data.nodeId === nodeId
       || node.id === "__start" && context === "start"
+      || node.id === "__plan_start" && context === "plan-start"
+      || node.id === "__plan_end" && context === "plan-end"
     const inStep = !stepId || !node.data.scopeStepId || node.data.scopeStepId === stepId
     const actions = node.type === "chain-stage" ? node.data.actions.map(action =>
       Boolean(action.selected) === (inStep && action.id === nodeId) ? action : { ...action, selected: inStep && action.id === nodeId }) : null

@@ -333,6 +333,12 @@ def register_method_read_tool(tools, *, output_schema, capture_content=False):
          'only a small content preview and coverage are returned to you. No data cleaning is performed.'
          if capture_content else
         'Describe and verify a reusable DOM field-reading method for one real output-contract path. '
+        'Reuse current native observations for DOM projections; do not use remembered website CSS. '
+        'For a field without observed DOM evidence, use native search_page on its visible text and '
+        'find_elements on the returned paths, or find_elements directly for observed attributes. '
+        'A combined query matching some fields does not verify the others. Missing or ambiguous matches '
+        'need inspection of that field and scope on the current page, not leaving a valid detail page. '
+        'page-url, inherited input and successful readRef reuse need no repeated DOM discovery. '
         'Provide a CSS record container and relative field projections; types come from the output contract. '
         'Fields read visible text by default. Use attribute only for an attribute observed on the page. '
         'After a real navigation, selector=:scope with valueSource=page-url reads the current document URL. '

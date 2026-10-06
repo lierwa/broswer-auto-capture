@@ -3,7 +3,7 @@ import { Button, SegmentedControl, TextArea } from "@radix-ui/themes"
 import { AlertTriangle } from "lucide-react"
 import { parseTaskValue, type JsonValue, type TaskExecution, type TaskExecutionDetail, type TaskExecutionEventBatch } from "@browser-capture/contracts"
 import { ExecutionFeedback } from "./ExecutionFeedback.js"
-import { ChainStartContext, ChainTerminalContext } from "./ChainBoundaryContext.js"
+import { ChainStartContext, ChainTerminalContext, PlanBoundaryContext } from "./ChainBoundaryContext.js"
 import { ChainInspector } from "./ChainInspector.js"
 import { ChainNodeExecution } from "./ChainNodeExecution.js"
 import { SavedResultDialog } from "./SavedResultDialog.js"
@@ -33,6 +33,10 @@ export function WorkbenchContext({ model, connection, onRequirementView, onRequi
   if (selectedNode?.kind === "terminal") return <ChainTerminalContext model={model} node={selectedNode}><ExecutionFeedback model={model} connection={connection}
     onRequirementRevision={onRequirementRevision} /></ChainTerminalContext>
   if (contextMode === "start") return <ChainStartContext model={model} onRequirementView={onRequirementView} />
+  if (contextMode === "plan-start" || contextMode === "plan-end") return <PlanBoundaryContext model={model}
+    boundary={contextMode === "plan-start" ? "start" : "end"} onRequirementView={onRequirementView}>
+    <ExecutionFeedback scope="execution" model={model} connection={connection} onRequirementRevision={onRequirementRevision} />
+  </PlanBoundaryContext>
   if (chain && presentation && (selectedNode || selectedStage)) return <ChainInspector chain={chain}
     presentation={presentation} stage={selectedStage} node={selectedNode} batch={chainEvents}
     onClose={model.closeContext} />

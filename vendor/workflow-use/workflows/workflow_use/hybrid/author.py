@@ -111,7 +111,7 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
             # WHY：保留全部原生默认观察属性；已有 href 是识别无字链接的证据，不能只反馈点击成功。
             agent = Agent(task=request.task, browser=browser, tools=tools, llm=models['agent'],
                           include_attributes=[*AgentSettings().include_attributes, 'href'],
-                          page_extraction_llm=models['extract'], output_model_schema=output_model,
+                          page_extraction_llm=models['extract'],
                           register_new_step_callback=callbacks.before_action, use_vision=True, use_judge=False,
                            max_actions_per_step=1, directly_open_url=False, enable_signal_handler=False,
                            _url_shortening_limit=AUTHOR_URL_SHORTENING_LIMIT,

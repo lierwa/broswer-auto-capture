@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 import { valueBindingSchema } from "@browser-capture/contracts"
-import { elementEntrySchema, elementEntryValueSchema } from "./element-entry-contract.js"
+import { elementEntrySchema, elementEntryValueSchema, legacyElementEntryValueSchema } from "./element-entry-contract.js"
 import type { hybridNaturalRequestSchema, HybridSegment, HybridCompilation } from "./hybrid-schema.js"
 import type { naturalPayloadContext } from "./hybrid-natural-payload.js"
 
@@ -45,7 +45,9 @@ export function assertInputEntryTarget(segment: Exclude<HybridSegment, { kind: "
     schema = schema.properties[part]!
   }
   if (value.actionRef !== action.id || !isDeepStrictEqual(value.binding, binding)
-    || !isDeepStrictEqual(schema, elementEntryValueSchema) || value.targetId !== pre.tabId
+    // WHY：旧不可变版本继续核验原合同；兼容只接受两个完整合同，不放宽来源身份或摘要。
+    || ![elementEntryValueSchema, legacyElementEntryValueSchema].some(entry => isDeepStrictEqual(schema, entry))
+    || value.targetId !== pre.tabId
     || value.withinEntry !== segment.target.withinEntry
     || value.withinEntry === undefined && value.backendNodeId !== value.entry.backendNodeId
     || value.entry.tabId !== pre.tabId?.slice(-4) || value.entry.url !== pre.url) {

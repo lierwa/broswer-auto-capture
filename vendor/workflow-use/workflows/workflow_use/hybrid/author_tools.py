@@ -32,6 +32,11 @@ class AuthorTools(Tools):
                          display_files_in_done_text=display_files_in_done_text)
         self.use_structured_output_action(output_model)
 
+    def get_output_model(self):
+        # WHY：B-U 用此公开接口向模型声明它要填写的业务结果；本适配只要求 readRefs。
+        # 业务模型仍由下方原生 done 序列化，最终通过显式模型参数读取，不能再注入 Agent task。
+        return None
+
     def use_structured_output_action(self, output_model: type[BaseModel]):
         # WHY：Agent 构造会再次调用这个公开方法；每次先复用原生注册，再安装相同合同，
         # 保证探索前的 registry digest 与模型实际看到的 done schema 一致。

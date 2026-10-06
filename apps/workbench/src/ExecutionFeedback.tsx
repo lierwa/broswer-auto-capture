@@ -7,9 +7,10 @@ import type { LiveChainModel } from "./useLiveChain.js"
 
 type ReviewCommand = Extract<TaskChainCommand, { type: "review_execution" }>
 // WHY：保留原反馈的幂等与版本引用；结果入口只由终点与历史承接。
-export function ExecutionFeedback({ model, connection, onRequirementRevision, pendingOnly = false }: {
+export function ExecutionFeedback({ model, connection, onRequirementRevision, pendingOnly = false, scope = "call" }: {
   model: LiveChainModel; connection: TaskChainConnection;
   pendingOnly?: boolean;
+  scope?: "call" | "execution";
   onRequirementRevision(review: TaskExecutionReviewReceipt): Promise<boolean>
 }) {
   const onClose = model.closeContext
@@ -25,7 +26,7 @@ export function ExecutionFeedback({ model, connection, onRequirementRevision, pe
     if (!execution || reviewing) return
     const command: ReviewCommand = intent?.command ?? { type: "review_execution", requestId: crypto.randomUUID(),
       executionId: execution.id, expectedSequence: execution.sequence, decision, feedback: feedback.trim() || null,
-      ...(decision === "requirement_revision" && model.step ? { selection: { stepId: model.step.stepId,
+      ...(decision === "requirement_revision" && scope === "call" && model.step ? { selection: { stepId: model.step.stepId,
         runId: model.selectedRunId ?? model.selectedCall?.run.binding.runId ?? null } } : {}) }
     if (await connection.submitReview(command, onRequirementRevision)) setReviewOpen(false)
   }
@@ -37,7 +38,7 @@ export function ExecutionFeedback({ model, connection, onRequirementRevision, pe
       {execution && canReview && <section className="context-feedback">{!reviewOpen && !pending ? <Button size="1" variant="ghost"
         onClick={() => setReviewOpen(true)}>重新说明需求</Button> : <>
         <h4>重新说明需求</h4><p>将保存你的原话，携带本次运行、需求 v{model.detail?.execution.requirement.version ?? model.plan?.requirement.version}
-          {execution.release ? `、发布 V${execution.release.version}` : "、草稿版本"}及所选调用的结果引用，回到同一个任务的需求对话。</p>
+          {execution.release ? `、发布 V${execution.release.version}` : "、草稿版本"}及{scope === "call" ? "所选调用" : "本次任务"}的结果引用，回到同一个任务的需求对话。</p>
         {model.workspace?.requirement && model.detail && model.workspace.requirement.version !== model.detail.execution.requirement.version
           && <p>当前需求已有更新；原运行上下文将明确标为旧版本，不覆盖当前草案。</p>}
         <TextArea value={text} disabled={reviewing || pending} onChange={(event) => setFeedback(event.target.value)}

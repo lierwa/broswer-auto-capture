@@ -324,9 +324,10 @@ async def project_field_records(browser, specification: ReadSpec, elements, *, f
             # WHY：纯函数筛选/排序后仍返回原集合身份，不能将过滤后下标当成 DOM ordinal。
             record['ordinal'] = ordinal
         if specification.entryField is not None:
-            from .element_entry import live_entry
+            from .element_entry import live_entry, entry_supports_navigation
             record[specification.entryField] = await live_entry(browser, element, specification.container, ordinal,
-                                                                document_root=entry_document)
+                document_root=entry_document,
+                include_navigation=entry_supports_navigation(specification.outputSchema, specification.entryField))
             consumed += len(json.dumps(record[specification.entryField], ensure_ascii=False).encode())
             if specification.maxInputBytes is not None and consumed > specification.maxInputBytes:
                 raise ValueError('read_input_limit')
@@ -334,6 +335,9 @@ async def project_field_records(browser, specification: ReadSpec, elements, *, f
             # WHY：同一运行按真实链接优先建立身份；无链接时使用实际字段摘要，不依赖临时 DOM 编号。
             links = {name: record[name] for name, field in specification.fields.items()
                      if field.attribute == 'href' and name in record}
+            navigation = record.get(specification.entryField, {}).get('navigationUrl')
+            if navigation is not None:
+                links[specification.entryField] = navigation
             from .element_entry import entry_key_record
             values = entry_key_record(record, specification.keyField, specification.entryField)
             record[specification.keyField] = digest(links or {'url': key_url, 'ordinal': ordinal, 'record': values})

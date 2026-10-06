@@ -43,7 +43,8 @@ const markdownCandidate = defineFlatXmlDirective({
   tag: markdownTag,
   rawText: true,
   prompt: '<interview-markdown title="short title"># 目标\n已确认的业务目标。\n\n## 试做入口\n1. 已选来源候选的真实 URL\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成已确认目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：从入口完成已确认目标。\n\n## 代表试做\n从入口完成已确认的业务目标。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n说明可观察完成事实和不足处理。</interview-markdown>',
-  summary: "One complete, user-reviewable preparation plan draft. Put the title in the attribute and the complete Markdown directly in the body. Omit it while a question is required.",
+  // WHY：协议示例只说明单次任务的格式；重复业务必须由访谈产出逐项边界，宿主不能事后猜计划。
+  summary: "One complete, user-reviewable preparation plan draft. The one-step example only illustrates a single operation, not a default task plan. When each selected object needs its own detail visit or operation, declare the selection as an entry collection and the dependent per-object step as 逐项执行. Derive the actual steps from the task. Put the title in the attribute and complete Markdown in the body. Omit it while a question is required.",
   parse(element): FlatXmlPlatformDirective {
     const { title } = markdownAttributesSchema.parse(element.attributes)
     return { kind: "browser-capture.interview-markdown", value: {

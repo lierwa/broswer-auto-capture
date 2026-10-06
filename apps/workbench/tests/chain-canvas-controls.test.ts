@@ -46,8 +46,13 @@ test("同一真实runtime跑两轮不同分支后到达输出及完成，当前�
   const detail = { execution: { id: run.binding.authorizationId, status: "cleanup_required",
     cleanupResume: { status: "completed" }, steps: [{ stepId: "perform", status: "completed", runIds: [run.binding.runId] }] },
     calls: [{ stepId: "perform", run }] } as unknown as NonNullable<Parameters<typeof buildPlanCanvasGraph>[9]>
+  const inspected: string[] = []
   const planGraph = buildPlanCanvasGraph(plan, [{ stepId: "perform", chain, presentation }], undefined,
-    run.binding.authorizationId, runBatch(run), () => {}, () => {}, undefined, [], detail)
+    run.binding.authorizationId, runBatch(run), () => {}, () => {}, undefined, [], detail, boundary => inspected.push(boundary))
+  // WHY：计划边界必须可检查，并且选中计划结果不能错误地选中某次步骤返回。
+  for (const id of ["__plan_start", "__plan_end"]) planGraph.nodes.find(node => node.id === id)!.data.onInspect?.(id)
+  assert.deepEqual(inspected, ["start", "end"])
+  assert.deepEqual(selectCanvasNodes(planGraph.nodes, null, null, "plan-end").filter(node => node.selected).map(node => node.id), ["__plan_end"])
   const call = planGraph.nodes.find(node => node.type === "chain-stage")!
   if (call.type !== "chain-stage") throw new Error("missing_call")
   assert.deepEqual(call.data.items, items)

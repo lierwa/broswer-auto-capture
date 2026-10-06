@@ -301,3 +301,17 @@ Reuse Assessment:
 对抗首轮发现P1：原CDPOwnerScopes在合法session时提前返回，Target.closeTarget却按全局target路由，可能绕过目标归属。已把target检查移到session提前返回之前，补合法session携foreign target拒绝回归；3项定点通过，窄复审无新增P1/P2。扩展构建并通过Chrome原生扩展页重载，管理窗口用后关闭。
 
 正式d8067258经正常handoff/end返回成功，sequence189、browserHandoff ended，原6目标租约ended且物理窗口消失。只读verify在旧relay无映射时可能报错，因此同owner控制进程退出证明成立、且非human_wait时仍沿原生end恢复；未知退出/人工等待保持拒绝。原先错误确认的样本d4cd0cc0与复验7c0c4bfb，依据各自首次runner审计、browser/1确定owner与process_tree确认，使用既有runtime执行一次维护关闭，未改写数据库历史；两个原租约均ended，剩余Chrome窗口仅工作台。
+
+## 2026-10-06 新任务暴露的基础契约问题及实证边界
+
+京东既有结果没有证明通用基建完成。GitHub 新任务按正常入口出现的首败必须作为反证保留，不能把一次连接、局部测试或维护后结果合并成通用性结论。
+
+| 基础边界 | 已证实缺陷 | 本轮处置与验收 | 未覆盖 |
+| --- | --- | --- | --- |
+| 需求→计划→调用 | 逐项业务容易被访谈输出压成一次处理，影响实际 chain 输入与循环 | 既有 once/each 计划投影 + 访谈语义说明；新短需求自主形成两步及最多5次调用 | 任意任务语义均正确没有证明 |
+| 来源值→页面会话 | 仅把 DOM backend/root 当入口，第一项同页导航后后续输入失效 | 原生 anchor.href 作为导航值，原生 navigate 消费输入；25项入口验证及5项完整运行/复跑 | 无href的同页控件与异构入口不能靠此修复保证 |
+| 原生 Agent→宿主完成 | Agent输出schema与自定义done回执协议冲突 | 复用 Tools.get_output_model，不广告模型不应填写的业务schema；8项测试、真实有效done、普通复跑0LLM | 未穷尽供应商返回错误与所有工具协议 |
+| 持久化运行→工作台 | 计划结束节点未接整体结果，反馈错带单次调用范围 | 同execution的plan边界与原成果展示；真实结束节点打开5条正文和内嵌原图 | 布局全部分支组合不在本轮验收内 |
+| 源码契约演进 | 导航字段扩展会破坏旧TS schema精确识别 | 对抗发现后同步新旧完整schema校验，不改旧版本摘要 | 所有历史版本兼容性未穷尽 |
+
+冻结后 GitHub 新任务的完整试跑、发布、正式运行和独立复跑通过；源码、chain、plan、release未在运行中更换。首次来源单步验证与第二次全量验证分列。内容末尾仍有页面控件文字。原京东同版复跑另列，不把其维护生成历史洗成正常系统生成通过。详见 [本轮证据](GITHUB_MAINLINE_REPAIR_20261006.md)。

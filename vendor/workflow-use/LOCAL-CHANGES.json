@@ -123,7 +123,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/author.py",
-      "sha256": "75845d5f05bbe22151f4a8e2e87917ced7778ed11d94a8c440df467dd3d38f90"
+      "sha256": "c1906afdf9f44a95bf8db1d0366d6b935abef7aa33a6a10e05fb3a4844167403"
     },
     {
       "path": "workflows/workflow_use/hybrid/bindings.py",
@@ -291,7 +291,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/read.py",
-      "sha256": "c32c8f91f38dcaeb7476f3fcfbf40a90986d3a4f242f3ed40265d1a0c4bd7fa0"
+      "sha256": "da17fa0f840452d28c10b3dbaa009ac6338fb6ed18befe609ba46df1f708f291"
     },
     {
       "path": "workflows/workflow_use/hybrid/record_projection_capture.py",
@@ -371,7 +371,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/author_tools.py",
-      "sha256": "ec40ee77e065a45b886ea89e6be3c4c621349ca54d9de8e0857b5797af1eba83"
+      "sha256": "b10fadb2cbe1198df6cd75f4c684b179aa03d5d012de549bf44278a40beb32ad"
     },
     {
       "path": "workflows/workflow_use/hybrid/author_callbacks.py",
@@ -395,7 +395,7 @@
     },
     {
       "path": "workflows/tests/test_author_completion.py",
-      "sha256": "e881079fa50c4d9762c248fa1a7663eadd6b16c00c53967dfdfd2d97d3027b78"
+      "sha256": "51df39d5f74d3170a54030adf5494195a88e1f91a9def82bd9a22cda1f4d9591"
     },
     {
       "path": "workflows/tests/test_author_callback_stop.py",
@@ -491,7 +491,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/method_read_tool.py",
-      "sha256": "5dbd82e63982833d73984cd227adca4b6c8ff7aebbc97dd9439b4dff9a026593"
+      "sha256": "20ee7bf8f57c9462dc9d1799baa45c59f36dda341c3431f1766de320d7eefe72"
     },
     {
       "path": "workflows/workflow_use/hybrid/method_read_evidence.py",
@@ -723,7 +723,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/element_entry.py",
-      "sha256": "84ee319a9203cb2ced3b1f1b8805234464f3d90278c61fe85b8e47139a4b7ccc"
+      "sha256": "a289fce8f7f9b0fa55b37c7b5c0c7b3dbdcd3b30a7789e2046e40e2f32de3603"
     },
     {
       "path": "workflows/workflow_use/hybrid/target_contract.py",
@@ -743,7 +743,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/entry_record_scope.py",
-      "sha256": "2cbcf0eb3dbff203e31cd590e7b75b0a09da372bba80ab49e110c3fc5905002c"
+      "sha256": "a646c23f9129da1ffaf304a0d66b549e4be12a872c6818d1f6727f283b10c4c9"
     },
     {
       "path": "workflows/workflow_use/hybrid/entry_descendant.py",
@@ -764,6 +764,10 @@
     {
       "path": "workflows/tests/test_content_region.py",
       "sha256": "96ee73f2c09e78db3d42d2e33be2e7204e7a847e24c6fe9f3388de1e4cb3cd98"
+    },
+    {
+      "path": "workflows/tests/test_entry_navigation.py",
+      "sha256": "82be0632d6466ffe71fdde19b0ad02d7b3597cb76ac414d6dc91399bdd1c3e08"
     }
   ],
   "scope": "runtime-source-and-required-mainline-fixtures"

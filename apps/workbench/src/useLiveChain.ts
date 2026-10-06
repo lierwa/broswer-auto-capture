@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import { eventsForStep } from "./chainWorkbenchProjection.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 
-export type WorkbenchContextMode = "history" | "diagnostics" | "preparation" | "start" | null
+export type WorkbenchContextMode = "history" | "diagnostics" | "preparation" | "start" | "plan-start" | "plan-end" | null
 
 export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const view = useSyncExternalStore(connection.subscribe, connection.snapshot, connection.snapshot)
@@ -98,6 +98,7 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
     setSelectedStageId, setSelectedNodeId, setContextMode,
     openContext, closeContext,
     openTerminal: () => {
+      if (plan && plan.steps.length > 1) { openContext("plan-end"); return }
       const terminal = chain?.nodes.find(node => node.kind === "terminal" && node.status === "completed")
         ?? chain?.nodes.find(node => node.kind === "terminal")
       if (terminal) { setSelectedNodeId(terminal.id); setSelectedStageId(null); setContextMode(null) }

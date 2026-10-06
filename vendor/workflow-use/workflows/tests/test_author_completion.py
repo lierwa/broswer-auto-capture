@@ -2,6 +2,10 @@
 import json
 import unittest
 from types import SimpleNamespace
+from tempfile import TemporaryDirectory
+
+from browser_use import Agent
+from browser_use_runner.ai_connect import AIConnectModel
 
 from pydantic import ValidationError
 
@@ -24,7 +28,21 @@ class AuthorCompletionTests(unittest.IsolatedAsyncioTestCase):
         self.tools.use_structured_output_action(self.output_model)
         rebuilt = ActionRegistry.from_tools(self.tools)
         self.assertEqual(initial.schemaDigest, rebuilt.schemaDigest)
-        self.assertIs(self.tools.get_output_model(), self.output_model)
+        self.assertIsNone(self.tools.get_output_model())
+
+    def test_native_agent_does_not_ask_model_to_copy_host_owned_output(self):
+        # WHY：真实 Agent 构造会自动注入工具输出 schema；读取回执协议不能同时要求抄写业务值。
+        model, _ = output_model_for({'type': 'object', 'properties': {'content': {'type': 'string'}},
+                                    'required': ['content'], 'additionalProperties': False}, 'CapturedOutput')
+        tools = AuthorTools(output_model=model)
+        with TemporaryDirectory() as directory:
+            agent = Agent(task='Capture the requested region.', tools=tools,
+                llm=AIConnectModel(model='fixture', endpoint='http://127.0.0.1:1', token='fixture', purpose='agent'),
+                file_system_path=directory, enable_signal_handler=False, use_vision=True, use_judge=False)
+            self.assertEqual(agent.task, 'Capture the requested region.')
+            self.assertIsNone(agent.output_model_schema)
+            properties = tools.registry.registry.actions['done'].param_model.model_json_schema()['properties']
+            self.assertEqual(set(properties), {'success', 'reason', 'readRefs'})
 
     def test_native_done_root_json_values_are_plain_json_values(self):
         class History:

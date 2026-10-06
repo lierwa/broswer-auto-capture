@@ -15,7 +15,7 @@ export function planCallId(stepId: string) { return `plan-call:${stepId}` }
 export function buildPlanCanvasGraph(plan: TaskDraftContent["plan"], steps: TaskDraftContent["steps"],
   build: Build | undefined, executionId: string | null, batch: TaskExecutionEventBatch | null,
   onInspect: Selection, onSelect: Selection, selected?: { stepId: string; runId: string | null }, completedBuilds: Build[] = [],
-  detail?: TaskExecutionDetail | null) {
+  detail?: TaskExecutionDetail | null, onBoundary?: (boundary: "start" | "end") => void) {
   const nodes: ChainCanvasNode[] = [], edges: Edge[] = []
   const execution = detail?.execution.id === executionId ? detail.execution : undefined
   for (const definition of plan.steps) {
@@ -63,7 +63,7 @@ export function buildPlanCanvasGraph(plan: TaskDraftContent["plan"], steps: Task
     if (!step.dependsOn.length) link("__plan_start", planCallId(step.id))
     if (!plan.steps.some(item => item.dependsOn.includes(step.id))) link(planCallId(step.id), "__plan_end")
   }
-  nodes.push(boundary("__plan_start", "开始", "start"), boundary("__plan_end", "结束", "end"))
+  nodes.push(boundary("__plan_start", "开始", "start", onBoundary), boundary("__plan_end", "结束", "end", onBoundary))
   // WHY：结束表示合法计划出口。失败停在真实步骤上，不能把未到达的结束节点涂成已完成。
   const end = nodes.at(-1)! as TerminalCanvasNode
   const outcome = execution ? executionOutcome(execution) : undefined
@@ -87,7 +87,7 @@ function statusTone(status: string | undefined): ChainRunTone {
   return status === "partial" || status === "cancelled" ? "ended" : "idle"
 }
 
-function boundary(id: string, label: string, terminal: "start" | "end"): TerminalCanvasNode {
+function boundary(id: string, label: string, terminal: "start" | "end", onBoundary?: (boundary: "start" | "end") => void): TerminalCanvasNode {
   return { id, type: "chain-terminal", position: { x: 0, y: 0 }, width: 100, height: 54,
-    data: { label, terminal, tone: "idle", direction: "LR" } }
+    data: { label, terminal, tone: "idle", direction: "LR", onInspect: () => onBoundary?.(terminal) } }
 }

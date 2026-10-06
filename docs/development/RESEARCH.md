@@ -1,5 +1,9 @@
 # 技术调研与复用结论
 
+## 2026-10-06 冻结版本 GitHub 主流程验收
+
+本轮未引入或替换组件。用户明确不强制接入 BrowserSkill，沿现有 Playwright 扩展/B-U 生产路径，从简短新需求检验系统自主澄清、计划、输出及执行。连接和本次自动清理有事实，但准备失败：单 once 计划、4 个动态条目选择证据缺口、字段读取失败，未进入正式运行。实际轨迹和未测范围见[验收记录](GITHUB_MAINLINE_ACCEPTANCE_20261006.md)。后续修复须针对计划和编译衔接取固定源码依据，不把单站选择器补丁、底层连接成功或开发救场当作通用主流程交付。
+
 ## 2026-10-06 大成果投影与重启后物理关闭
 
 原生Node CPU采样定位/api/tasks重复加载含原图的execution；直接复用已固定lru-cache缓存轻量TaskSummary，SQLite事实版本失效，1项定点通过，暖列表31/16ms，最终真实完成画布7秒可见。未重写持久化或扩大缓存为整份页面。
@@ -4042,3 +4046,10 @@ Reuse Assessment:
 - replay model calls: 0。
 - rejected candidates and evidence: 没有拒绝或重写原生能力；只补项目证据与编译边界。
 - focused validation: 观察后缓存重建/节点对象变异仍绑定原 backend；跨页/缺失/不匹配快照必须拒绝；原真实任务的最新失败保留，具体异常阶段尚未确认。
+# 2026-10-06 主链路首败整改
+
+修复前的断点、固定上游依据与最小验证范围见 [整改记录](GITHUB_MAINLINE_REPAIR_20261006.md)。旧冻结轮次保留失败，新代码必须重新验收。
+
+## 2026-10-06 来源跨页面输入验收与完成协议适配
+
+固定 browser-use 0.13.8 的 Element.evaluate/HTMLAnchorElement.href、Tools.navigate 与 Tools.get_output_model 直接复用；B-A-T 只适配新旧入口 schema、来源键与已验证 readRef 的完成交接，没有新增连接框架、调度器或恢复 loop。真实双链接单标签导航、旧合同身份保护、25 项 Python入口验证、8项完成协议、API合同1项、计划投影6项通过。真实新任务冻结生成后正式运行及独立复跑均完成5项、0模型调用。当前证据限于被测任务，原图UI解码已补齐。评估、许可证、固定源码和首败见 [本轮整改](GITHUB_MAINLINE_REPAIR_20261006.md)。

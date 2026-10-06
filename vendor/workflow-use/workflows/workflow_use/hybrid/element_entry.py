@@ -1,9 +1,10 @@
 """Adapt live collection entries to existing native target resolution and each inputs."""
-from pydantic import Field
+from pydantic import Field, model_serializer
+from urllib.parse import urlsplit
 
 from .evidence import Contract, digest
 
-ENTRY_SCHEMA = {'type': 'object', 'properties': {
+LEGACY_ENTRY_SCHEMA = {'type': 'object', 'properties': {
     'kind': {'type': 'string', 'minLength': 1, 'maxLength': 7},
     'tabId': {'type': 'string', 'minLength': 4, 'maxLength': 4},
     'url': {'type': 'string', 'minLength': 1, 'maxLength': 32000},
@@ -14,7 +15,10 @@ ENTRY_SCHEMA = {'type': 'object', 'properties': {
     'documentRootId': {'type': 'integer', 'minimum': 1, 'maximum': 9007199254740991}},
     'required': ['kind', 'tabId', 'url', 'selector', 'ordinal', 'text', 'backendNodeId', 'documentRootId'],
     'additionalProperties': False}
+ENTRY_SCHEMA = {**LEGACY_ENTRY_SCHEMA, 'properties': {**LEGACY_ENTRY_SCHEMA['properties'],
+    'navigationUrl': {'type': 'string', 'minLength': 1, 'maxLength': 32000}}}
 ENTRY_TEXT = "() => (this.textContent || '').replace(/\\s+/g, ' ').trim()"
+ENTRY_NAVIGATION = "() => this.tagName === 'A' && !this.hasAttribute('download') && this.getAttribute('href') ? this.href : null"
 
 
 class ElementEntry(Contract):
@@ -26,12 +30,26 @@ class ElementEntry(Contract):
     text: str = Field(max_length=8000)
     backendNodeId: int = Field(gt=0, le=9007199254740991)
     documentRootId: int = Field(gt=0, le=9007199254740991)
+    navigationUrl: str | None = Field(default=None, min_length=1, max_length=32000)
+
+    @model_serializer(mode='wrap')
+    def preserve_legacy_shape(self, serialize):
+        value = serialize(self)
+        if self.navigationUrl is None:
+            value.pop('navigationUrl', None)
+        return value
 
 
 def entry_field(schema):
     record = schema.get('items', {}) if schema.get('type') == 'array' else schema
-    matches = [name for name, value in record.get('properties', {}).items() if value == ENTRY_SCHEMA]
+    matches = [name for name, value in record.get('properties', {}).items()
+               if value in (ENTRY_SCHEMA, LEGACY_ENTRY_SCHEMA)]
     return matches[0] if len(matches) == 1 else None
+
+
+def entry_supports_navigation(schema, field):
+    record = schema.get('items', {}) if schema.get('type') == 'array' else schema
+    return record.get('properties', {}).get(field) == ENTRY_SCHEMA
 
 
 async def entry_document_id(page):
@@ -42,14 +60,19 @@ async def entry_document_id(page):
     return await _element_backend(roots[0])
 
 
-async def live_entry(browser, element, selector, ordinal, *, document_root=None):
+async def live_entry(browser, element, selector, ordinal, *, document_root=None, include_navigation=False):
     from .targets import _element_backend
     page = await browser.get_current_page()
     info = await page.get_target_info()
     text = await element.evaluate(ENTRY_TEXT)
+    # WHY：浏览器原生 href 属性负责相对地址及 base URI；不从整行任意子链接猜入口。
+    navigation = await element.evaluate(ENTRY_NAVIGATION) if include_navigation else None
+    if not isinstance(navigation, str) or urlsplit(navigation).scheme not in ('http', 'https'):
+        navigation = None
     return ElementEntry(kind='element', tabId=info['targetId'][-4:], url=await page.get_url(),
                         selector=selector, ordinal=ordinal, text=text[:8000], backendNodeId=await _element_backend(element),
-                        documentRootId=document_root if document_root is not None else await entry_document_id(page)).model_dump(mode='json')
+                        documentRootId=document_root if document_root is not None else await entry_document_id(page),
+                        navigationUrl=navigation).model_dump(mode='json')
 
 
 def entry_key_record(record, key_field, entry_field):
@@ -62,7 +85,7 @@ def entry_key_record(record, key_field, entry_field):
 
 
 def entry_inputs(value, schema, path=()):
-    if schema == ENTRY_SCHEMA:
+    if schema in (ENTRY_SCHEMA, LEGACY_ENTRY_SCHEMA):
         yield list(path), ElementEntry.model_validate(value)
     elif isinstance(value, dict):
         for name, child in value.items():
@@ -176,7 +199,7 @@ def compiled_entry_target(action, pre, input_schema):
         if not isinstance(part, str) or part not in schema.get('required', []):
             raise ValueError('input_entry_target_invalid')
         schema = schema.get('properties', {}).get(part, {})
-    if (schema != ENTRY_SCHEMA or value['binding']['source'] != 'input'
+    if (schema not in (ENTRY_SCHEMA, LEGACY_ENTRY_SCHEMA) or value['binding']['source'] != 'input'
             or entry.tabId != pre.tabId[-4:] or entry.url != pre.url
             or within is None and entry.backendNodeId != value['backendNodeId']
             or value['targetId'] != pre.tabId or not fact.sourceRefs

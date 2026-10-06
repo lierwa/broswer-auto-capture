@@ -4,6 +4,9 @@ from .record_projection_dom import _ancestors_to_root, _identity, _relative_sele
 
 
 def record_roots(members):
+    # WHY：用户选择的原生链接本身就是可复跑输入；扩大到整行会丢失确定的目的地址。
+    if members and all(node_tag(member) == 'a' and getattr(member, 'attributes', {}).get('href') for member in members):
+        return members, [0] * len(members)
     if len(members) < 2:
         return members, [0] * len(members)
     counts = {}
