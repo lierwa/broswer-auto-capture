@@ -2,6 +2,8 @@
 import copy
 import json
 import traceback
+import sys
+from pathlib import Path
 
 from browser_use.agent.views import ActionResult
 from browser_use.browser.session import BrowserSession
@@ -39,6 +41,7 @@ class MethodReadToolParams(Contract):
     container: str | None = Field(default=None, min_length=1, max_length=2000, description=(
         'Reusable CSS selector for records in the current page.'))
     regions: str | None = Field(default=None, min_length=1, max_length=2000)
+    regionMode: Literal['selected-regions'] | None = None
     indices: list[PositiveInt] | None = Field(default=None, min_length=1, max_length=300)
     fields: dict[str, MethodReadField] | None = Field(default=None, min_length=1, max_length=100, description=(
         'Relative DOM field projections. Types and cardinality come from the output contract.'))
@@ -53,11 +56,13 @@ class MethodReadToolParams(Contract):
     def exclusive_method_or_reference(cls, value):
         if not isinstance(value, dict):
             return value
+        if value.get('regionMode') is not None and value.get('regions') is None:
+            raise ValueError('method_read_region_mode_requires_regions')
         if 'readRef' in value:
             if set(value) != {'readRef'} or not isinstance(value['readRef'], str):
                 raise ValueError('method_read_reference_parameters_mixed')
-        elif any(name in value for name in ('container', 'indices', 'regions')) and set(value) <= {'container', 'indices', 'regions', 'take'}:
-            if 'regions' in value and set(value) != {'regions'}:
+        elif any(name in value for name in ('container', 'indices', 'regions')) and set(value) <= {'container', 'indices', 'regions', 'take', 'regionMode'}:
+            if 'regions' in value and set(value) - {'regions', 'regionMode'}:
                 raise ValueError('method_read_reference_parameters_mixed')
             return {**value, 'captureContent': True}
         elif value.get('captureContent') is not True and any(value.get(name) is None for name in ('outputPath', 'container', 'fields')):
@@ -71,11 +76,11 @@ class MethodReadToolParams(Contract):
             return {'readRef': self.readRef}
         if self.captureContent:
             if self.regions is not None:
-                return {'regions': self.regions}
+                return {'regions': self.regions, **({'regionMode': self.regionMode} if self.regionMode else {})}
             return {**({'indices': self.indices} if self.indices is not None else {'container': self.container}),
                     **({'take': self.take} if self.take is not None else {})}
         return {key: value for key, value in handler(self).items()
-                if key not in {'readRef', 'captureContent'} and (key not in {'take', 'indices', 'regions'} or value is not None)}
+                if key not in {'readRef', 'captureContent'} and (key not in {'take', 'indices', 'regions', 'regionMode'} or value is not None)}
 
 
 class EntryReadToolParams(Contract):
@@ -102,6 +107,7 @@ class AuthorMethodReadToolParams(MethodReadToolParams):
     maxItems: SkipJsonSchema[Literal[300]] = Field(default=300, exclude=True)
     indices: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
     regions: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
+    regionMode: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
 
 
 ROOT_ARRAY_PATH_GUIDANCE = (
@@ -263,7 +269,7 @@ def expand_method_read_params(params: MethodReadToolParams, output_schema, *, in
         if not content_schema(output_schema) or container is None:
             raise NaturalReadFailure('natural_read_schema_mismatch')
         return FieldReadMapping.model_validate({'specification': {'container': container,
-            **({'contentRegion': 'common-ancestor'} if params.regions is not None else {}),
+            **({'contentRegion': params.regionMode or 'common-ancestor'} if params.regions is not None else {}),
             'fields': {'content': {'selector': ':scope', 'attribute': None, 'valueType': 'string',
                                    'contentSource': 'page-content'}},
             'maxItems': 1, 'requireComplete': True, 'maxInputBytes': CONTENT_LIMIT * 2,
@@ -326,7 +332,7 @@ def register_method_read_tool(tools, *, output_schema, capture_content=False):
          'with this readRef; the next step processes one representative entry using the native actions.'
          if entry_field(output_schema) else
          'Capture the task-relevant raw page content. Supply regions selecting one or more observed related '
-         'regions; the host derives their shared parent, so do not search for or guess its CSS. '
+         'regions; only these regions and their descendants are saved, excluding unrelated siblings. '
          'You may omit regions to capture the whole current page body. Reuse a successful readRef alone. '
          'Do not declare business fields. '
          'Expand and load images first. The host saves raw HTML, Markdown and original image bytes; '
@@ -475,6 +481,13 @@ def _safe_failure_detail(error):
     result = {'type': type(error).__name__ if type(error).__name__ in kinds else 'upstream_error',
               'frames': [[frame.name, frame.lineno] for frame in frames
                          if '/hybrid/' in frame.filename.replace('\\', '/')][-4:]}
+    modules = ('method_read_tool', 'entry_selection', 'entry_record_scope', 'record_projection_dom',
+               'read_sampling', 'natural_reads', 'page_content', 'content_region', 'read', 'targets')
+    sources = {Path(module.__file__).resolve(): name for name in modules
+               if (module := sys.modules.get('workflow_use.hybrid.' + name)) is not None}
+    # WHY：标准 traceback 提供调用链，持久化只保留固定模块名/行号，禁止动态路径、异常正文及 locals。
+    result['sources'] = [{'source': sources[Path(frame.filename).resolve()], 'line': frame.lineno}
+                         for frame in frames if Path(frame.filename).resolve() in sources][-4:]
     if isinstance(error, ValidationError):
         names = {'kind', 'tabId', 'url', 'selector', 'ordinal', 'text'}
         result['validation'] = [{'field': '.'.join(str(part) for part in item['loc'] if part in names),

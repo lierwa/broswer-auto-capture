@@ -19,15 +19,20 @@ SAFE_CONTENT_FAILURE_CODES = frozenset({'content_page_missing', 'content_page_id
     'content_image_resource_missing', 'content_image_resource_type_invalid', 'content_capture_store_required',
     'content_page_identity_unavailable', 'content_css_resource_unproven',
     'content_region_resolution_failed', 'content_region_limit', 'content_region_specification_invalid'})
-REGION_CONTENT = r'''() => { const painted=e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&
-    Array.from(e.getClientRects()).some(r=>r.width>0&&r.height>0); return JSON.stringify({html:this.outerHTML,
-  textPreview:(this.innerText||'').slice(0,1500).replace(/[\uD800-\uDBFF]$/,''),
-  images:Array.from(this.querySelectorAll('img')).concat(this.matches('img')?[this]:[]).map(i=>({
+REGION_CONTENT = r'''(selector = null) => {
+  const selected=selector ? Array.from(this.ownerDocument.querySelectorAll(selector)) : [this];
+  if (!selected.length || selected.some(e=>!this.contains(e))) return JSON.stringify({invalidScope:true});
+  const roots=selected.filter(e=>!selected.some(other=>other!==e&&other.contains(e)));
+  const nodes=roots.flatMap(e=>[e,...e.querySelectorAll('*')]);
+  const painted=e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&
+    Array.from(e.getClientRects()).some(r=>r.width>0&&r.height>0);
+  return JSON.stringify({html:roots.map(e=>e.outerHTML).join('\n'),
+  textPreview:roots.map(e=>e.innerText||'').join('\n').slice(0,1500).replace(/[\uD800-\uDBFF]$/,''),
+  images:nodes.filter(e=>e.matches('img')).map(i=>({
     url:i.currentSrc||i.src, loaded:i.complete&&i.naturalWidth>0})),
-  unsupported:Array.from(this.querySelectorAll('iframe,canvas')).concat(this.matches('iframe,canvas')?[this]:[])
-    .filter(painted).length,
-  shadows:[this,...this.querySelectorAll('*')].filter(e=>e.shadowRoot&&painted(e)).length,
-  backgrounds:[this,...this.querySelectorAll('*')].flatMap((e,ordinal)=>painted(e)?[null,'::before','::after'].flatMap(pseudo=>{
+  unsupported:nodes.filter(e=>e.matches('iframe,canvas')&&painted(e)).length,
+  shadows:nodes.filter(e=>e.shadowRoot&&painted(e)).length,
+  backgrounds:nodes.flatMap((e,ordinal)=>painted(e)?[null,'::before','::after'].flatMap(pseudo=>{
     const style=getComputedStyle(e,pseudo); const shown=!pseudo||(style.content!=='none'&&
       style.display!=='none'&&style.visibility==='visible'&&Number(style.opacity)>0);
     return style.backgroundImage!=='none'&&shown?
@@ -43,7 +48,7 @@ def content_result(result_spec):
             and any(field.producerRef == 'page-content' for field in result_spec.fields))
 
 
-async def capture_region(browser, element, *, readiness=False):
+async def capture_region(browser, element, *, readiness=False, regions=None):
     # WHY：直接查询当前元素，不能把 DomWatchdog 的非空历史树当作展开/加载后的内容。
     before = await live_document_sample(browser)
     if not before['stable'] or not before['documentDigest']:
@@ -52,7 +57,11 @@ async def capture_region(browser, element, *, readiness=False):
     if page is None:
         raise ValueError('content_page_missing')
     info, url = await page.get_target_info(), await page.get_url()
-    region = json.loads(await element.evaluate(REGION_CONTENT))
+    # WHY：选择器解析和包含关系均由浏览器原生 DOM 提供；按选中区域序列化，不能扩大到共同父元素。
+    region = json.loads(await element.evaluate(REGION_CONTENT, regions) if regions is not None
+                        else await element.evaluate(REGION_CONTENT))
+    if region.get('invalidScope'):
+        raise ValueError('content_region_resolution_failed')
     if region['unsupported'] or region['shadows']:
         # TRADE-OFF：不把未取得的 iframe/canvas/shadow 内容伪报为完整；保留原生探索选择其它范围。
         raise ValueError('content_scope_requires_supported_observation')

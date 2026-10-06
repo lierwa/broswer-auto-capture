@@ -53,6 +53,11 @@ def binding_facts(action_ref, action_name, arguments, input_value, input_schema,
         if argument_path in IGNORED_TECHNICAL_PARAMETERS.get(action_name, frozenset()):
             continue
         input_paths = matching_input_paths(input_value, input_schema, value)
+        if action_name == 'bat_read_fields' and argument_path == 'take' and len(input_paths) > 1:
+            # WHY：保留全部真实候选供编译阻塞，不能把同值输入歧义降级成固定样本数量。
+            facts.extend(NaturalBindingFact(actionRef=action_ref, argumentPath=argument_path,
+                binding={'source': 'input', 'path': path}, provenance='runtime_input') for path in input_paths)
+            continue
         if len(input_paths) == 1:
             facts.append(NaturalBindingFact(actionRef=action_ref, argumentPath=argument_path,
                 binding={'source': 'input', 'path': input_paths[0]}, provenance='runtime_input'))

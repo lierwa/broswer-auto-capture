@@ -11,16 +11,9 @@ def natural_target(action, pre, requirement_text='', input_schema=None, post=Non
             action.name in OPTIONAL_TARGET_ACTIONS and action.args.get('index') is not None):
         return None, [], []
     if action.name == 'click' and input_schema is not None:
-        from .element_entry import compiled_entry_target
-        mismatch = any(fact.kind == 'input_entry_mismatch' for fact in pre.facts)
-        context_navigation = any(fact.kind == 'input_entry_context' for fact in pre.facts) and post is not None \
-            and (pre.url != post.url or pre.tabId != post.tabId)
-        if mismatch or context_navigation:
-            # WHY：来源中的错误条目不能退回固定名字/XPath；辅助弹窗控件仍可沿既有准备机制编译。
-            return None, [], [gap('missing_binding', [action.id], 'input_entry_target_unproven', 'collect_evidence')]
-        entry = compiled_entry_target(action, pre, input_schema)
+        entry = _input_entry_target(action, pre, post, input_schema)
         if entry is not None:
-            return entry[0], entry[1], []
+            return entry
     facts = [fact for fact in pre.facts if fact.kind == 'dom_structure'
              and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
     if len(facts) != 1:
@@ -78,6 +71,26 @@ def natural_target(action, pre, requirement_text='', input_schema=None, post=Non
         return None, [], [gap('unsupported_capability', [action.id],
                               'natural_target_xpath_unavailable', 'add_capability')]
     return {'strategy': 'xpath', 'value': xpath, 'scope': target_scope}, fact.sourceRefs, []
+
+
+def _input_entry_target(action, pre, post, input_schema):
+    from .element_entry import compiled_entry_target
+    from .entry_lifetime import entry_document_survives
+    mismatch = any(fact.kind == 'input_entry_mismatch' for fact in pre.facts)
+    context_navigation = any(fact.kind == 'input_entry_context' for fact in pre.facts) and post is not None \
+        and (pre.url != post.url or pre.tabId != post.tabId)
+    if mismatch or context_navigation:
+        # WHY：来源中的错误条目不能退回固定名字/XPath；辅助弹窗控件仍可沿既有准备机制编译。
+        return None, [], [gap('missing_binding', [action.id], 'input_entry_target_unproven', 'collect_evidence')]
+    entry = compiled_entry_target(action, pre, input_schema)
+    if entry is None:
+        return None
+    if not entry_document_survives(pre, post):
+        # WHY：DOM 输入属于来源文档；同页导航/刷新销毁它后，下一条输入不能复用。
+        # 保留原生探索，只阻止发布这种入口方法；不按 ordinal 重找，也不猜造新导航或返回动作。
+        return None, [], [gap('unsupported_capability', [action.id],
+            'input_entry_document_lifetime_unsupported', 'collect_evidence')]
+    return entry[0], entry[1], []
 
 
 def _validated_candidate(raw, structure, pre):

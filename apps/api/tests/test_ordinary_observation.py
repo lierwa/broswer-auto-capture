@@ -13,7 +13,7 @@ class OrdinaryObservationTests(unittest.IsolatedAsyncioTestCase):
         url, target_id = 'https://fixture.invalid/', 'tab-1'
         page = SimpleNamespace(
             get_target_info=AsyncMock(return_value={'targetId': target_id}),
-            get_url=AsyncMock(return_value=url))
+            get_url=AsyncMock(return_value=url), get_title=AsyncMock(return_value='Fixture'))
         mapping = {}
         captures = []
 
@@ -24,7 +24,7 @@ class OrdinaryObservationTests(unittest.IsolatedAsyncioTestCase):
             mapping.clear()
             mapping[captures[-1]] = object()
             return SimpleNamespace(
-                title='Fixture', tabs=[SimpleNamespace(target_id=target_id)],
+                title='Stale cached title', tabs=[SimpleNamespace(target_id=target_id)],
                 dom_state=SimpleNamespace(llm_representation=lambda: f'fresh-dom-{captures[-1]}'))
 
         browser = SimpleNamespace(id='session-1', agent_focus_target_id=target_id,
@@ -39,7 +39,7 @@ class OrdinaryObservationTests(unittest.IsolatedAsyncioTestCase):
 
         runner = Runner()
         runner.browser = browser
-        with patch('browser_use_runner.hybrid_main.current_document_id',
+        with patch('browser_use_runner.runtime_observation.current_document_id',
                    AsyncMock(side_effect=[ValueError('target_document_identity_unavailable'), 'document-1'])) as identity:
             observed = await runner.observe()
         self.assertEqual(captures, [1, 2, 3, 4])
@@ -53,7 +53,7 @@ class OrdinaryObservationTests(unittest.IsolatedAsyncioTestCase):
             browser.agent_focus_target_id = 'tab-2'
             return 'document-2'
 
-        with patch('browser_use_runner.hybrid_main.current_document_id', AsyncMock(side_effect=change_tab)):
+        with patch('browser_use_runner.runtime_observation.current_document_id', AsyncMock(side_effect=change_tab)):
             with self.assertRaisesRegex(ValueError, 'hybrid_observation_identity_changed'):
                 await runner.observe()
         self.assertEqual(captures, [1, 2, 3, 4, 5])

@@ -56,7 +56,8 @@ test("认证未处理仍等待；SQLite 重建后恢复同 execution/run/owner�
         withCapabilities: (input, work) => withHybridCapabilities({ ...input, root, directory, createRunner: () => runner }, work) }
       const host = new TaskRuntimeHost(repository, { setAuthorizationValidator() {} } as never,
         { selection() { throw new Error("model_forbidden") } } as never, undefined, upstream)
-      const state = { snapshot: () => ({ active: false, confirmedVersion: 1 }) } as unknown as ProductStore
+      const state = { snapshot: () => ({ active: false, confirmedVersion: 1 }),
+        releasedBrowserWindowOwners: () => [] } as unknown as ProductStore
       return { repository, executor: new TaskPlanExecutor(state, repository, host) }
     }
     let service = create()

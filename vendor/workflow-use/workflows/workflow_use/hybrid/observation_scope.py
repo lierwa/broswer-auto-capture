@@ -24,11 +24,13 @@ class ObservationRefreshRequired(RuntimeError):
                          + '; no action was sent. Re-read the current page before choosing a target')
 
 
-async def live_document_sample(browser):
-    target_id = browser.agent_focus_target_id
+async def live_document_sample(browser, target_id=None):
+    from browser_use.actor.page import Page
+    require_focus = target_id is None
+    target_id = browser.agent_focus_target_id if require_focus else target_id
     stage = 'current_page'
     try:
-        page = await browser.get_current_page()
+        page = await browser.get_current_page() if require_focus else Page(browser, target_id)
         if page is None:
             raise ValueError('page_unavailable')
         stage = 'target_before'
@@ -46,7 +48,7 @@ async def live_document_sample(browser):
         after = await page.get_target_info()
         stage = 'target_identity'
         if not target_id or before.get('targetId') != after.get('targetId') or target_id != after.get('targetId') \
-                or target_id != browser.agent_focus_target_id:
+                or require_focus and target_id != browser.agent_focus_target_id:
             raise ValueError('observation_tab_changed')
     except Exception as error:
         raise LiveDocumentReadError(stage, error) from None

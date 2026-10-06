@@ -232,11 +232,11 @@ function contentMethodArgs(raw: JsonValue, value: MethodFact, request: MethodReq
   const capture = Object.values(value.specification.fields).some(field => field.contentSource === "page-content")
   if (!capture) return methodArgsSchema.parse(raw)
   const selected = z.union([z.object({ container: z.string().min(1) }).strict(),
-    z.object({ regions: z.string().min(1) }).strict()]).parse(raw)
+    z.object({ regions: z.string().min(1), regionMode: z.literal("selected-regions").optional() }).strict()]).parse(raw)
   const args = { container: "regions" in selected ? selected.regions : selected.container }
   const confirmedContent = isContentResult(request.plan.resultSpec)
     || request.requirement.text.split(/\r?\n/u).some(line => line.trim() === "- 交付：页面内容")
-  if (value.specification.contentRegion !== ("regions" in selected ? "common-ancestor" : undefined)
+  if (value.specification.contentRegion !== ("regions" in selected ? selected.regionMode ?? "common-ancestor" : undefined)
     || !confirmedContent || !isDeepStrictEqual(value.specification.outputSchema, contentValueSchema)
     || !isDeepStrictEqual(value.outputPath, []) || !isDeepStrictEqual(value.readPath, [])
     || value.specification.maxItems !== 1 || value.specification.inheritFields?.length

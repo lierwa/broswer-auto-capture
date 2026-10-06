@@ -85,7 +85,7 @@ class NormalizedTraceBase(Contract):
                                  'verified_natural_read', 'verified_target_scroll', 'verified_visible_wait',
                                  'verified_natural_summary', 'verified_output_assembly', 'selection_function',
                                  'verified_human_resume',
-                                 'observation_diagnostic', 'document_identity'}:
+                                 'observation_diagnostic', 'document_identity', 'entry_source_document'}:
                     value_digest = digest(fact.value)
                     if any(reference.digest != value_digest for reference in fact.sourceRefs):
                         raise ValueError('fact_source_digest_mismatch')

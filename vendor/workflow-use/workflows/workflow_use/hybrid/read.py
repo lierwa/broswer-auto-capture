@@ -111,7 +111,7 @@ class ReadSampleCoverage(Contract):
 
 class ReadSpec(Contract):
     container: str = Field(min_length=1, max_length=2000)
-    contentRegion: Literal['common-ancestor'] | None = None
+    contentRegion: Literal['common-ancestor', 'selected-regions'] | None = None
     fields: dict[str, ReadField] = Field(max_length=100)
     maxItems: int = Field(gt=0, le=300)
     includeOrdinal: bool = False
@@ -306,7 +306,8 @@ async def project_field_records(browser, specification: ReadSpec, elements, *, f
         entry_document = await entry_document_id(await browser.get_current_page())
     for ordinal, element in enumerate(elements, start=1):
         fragments = await project_fields(browser, element, fields, native_context,
-                                         field_samples=field_samples, content_readiness=content_readiness)
+            field_samples=field_samples, content_readiness=content_readiness,
+            content_regions=specification.container if specification.contentRegion == 'selected-regions' else None)
         consumed += sum(len(value.encode()) for values in fragments.values()
                         for value in values if isinstance(value, str))
         if specification.maxInputBytes is not None and consumed > specification.maxInputBytes:
@@ -345,14 +346,15 @@ async def project_field_records(browser, specification: ReadSpec, elements, *, f
     return output
 
 
-async def project_fields(browser, element, fields, native_context, *, field_samples=None, content_readiness=False):
+async def project_fields(browser, element, fields, native_context, *, field_samples=None, content_readiness=False,
+                         content_regions=None):
     content_fields = {name: field for name, field in fields.items() if field.contentSource is not None}
     if content_fields:
         if len(fields) != 1:
             raise ValueError('content_scope_field_invalid')
         from .page_content import capture_region
         name = next(iter(content_fields))
-        return {name: [await capture_region(browser, element, readiness=content_readiness)]}
+        return {name: [await capture_region(browser, element, readiness=content_readiness, regions=content_regions)]}
     fields = {name: field for name, field in fields.items() if not field.ordinal}
     if not fields:
         return {}

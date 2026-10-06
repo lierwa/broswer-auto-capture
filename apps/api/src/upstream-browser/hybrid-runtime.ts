@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { resolveContentReceipts } from "./content-receipts.js"
 import { BROWSER_CONTEXT_OUTPUT, browserContextOutputSchema } from "./hybrid-browser-context.js"
 import { elementEntrySchema } from "./element-entry-contract.js"
+import { materializeReadCommand } from "./hybrid-read-input.js"
 import { isDeepStrictEqual } from "node:util"
 import path from "node:path"
 import { z } from "zod"
@@ -136,7 +137,9 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
               ...(invocation.node.capability.name === "browser.workflow-step"
                 ? materializeHybridWorkflowCommand(scoped, invocation.input)
                 : invocation.node.capability.name === "browser.target-readiness"
-                  ? materializeTargetReadinessCommand(scoped, invocation.input) : scoped) })
+                  ? materializeTargetReadinessCommand(scoped, invocation.input)
+                  : invocation.node.capability.name === "browser.read-fields"
+                    ? materializeReadCommand(scoped, invocation.input) : scoped) })
             // One admitted provider command; errors after dispatch still consume the attempted action budget.
             admit(this)
             const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({

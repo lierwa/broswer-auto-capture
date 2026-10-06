@@ -4053,3 +4053,6 @@ Reuse Assessment:
 ## 2026-10-06 来源跨页面输入验收与完成协议适配
 
 固定 browser-use 0.13.8 的 Element.evaluate/HTMLAnchorElement.href、Tools.navigate 与 Tools.get_output_model 直接复用；B-A-T 只适配新旧入口 schema、来源键与已验证 readRef 的完成交接，没有新增连接框架、调度器或恢复 loop。真实双链接单标签导航、旧合同身份保护、25 项 Python入口验证、8项完成协议、API合同1项、计划投影6项通过。真实新任务冻结生成后正式运行及独立复跑均完成5项、0模型调用。当前证据限于被测任务，原图UI解码已补齐。评估、许可证、固定源码和首败见 [本轮整改](GITHUB_MAINLINE_REPAIR_20261006.md)。
+
+## 2026-10-06 基础契约整改（当前范围）
+用户要求仅独立 headless/本地样本验证底层，不运行京东或接管日常浏览器。已复用 B-U Page/Element/原生 DOM/CDP、原 Playwright owner relay、LangGraph 与 Python traceback，修正来源存活准入、数量绑定、精确选区及安全诊断；新增通用基础库为零。真实 runner 重建暴露异步缓存标题污染恢复摘要，改用原生实时标题后同 run、SQLite 重开、数量 1/3、0LLM、owned 清理验证通过。DOM 编译适配与浏览器原生查询职责、四项 review P2、全部首败与未测范围见 [基础整改记录](FOUNDATION_CONTRACT_REPAIR_20261006.md)。

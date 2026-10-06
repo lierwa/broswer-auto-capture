@@ -6,7 +6,6 @@ import signal
 import sys
 from importlib.metadata import version
 from pathlib import Path
-from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from browser_use import Browser, BrowserProfile
@@ -17,7 +16,6 @@ from workflow_use.hybrid.postconditions import PostconditionNotMet
 from workflow_use.hybrid.read import read_fields
 from workflow_use.hybrid.rendered_field_text import FieldReadError
 from workflow_use.hybrid.author import author_step
-from workflow_use.hybrid.target_preparation import current_document_id
 from workflow_use.hybrid.human_wait import HumanWaitControl
 from browser_use_runner.ai_connect import AIConnectModel
 from browser_use_runner.output_schema import output_model_for
@@ -390,27 +388,8 @@ class Runner:
                 await asyncio.sleep(0.25)
 
     async def _observe_once(self):
-        page_before = await self.browser.get_current_page()
-        url_before = await page_before.get_url() if page_before is not None else None
-        # WHY：普通运行的恢复摘要只消费实时 DOM 与页面身份，截图不参与合同或 digest。
-        state = await self.browser.get_browser_state_summary(include_screenshot=False)
-        tab_id = self.browser.agent_focus_target_id
-        if not tab_id or tab_id not in {tab.target_id for tab in state.tabs}:
-            raise ValueError('hybrid_tab_identity_unavailable')
-        # Hash page structure in memory; never log or persist raw DOM/screenshot/profile data.
-        tree = state.dom_state.llm_representation()
-        page = await self.browser.get_current_page()
-        live_url = await page.get_url() if page is not None else None
-        document_id = await current_document_id(self.browser)
-        page_after = await self.browser.get_current_page()
-        url_after = await page_after.get_url() if page_after is not None else None
-        if self.browser.agent_focus_target_id != tab_id:
-            raise ValueError('hybrid_observation_identity_changed')
-        if not live_url or live_url != url_before or url_after != live_url:
-            raise ValueError('hybrid_observation_url_unstable')
-        snapshot = {'url': live_url, 'title': state.title, 'documentDigest': digest(tree)}
-        return {'sessionId': self.browser.id, 'tabId': str(tab_id), 'url': live_url, 'documentId': document_id,
-                'observationDigest': digest(snapshot), 'observedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}
+        from browser_use_runner.runtime_observation import observe_once
+        return await observe_once(self.browser)
 
     async def close(self):
         if self.close_task is None:

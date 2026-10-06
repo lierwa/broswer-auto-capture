@@ -1,6 +1,7 @@
 """Native CDP recovery in a temporary headless profile; no personal Chrome or secrets."""
 import asyncio
 import json
+import os
 import tempfile
 from pathlib import Path
 from uuid import uuid4
@@ -9,7 +10,7 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 from browser_use_runner.attached_window import AttachedWindow, _client
 
-OUT = Path.cwd() / 'work/replay-closure-20261004'
+OUT = Path(os.environ.get('BAT_RECOVERY_PROOF_DIRECTORY', Path.cwd() / 'work/replay-closure-20261004'))
 proof = {'passed': False, 'headless': True, 'personalProfileTouched': False, 'modelCalls': 0}
 
 async def relay(endpoint):
@@ -29,7 +30,7 @@ async def main():
         root = Path(directory)
         async with async_playwright() as pw:
             browser = await pw.chromium.launch_persistent_context(str(root / 'chrome'),
-                executable_path=r'C:\Program Files\Google\Chrome\Application\chrome.exe', headless=True,
+                executable_path=str(Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Google/Chrome/Application/chrome.exe'), headless=True,
                 args=['--remote-debugging-port=0'])
             servers = []
             try:

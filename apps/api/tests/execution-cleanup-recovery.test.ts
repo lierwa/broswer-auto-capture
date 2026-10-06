@@ -11,8 +11,8 @@ import { TaskContractRepository } from "../src/task-chain/repository.js"
 import { TaskChainService } from "../src/task-chain/service.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
 
-// WHY：再次运行只做一次原 owner 释放核验；必须先持久化旧失败，不能复用/覆盖原 execution。
-for (const trigger of ["worker_exit", "rerun"] as const) test(`${trigger} verifies the old owner once and retains the original failure`, async () => {
+// WHY：队列收尾或用户清理只核验原 owner 一次；再次运行前必须保留旧 execution 的原失败。
+for (const trigger of ["worker_exit", "explicit_cleanup"] as const) test(`${trigger} verifies the old owner once and retains the original failure`, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-cleanup-rerun-")), store = await ProductStore.open(directory)
   try {
     const taskId = store.taskAction({ type: "create", requestId: randomUUID() }), repository = new TaskContractRepository(store)
@@ -43,10 +43,14 @@ for (const trigger of ["worker_exit", "rerun"] as const) test(`${trigger} verifi
         return { snapshot: { taskId }, acceptedExecution: null }
       },
     }) as TaskChainService
-    if (trigger === "rerun") await service.dispatchAsync(taskId, { type: "run_task", requestId: randomUUID(), release: original.plan,
-      input: null, pacing: { nodeDelayMs: 0 } })
-    else await (service as unknown as { drain(): Promise<void> }).drain()
-    assert.equal(checks, 1); assert.equal(accepted, trigger === "rerun" ? 1 : 0)
+    if (trigger === "explicit_cleanup") {
+      await service.dispatchAsync(taskId, { type: "cleanup_execution", requestId: randomUUID(), executionId: pending.id,
+        expectedSequence: pending.sequence })
+      await service.dispatchAsync(taskId, { type: "run_task", requestId: randomUUID(), release: original.plan,
+        input: null, pacing: { nodeDelayMs: 0 } })
+    } else await (service as unknown as { executeQueued(item: { taskId: string; id: string }, controller: AbortController): Promise<void> })
+      .executeQueued({ taskId, id: pending.id }, new AbortController())
+    assert.equal(checks, 1); assert.equal(accepted, trigger === "explicit_cleanup" ? 1 : 0)
     assert.equal(repository.execution(taskId, pending.id).status, "failed")
     assert.deepEqual(repository.execution(taskId, pending.id).result, original.result)
     assert.equal(repository.executionHistory(taskId, 0, 10).length, 1)

@@ -138,7 +138,7 @@ const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.str
     }
   })
 export const readSpecificationSchema = z.object({ container: z.string().min(1),
-  contentRegion: z.literal("common-ancestor").optional(),
+  contentRegion: z.enum(["common-ancestor", "selected-regions"]).optional(),
   fields: z.record(z.string().min(1), readFieldSchema),
   includeOrdinal: z.boolean().optional(),
   requireComplete: z.boolean().optional(),

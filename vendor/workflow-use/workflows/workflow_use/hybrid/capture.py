@@ -212,6 +212,8 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
             self.post_action_facts, self.observe,
             closed_target_id=self.pending.get('closedTargetId'),
             snapshot_reader=self.observation_scope.capture_post if self.observation_scope is not None else None)
+        from .entry_lifetime import capture_entry_lifetime
+        await capture_entry_lifetime(self, after)
         if 'bat_scroll_to' in self.pending['action']:
             after.facts.extend(self.target_scroll_facts(item.result, step, after))
         if 'bat_wait_for' in self.pending['action']:

@@ -92,7 +92,7 @@ class PageContentTests(unittest.IsolatedAsyncioTestCase):
             records = register_method_read_tool(tools, output_schema=CONTENT_SCHEMA, capture_content=True)
             tool = tools.registry.registry.actions['bat_read_fields']
             page = await browser.get_current_page()
-            self.assertEqual(ContentReadToolParams().model_dump(), {'regions': 'body'})
+            self.assertEqual(ContentReadToolParams().model_dump(), {'regions': 'body', 'regionMode': 'selected-regions'})
             for index in (1, 2):
                 await page.goto(f'http://127.0.0.1:{server.server_port}/detail/{index}')
                 await (await page.get_elements_by_css_selector('#expand'))[0].click()
@@ -100,14 +100,14 @@ class PageContentTests(unittest.IsolatedAsyncioTestCase):
                     if await page.evaluate("() => [...document.querySelectorAll('#content img')].every(i=>i.complete&&i.naturalWidth>0)") == 'true':
                         break
                     await asyncio.sleep(.05)
-                params = ContentReadToolParams(regions='#content table, #content img') if index == 1 else ContentReadToolParams(readRef='r1')
+                params = ContentReadToolParams(regions='#content') if index == 1 else ContentReadToolParams(readRef='r1')
                 result = await tool.function(params=params, browser_session=browser)
                 self.assertIsNone(result.error)
                 record = records.records[-1]
                 proof = verified_method_read(records=records, start=index - 1, arguments=params.model_dump(),
                     results=[result], result_ref=EvidenceRef(ref='result', digest=digest(result.model_dump(mode='json'))),
                     action_ref=f'a-{index}')
-                self.assertEqual(proof.specification.contentRegion, 'common-ancestor')
+                self.assertEqual(proof.specification.contentRegion, 'selected-regions')
                 output = await read_fields(browser, record.mapping.specification)
                 receipt = json.loads(output['content'])
                 body = json.loads((Path(spool.name) / 'content-receipts' / str(owner) / (receipt['digest'] + '.json')).read_bytes())

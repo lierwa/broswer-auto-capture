@@ -290,16 +290,22 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
                               'verified_natural_read_invalid', 'reject_trace')]
     refs = unique_evidence([action.resultRef, *pre.sourceRefs, *post.sourceRefs,
                             *(reference for fact in facts for reference in fact.sourceRefs)])
-    specification = runtime_read_specification(values[0].specification)
+    from .read_input_binding import bind_read_take
+    try:
+        specification, bindings = bind_read_take(request, action, pre, values[0].specification,
+                                                output_schema, values[0].outputPath)
+    except ValueError as error:
+        return None, None, [gap('missing_binding', [action.id], str(error), 'collect_evidence')]
+    refs = unique_evidence([*refs, *(ref for binding in bindings for ref in binding['proofRefs'])])
     segment = {'id': 's-' + action.id, 'kind': 'deterministic',
         'operation': {'name': 'browser.read-fields', 'version': 2, 'specification': specification},
         'target': {'strategy': 'css', 'value': value.specification.container,
                    'scope': {'url': pre.url, 'urlDigest': value.urlDigest}},
-        'bindings': [], 'preconditions': [{'kind': 'source_observation', 'evidenceRef': pre.id}],
+        'bindings': bindings, 'preconditions': [{'kind': 'source_observation', 'evidenceRef': pre.id}],
         'expectedEffect': {'kind': 'read'},
         'postconditions': [{'kind': 'output_schema',
-                            'schemaDigest': digest(value.specification.outputSchema)}],
-        'outputs': [{'schema': values[0].specification.outputSchema, 'sourceRef': fact.id} for fact in facts],
+                            'schemaDigest': digest(specification['outputSchema'])}],
+        'outputs': [{'schema': specification['outputSchema'], 'sourceRef': fact.id} for fact in facts],
         'proofRefs': [ref.model_dump(mode='json') for ref in refs]}
     return segment, None if internal_query else paths, []
 

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from workflow_use.hybrid.evidence import digest
 from workflow_use.hybrid.method_read_tool import (
-    MethodReadToolParams, expand_method_read_params, register_method_read_tool,
+    MethodReadToolParams, expand_method_read_params, register_method_read_tool, method_read_params_for,
 )
 from workflow_use.hybrid.natural_reads import NaturalReadFailure
 from workflow_use.hybrid.read_sampling import ReadSample
@@ -55,6 +55,12 @@ class ToolsStub:
 
 
 class MethodReadMappingTests(unittest.TestCase):
+    def test_internal_content_mode_is_absent_from_field_tool_schema(self):
+        for schema in ({'type': 'object'}, {'type': 'array'}):
+            properties = method_read_params_for(schema).model_json_schema()['properties']
+            self.assertNotIn('regionMode', properties)
+            self.assertNotIn('regions', properties)
+
     def test_runtime_budget_does_not_inherit_final_count_or_host_sample_limit(self):
         mapping = expand_method_read_params(parameters(maxItems=100), OUTPUT)
         self.assertEqual(mapping.specification.maxItems, 100)
@@ -196,7 +202,12 @@ class MethodReadToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(records.records, [])
             success = await tools.actions['bat_read_fields'](params, browser)
         self.assertEqual(limited.error, 'read_collection_limit')
-        self.assertEqual(hidden.error, 'bat_read_fields_failed')
+        code, detail = hidden.error.split(': ', 1)
+        self.assertEqual(code, 'method_read_sample_failed')
+        self.assertEqual(json.loads(detail)['type'], 'RuntimeError')
+        self.assertIn('method_read_tool', [item['source'] for item in json.loads(detail)['sources']])
+        self.assertNotIn('private', hidden.error)
+        self.assertNotIn(str(__file__), hidden.error)
         self.assertEqual(json.loads(success.extracted_content)['readRef'], 'r1')
         self.assertEqual(len(records.records), 1)
 

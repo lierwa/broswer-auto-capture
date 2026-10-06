@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 import { valueBindingSchema } from "@browser-capture/contracts"
+import { digestJson } from "@browser-capture/runtime"
 import { elementEntrySchema, elementEntryValueSchema, legacyElementEntryValueSchema } from "./element-entry-contract.js"
 import type { hybridNaturalRequestSchema, HybridSegment, HybridCompilation } from "./hybrid-schema.js"
 import type { naturalPayloadContext } from "./hybrid-natural-payload.js"
@@ -52,5 +53,27 @@ export function assertInputEntryTarget(segment: Exclude<HybridSegment, { kind: "
     || value.withinEntry === undefined && value.backendNodeId !== value.entry.backendNodeId
     || value.entry.tabId !== pre.tabId?.slice(-4) || value.entry.url !== pre.url) {
     throw new Error("hybrid_entry_source_mismatch")
+  }
+  const post = request.trace.observations.find(item => item.id === action.postObservationRef)
+  if (!post) return
+  const documents = [pre, post].map(observation => {
+    const facts = observation.facts.filter(item => item.kind === "document_identity")
+    if (facts.length !== 1) return null
+    payload.assertFact(facts[0]!, observation.id)
+    return z.object({ targetId: z.string(), documentDigest: z.string().regex(/^[a-f0-9]{64}$/u) })
+      .strict().parse(facts[0]!.value)
+  })
+  // WHY：宿主独立拒绝已销毁来源文档的 DOM 入口，不能仅信任 Python 返回的可编译结论。
+  if (pre.tabId !== post.tabId) {
+    const facts = post.facts.filter(item => item.kind === "entry_source_document")
+    if (facts.length === 1) payload.assertFact(facts[0]!, post.id)
+    if (!documents[0] || documents[0].targetId !== pre.tabId || facts.length !== 1
+      || !isDeepStrictEqual(facts[0]!.value, { ...documents[0], urlDigest: digestJson(pre.url) })) {
+      throw new Error("hybrid_entry_document_lifetime_unsupported")
+    }
+    return
+  }
+  if (pre.url !== post.url || documents[0] && documents[1] && !isDeepStrictEqual(documents[0], documents[1])) {
+    throw new Error("hybrid_entry_document_lifetime_unsupported")
   }
 }

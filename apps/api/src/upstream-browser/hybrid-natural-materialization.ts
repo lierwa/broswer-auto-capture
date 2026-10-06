@@ -7,6 +7,7 @@ import { naturalPayloadContext } from "./hybrid-natural-payload.js"
 import { jsonValueAtPath } from "./hybrid-json-path.js"
 import { assertSelectionValueBinding } from "./hybrid-selection.js"
 import { assertPriorBrowserContext } from "./hybrid-browser-context.js"
+import { boundReadSpecification } from "./hybrid-read-input.js"
 
 type NaturalContext = { version: 2; request: z.infer<typeof hybridNaturalRequestSchema>;
   payload: ReturnType<typeof naturalPayloadContext> }
@@ -228,7 +229,8 @@ export function assertNaturalReadSegment(segment: Extract<HybridSegment, { kind:
       throw new Error("hybrid_natural_read_observation_mismatch")
     }
     context.payload.assertFact(fact, observation.id)
-    const value = z.object({ actionRef: z.string(), specification: readSpecificationSchema }).passthrough().parse(fact.value)
+    const value = z.object({ actionRef: z.string(), specification: readSpecificationSchema,
+      outputPath: z.array(z.union([z.string(), z.number().int().nonnegative()])).default([]) }).passthrough().parse(fact.value)
     for (const name of value.specification.inheritFields ?? []) {
       const input = context.request.runtimeInputSchema, schema = value.specification.outputSchema
       const output = schema.type === "array" ? schema.items : schema
@@ -236,9 +238,10 @@ export function assertNaturalReadSegment(segment: Extract<HybridSegment, { kind:
         || !input.properties[name] || output.required.includes(name) && !input.required.includes(name)
           && !Object.hasOwn(value.specification.fields, name)) throw new Error("hybrid_natural_read_input_schema_mismatch")
     }
+    const runtimeRead = boundReadSpecification(value.specification, segment, context.request, actionRef, value.outputPath)
     if (value.actionRef !== actionRef || !isDeepStrictEqual(
-      { ...value.specification, maxInputBytes: value.specification.maxInputBytes ?? 128000 }, segment.operation.specification)
-      || !isDeepStrictEqual(output.schema, value.specification.outputSchema)) {
+      { ...runtimeRead, maxInputBytes: runtimeRead.maxInputBytes ?? 128000 }, segment.operation.specification)
+      || !isDeepStrictEqual(output.schema, runtimeRead.outputSchema)) {
       throw new Error("hybrid_natural_read_mismatch")
     }
   }
