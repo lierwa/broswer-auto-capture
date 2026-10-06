@@ -83,6 +83,7 @@
     "Declare only connect.html web-accessible to http://127.0.0.1/* for the original loopback redirect; retain original token checks",
     "Retain original approved extension mapping across independent owner-scoped SDK clients; never auto-reconnect the extension",
     "Host-only owner endpoint scopes multiplex original CDP mappings; responses return to their originating client and target/session events stay within the owner; no extension reinstall required",
+    "Owner-scoped Playwright reconnect resolves targetless getTargetInfo only from live owned targets and replays existing owned attached/runtime facts on connection; no global target fallback or debugger reattachment",
     "Refresh owned Target facts through original chrome.debugger Target.getTargetInfo; stale attach-time URL is not a postcondition fact",
     "Explicit first Allow optionally carries the original token on extension.initialized for host configuration; host strips it before CDP and persists only after readiness",
     "Require exact extension Origin on the extension WebSocket; retain original token checks and empty initialization for ordinary reconnects",

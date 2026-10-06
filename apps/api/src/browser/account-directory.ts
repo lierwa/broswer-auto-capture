@@ -103,7 +103,7 @@ export class AccountDirectory {
     this.active(operation, signal)
     const previous = this.current(operation.platformId), result = check.result
     if (!result || check.status !== "completed" || check.run?.status !== "completed" || !check.run.auditComplete || check.run.consumed.llmCalls !== 0)
-      throw new DomainError("account_check_incomplete", "检查未正常结束，请重试。", 409)
+      throw new DomainError("account_check_incomplete", "账号检查过程发生错误，登录状态未能核验。已保存的账号保留。", 409)
     const authenticated = result.status === "authenticated"
     const changed = Boolean(previous && !previous.deletedAt && operation.intent !== "switch" && authenticated
       && (previous.identityKey ? result.identityKey !== previous.identityKey : identity.id !== previous.sourceIdentityId))

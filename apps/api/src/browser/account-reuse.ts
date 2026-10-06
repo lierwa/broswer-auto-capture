@@ -87,6 +87,10 @@ export class AccountReuse {
     await this.verify?.(target.kind)
     const targetWindow = await this.windows.open(target, platform, input.signal, false)
     const targetCheck = await this.checks.run(platform, target, targetWindow, randomUUID(), input.signal)
+    // WHY：检查器中断不是账号不同，也不能降级为可忽略的未登录；保留系统失败层。
+    if (targetCheck.status !== "completed" || targetCheck.run?.status !== "completed" || !targetCheck.run.auditComplete
+      || targetCheck.run.consumed.llmCalls !== 0)
+      throw new DomainError("account_check_incomplete", "账号检查未能完成，准备尚未开始。已保存的账号保留。", 409)
     // WHY：启动只先验证实际使用的 Profile；已登录同账号时不打开另一浏览器作重复证明。
     if (targetCheck.result?.status === "authenticated" && (account.identityKey
       ? targetCheck.result.identityKey === account.identityKey : source.id === target.id)) return

@@ -33,7 +33,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (state.popupRequest) { write({ popupRequest: state.popupRequest }); break }
     await new Promise(resolve => setTimeout(resolve, 25))
   }
-  try { await paired; write({ paired: true, cdpUrl: await manager.endpoint() }) }
+  try { await paired; write({ paired: true, cdpUrl: await manager.endpoint(false, command.ownerId) }) }
   catch { write({ paired: false }) }
 }
 manager.close()

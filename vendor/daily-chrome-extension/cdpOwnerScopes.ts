@@ -11,11 +11,20 @@ export class CDPOwnerScopes {
     targets.forEach(target => known.add(target)); this.targets.set(owner, known);
   }
   accepts(owner: string) { return this.targets.has(owner); }
+  ownedTargets(owner: string) { return [...(this.targets.get(owner) ?? [])]; }
   connect(client: any, owner: string) { this.clients.set(client, owner); }
   disconnect(client: any) { this.clients.delete(client); }
   close(reason: string) { for (const client of this.clients.keys()) client.close(1000, reason); }
   owns(owner: string, target: string) { return this.targets.get(owner)?.has(target) === true; }
   claim(owner: string, target: string) { this.targets.get(owner)?.add(target); }
+  parameters(owner: string, method: string, params: any, sessionId?: string, liveTargets: { targetId: string }[] = []) {
+    // WHY：Playwright 用无 target 的只读查询完成握手；原 BrowserModel 默认取全局首 tab，
+    // 因此必须先限定到本 owner，不能直接放开原 fallback 或把缺失目标的写操作一起放行。
+    if (method !== 'Target.getTargetInfo' || params?.targetId || sessionId && sessionId !== 'bat-browser-root') return params;
+    const targetId = liveTargets.find(target => this.owns(owner, target.targetId))?.targetId;
+    if (!targetId) throw Error('daily_chrome_target_required');
+    return { ...params, targetId };
+  }
   check(owner: string, method: string, params: any, sessionId?: string) {
     // WHY：Target.closeTarget 等浏览器动作即使带合法 session 仍按 target 路由，不能跳过目标归属。
     if (params?.targetId && !this.owns(owner, params.targetId)) throw Error('daily_chrome_target_not_authorized');

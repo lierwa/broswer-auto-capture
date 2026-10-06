@@ -25,6 +25,7 @@ export function failureLayer(error: unknown, stage: string): string {
     return failureLayer(error.primary.error, stage)
   }
   const message = error instanceof Error ? error.message : "unknown"
+  if (authoringFailureCode(error).startsWith("account_")) return "账号准备检查"
   if (/^hybrid_existing_browser_/.test(message)) return "日常 Chrome 连接"
   if (message === "hybrid_source_protocol_invalid") return "来源结果交接"
   if (/hybrid_compilation_(ack|save)/.test(message)) return "在线节点保存"
@@ -51,6 +52,9 @@ export function authoringFailureMessage(error: unknown): string {
     if (primary) return authoringFailureMessage(primary)
   }
   const message = error instanceof Error ? error.message : "authoring_failed"
+  if (authoringFailureCode(error) === "account_check_incomplete") {
+    return "账号检查过程发生错误，浏览器试做尚未开始，登录状态未能核验。已保存的账号保留。"
+  }
   if (message === "hybrid_existing_browser_endpoint_required") {
     return "未找到日常 Chrome 的原生连接；请保持 Chrome 打开，并在 chrome://inspect/#remote-debugging 开启远程调试。本轮未启动其他浏览器。"
   }

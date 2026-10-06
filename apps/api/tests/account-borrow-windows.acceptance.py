@@ -11,7 +11,7 @@ from browser_use_runner.account_borrow import borrow_window
 from playwright.async_api import async_playwright
 import psutil
 
-OUTPUT = ROOT / 'work/account-rebuild-20261003/borrow-windows'
+OUTPUT = ROOT / os.environ.get('BAT_ACCOUNT_BORROW_OUTPUT', 'work/account-rebuild-20261003/borrow-windows')
 OUTPUT.mkdir(parents=True, exist_ok=True)
 proof = {'modelCalls': 0, 'personalProfileTouched': False, 'steps': []}
 
@@ -38,6 +38,7 @@ async def dedicated():
 
 
 async def daily(probe=None):
+    owner = str(uuid4())
     profile = OUTPUT / 'daily'
     profile.mkdir(exist_ok=True)
     (profile / 'Default').mkdir(exist_ok=True)
@@ -74,7 +75,7 @@ async def daily(probe=None):
             loaded = await cdp.send('Extensions.loadUnpacked', {'path': str(extension)})
             assert loaded['id'] == extension_id
             proof['dailyStage'] = 'owned_extension_approval'
-            relay.stdin.write(b'{"op":"pair"}\n')
+            relay.stdin.write((json.dumps({'op': 'pair', 'ownerId': owner}) + '\n').encode())
             await relay.stdin.drain()
             pending = json.loads(await asyncio.wait_for(relay.stdout.readline(), 20))
             page = await client.contexts[0].new_page()
@@ -84,7 +85,6 @@ async def daily(probe=None):
             paired = json.loads(await asyncio.wait_for(relay.stdout.readline(), 35))
             assert paired.get('paired'), paired
             await cdp.detach()
-        owner = str(uuid4())
         proof['dailyStage'] = 'original_owner_start'
         window = AttachedWindow(OUTPUT / 'daily-owner/default', owner, paired['cdpUrl'])
         browser = await window.start(resume=False, allowed_domains=None)

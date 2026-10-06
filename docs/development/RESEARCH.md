@@ -4083,3 +4083,28 @@ Reuse Assessment:
 - replay model calls: 0 个新增隐式执行调用。
 - rejected candidates and evidence: 不造 XML 容错解析器，不自动补闭合标签；公共 parser 已能提供 unclosed_tag 诊断。上游 authoring-registry.ts 的 buffered scope 直接覆盖所需能力。
 - focused validation: 10 项定点与 API 类型检查通过；入口编号补充样本通过；headless round-3 真实首败经一次修复后成功，UI 确认和刷新持久化通过（见 PROGRESS 最新条目）。
+# 账号连接整改：owner 隔离与 Playwright 握手
+
+Product Alignment:
+- natural-language task: 任意网站的账号检查与任务准备前检查。
+- reusable chain boundary: 原 owner 浏览器连接，不修改业务链。
+- runtime inputs: 已持久化 owner/lease 与原生 CDP 握手。
+- dynamic task outputs: 实际账号检查结果。
+- generic platform capability used: Playwright connect_over_cdp；原 CDP relay owner 路由。
+- replay model calls: 0。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: Playwright 在 owner endpoint 上查询默认 target 信息。
+- existing implementation in repository: 固定微软 Playwright relay；cdpOwnerScopes 是 B-A-T 隔离适配。
+- mature candidates and pinned versions: vendor/daily-chrome-extension/UPSTREAM.json 固定 Playwright 8b552173e8d767db29b8baef8f4a1f08cf7f26bf、扩展 0.4.0。
+- selected implementation: 保持原 relay/BrowserModel/Playwright，只把无 target 的只读握手绑定到本 owner 当前存活 target；重连复用原 attach 通知与 session。
+- reused public surface: connect_over_cdp、new_cdp_session、Target.getTargetInfo。
+- B-A-T-owned adapter and remaining gap: owner 默认读取目标解析；不放宽跨 owner 命令，不复制连接框架。
+- license/runtime/platform fit: 已有 Apache-2.0 Windows TypeScript/Python 组件。
+- browser/runtime/state ownership conflicts: 不接触个人浏览器；新建隔离 headless Profile 验证真实扩展与 owner 地址。
+- replay model calls: 0。
+- rejected candidates and evidence: 不绕过 owner scope；旧验收使用无 owner 地址，无法覆盖生产路径。
+- focused validation: 修复前真实 headless 复现 connect_over_cdp 的 Target.getTargetInfo 被 daily_chrome_target_required 拒绝；证据 work/account-scoped-borrow-20261006/before/retry-daily.json。
+
+第二处实际断点是重连缺少原 owned target 的 attached 通知，修正调用时机并只清本 owner 的通知标记。对抗审查指出历史首 target 已关闭的情况，改用原生活目标与权限集合交集后复审关闭。最终真实 headless Chrome/原扩展/owner URL 的借用、限定来源 Cookie 读取、断开后保留任务页通过；没有操作个人 Profile。账号检查中断使用既有 DomainError 与审计事实归入账号准备检查，保留账号，不交给模型修复。验证详情、首败及两项已复现的基线测试失败见 [账号连接修复记录](ACCOUNT_SCOPED_BORROW_FIX_20261006.md)。

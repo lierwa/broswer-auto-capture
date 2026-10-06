@@ -93,6 +93,7 @@ export class BrowserModel {
   }
   prepareOwnerConnection(targets: string[]) {
     for (const session of this._tabSessions.values()) if (targets.includes(session.targetInfo?.targetId)) {
+      this._announcedSessions.delete(session.sessionId);
       this._runtimeReplayed.delete(session.tabId);
     }
   }

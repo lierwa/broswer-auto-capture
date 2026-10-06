@@ -8,6 +8,33 @@ import { PythonUpstreamBrowserRuntime } from "../src/upstream-browser/python-run
 import type { TaskRuntimeHost } from "../src/task-chain/runtime-host.js"
 import { stableUuid } from "@browser-capture/runtime"
 import type { AccountStartup } from "../src/browser/account-reuse.js"
+import { authoringFailureCode, authoringFailureMessage, failureLayer } from "../src/task-chain/authoring-failure.js"
+
+// WHY：同一运行时故障必须在目录与启动入口都保留失败，不能宣称未登录或跳过只读准入。
+test("interrupted account checks preserve the account and fail startup before exploration", async () => {
+  const f = await directoryFixture()
+  try {
+    await f.command("add")
+    const original = structuredClone(f.api.accounts.directory.current("bilibili"))
+    f.upstream.accountSession = async () => { throw Error("hybrid_runner_failed:Error") }
+    const snapshot = await f.command("check")
+    assert.equal(snapshot.operation?.status, "failed")
+    assert.match(snapshot.operation?.reason ?? "", /检查过程发生错误/)
+    assert.deepEqual(f.api.accounts.directory.current("bilibili"), original)
+    for (const publicRead of [false, true]) {
+      await assert.rejects(f.api.accounts.prepareStartup({ ownerId: randomUUID(), browserMode: "daily",
+        allowedOrigins: ["https://www.bilibili.com"], signal: AbortSignal.timeout(5000), resume: false, publicRead }), error => {
+        assert.equal(authoringFailureCode(error), "account_check_incomplete")
+        assert.equal(failureLayer(error, "exploring"), "账号准备检查")
+        assert.match(authoringFailureMessage(error), /试做尚未开始/)
+        return true
+      })
+    }
+    assert.equal(f.state.writes, 0)
+    assert.deepEqual(f.api.accounts.directory.current("bilibili"), original)
+    assert.equal(f.api.accounts.repository.list("platformCheck").at(-1)?.run?.consumed.llmCalls, 0)
+  } finally { await f.api.app.close() }
+})
 
 test("actual frozen group/controller→native startup permits public read, denies identity-bound writes and foreign owner", async () => {
   const f = await directoryFixture()

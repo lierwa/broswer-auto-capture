@@ -29,7 +29,9 @@ test("原 relay 的两个 owner 客户端同时创建目标，响应/目标隔�
   })
   extension.send(JSON.stringify({ method: "extension.initialized", params: [] }))
   await relay.extensionReady()
-  const a = new ws(relay.cdpEndpoint(randomUUID())), b = new ws(relay.cdpEndpoint(randomUUID()))
+  const ownerA = randomUUID(), ownerB = randomUUID()
+  const a = new ws(relay.cdpEndpoint(ownerA)), b = new ws(relay.cdpEndpoint(ownerB))
+  let reconnected: typeof a | undefined
   await Promise.all([once(a, "open"), once(b, "open")])
   function request(client: typeof a, id: number, method: string, params: unknown = {}) {
     return new Promise<any>(resolve => {
@@ -44,12 +46,30 @@ test("原 relay 的两个 owner 客户端同时创建目标，响应/目标隔�
     const [ta, tb] = await Promise.all([request(a, 2, "Target.getTargets"), request(b, 2, "Target.getTargets")])
     assert.deepEqual(ta.result.targetInfos.map((t: any) => t.targetId), [ra.result.targetId])
     assert.deepEqual(tb.result.targetInfos.map((t: any) => t.targetId), [rb.result.targetId])
+    // 保护真实首败：Playwright 无 target 握手只能解析本 owner，不能读取全局首 tab。
+    const [infoA, infoB] = await Promise.all([request(a, 21, "Target.getTargetInfo"), request(b, 21, "Target.getTargetInfo")])
+    assert.equal(infoA.result.targetInfo.targetId, ra.result.targetId)
+    assert.equal(infoB.result.targetInfo.targetId, rb.result.targetId)
+    assert.match((await request(a, 22, "Target.getTargetInfo", { targetId: rb.result.targetId })).error.message, /not_authorized/)
+    assert.match((await request(a, 23, "Target.closeTarget")).error.message, /target_required/)
     assert.match((await request(a, 3, "Target.closeTarget", { targetId: rb.result.targetId })).error.message, /not_authorized/)
     a.close(); await once(a, "close")
     const remaining = await request(b, 4, "Target.getTargets")
     assert.equal(remaining.result.targetInfos[0].targetId, rb.result.targetId)
     assert.equal(relay.isConnected(), true)
-  } finally { a.close(); b.close(); extension.close(); await relay.close() }
+    const notifications: any[] = [], foreignNotifications: any[] = []
+    b.on("message", (raw: Buffer) => { const value = JSON.parse(raw.toString()); if (value.method) foreignNotifications.push(value) })
+    reconnected = new ws(relay.cdpEndpoint(ownerA))
+    reconnected.on("message", (raw: Buffer) => { const value = JSON.parse(raw.toString()); if (value.method) notifications.push(value) })
+    await once(reconnected, "open")
+    await request(reconnected, 5, "Target.setAutoAttach", { autoAttach: true })
+    assert.deepEqual(notifications.filter(e => e.method === "Target.attachedToTarget").map(e => e.params.targetInfo.targetId), [ra.result.targetId])
+    assert.equal(foreignNotifications.length, 0, "重连不得重发其他 owner 的通知")
+    const second = await request(reconnected, 6, "Target.createTarget", { url: "about:blank" })
+    await request(reconnected, 7, "Target.closeTarget", { targetId: ra.result.targetId })
+    const current = await request(reconnected, 8, "Target.getTargetInfo")
+    assert.equal(current.result.targetInfo.targetId, second.result.targetId, "历史首目标已关闭时选择本 owner 当前活目标")
+  } finally { reconnected?.close(); a.close(); b.close(); extension.close(); await relay.close() }
 })
 
 test("冷启动两个任务复用一次 relay 连接；授权修改仍互斥", async () => {

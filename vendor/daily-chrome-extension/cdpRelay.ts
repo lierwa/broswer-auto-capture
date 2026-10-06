@@ -137,7 +137,7 @@ export class CDPRelayServer {
   }
 
   cdpEndpoint(owner?: string, targets: string[] = []) {
-    if (owner) { this._scopes.register(owner, targets); this._handler.prepareOwnerConnection(targets); }
+    if (owner) this._scopes.register(owner, targets);
     return `${this._wsHost}${this._cdpPath}${owner ? `/${owner}` : ''}`;
   }
 
@@ -258,7 +258,11 @@ export class CDPRelayServer {
       ws.close(1000, 'Another CDP client already connected');
       return;
     }
-    if (owner) this._scopes.connect(ws, owner);
+    if (owner) {
+      this._scopes.connect(ws, owner);
+      // WHY：SDK 重连需要原生 attached/Runtime 事实重发；只重置这个 owner 的通知，不重 attach。
+      this._handler.prepareOwnerConnection(this._scopes.ownedTargets(owner));
+    }
     else this._cdpConnection = ws;
     ws.on('message', async (data: RawData) => {
       try {
@@ -334,10 +338,15 @@ export class CDPRelayServer {
     debugLogger('← Playwright:', `${message.method} (id=${message.id})`);
     const { id, sessionId, method, params } = message;
     try {
-      if (owner) this._scopes.check(owner, method, params, sessionId);
-      let result = await this._handleCDPCommand(method, params, sessionId);
+      // 历史 target 集保留清理权；默认读目标只能来自原模型当前仍存在的 target。
+      const implicitTarget = owner && method === 'Target.getTargetInfo' && !params?.targetId
+        && (!sessionId || sessionId === 'bat-browser-root');
+      const liveTargets = implicitTarget ? (await this._handleCDPCommand('Target.getTargets', {}, undefined)).targetInfos : [];
+      const scopedParams = owner ? this._scopes.parameters(owner, method, params, sessionId, liveTargets) : params;
+      if (owner) this._scopes.check(owner, method, scopedParams, sessionId);
+      let result = await this._handleCDPCommand(method, scopedParams, sessionId);
       if (owner) {
-        result = this._scopes.response(owner, method, params, result);
+        result = this._scopes.response(owner, method, scopedParams, result);
         if (method === 'Target.createTarget') await this._handler.handleCDPCommand('Target.attachToTarget', { targetId: result.targetId }, undefined);
       }
       client?.send(JSON.stringify({ id, ...(sessionId ? { sessionId } : {}), result }));
