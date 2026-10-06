@@ -23,7 +23,7 @@ export const hybridStartRequestSchema = z.object({ id, type: z.literal("hybrid_s
   allowedOrigins: z.array(z.string().url()).min(1).max(32),
   allowedSites: z.array(z.object({ scheme: z.enum(["http", "https"]), domain: z.string().min(1).max(253),
     port: z.number().int().min(1).max(65_535).nullable(), includeSubdomains: z.boolean() }).strict()).min(1).max(32),
-  managedWindow: z.object({ ownerId: id, resume: z.boolean(), releasedOwners: z.array(id).optional() }).strict().optional(),
+  managedWindow: z.object({ ownerId: id, resume: z.boolean(), releasedOwners: z.array(id).optional(), accountMaintenance: z.boolean().optional() }).strict().optional(),
   existingBrowser: z.object({ ownerId: id, resume: z.boolean(), releasedOwners: z.array(id).optional(),
     cdpUrl: z.url().refine((value) => {
       const url = new URL(value)

@@ -31,6 +31,7 @@ export const accountCheckSchema = z.object({ id, entryId: id, entryRevision: z.n
   // WHY：只保存必要审计摘要；节点输出、页面、Cookie 和原认证响应不进入账号库。
   nodeEvents: z.array(z.object({ nodeId: z.string(), status: z.string() }).strict()) }).strict()
 export const accountMaintenanceSchema = z.object({ id, browserIdentityId: id, entryId: id.nullable(),
+  headless: z.boolean().optional(),
   ownerId: id, leaseId: id, status: z.enum(["opening", "open", "recognizing", "checking", "establishing", "closing", "cleanup_required", "closed"]),
   createdAt: stamp, updatedAt: stamp, reason: z.string().nullable() }).strict()
 export const accountMethodSchema = z.object({ id, entryId: id, entryRevision: z.number().int(), url: accountUrlSchema,

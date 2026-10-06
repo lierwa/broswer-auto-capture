@@ -48,7 +48,7 @@ api.dailyChrome.endpoint = async (_popup, ownerId) => {
 const start = RunnerProcess.prototype.startCompiler
 const prototype = RunnerProcess.prototype as unknown as { launch(entry: string): Promise<void> }
 const launch = prototype.launch
-let launches = 0
+let launches = 0, interruptPreparedTarget = false
 prototype.launch = async function(entry) {
   const runner = this as unknown as { lifecycle: { runnerScript?: string; runnerEnvironment?: Record<string, string> } }
   runner.lifecycle.runnerScript = path.join(root, "apps/api/tests/fixtures/account-operation-runner.py")
@@ -58,7 +58,16 @@ prototype.launch = async function(entry) {
 RunnerProcess.prototype.startCompiler = async function() { launches++; return start.call(this) }
 const call = native.accountSession.bind(native), actions: string[] = []
 const managedAction = native.managedWindowAction.bind(native)
-native.accountSession = (args, signal) => { actions.push(args.action); return call(args, signal) }
+native.accountSession = async (args, signal) => {
+  actions.push(args.action)
+  const result = await call(args, signal)
+  if (interruptPreparedTarget && args.action === "auth_prepare") {
+    interruptPreparedTarget = false
+    const lease = JSON.parse(await readFile(path.join(data, "browser-profile/window-leases/attached-window-lease", `${args.ownerId}.json`), "utf8"))
+    await child("apps/api/tests/fixtures/account-operation-close.py", { port: config.nativePort, targetId: lease.targetId })
+  }
+  return result
+}
 async function child(script: string, value: object) {
   const process = spawn(python, [script], { cwd: root, stdio: "pipe", windowsHide: true })
   let stdout = "", stderr = ""
@@ -69,7 +78,7 @@ async function child(script: string, value: object) {
   return JSON.parse(stdout) as object
 }
 const proof = { passed: false, headless: true, personalProfileTouched: false, modelCalls: 0, elapsedMs: 0,
-  compilerLaunches: 0, actions, ui: {} as object, cleanupFailureUi: {} as object, manuallyClosedRecovery: false, closedOwners: [] as string[] }
+  compilerLaunches: 0, actions, ui: {} as object, cleanupFailureUi: {} as object, preparedPageLossRecovered: false, manuallyClosedRecovery: false, closedOwners: [] as string[] }
 try {
   api.store.saveBrowserEnvironment("dedicated-visible", api.store.browserEnvironment().revision)
   const identity = await core.identities.identify("dedicated")
@@ -82,6 +91,15 @@ try {
   await api.accounts.settled()
   assert.equal(api.accounts.directory.snapshot().operation?.status, "completed")
   api.store.saveBrowserEnvironment("daily", api.store.browserEnvironment().revision)
+  // WHY：复现真实故障边界：备份已落盘、首次写入前原页消失，不得留下全局 pending 锁。
+  interruptPreparedTarget = true
+  await api.accounts.directoryCommand({ type: "check", platformId: platform.id,
+    revision: api.accounts.directory.current(platform.id)!.revision, requestId: randomUUID() })
+  await api.accounts.settled()
+  assert.equal(api.accounts.directory.snapshot().operation?.status, "failed")
+  assert.equal(api.accounts.repository.list("transfer").at(-1)?.status, "rolled_back")
+  assert(api.accounts.repository.list("maintenance").every(w => w.status === "closed"))
+  proof.preparedPageLossRecovered = true
   await api.app.listen({ host: "127.0.0.1", port: 0 })
   const url = `http://127.0.0.1:${(api.app.server.address() as { port: number }).port}`
   actions.length = 0; const before = launches, started = Date.now()

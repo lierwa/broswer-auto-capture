@@ -1,5 +1,11 @@
 # 开发进度
 
+## 当前有效状态：账号检查恢复；Bilibili 准备、复验、发布完成，正式运行验收阻塞（10/7）
+
+原未写入 transfer 因恢复前置 inspect 失联而阻塞两个入口，已按 DPAPI 写前阶段修复；保存的真实 B 站账号通过现有 UI headless 检查和刷新，0 模型、窗口 closed。隔离原生关页故障注入证明失败不会再留下 pending，下一次 UI 检查通过；自动 headless 检查及转人工登录守卫经测试与对抗复审。首败、限制及完整证据见[本轮记录](ACCOUNT_RECOVERY_AND_BILI_20261007.md)。
+
+921 个源码/配置文件冻结且结束比对无变化，服务 PID24604。最新原任务 `5eecaaee` 的 job `6b3f66cb` 自然完成：B-U 6 动作/7 次模型；探索记录报告第 194 话播放计时 02:35/19:27。sample、verification 两次独立复跑均 completed、0 模型、cleanup confirmed，通过 UI 发布 V1 `438a9a7f`。正式运行 UI 因原任务 keep_open 与 headless 冲突禁用提交，未启动正式 execution，**完整验收未通过**。未绕过入口、未修改任务或冻结代码；无活动 job/execution。以下历史“通过”不得代替本轮完整任务结论。
+
 ## 最新：完整“检查登录”流程通过隔离真实 UI 验收（10/7）
 
 此前局部借用验收漏掉真实传输开销：12 次账号请求各重启 Python，目标已认证后整次操作超时回滚，并遗留自动检查页。本轮按一次操作复用原进程，失败 finally 关检查页，登录结果与清理 notice 分开，收尾保持 busy。另修旧页已关时 inspect 堵住 finish、导致新准备/运行失败的共性恢复问题。7 定点、API 类型检查、Workbench 构建通过；对抗 P2 已闭合，恢复路径补审无新增 P1/P2。

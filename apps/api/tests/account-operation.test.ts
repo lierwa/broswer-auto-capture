@@ -127,3 +127,23 @@ test("missing relay enumeration cannot block native owned cleanup before startup
     assert.equal(f.api.accounts.repository.get("maintenance", retained.id).status, "closed")
   } finally { await f.api.app.close() }
 })
+
+test("manual login replaces a retained headless check only after owned closure is confirmed", async () => {
+  const f = await directoryFixture(), action = f.upstream.managedWindowAction!
+  try {
+    const core = accountOwnedCore(f.api.accounts), identity = await core.identities.identify("dedicated")
+    const first = await core.windows.open(identity, f.api.accounts.directory.platform("bilibili"), new AbortController().signal, false)
+    assert.equal(first.headless, true)
+    f.api.accounts.repository.save("maintenance", { ...first, status: "cleanup_required" })
+    f.upstream.managedWindowAction = async input => {
+      if (input.action === "end" || input.action === "verify_closed") throw Error("owned_close_unconfirmed")
+      return action(input)
+    }
+    await assert.rejects(core.windows.open(identity, null, new AbortController().signal, true), /关闭尚未确认/)
+    assert.equal(f.api.accounts.repository.list("maintenance").length, 1)
+    f.upstream.managedWindowAction = action
+    const next = await core.windows.open(identity, null, new AbortController().signal, true)
+    assert.notEqual(next.ownerId, first.ownerId); assert.equal(next.headless, false)
+    assert.equal(f.api.accounts.repository.get("maintenance", first.id).status, "closed")
+  } finally { f.upstream.managedWindowAction = action; await f.api.app.close() }
+})

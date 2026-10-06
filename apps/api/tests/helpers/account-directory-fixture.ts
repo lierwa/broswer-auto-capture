@@ -47,7 +47,8 @@ export async function directoryFixture(serveUi = false) {
       if (input.action === "auth_read") return { cookies: [{ name: "SESSDATA", domain: ".bilibili.com", path: "/", value: name }], storage: {} }
       if (input.action === "auth_prepare") { backups.set(payload.rollbackRef, name); return { phase: "prepared" } }
       if (input.action === "auth_write") { state.writes++; state[input.kind] = payload.state.cookies[0]!.value; return { phase: "written" } }
-      if (input.action === "auth_restore") { if (state.restoreFails) throw Error("account_rollback_target_changed")
+      if (input.action === "auth_restore") { if ((input.payload as { offline?: boolean })?.offline) return { phase: "browser_required" }
+        if (state.restoreFails) throw Error("account_rollback_target_changed")
         state[input.kind] = backups.get(payload.rollbackRef)!; backups.delete(payload.rollbackRef); return { phase: "restored" } }
       backups.delete(payload.rollbackRef); return { phase: "abandoned" }
     },

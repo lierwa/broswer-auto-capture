@@ -297,6 +297,14 @@ export class SourceLifecycleDiagnostics {
       ...(issues.length ? { issues } : {}) }, new Date().toISOString())
   }
 
+  recordAccountFailure(action: string, error: unknown) {
+    if (!/^(?:check|observe|open_page|pick_marker|clear_marker|auth_read|auth_prepare|auth_write|auth_restore|auth_abandon)$/.test(action)) return
+    const reason = error instanceof Error ? error.message : ""
+    const code = /^(?:[A-Za-z_]+:)*((?:account_|hybrid_)[a-z_0-9]{1,100})$/.exec(reason)?.[1] ?? "account_native_request_failed"
+    // WHY：仅保存固定动作和错误码；原始异常、页面、请求 payload 和凭据不落日志。
+    this.append({ source: "host", phase: "account_request", status: "failed", action, code }, new Date().toISOString())
+  }
+
   recordScopeMismatch(value: unknown) {
     const event = scopeMismatchSchema.safeParse(value)
     if (event.success) this.append({ source: "host", ...event.data }, new Date().toISOString())

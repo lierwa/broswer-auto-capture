@@ -69,7 +69,7 @@ type HybridRunner = Pick<RunnerProcess, "close" | "envBoolean" | "request" | "st
 type HybridCapabilitiesInput = { root: string; directory: string; ownerId: string;
   profilePath?: string;
   signal: AbortSignal; allowedOrigins: string[]; canRestoreByNavigation?: boolean; headless?: boolean;
-  managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] };
+  managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[]; accountMaintenance?: boolean };
   handoffPurpose?: () => "delivery" | "human_wait" | null;
   onHandoff?: (purpose: "delivery" | "human_wait", lease: Awaited<ReturnType<RunnerProcess["handoff"]>>["lease"]) => void;
   onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;

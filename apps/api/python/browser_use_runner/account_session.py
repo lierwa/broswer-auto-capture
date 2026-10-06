@@ -43,12 +43,13 @@ def module_from(file):
 
 
 async def handle(request):
-    if request.kind == 'daily' and request.cdpUrl:
+    payload = request.payload or {}
+    offline = request.action == 'auth_abandon' or request.action == 'auth_restore' and payload.get('offline') is True
+    if not offline and request.kind == 'daily' and request.cdpUrl:
         from browser_use_runner.attached_window import AttachedWindow
         AttachedWindow(request.profilePath, request.ownerId, request.cdpUrl,
                        legacy_endpoint_verified=request.legacyEndpointVerified)._load(request.leaseId)
     store = RollbackStore(Path(request.profilePath).resolve().parents[1])
-    payload = request.payload or {}
     if request.action == 'open_page':
         async with asyncio.timeout(40):
             async with borrow_window(request.profilePath, request.ownerId, request.leaseId, request.kind) as borrowed:
@@ -78,6 +79,14 @@ async def handle(request):
         expected = {'ownerId':str(request.ownerId),'leaseId':str(request.leaseId),'kind':request.kind,'platformId':request.platformId}
         if any(snapshot['binding'].get(k) != v for k,v in expected.items()) or not snapshot.get('scope'):
             raise ValueError('account_rollback_owner_or_scope_changed')
+        if snapshot.get('schemaVersion') != 1:
+            raise ValueError('account_rollback_owner_or_version_changed')
+        # WHY：write_started 在每次原生写入前落盘；仅准备的事务没有可撤销副作用，也不应连接失效页面。
+        if snapshot['phase'] == 'rollback_ready':
+            store.remove(payload['rollbackRef'])
+            return {'phase': 'rolled_back'}
+        if offline:
+            return {'phase': 'browser_required'}
         async with asyncio.timeout(60):
             async with borrow_window(request.profilePath, request.ownerId, request.leaseId, request.kind) as borrowed:
                 return await restore(snapshot['scope'], borrowed, store, payload['rollbackRef'], snapshot['binding'])

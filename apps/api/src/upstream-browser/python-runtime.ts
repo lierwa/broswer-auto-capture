@@ -16,6 +16,7 @@ import type { AccountStartup } from "../browser/account-reuse.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "./cleanup.js"
 import { dailyWindowTransport } from "./daily-window-transport.js"
 import { AccountRunner } from "./account-runner.js"
+import { SourceLifecycleDiagnostics } from "./source-lifecycle-diagnostics.js"
 
 type AuthoringInput = Parameters<NonNullable<UpstreamBrowserRuntime["withAuthoring"]>>[0]
 type CapabilitiesInput = Parameters<NonNullable<UpstreamBrowserRuntime["withCapabilities"]>>[0]
@@ -54,9 +55,15 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
   }
   async accountSession(input: Parameters<NonNullable<UpstreamBrowserRuntime["accountSession"]>>[0], signal: AbortSignal) {
     try {
-      const transport = input.kind === "daily" ? await this.dailyTransport(input.ownerId) : {}
+      const offline = input.action === "auth_abandon" || input.action === "auth_restore"
+        && input.payload !== null && typeof input.payload === "object" && !Array.isArray(input.payload) && input.payload.offline === true
+      const transport = input.kind === "daily" && !offline ? await this.dailyTransport(input.ownerId) : {}
       return await this.accountRunner.use(signal, runner => runner.request(accountSessionRequestSchema.parse({ ...input, ...transport,
         id: randomUUID(), type: "hybrid_account_session", profilePath: path.join(this.options.directory, "browser-profile", "default") })))
+    } catch (error) {
+      const diagnostic = SourceLifecycleDiagnostics.open(this.options.directory, input.ownerId)
+      try { diagnostic?.recordAccountFailure(input.action, error) } finally { diagnostic?.close() }
+      throw error
     } finally {
       // WHY：取消可能先终止原runner；用新短时借用退出原生选取，仍只操作原owner页面。
       if (input.action === "pick_marker" && signal.aborted) {

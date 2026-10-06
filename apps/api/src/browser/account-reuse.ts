@@ -66,8 +66,6 @@ export class AccountReuse {
   }
   async recoverPending(signal: AbortSignal) {
     for (const transfer of this.directory.repository.list("transfer").filter(v => v.rollbackRef)) {
-      const target = this.directory.repository.get("identity", transfer.targetIdentityId)
-      await this.verify?.(target.kind)
       // WHY：恢复消费 DPAPI 固定旧 scope；当前目录升级/移除平台不能堵住原 owner 的安全回滚。
       await this.transfers.restore({ id: transfer.platformId }, transfer.id, signal)
     }

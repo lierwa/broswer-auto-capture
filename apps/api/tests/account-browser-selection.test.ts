@@ -7,6 +7,8 @@ import { accountFixtureChain } from "./browser-account-fixture.js"
 // WHY：共享目录不能让维护操作忽略本次选择，也不能因目标未登录丢失原有效来源。
 test("shared account check uses the selected browser and retains the account identity", async () => {
   const f = await directoryFixture()
+  const original = f.upstream.withCapabilities!.bind(f.upstream), modes: string[] = []
+  f.upstream.withCapabilities = async (input, work) => { modes.push(`${input.browserMode}:${input.managedWindow?.accountMaintenance === true}`); return original(input, work) }
   try {
     await f.command("add")
     const account = f.api.accounts.directory.current("bilibili")!
@@ -18,6 +20,9 @@ test("shared account check uses the selected browser and retains the account ide
     assert.equal(identity.kind, "dedicated")
     assert.equal(f.api.accounts.directory.current("bilibili")?.id, account.id)
     assert.equal(f.state.writes, 0)
+    assert.equal(modes.at(-1), "dedicated-headless:true")
+    await f.command("open")
+    assert.equal(modes.at(-1), "dedicated-visible:false")
   } finally { await f.api.app.close() }
 })
 
@@ -46,7 +51,9 @@ test("a selected browser without reusable login does not discard the original ac
     f.state.dedicated = "none"
     f.api.store.saveBrowserEnvironment("dedicated-visible", f.api.store.browserEnvironment().revision)
     const state = await f.command("check")
-    assert.equal(state.items[0]?.account?.state, "expired")
+    // WHY：未完成跨 Profile 复用不能把另一来源已核验的账号判过期。
+    assert.equal(state.items[0]?.account?.state, "ready")
+    assert.equal(state.operation?.status, "failed")
     assert.equal(f.api.accounts.directory.current("bilibili")?.sourceIdentityId, account.sourceIdentityId)
     assert.equal(f.state.writes, 0)
   } finally { await f.api.app.close() }

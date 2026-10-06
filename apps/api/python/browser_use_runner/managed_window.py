@@ -408,8 +408,9 @@ class ManagedWindow:
                 await asyncio.sleep(0.25)
         raise ValueError('hybrid_managed_window_cdp_unavailable')
 
-    async def handoff(self, browser):
-        if self.headless:
+    async def handoff(self, browser, *, account_maintenance=False):
+        # WHY：自动账号检查只交回宿主借用，未交给人；仍以原 owner/CDP/进程核验并 finally 关闭。
+        if self.headless and not account_maintenance:
             raise ValueError('hybrid_managed_window_headless_handoff_unsupported')
         lease = self._load(self.owner_id)
         if lease.status != 'running' or browser.id != lease.sessionId:

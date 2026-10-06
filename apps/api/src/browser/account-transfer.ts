@@ -34,7 +34,8 @@ export class AccountTransfers {
   private async call(action: "auth_read" | "auth_prepare" | "auth_write" | "auth_restore" | "auth_abandon",
     platform: Pick<Platform, "id">, window: AccountMaintenance, signal: AbortSignal, payload: JsonValue = null) {
     const identity = this.repository.get("identity", window.browserIdentityId)
-    if (action !== "auth_abandon") await this.identities.assertBound(identity)
+    const offline = action === "auth_restore" && payload !== null && typeof payload === "object" && !Array.isArray(payload) && payload.offline === true
+    if (action !== "auth_abandon" && !offline) await this.identities.assertBound(identity)
     if (!this.upstream.accountSession) throw new Error("account_session_unavailable")
     return this.upstream.accountSession({ action, ownerId: window.ownerId, leaseId: window.leaseId,
       kind: identity.kind, platformId: platform.id, catalogVersion: this.version, evidenceSha256: this.sourceDigest, payload }, signal)
@@ -140,11 +141,15 @@ export class AccountTransfers {
     const target = this.repository.get("identity", record.targetIdentityId)
     const window = record.targetWindowId ? this.repository.get("maintenance", record.targetWindowId) : this.repository.active(target.id)
     if (!window) throw new Error("account_rollback_window_missing")
-    await this.identities.assertBound(target)
-    await this.windows.action("inspect", window)
     this.update(record, { status: "rolling_back" })
     try {
-      await this.call("auth_restore", platform, window, signal, { rollbackRef: record.rollbackRef })
+      // WHY：先消费加密写前日志；原页失联不能阻止无写入撤销。有写入才进入原生 owner/digest 核验。
+      const probe = z.object({ phase: z.enum(["rolled_back", "browser_required"]) }).parse(
+        await this.call("auth_restore", platform, window, signal, { rollbackRef: record.rollbackRef, offline: true }))
+      if (probe.phase === "browser_required") {
+        this.windows.assertControl(target.kind)
+        await this.call("auth_restore", platform, window, signal, { rollbackRef: record.rollbackRef })
+      }
       return this.update(record, { status: "rolled_back", rollbackRef: null, reason: "已核验并恢复目标原会话。" })
     } catch (error) { this.update(record, { status: "target_pending", reason: safeReason(error) }); throw error }
   }

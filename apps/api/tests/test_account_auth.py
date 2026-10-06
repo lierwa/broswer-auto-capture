@@ -20,6 +20,25 @@ class Borrowed:
     async def remove_cookie(self,cookie): self.writes+=1; self.state['cookies']=[c for c in self.state['cookies'] if c['name']!=cookie['name']]
 
 class AuthBoundaries(unittest.IsolatedAsyncioTestCase):
+    async def test_prepared_only_recovery_does_not_require_browser_or_lease(self):
+        with TemporaryDirectory() as directory:
+            store=RollbackStore(directory); ref=str(uuid4()); owner=str(uuid4())
+            binding={'ownerId':owner,'leaseId':owner,'kind':'daily','platformId':'owned'}
+            snapshot={'schemaVersion':1,'binding':binding,'scope':{'id':'owned'},'phase':'rollback_ready'}
+            store.save(ref,snapshot)
+            request=SimpleNamespace(profilePath=str(Path(directory)/'browser-profile/default'),ownerId=owner,leaseId=owner,
+                kind='daily',cdpUrl=None,platformId='owned',payload={'rollbackRef':ref,'offline':True},action='auth_restore')
+            with patch('browser_use_runner.account_session.borrow_window',side_effect=AssertionError('must_not_connect')):
+                self.assertEqual((await handle(request))['phase'],'rolled_back')
+            self.assertFalse(store.path(ref).exists())
+            snapshot['schemaVersion']=2;store.save(ref,snapshot)
+            with self.assertRaisesRegex(ValueError,'version'): await handle(request)
+            self.assertTrue(store.path(ref).exists())
+            snapshot.update(schemaVersion=1,phase='write_started');store.save(ref,snapshot)
+            with patch('browser_use_runner.account_session.borrow_window',side_effect=AssertionError('probe_must_not_connect')):
+                self.assertEqual((await handle(request))['phase'],'browser_required')
+            self.assertTrue(store.path(ref).exists())
+
     async def test_native_encryption_confirm_race_old_scope_and_idempotent_abandon(self):
         out=ROOT/'work/account-rebuild-20261003'; out.mkdir(exist_ok=True)
         with TemporaryDirectory(dir=out) as directory:

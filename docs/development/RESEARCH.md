@@ -1,5 +1,33 @@
 # 技术调研与复用结论
 
+## 2026-10-07 未写入登录转移的离线恢复
+
+现场 transfer `173d7956` 的 DPAPI 材料为 `rollback_ready`，无任何已写入凭据；恢复却前置 inspect，空 relay 枚举同时堵住账号检查和 B-U 准备。新增回归先在 HEAD 复现：未写入恢复仍调用浏览器。原始首次转移错误被旧 safeReason 抹去，不能将猜测当根因。
+
+Product Alignment:
+- natural-language task: 检查账号以及启动任何使用已登记账号的浏览器任务。
+- reusable chain boundary: 账号准备恢复，不修改网站任务或执行图。
+- runtime inputs: 既有加密恢复引用与 owner/lease。
+- dynamic task outputs: 无写入撤销或需要有界浏览器恢复。
+- generic platform capability used: 原 DPAPI RollbackStore、原 auth_restore 与原窗口清理。
+- replay model calls: 0。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 按既有写前日志事实恢复未开始的转移，避免无意义的旧页连接依赖。
+- existing implementation in repository: account_auth.py 在每条 Cookie/storage 写入前持久化 write_started；account_secrets.py 的原 DPAPI store；原 account_session 协议。
+- mature candidates and pinned versions: 现有 Windows DPAPI、Python 3.12 和既有 Playwright 原生 CDP；无新依赖。
+- selected implementation: 原恢复入口先检查加密阶段；未写入直接结束，有写入仍用原恢复校验。
+- reused public surface: RollbackStore.load/remove 和原 restore；不自建恢复循环。
+- B-A-T-owned adapter and remaining gap: 宿主先作不连接浏览器的恢复探测，再根据 browser_required 进入原路径；保留 schema/owner/scope 校验。
+- license/runtime/platform fit: 既有 Windows 原生实现，无许可或平台变化。
+- browser/runtime/state ownership conflicts: 未写入分支不改当前浏览器状态；已写入分支不放宽 digest 守卫。
+- replay model calls: 0。
+- rejected candidates and evidence: 不清空数据库 pending、不猜原页已关、不恢复未曾写入的旧登录。
+- focused validation: Python 2项、账号操作/共享登录15项、后续人工可见性与选择12项定点通过，API/Workbench检查和构建通过；原生 headless 故障注入后原UI检查18.972秒完成且物理残留0；保存的真实账号经UI检查/刷新通过，0模型、维护页closed。对抗P2人工复用隐藏页已修并复审。冻结原Bilibili任务自然完成B-U、编译、两次0模型复跑及UI发布；正式运行受keep_open/headless UI守卫阻塞，未绕过提交，完整产品验收未通过。921文件冻结比对无变化，见[完整记录](ACCOUNT_RECOVERY_AND_BILI_20261007.md)。
+
+自动专属账号检查直接复用 ManagedWindow/Chrome 的现有 headless 启动；内部 `accountMaintenance` 只允许把该连接交回同一宿主检查操作，不放开任务的 headless 人工交接。账号、owner、Profile、CDP 核验及 finally 关闭全部沿原实现；人工打开、添加和重新登录仍可见。该字段为宿主固定值，不交由模型生成。B-U 任务继续使用既有独立 headless 模式，未加入网站补丁。
+
 ## 2026-10-07 账号检查整次操作与收尾
 
 现场操作 d15feffd：120 秒期限包含建窗、检查与跨 Profile 登录复用；目标在 16:01:53Z 已确认登录，随后备份删除撞到期限，事务回滚，目标维护页没有进入 finally 收尾。每次 accountSession 都重启完整 Python runner，之前测试替换了该真实传输，因此没有覆盖累计开销。

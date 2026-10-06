@@ -90,6 +90,7 @@ class Runner:
         self.close_task = None
         self.popup_resume = None
         self.managed_window = None
+        self.account_maintenance = False
         self.human_wait = None
         self.author_request_id = None
         self.publish_human_wait = None
@@ -210,6 +211,7 @@ class Runner:
                 self.connection = ConnectedTaskScope(config)
             self.managed_window, self.browser = await self.connection.start(config, domains, self.diagnostic)
         elif window_config is not None:
+            self.account_maintenance = window_config.accountMaintenance
             if config.headless and config.existingBrowser is not None:
                 raise ValueError('hybrid_managed_window_requires_visible')
             attached = config.existingBrowser is not None or (window_config.resume
@@ -405,7 +407,9 @@ class Runner:
         if self.popup_resume is not None:
             self.popup_resume.close()
             self.popup_resume = None
-        result = await self.managed_window.handoff(self.browser)
+        result = (await self.managed_window.handoff(self.browser, account_maintenance=True)
+                  if self.account_maintenance and isinstance(self.managed_window, ManagedWindow)
+                  else await self.managed_window.handoff(self.browser))
         self.browser = None
         return result
 

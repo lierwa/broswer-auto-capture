@@ -22,6 +22,7 @@ class ManagedWindowConfig(Contract):
     ownerId: UUID
     resume: bool = False
     releasedOwners: list[UUID] = Field(default_factory=list)
+    accountMaintenance: bool = False
 
 
 class ExistingBrowserConfig(ManagedWindowConfig):

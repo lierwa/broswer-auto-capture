@@ -51,7 +51,7 @@ export interface UpstreamBrowserRuntime {
   withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
     sessionPurpose?: "account"; publicRead?: boolean;
     connectionOwnerId?: string; closeAfterOperation?: boolean;
-    headless?: boolean; browserMode?: BrowserMode; managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] };
+    headless?: boolean; browserMode?: BrowserMode; managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[]; accountMaintenance?: boolean };
     handoffPurpose?: () => "delivery" | "human_wait" | null;
     onHandoff?: (purpose: "delivery" | "human_wait", lease: ReturnType<typeof hybridWindowLeaseSchema.parse>) => void;
     onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;

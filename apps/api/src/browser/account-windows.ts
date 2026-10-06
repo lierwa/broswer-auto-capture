@@ -20,6 +20,13 @@ export class AccountWindows {
     await this.identities.assertBound(identity)
     this.assertControl(identity.kind)
     let session = this.repository.active(identity.id)
+    if (session?.headless && navigate) {
+      // WHY：人工登录不能复用上次自动检查遗留的隐藏窗口，须先确认原 owner 关闭。
+      await this.finish(session)
+      if (this.repository.get("maintenance", session.id).status !== "closed")
+        throw new DomainError("account_window_unconfirmed", "原检查窗口关闭尚未确认，请重试。", 409)
+      session = null
+    }
     if (session?.status === "cleanup_required") {
       const inspected = await this.action("inspect", session).catch(() => null)
       if (inspected?.window.active) session = this.update(session, "open")
@@ -36,7 +43,7 @@ export class AccountWindows {
       this.assertAvailable(identity.kind)
       const ownerId = randomUUID()
       session = this.repository.save("maintenance", { id: randomUUID(), browserIdentityId: identity.id,
-        entryId: null, ownerId, leaseId: ownerId, status: "opening", createdAt: new Date().toISOString(),
+        entryId: null, ownerId, leaseId: ownerId, headless: identity.kind === "dedicated" && !navigate, status: "opening", createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(), reason: null })
     }
     if (platform) {
@@ -56,10 +63,11 @@ export class AccountWindows {
     if (!this.upstream.withCapabilities) throw new Error("account_browser_unavailable")
     try {
       let handed = false
+      const headless = identity.kind === "dedicated" && !navigate
       await this.upstream.withCapabilities({ ownerId: session.ownerId, signal, sessionPurpose: "account",
-        browserMode: identity.kind === "daily" ? "daily" : "dedicated-visible", headless: false,
+        browserMode: identity.kind === "daily" ? "daily" : headless ? "dedicated-headless" : "dedicated-visible", headless,
         allowedOrigins: platform?.origins ?? ["http://127.0.0.1"],
-        managedWindow: { ownerId: session.ownerId, resume, releasedOwners: this.releasedOwners(identity.kind) }, handoffPurpose: () => "human_wait",
+        managedWindow: { ownerId: session.ownerId, resume, releasedOwners: this.releasedOwners(identity.kind), ...(headless ? { accountMaintenance: true } : {}) }, handoffPurpose: () => "human_wait",
         onHandoff: (_purpose, lease) => {
           if (lease.ownerId !== session!.ownerId) throw new Error("account_owner_changed")
           handed = true; this.repository.save("maintenance", { ...this.repository.get("maintenance", session!.id), leaseId: lease.leaseId })
