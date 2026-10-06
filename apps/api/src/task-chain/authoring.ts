@@ -1,12 +1,12 @@
 import { z } from "zod"
 import {
   type AuthoringProgressEvent, type ChainPresentation, type JsonValue, type TaskAuthoringJob, type TaskChain,
-  type TaskPlan, type TaskRequirement,
+  type TaskPlan, type TaskRequirement, type TaskPreparationResearch,
 } from "@browser-capture/contracts"
 import { humanWaitpointSchema, type HumanWaitpoint } from "@browser-capture/contracts/browser"
 import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
 import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
-import { conflict } from "../errors.js"
+import { conflict, DomainError } from "../errors.js"
 import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
 import { browserUseTask, naturalRequirementText } from "../upstream-browser/task-request.js"
 import { completedModelInvocations } from "../upstream-browser/workflow-artifact.js"
@@ -19,7 +19,7 @@ import type { TaskContractRepository } from "./repository.js"
 import { projectPreparationPlan } from "./preparation-plan-projection.js"
 import { reusableHybridSources } from "./hybrid-source-reuse.js"
 import { plannedProgression } from "./authoring-progression.js"
-import { authoringFailureMessage, failureLayer, RequirementClarificationRequired } from "./authoring-failure.js"
+import { authoringFailureCode, authoringFailureMessage, failureLayer, RequirementClarificationRequired } from "./authoring-failure.js"
 import { createChainPresentation, createStepChainPresentation } from "./presentation.js"
 import { AuthoringBuild } from "./authoring-build.js"
 
@@ -33,7 +33,7 @@ export class TaskChainAuthoring {
   constructor(private readonly repository: TaskContractRepository, private readonly ai: AIModelProvider,
     private readonly upstream: UpstreamBrowserRuntime) {}
 
-  async plan(job: TaskAuthoringJob, requirement: TaskRequirement, signal: AbortSignal) {
+  async plan(job: TaskAuthoringJob, requirement: TaskRequirement, signal: AbortSignal, research?: TaskPreparationResearch) {
     try {
       signal.throwIfAborted()
       job.status = "running"
@@ -41,7 +41,7 @@ export class TaskChainAuthoring {
         reportedInvocations: null, events: [], escalations: [] }
       this.touch(job)
       // WHY：唯一业务计划已由用户在访谈中确认；此处只能投影同版草案，不得再次调用模型添目标或 URL。
-      const plan = projectPreparationPlan(requirement, this.repository.nextPlanVersion(requirement.taskId))
+      const plan = projectPreparationPlan(requirement, this.repository.nextPlanVersion(requirement.taskId), research)
       this.complete(job, plan.id, 0)
       return plan
     } catch (error) { this.fail(job, signal, error); throw error }
@@ -92,6 +92,13 @@ export class TaskChainAuthoring {
       active.job.waitpoint.status = "completed"; active.job.waitpoint.resolvedAt = new Date().toISOString()
       active.job.status = "running"; active.job.reason = "人工处理已确认，正在继续原代表试做。"
       this.humanWaits.delete(jobId); this.touch(active.job)
+    }).catch(error => {
+      // WHY：恢复失败不结束原Agent或伪造完成；保留等待，并只公开已有白名单错误代码。
+      const code = authoringFailureCode(error)
+      if (this.humanWaits.get(jobId) === active && active.job.waitpoint?.id === waitpointId) {
+        active.job.reason = `人工处理恢复未通过：${code}；原任务仍在等待。`; this.touch(active.job)
+      }
+      throw new DomainError("authoring_human_resume_failed", `恢复原任务未通过：${code}`, 409)
     }).finally(() => { active.resuming = false })
     await active.continuation
   }
@@ -176,7 +183,9 @@ export class TaskChainAuthoring {
     const providerInvocations = compilationInvocations + (reused ? 0
       : sources.reduce((sum, source) => sum + completedModelInvocations(source.result.modelCalls), 0))
     job.authoring.stage = "compiled"; job.authoring.level = "E2"
-    job.authoring.annotations = z.json().parse({ mode: "workflow-use/v2", artifacts })
+    const online = z.object({ steps: z.array(z.json()) }).safeParse(job.authoring.annotations)
+    job.authoring.annotations = z.json().parse({ mode: "workflow-use/v2", artifacts,
+      ...(online.success ? { steps: online.data.steps } : {}) })
     job.authoring.compiledChain = references[0]!; job.authoring.compiledChains = references
     job.authoring.consumption.providerInvocations = providerInvocations
     this.complete(job, plan.id, providerInvocations)
@@ -190,6 +199,7 @@ export class TaskChainAuthoring {
       stepInput: JsonValue; result: HybridSourceResult; compiled: ReturnType<AuthoringBuild["finish"]> }> = []
     const sourceArtifacts: Array<{ stepId: string; closed: boolean;
       artifact: ReturnType<TaskContractRepository["saveArtifact"]> }> = []
+    const capturedCalls = new Map<string, number>()
     let explorationError: unknown, closed = false
     try {
       const requirementText = naturalRequirementText(requirement).text
@@ -226,6 +236,8 @@ export class TaskChainAuthoring {
             await build.accept(event, bounded)
           },
             onSource: (result) => {
+            capturedCalls.set(step.id, completedModelInvocations(result.modelCalls))
+            job.authoring!.consumption.providerInvocations = [...capturedCalls.values()].reduce((sum, count) => sum + count, 0)
             const artifact = this.repository.saveArtifact(plan.taskId, job.id, hybridSourceMediaType,
               z.json().parse(createHybridSourceArtifact(requirement, plan, step.id, stepInput, result)))
             sourceArtifacts.push({ stepId: step.id, closed: false, artifact })
@@ -233,6 +245,8 @@ export class TaskChainAuthoring {
             this.touch(job)
           } })
         assertCapturedSourceIdentity(requirement, plan, step.id, stepInput, result)
+        job.authoring!.consumption.explorationToolCalls += result.browserCommands
+        this.touch(job)
         const compilationFailure = result.sourceGaps.find(gap => gap.reason.startsWith("hybrid_compilation_"))
         if (compilationFailure) throw new Error(compilationFailure.reason)
         const ambiguities = result.sourceGaps.filter((gap) => gap.resolution === "confirm_intent")
@@ -240,12 +254,16 @@ export class TaskChainAuthoring {
         // WHY：只有纯业务歧义可从未完成来源返回需求对话；缺证或拒绝来源仍按来源失败处理。
         const ambiguityOnly = ambiguities.length > 0
           && result.sourceGaps.every((gap) => gap.resolution === "confirm_intent")
-        if (!result.sourceSuccess && !ambiguityOnly) throw new Error("hybrid_completed_source_required")
+        if (!result.sourceSuccess && !ambiguityOnly) {
+          const trace = hybridNaturalRequestSchema.parse(result.request).trace
+          const failed = trace.actions.find(action => action.status === "failed")
+          // WHY：仅公开固定动作名与序号，完整失败证据已保存在来源；不能把页面文本塞进错误消息。
+          const action = failed && typeof failed.name === "string" && /^[a-z][a-z0-9_]*$/u.test(failed.name) ? failed.name : "done"
+          throw new Error(`hybrid_completed_source_required:${action}:${failed ? trace.actions.indexOf(failed) + 1 : trace.actions.length}`)
+        }
         if (ambiguities.length) throw new RequirementClarificationRequired(ambiguities)
         sources.push({ step, stepInput, result, compiled: build.finish(result) })
         progression.acceptSource(step.id, stepInput, result)
-        job.authoring!.consumption.explorationToolCalls += result.browserCommands
-        this.touch(job)
       } } catch (error) { explorationError = error }
       })
       closed = true
@@ -255,8 +273,8 @@ export class TaskChainAuthoring {
     for (const reference of sourceArtifacts) reference.closed = closed
     job.authoring.exploration = z.json().parse({ mode: "workflow-use-authoring/v3", sources: sourceArtifacts })
     if (!explorationError) { job.authoring.stage = "explored"; job.authoring.level = "E1" }
-    job.authoring.consumption.providerInvocations = explorationError ? null
-      : sources.reduce((sum, source) => sum + completedModelInvocations(source.result.modelCalls), 0)
+    job.authoring.consumption.providerInvocations = capturedCalls.size
+      ? [...capturedCalls.values()].reduce((sum, count) => sum + count, 0) : null
     this.touch(job)
     if (explorationError) throw explorationError
     signal.throwIfAborted()
@@ -290,6 +308,7 @@ export class TaskChainAuthoring {
       job.audit!.reportedInvocations = job.authoring.consumption.providerInvocations === null ? null
         : job.authoring.consumption.providerInvocations
       job.authoring.failureLayer = failureLayer(error, job.authoring.stage)
+      job.authoring.failureCode = authoringFailureCode(error)
     }
     if (error instanceof RequirementClarificationRequired && job.preparation) {
       job.preparation.requirementReturn = {

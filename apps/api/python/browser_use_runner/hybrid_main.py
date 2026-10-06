@@ -35,10 +35,11 @@ from browser_use_runner.read_error_codes import (
 from browser_use_runner.attached_window import AttachedWindow
 from browser_use_runner.connected_task_scope import ConnectedTaskScope
 from browser_use_runner.profile_owner import current_profile_owner, recover_profile_owner
+from browser_use_runner.window_control import control_window
 from browser_use_runner.hybrid_commands import (
     AllowedSite, StartConfig, ProfileStartConfig, StepCommand, ReadCommand, TargetReadinessCommand,
     ReadScope, COMMAND, Envelope, StartRequest, ProfileStartRequest, ProfileOwnerRequest, ProfileRecoverRequest,
-    ExecuteRequest, ObserveRequest, HandoffRequest, ManagedWindowRequest, CloseRequest, ReleaseRequest,
+    ExecuteRequest, ObserveRequest, HandoffRequest, ManagedWindowRequest, AccountSessionRequest, CloseRequest, ReleaseRequest,
     AuthorModel, AuthorRequest, AuthorResumeRequest, CompileRequest, REQUEST,
 )
 
@@ -77,7 +78,6 @@ async def reset_automation_tabs(browser):
         if tab.target_id != focus:
             await browser.close_page(tab.target_id)
     await current.goto('about:blank')
-
 
 class Runner:
     def __init__(self, diagnostic=None):
@@ -126,15 +126,15 @@ class Runner:
             return await self.observe()
         if isinstance(request, HandoffRequest):
             return await self.handoff()
+        if isinstance(request, AccountSessionRequest):
+            if self.browser is not None:
+                raise ValueError('account_borrow_requires_released_owner')
+            from browser_use_runner.account_session import handle
+            return await handle(request)
         if isinstance(request, ManagedWindowRequest):
             if self.browser is not None:
                 raise ValueError('hybrid_managed_window_controlled')
-            if AttachedWindow.has_lease(request.profilePath, request.ownerId):
-                window = AttachedWindow(request.profilePath, request.ownerId)
-                return await getattr(window, request.action)(request.leaseId)
-            window = ManagedWindow(request.profilePath, request.ownerId)
-            action = 'inspect' if request.action == 'verify_closed' else request.action
-            return getattr(window, action)(request.leaseId)
+            return await control_window(request)
         if isinstance(request, AuthorResumeRequest):
             if self.human_wait is None or request.authorRequestId != self.author_request_id:
                 raise ValueError('hybrid_human_author_request_mismatch')
@@ -215,24 +215,28 @@ class Runner:
             if config.headless and config.existingBrowser is not None:
                 raise ValueError('hybrid_managed_window_requires_visible')
             attached = config.existingBrowser is not None or (window_config.resume
+                       and not ManagedWindow.has_lease(self.profile_path, window_config.ownerId)
                        and AttachedWindow.has_lease(self.profile_path, window_config.ownerId))
             self.managed_window = (AttachedWindow(self.profile_path, window_config.ownerId,
                                    config.existingBrowser.cdpUrl if config.existingBrowser else None,
-                                   diagnostic=self.diagnostic)
+                                   diagnostic=self.diagnostic, released_owners=window_config.releasedOwners)
                                    if attached else ManagedWindow(self.profile_path, window_config.ownerId,
-                                                                  headless=config.headless))
-            self.browser = await self.managed_window.start(resume=window_config.resume, allowed_domains=domains)
+                                                                  headless=config.headless, released_owners=window_config.releasedOwners))
+            kwargs = {} if attached else {'storage_state': config.storageState.model_dump() if config.storageState else None}
+            self.browser = await self.managed_window.start(resume=window_config.resume, allowed_domains=domains, **kwargs)
         else:
             self.browser = owned_browser(self.profile_path, headless=config.headless, allowed_domains=domains)
             await self.browser.start()
-        if not isinstance(self.managed_window, AttachedWindow):
+        if self.managed_window is None or self.managed_window.scope is None:
             self.popup_resume = PopupResumeAdapter(self.browser)
-        if not isinstance(self.managed_window, AttachedWindow) and (window_config is None or not window_config.resume):
+        if (self.managed_window is None or self.managed_window.scope is None) and (window_config is None or not window_config.resume):
             await reset_automation_tabs(self.browser)
         session = await self.browser.get_or_create_cdp_session()
         session.cdp_client.register.Network.responseReceived(self.record_document_response)
         await session.cdp_client.send.Network.enable(session_id=session.session_id)
         self.capability = OrdinaryCapability(self.browser)
+        if window_config is not None:
+            self.browser._bat_content_store = (self.profile_path.parent, window_config.ownerId)
         return {'mode': 'hybrid/v2', 'modelCalls': 0}
 
     async def start_profile(self, raw):
@@ -257,7 +261,7 @@ class Runner:
     def record_document_response(self, event, _session_id):
         if self.connection is not None and (self.browser is None or self.managed_window is None):
             return
-        if isinstance(self.managed_window, AttachedWindow):
+        if isinstance(self.managed_window, (AttachedWindow, ManagedWindow)) and self.managed_window.scope is not None:
             manager, scope = self.browser.session_manager, self.managed_window.scope
             if manager is None or scope is None or manager.get_target_id_from_session_id(_session_id) not in scope.owned:
                 return
@@ -314,7 +318,7 @@ class Runner:
             scope = command.scope.model_dump(exclude_none=True) if command.scope is not None else None
             try:
                 output = await read_fields(self.browser, command.specification, scope=scope,
-                                           required_paths=command.requiredPaths)
+                                           required_paths=command.requiredPaths, inherited=command.inherited)
             except Exception as error:
                 # WHY：仅读取层固定错误码可穿过 fd3；字段名、页面正文和依赖消息留在 owner 内。
                 if isinstance(error, (FieldReadError, ValueError)) and str(error) in SAFE_READ_FAILURE_CODES:
@@ -453,11 +457,9 @@ class Runner:
             self.managed_window = None
         return {'closed': all(stage['status'] != 'unconfirmed' for stage in stages), 'stages': stages}
 
-
 def document_key(url):
     value = urlsplit(url)
     return value._replace(fragment='').geturl()
-
 
 def external_document_error(status):
     if status == 401:

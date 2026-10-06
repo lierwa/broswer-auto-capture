@@ -16,6 +16,7 @@ import { runnerAuthorRequestSchema, runnerAuthorResultSchema, runnerCloseRequest
 import { hybridProfileStartRequestSchema, hybridStartRequestSchema, hybridHandoffRequestSchema,
   hybridManagedWindowRequestSchema, hybridManagedWindowResultSchema, hybridWindowLeaseSchema,
   profileOwnerRequestSchema, profileRecoverRequestSchema,
+  accountSessionRequestSchema,
   type HybridRunnerRequest } from "./hybrid-protocol.js"
 import { recompileHybridSource, type HybridAuthoringProgress,
   type HybridAuthorSession } from "./hybrid-exploration.js"
@@ -39,24 +40,28 @@ export interface UpstreamBrowserSession {
     outputSchema: ValueSchema; artifactKey: string; onModelCall?(report: ModelCallReport): Promise<void> }): Promise<UpstreamReplayResult>
 }
 export interface UpstreamBrowserRuntime {
+  accountSession?(input: Omit<ReturnType<typeof accountSessionRequestSchema.parse>, "id" | "type" | "profilePath">,
+    signal: AbortSignal): Promise<JsonValue>
   close?(): Promise<RunnerCleanupReport>
   sourceDigest?(): Promise<string>
   recompile?(input: Omit<Parameters<typeof recompileHybridSource>[0], "root" | "directory" | "subject">): ReturnType<typeof recompileHybridSource>
   withSession<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string },
     work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T>
   withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
+    sessionPurpose?: "account"; publicRead?: boolean;
     connectionOwnerId?: string; closeAfterOperation?: boolean;
-    headless?: boolean; browserMode?: BrowserMode; managedWindow?: { ownerId: string; resume: boolean };
+    headless?: boolean; browserMode?: BrowserMode; managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] };
     handoffPurpose?: () => "delivery" | "human_wait" | null;
     onHandoff?: (purpose: "delivery" | "human_wait", lease: ReturnType<typeof hybridWindowLeaseSchema.parse>) => void;
     onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
     onCleanup?: (report: RunnerCleanupReport) => void },
     work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T>
   withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
+    managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] }; preserveWindow?: boolean;
     connectionOwnerId?: string; browserMode?: BrowserMode;
     onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
     work: (session: HybridAuthorSession) => Promise<T>): Promise<T>
-  managedWindowAction?(input: { action: "inspect" | "focus" | "end" | "verify_closed"; ownerId: string; leaseId: string }):
+  managedWindowAction?(input: { action: "inspect" | "focus" | "page" | "end" | "verify_closed"; ownerId: string; leaseId: string; browserMode?: BrowserMode; controllerReleased?: boolean }):
     Promise<{ window: ReturnType<typeof hybridManagedWindowResultSchema.parse>; report: RunnerCleanupReport }>
 }
 
@@ -153,8 +158,8 @@ export class RunnerProcess {
     return { report, lease }
   }
 
-  async managedWindowAction(input: { action: "inspect" | "focus" | "end" | "verify_closed"; profilePath: string;
-    ownerId: string; leaseId: string }) {
+  async managedWindowAction(input: { action: "inspect" | "focus" | "page" | "end" | "verify_closed"; profilePath: string;
+    ownerId: string; leaseId: string; browserMode?: BrowserMode; cdpUrl?: string; legacyEndpointVerified?: boolean; controllerReleased?: boolean }) {
     await this.launch("main.py")
     let window: ReturnType<typeof hybridManagedWindowResultSchema.parse>
     try {

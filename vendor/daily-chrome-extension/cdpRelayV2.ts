@@ -54,6 +54,11 @@ export class ExtensionProtocolV2 {
   connectOverCDP(sendToCDPClient: SendToCDPClient): void {
     this._model.connectOverCDP(sendToCDPClient);
   }
+  prepareOwnerConnection(targets: string[]) { this._model.prepareOwnerConnection(targets); }
+
+  borrowCDPSession(targetId: string): { sessionId: string } {
+    return this._model.borrowTarget(targetId, 'bat-browser-root');
+  }
 
   // Called when the extension WebSocket closes. Rejects a pending `ready()`
   // promise so a blocked `establishExtensionConnection` bails out instead of
@@ -96,6 +101,14 @@ export class ExtensionProtocolV2 {
   // undefined to fall through to forwarding to the extension.
   async handleCDPCommand(method: string, params: any, sessionId: string | undefined): Promise<{ result: any } | undefined> {
     switch (method) {
+      case 'Target.detachFromTarget': {
+        // WHY：原extension拥有debugger租约，借用结束只删除已有tab的会话别名。
+        if (typeof params?.sessionId === 'string' && this._model.hasSession(params.sessionId)) {
+          this._model.releaseBorrow(params.sessionId);
+          return { result: {} };
+        }
+        return undefined;
+      }
       case 'Target.setDiscoverTargets': {
         if (sessionId)
           return undefined;

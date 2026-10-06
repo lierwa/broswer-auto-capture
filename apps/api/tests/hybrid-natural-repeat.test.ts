@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 import test from "node:test"
-import { jsonValueSchema, requiredNodeOutcomes, type JsonValue, type TaskChain, type ValueSchema } from "@browser-capture/contracts"
+import { jsonValueSchema, requiredNodeOutcomes, type JsonValue, type TaskChain, type TaskRun, type ValueSchema } from "@browser-capture/contracts"
 import { compileTaskChain, digestJson, TaskChainRuntime } from "@browser-capture/runtime"
 import { extractionFixture } from "../../../packages/contracts/tests/task-chain-fixtures.js"
 import { requestFor } from "../../../packages/runtime/tests/task-chain-fixtures.js"
@@ -11,6 +11,11 @@ import { naturalSourceFixture, canonical } from "./helpers/natural-source.js"
 import { HybridRuntimeScopeState } from "../src/upstream-browser/hybrid-runtime-scope.js"
 import { validateNaturalRepeats } from "../src/upstream-browser/hybrid-natural-repeat.js"
 import { hybridCompilerResponseSchema, hybridNaturalRequestSchema } from "../src/upstream-browser/hybrid-schema.js"
+import { createPreparationPresentation, createStepChainPresentation } from "../src/task-chain/presentation.js"
+import { buildCanvasGraph } from "../../workbench/src/ChainCanvasGraph.js"
+import { canvasStageList } from "../../workbench/src/chainCanvasList.js"
+import { runBatch } from "../../workbench/tests/fixtures/control-chain.js"
+import { mkdir, writeFile } from "node:fs/promises"
 
 const hash = "a".repeat(64), origin = "https://example.test/"
 const digest = (value: unknown) => digestCanonicalJson(jsonValueSchema.parse(value))
@@ -141,10 +146,12 @@ async function runPages(pages: JsonValue[][], options: { minItems?: number; maxC
   const chain = options.chain ?? fixture(options.minItems, options.maxCommands).materialize()
   compileTaskChain(chain)
   let page = 0, advances = 0, calls = 0
+  const snapshots: TaskRun[] = []
   const scope = new HybridRuntimeScopeState()
   const state = () => ({ sessionId: "test-session", tabId: "test-tab", url: `${origin}${page + 1}`,
     observationDigest: hash, observedAt: "2026-09-27T00:00:00.000Z" })
   const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {
+    persist: async run => { snapshots.push(structuredClone(run)) },
     browserCommandCount: () => calls,
     capability: async ({ node, config, input }) => {
       calls++
@@ -160,7 +167,7 @@ async function runPages(pages: JsonValue[][], options: { minItems?: number; maxC
       return { outcome: "success", output }
     },
   } })
-  return { chain, run, advances, calls }
+  return { chain, run, advances, calls, snapshots }
 }
 
 test("重复方法生成真实受限IR，三页动态数据去重且末页先累计，复跑零模型", async () => {
@@ -179,6 +186,32 @@ test("重复方法生成真实受限IR，三页动态数据去重且末页先累
   assert.equal(changed.chain, result.chain)
   assert.deepEqual(changed.run.outputs.result, { kind: "value", contract: { id: "extracted-result", version: 1 },
     value: changedRows })
+})
+
+test("自然repeat来源经实际物化、准备分组和runtime，直接接入循环分支列表", async () => {
+  const { chain, run, snapshots } = await runPages([[{ id: "one", title: "first" }], [], [{ id: "three", title: "last" }]])
+  assert.equal(run.status, "completed", run.outcome?.reason)
+  const step = { id: chain.stepId, title: "读取输入列表", goal: "按来源方法逐页处理" }
+  const presentation = createStepChainPresentation(chain, step)
+  const stage = presentation.stages.find(stage => stage.nodeIds.includes("loop-repeat-r1"))!
+  const items = canvasStageList(stage, chain), loopItem = items.find(item => item.id === "loop-repeat-r1")!
+  assert.ok(loopItem.body?.some(item => item.id === "first-repeat-r1"))
+  assert.ok(loopItem.body?.some(item => item.id === "s-r1"))
+  const loopNode = chain.nodes.find(node => node.id === loopItem.id)!
+  assert.ok(loopNode.kind === "loop" && "body" in loopNode)
+  assert.deepEqual(loopItem.returns, loopNode.body.exits)
+  const preparation = createPreparationPresentation({ step, nodes: chain.nodes as never, edges: chain.edges as never })
+  assert.ok(preparation.stages.some(stage => stage.nodeIds.includes("loop-repeat-r1") && stage.nodeIds.includes("s-r1")))
+  const graph = buildCanvasGraph(chain, presentation, runBatch(run), () => {})
+  assert.equal(graph.nodes.some(node => node.type === "chain-stage" && node.data.items.some(item => item.body)), true)
+  assert.equal(graph.nodes.find(node => node.id === "__end:completed")?.data.tone, "success")
+  assert.equal(run.consumed.llmCalls, 0)
+  if (process.env.BAT_CONTROL_UI_EVIDENCE) {
+    const directory = process.env.BAT_CONTROL_UI_EVIDENCE
+    await mkdir(directory, { recursive: true })
+    await writeFile(path.join(directory, "natural-control.json"), JSON.stringify({ chain, presentation, run, snapshots,
+      provenance: "synthetic-source-through-real-materializer-and-runtime" }))
+  }
 })
 
 test("重复方法预算在下一次翻页前终止，保留已累计输出且不冒充完成", async () => {

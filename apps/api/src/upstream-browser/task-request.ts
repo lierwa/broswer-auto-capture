@@ -45,7 +45,8 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
       throw new Error("preparation_draft_handoff_mismatch")
     }
   }
-  const mode = step.invocation.mode === "each" ? "这是集合中一个独立项目的完整执行。" : "这是本步骤的完整执行。"
+  const mode = step.invocation.mode === "each" ? "这是集合中一个独立项目的方法验证，输入属于这一个项目。"
+    : plan.steps.length > 1 ? "这里只验证本步骤的方法与阶段输出；后续步骤负责补全最终交付。" : "这是本步骤的完整执行。"
   const origin = requirementText.legacyMachineBlockRemoved
     ? "以下内容来自已确认的历史需求正文；历史机器规则块已经排除，不属于本次业务指令。"
     : "以下内容来自用户已确认的需求正文。"
@@ -57,13 +58,20 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
     "【本次步骤】",
     `步骤名称：${step.title}`,
     `业务目标：${step.goal}`,
+    ...(step.preparationResearch ? ["【本步骤的准备修订资料】",
+      "以下是已结束来源上的技术备注，不是新的业务要求，也不是本次现场事实。先用原生工具在当前输入上复核，再形成实际动作和读取；不能仅凭备注编译、报告成功或扩大授权来源。",
+      `来源准备：${step.preparationResearch.sourceJobId}；步骤：${step.preparationResearch.stepId}；产物：${step.preparationResearch.artifact.artifactId}；摘要：${step.preparationResearch.artifact.digest}`,
+      step.preparationResearch.notes] : []),
     `在总任务中的作用：${plan.summary}`,
-    `已完成的前置步骤：${step.dependsOn.length ? step.dependsOn.join("、") : "无"}`,
+    `已完成的前置步骤：${step.dependsOn.length ? step.dependsOn.map(id => plan.steps.find(item => item.id === id)?.title ?? id).join("、") : "无"}`,
     mode,
+    ...(plan.steps.length > 1 ? ["完整需求说明整项任务的范围和约束。本次只执行上面的步骤目标与下面的阶段输出合同；"
+      + "不替后续步骤执行，不把本步骤成功当成总任务完成。业务条件按本步骤已确认目标处理，技术动作由你根据真实页面研究。"] : []),
     "【预执行入口】",
     ...(entryUrls.length ? entryUrls.map((url, index) => `- 入口 ${index + 1}：${url}`)
       : ["- 当前计划没有可用入口；不得自行改用其他网站。"]),
-    "必须从上述入口开始，只能在计划授权的网站范围内完成任务；安全策略拒绝导航时立即停止，不得改用搜索引擎、其他协议或移动站碰运气。",
+    step.dependsOn.length ? "前置步骤已完成；保持同一授权现场并使用本次输入继续。输入有条目入口时只处理对应条目，不重选来源；其它步骤按其业务目标继续。"
+      : "必须从上述入口开始，只能在计划授权的网站范围内完成任务；安全策略拒绝导航时立即停止，不得改用搜索引擎、其他协议或移动站碰运气。",
     "【本次真实输入】",
     ...describeValue(input.resolvedInput, "输入"),
     "复跑时输入值可以变化，但字段、类型和边界如下：",
@@ -76,11 +84,18 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
       `失败位置：步骤 ${input.repair.stepId ?? "未知"}，运行 ${input.repair.runId ?? "未知"}，事件序号 ${input.repair.eventSequence ?? "未知"}。`,
       "必须针对这份失败事实重新完成真实任务并形成新候选；不得声称旧链路已被原地修改。"] : []),
     "【必须返回的结果】",
+    ...(requiredResultSpec(step).mode === "data" ? [
+      "以下合同约束本阶段正式复跑的结果。bat_read_fields 的首/尾代表样本只验证读取方法；"
+      + "sampled 少于 total 不表示漏采，不要为凑齐合同数量重复同页读取或抄写页面值。"
+      + "选择同一输出路径的一份成功 readRef，使用 readRefs 结束；当前页面完整范围由普通运行器执行该方法读取。"
+      + "若任务需要跨页或加载后续批次，仍须观察并保存实际推进和停止方法，当前 DOM 的 total 不代表全任务数量。",
+    ] : []),
     ...describeResultSpec(requiredResultSpec(step)),
     ...describeSchema(step.outputContract.schema, "结果", true),
     "【完成条件】",
     ...step.completion.map((condition) => `- ${condition.description}`),
-    "需求正文中的相关完成条件也必须满足；条件不足时不得报告完整成功。",
+    plan.steps.length > 1 ? "本步骤成功只声明本阶段方法可复跑；整项需求由全部步骤和正式运行完成，不能要求本步骤重复承担其他步骤。"
+      : "需求正文中的相关完成条件也必须满足；条件不足时不得报告完整成功。",
     "【范围与等待点】",
     `授权范围：${plan.authorizationScope}`,
     `风险与停止点：${step.risks.length ? step.risks.join("；") : "无额外风险"}`,
@@ -103,7 +118,7 @@ export function describeResultSpec(spec: ResultSpec) {
       `  - ${item.producerRef} 使用普通 ${item.operation} 数据节点，来源 ${item.sourceProducerRef} 的结果${displayPath(item.sourcePath)}`)] : []),
     ...(spec.edgeCases.length ? ["- 边界流程：", ...spec.edgeCases.map((edge) =>
       `  - ${edge.description}；逻辑控制 ${edge.controlRef}`)] : []),
-    "- 逻辑引用只说明计划关系；不得生成 CSS、DOM 引用、等待类型或真实 E1 节点 ID。",
+    "- 逻辑引用只说明计划关系；不需要你编写链路结构、DOM 证明或真实 E1 节点 ID。原生浏览器工具所需参数按工具说明提供。",
   ]
 }
 

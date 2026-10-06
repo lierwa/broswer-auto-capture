@@ -19,12 +19,13 @@ const views = [
 type WorkspaceModelSettings = Pick<ReturnType<typeof useModelSettings>,
   "accounts" | "selection" | "loading" | "saving" | "error" | "ready" | "save" | "load">
 
-export function TaskWorkspace({ task, visible, theme, otherRunning, modelSettings }: {
+export function TaskWorkspace({ task, visible, theme, modelSettings, attentionRequest }: {
   task: TaskSummary
   visible: boolean
   theme: "light" | "dark"
   otherRunning: TaskSummary | undefined
   modelSettings: WorkspaceModelSettings
+  attentionRequest?: { source: "interview" | "preparation" | "execution"; id: string; token: string } | undefined
 }) {
   const interview = useInterview(task.id)
   const taskChainConnection = useMemo(() => new TaskChainConnection(task.id), [task.id])
@@ -33,9 +34,12 @@ export function TaskWorkspace({ task, visible, theme, otherRunning, modelSetting
   useEffect(() => {
     if (visible && task.attention) setActiveTab(task.attention.source === "interview" ? "interview" : "canvas")
   }, [visible, task.attention?.id, task.attention?.kind])
+  useEffect(() => {
+    if (attentionRequest && visible) setActiveTab(attentionRequest.source === "interview" ? "interview" : "canvas")
+  }, [visible, attentionRequest?.token])
   const blocked = task.archived
     ? "任务已归档，恢复后可以继续对话。"
-    : otherRunning ? "另一任务正在处理，可先输入，结束后发送。" : undefined
+    : undefined
   function openDraft(value: number) {
     setVersion(value); setActiveTab("interview")
   }
@@ -46,7 +50,7 @@ export function TaskWorkspace({ task, visible, theme, otherRunning, modelSetting
       setActiveTab("interview")
       return interview.sendRevision(interview.pending.text, review.id, interview.pending.expectedRevision)
     }
-    if (!interview.ready || interview.busy || interview.state.active || interview.pending || task.archived || otherRunning) return false
+    if (!interview.ready || interview.busy || interview.state.active || interview.pending || task.archived) return false
     const revision = interview.state.revision
     setActiveTab("interview")
     return interview.sendRevision(requirementRevisionMessage(review.summary, review.feedback, review.context), review.id, revision)
@@ -62,6 +66,7 @@ export function TaskWorkspace({ task, visible, theme, otherRunning, modelSetting
         <Tabs.Content value="canvas" forceMount hidden={activeTab !== "canvas"}><LiveChain connection={taskChainConnection}
           theme={theme} active={visible && activeTab === "canvas"} onInterview={() => setActiveTab("interview")}
           onRequirementView={openDraft}
+          attentionRequest={attentionRequest}
           onRequirementRevision={reopenRequirement} /></Tabs.Content>
       </Tabs.Root>
     </section><DraftDialog state={interview.state} version={version}

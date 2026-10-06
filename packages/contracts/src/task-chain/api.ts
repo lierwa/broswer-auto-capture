@@ -2,13 +2,13 @@ import { z } from "zod"
 import { aiEventSchema } from "../ai.js"
 import { humanWaitpointSchema } from "../browser.js"
 import { artifactReferenceSchema, consumptionSchema, contractVersionSchema, digestSchema, identitySchema, keySchema, taskIdentitySchema, textSchema, versionReferenceSchema } from "./common.js"
-import { taskPlanSchema } from "./plan.js"
+import { taskPlanSchema, taskPreparationResearchSchema } from "./plan.js"
 import {
   DEFAULT_TASK_EXECUTION_PACING, runnableTaskReleaseSchema, taskExecutionBrowserSchema,
   taskExecutionPacingSchema,
 } from "./product.js"
 import { requirementReferenceSchema, taskRequirementSchema } from "./requirement.js"
-import { taskDraftContentSchema, taskDraftReferenceSchema, taskDraftSchema } from "./revision.js"
+import { taskDraftContentSchema, taskDraftReferenceSchema, taskDraftSchema, taskDraftStepSchema } from "./revision.js"
 import { capabilityDescriptorSchema } from "./capability-descriptor.js"
 import { nodeExecutionEventSchema, taskRunModeSchema, taskRunSchema } from "./run.js"
 import { jsonValueSchema, taskOutputSchema } from "./value.js"
@@ -182,6 +182,8 @@ export const taskAuthoringJobSchema = z.object({
   authoring: z.object({
     stage: z.enum(["planning", "exploring", "explored", "compiling", "compiled"]),
     level: z.enum(["E0", "E1", "E2", "E3", "E4"]), failureLayer: z.string().nullable(),
+    // WHY：启动前失败也保留安全原因；旧 job 可缺失，不能把笼统分类当作具体诊断。
+    failureCode: z.string().max(320).regex(/^[A-Za-z0-9_:]+$/).optional(),
     exploration: jsonValueSchema.nullable(), annotations: jsonValueSchema.nullable(),
     compiledChain: versionReferenceSchema.optional(),
     compiledChains: z.array(versionReferenceSchema).optional(),
@@ -192,6 +194,15 @@ export const taskAuthoringJobSchema = z.object({
       payload: z.string().min(1).max(8_000_000),
       nodes: z.array(stableChainNodeV2Schema).max(500), edges: z.array(chainEdgeV2Schema).max(5000),
       presentation: chainPresentationContentSchema.optional(),
+      compilation: z.object({ observedActions: z.number().int().min(0).max(500),
+        compiledActions: z.number().int().min(0).max(500), pendingActions: z.number().int().min(0).max(500),
+        excludedActions: z.number().int().min(0).max(500),
+        issues: z.array(z.object({ actionRef: z.string().regex(/^a-\d{4,}$/),
+          actionName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,80}$/),
+          reason: z.string().max(200).regex(/^[A-Za-z0-9_:.-]+$/),
+        }).strict()).max(500),
+      }).strict().refine(value => value.observedActions === value.compiledActions + value.pendingActions + value.excludedActions,
+        "compilation_coverage_count_mismatch").optional(),
     }).strict().optional(),
     consumption: z.object({ explorationToolCalls: z.number().int().nonnegative(), explorationSessions: z.number().int().nonnegative(),
       compilationCalls: z.number().int().nonnegative(), providerInvocations: z.number().int().nonnegative().nullable() }).strict(),
@@ -282,6 +293,7 @@ export const taskExecutionSummarySchema = z.object({
   steps: z.array(z.object({ stepId: keySchema, chain: versionReferenceSchema,
     status: taskExecutionStepSchema.shape.status, reason: textSchema.nullable() }).strict()),
   result: taskExecutionResultSchema.optional(), cleanup: executionCleanupSchema,
+  cleanupResume: taskExecutionCleanupResumeSchema.nullable().default(null),
   browser: taskExecutionBrowserSchema.optional(),
   browserHandoff: taskExecutionBrowserHandoffSchema.default(UNRECORDED_BROWSER_HANDOFF),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
@@ -303,13 +315,17 @@ export const taskExecutionDetailSchema = z.object({
   }) }).strict()),
 }).strict()
 
+export const taskAuthoringBuildViewSchema = taskAuthoringJobSchema.shape.authoring.unwrap().shape.build.unwrap()
+  .omit({ payload: true, authorRequestId: true }).extend({ presentation: chainPresentationContentSchema })
+
 export const taskAuthoringActivitySchema = z.object({
   id: identitySchema, status: z.enum(["queued", "running", "waiting_for_human", "failed", "interrupted"]),
   phase: preparationPhaseSchema,
+  // WHY：画布展示完整确认计划和已经保存的步骤链；未完成步骤不伪造技术节点。
+  plan: taskPlanSchema.optional(), steps: z.array(taskDraftStepSchema).max(100).optional(),
   browser: taskExecutionBrowserSchema.optional(),
-  build: taskAuthoringJobSchema.shape.authoring.unwrap().shape.build.unwrap()
-    .omit({ payload: true, authorRequestId: true })
-    .extend({ presentation: chainPresentationContentSchema }).optional(),
+  build: taskAuthoringBuildViewSchema.optional(),
+  completedBuilds: z.array(taskAuthoringBuildViewSchema).max(100).optional(),
   sequence: z.number().int().nonnegative(), reason: textSchema.nullable(),
   waitpoint: humanWaitpointSchema.nullable().default(null),
   inputRequest: z.object({ purpose: z.enum(["representative", "verification"]),
@@ -380,7 +396,8 @@ export const taskExecutionEventBatchSchema = z.object({
 const request = { requestId: identitySchema }
 export const taskChainCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cancel_authoring"), jobId: identitySchema }).strict(),
-  z.object({ type: z.literal("prepare_task"), ...request, requirementVersion: z.number().int().positive() }).strict(),
+  z.object({ type: z.literal("prepare_task"), ...request, requirementVersion: z.number().int().positive(),
+    browser: taskExecutionBrowserSchema.optional(), research: taskPreparationResearchSchema.optional() }).strict(),
   z.object({ type: z.literal("continue_preparation"), ...request, jobId: identitySchema,
     expectedSequence: z.number().int().nonnegative(), input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("resume_preparation_human"), ...request, jobId: identitySchema,
@@ -388,7 +405,8 @@ export const taskChainCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("recover_preparation_compilation"), ...request, jobId: identitySchema,
     expectedSequence: z.number().int().nonnegative() }).strict(),
   z.object({ type: z.literal("trial_task_draft"), ...request, draftId: identitySchema,
-    expectedRevision: z.number().int().nonnegative(), expectedChecksum: digestSchema, input: jsonValueSchema }).strict(),
+    expectedRevision: z.number().int().nonnegative(), expectedChecksum: digestSchema, input: jsonValueSchema,
+    browser: taskExecutionBrowserSchema.optional() }).strict(),
   z.object({ type: z.literal("publish_task_draft"), ...request, draftId: identitySchema,
     expectedRevision: z.number().int().nonnegative(), expectedChecksum: digestSchema }).strict(),
   z.object({ type: z.literal("review_execution"), ...request, executionId: identitySchema,

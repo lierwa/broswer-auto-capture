@@ -1,3 +1,4 @@
+import { stableUuid } from "@browser-capture/runtime"
 import { createHash, randomUUID } from "node:crypto"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
@@ -15,6 +16,7 @@ import { parseModelSelection, type ModelSelection } from "@agent-platform/ai-con
 import { automaticTaskTitle } from "./task-title.js"
 import { WorkspaceChanges } from "./workspace-changes.js"
 import { browserEnvironmentSchema, browserModeSchema, executionBrowser } from "@browser-capture/contracts/browser-profile"
+import { taskBrowserEnvironment } from "../browser/task-environment.js"
 
 export type ProductDatabase = ReturnType<typeof drizzle<typeof schema>>
 export function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex") }
@@ -45,6 +47,14 @@ export class ProductStore {
   }
   private assertAvailable() {
     if (this.closed || this.compromised) throw new DomainError("storage_unavailable", "本地持久化服务不可用，请重启后恢复。", 503)
+  }
+  readRevision(): string | null {
+    this.assertAvailable()
+    // WHY：SQLite 分别报告其他连接与本连接写入；事务内读可能随后回滚，不能缓存。
+    if (this.connection.inTransaction) return null
+    const external = this.connection.pragma("data_version", { simple: true })
+    const local = this.connection.prepare("SELECT total_changes()").pluck().get()
+    return `${external}:${local}`
   }
   task(id: string) {
     this.assertAvailable()
@@ -134,14 +144,30 @@ export class ProductStore {
     if (pending("browserRuns", "json_extract(body,'$.status') IN ('running','waiting_human','cleanup_required')"))
       conflict("浏览器运行或清理尚未结束，请先完成或清理。")
   }
-  activeBrowserWindowLease(exceptExecutionId?: string): { taskId: string; executionId: string } | null {
-    // WHY：交付给用户的窗口不再属于 runner 清理总账，但共享 Profile 在精确结束前不能被另一运行接管。
-    const row = this.connection.prepare(`SELECT taskId, id AS executionId FROM taskExecutions
-      WHERE id <> ? AND (json_extract(body,'$.browserHandoff.status') IN ('active','pending')
-      OR (json_extract(body,'$.browserHandoff.status') = 'unavailable'
-        AND json_extract(body,'$.browserHandoff.leaseId') IS NOT NULL)) LIMIT 1`)
-      .get(exceptExecutionId ?? "") as { taskId: string; executionId: string } | undefined
-    return row ?? null
+  private browserWindowLeases(exceptExecutionId?: string, browserKind?: "daily" | "dedicated") {
+    return this.connection.prepare(`SELECT taskId, id AS executionId, status,
+      json_extract(body,'$.browserHandoff.purpose') AS purpose,
+      json_extract(body,'$.browserHandoff.status') AS handoff,
+      json_extract(body,'$.browserHandoff.ownerId') AS ownerId,
+      json_extract(body,'$.browserHandoff.leaseId') AS leaseId,
+      json_extract(body,'$.browserHandoff.targetDigest') AS targetDigest,
+      json_extract(body,'$.cleanup.status') AS cleanup FROM taskExecutions
+      WHERE id <> ? AND (? IS NULL OR CASE
+        WHEN json_extract(body,'$.browser.mode') = 'daily' OR (json_extract(body,'$.browser.mode') IS NULL AND json_extract(body,'$.browser.headless') = 0) THEN 'daily'
+        WHEN json_extract(body,'$.browser.mode') IS NOT NULL OR json_extract(body,'$.browser.headless') = 1 THEN 'dedicated'
+        ELSE ? END = ?)
+      AND (json_extract(body,'$.browserHandoff.status') IN ('active','pending')
+        OR (json_extract(body,'$.browserHandoff.status') = 'unavailable'
+          AND json_extract(body,'$.browserHandoff.leaseId') IS NOT NULL))`)
+      .all(exceptExecutionId ?? "", browserKind ?? null, browserKind ?? null, browserKind ?? null) as WindowLeaseRecord[]
+  }
+  activeBrowserWindowLease(exceptExecutionId?: string, browserKind?: "daily" | "dedicated") {
+    const row = this.browserWindowLeases(exceptExecutionId, browserKind).find(lease => !releasedDelivery(lease))
+    return row ? { taskId: row.taskId, executionId: row.executionId } : null
+  }
+  releasedBrowserWindowOwners(browserKind: "daily" | "dedicated") {
+    // WHY：完成页只持有 target；控制权的释放许可来自持久执行和清理证据，不能由 HTTP 传入。
+    return this.browserWindowLeases(undefined, browserKind).filter(releasedDelivery).map(lease => lease.ownerId!)
   }
   taskBrowserWindowLease(taskId: string): string | null {
     const row = this.connection.prepare(`SELECT id FROM taskExecutions WHERE taskId = ?
@@ -176,6 +202,8 @@ export class ProductStore {
         this.connection.prepare("DELETE FROM researchRuns WHERE taskId = ?").run(taskId)
       }
       this.connection.prepare("DELETE FROM tasks WHERE id = ?").run(taskId)
+      this.connection.prepare("DELETE FROM browserSettings WHERE id = ?").run(`task:${taskId}`)
+      this.connection.prepare("DELETE FROM browserSettings WHERE id = ?").run(`task-browser-revision:${taskId}`)
       return taskId
     })()
   }
@@ -203,9 +231,10 @@ export class ProductStore {
       return next
     })()
   }
-  executionBrowser(browser?: { headless: boolean; mode?: ReturnType<typeof browserModeSchema.parse> | undefined }) {
+  executionBrowser(browser?: { headless: boolean; mode?: ReturnType<typeof browserModeSchema.parse> | undefined }, taskId?: string) {
     // WHY：旧显式可见请求一直使用日常 Chrome，不能被新全局无头选择覆盖；缺省才读取当前选择。
-    const mode = browser?.mode ?? (browser ? browser.headless ? "dedicated-headless" : "daily" : this.browserEnvironment().mode)
+    const mode = browser?.mode ?? (browser ? browser.headless ? "dedicated-headless" : "daily"
+      : taskId ? taskBrowserEnvironment(this, taskId).mode : this.browserEnvironment().mode)
     return executionBrowser(mode)
   }
   saveSharedModelSelection(subjectId: string, input: unknown) {
@@ -285,4 +314,12 @@ export class ProductStore {
     this.workspaceChanges.close()
     this.closed = true; this.connection.close(); await this.release().catch(() => {})
   }
+}
+
+type WindowLeaseRecord = { taskId: string; executionId: string; status: string; purpose: string | null;
+  handoff: string; ownerId: string | null; leaseId: string | null; targetDigest: string | null; cleanup: string }
+function releasedDelivery(lease: WindowLeaseRecord) {
+  return lease.status === "completed" && lease.purpose === "delivery" && lease.handoff === "active"
+    && lease.cleanup === "confirmed" && Boolean(lease.targetDigest)
+    && lease.ownerId === stableUuid(lease.executionId, "managed-window") && lease.leaseId === lease.ownerId
 }

@@ -34,12 +34,28 @@ TARGET_PREPARATION_SCRIPT = r"""() => {
   const top = rect ? Math.max(0, rect.top) : 0;
   const bottom = rect ? Math.min(innerHeight, rect.bottom) : 0;
   const inView = Boolean(visible && right > left && bottom > top);
-  const x = inView ? (left + right) / 2 : 0;
-  const y = inView ? (top + bottom) / 2 : 0;
-  const hit = inView ? document.elementFromPoint(x, y) : null;
+  let x = inView ? (left + right) / 2 : 0;
+  let y = inView ? (top + bottom) / 2 : 0;
+  let hit = inView ? document.elementFromPoint(x, y) : null;
   const root = this.getRootNode();
-  const hitRelation = hit === this ? 'self' : hit && this.contains(hit) ? 'descendant'
+  const relation = hit => hit === this ? 'self' : hit && this.contains(hit) ? 'descendant'
     : root instanceof ShadowRoot && hit === root.host ? 'composed' : 'outside';
+  let hitRelation = relation(hit);
+  // WHY：多行 inline 的联合框中心可能位于行间空白；用浏览器原生片段证明同一目标命中。
+  // TRADE-OFF：只接受本元素/子元素的真实命中，实际遮挡仍失败，不使用 JS click。
+  if (inView && hitRelation === 'outside') {
+    let bestArea = 0;
+    for (const part of this.getClientRects()) {
+      const l = Math.max(0, part.left), r = Math.min(innerWidth, part.right);
+      const t = Math.max(0, part.top), b = Math.min(innerHeight, part.bottom);
+      const area = Math.max(0, r-l) * Math.max(0, b-t);
+      const px = (l+r)/2, py = (t+b)/2;
+      const candidate = area > 0 ? document.elementFromPoint(px, py) : null;
+      if (area > bestArea && relation(candidate) !== 'outside') {
+        bestArea = area; x = px; y = py; hit = candidate; hitRelation = relation(hit);
+      }
+    }
+  }
   const disabled = Boolean(connected && (this.matches(':disabled')
     || this.getAttribute('aria-disabled') === 'true' || this.closest('[inert]')));
   const readOnly = Boolean(connected && 'readOnly' in this && this.readOnly);
@@ -145,10 +161,16 @@ def assert_action_target(state, action_name):
     if action_name == 'input' and state['readOnly']:
         raise ValueError('target_read_only')
     if state['pointerBlocked'] or state['hitRelation'] == 'outside':
-        raise ValueError('target_hit_blocked')
+        error = ValueError('target_hit_blocked')
+        # WHY：只保留固定几何/状态诊断，才能区分命中准备错误与实际遮挡；不记录页面/节点内容。
+        error.diagnostic = {'pointerBlocked': state['pointerBlocked'], 'hitRelation': state['hitRelation'],
+                            'center': state['center'], 'viewport': state['viewport'],
+                            'scrollTop': state['scrollContainer'].get('scrollTop')}
+        raise error
 
 
-async def prepare_mapped_target(resolver, target, action_name, page, mapping, target_id, index, scrolled):
+async def prepare_mapped_target(resolver, target, action_name, page, mapping, target_id, index, scrolled,
+                                *, native_dispatch=False):
     # Delayed import keeps target parsing and target preparation as separate modules without duplicating helpers.
     from .targets import (SCROLL_INTO_VIEW_SCRIPT, _backend_id, _current_target, _node_value,
                           element_from_backend)
@@ -158,7 +180,7 @@ async def prepare_mapped_target(resolver, target, action_name, page, mapping, ta
         raise ValueError('element_identity_unavailable')
     element = await element_from_backend(page, backend_id, target_id)
     state = await inspect_action_target(element)
-    if not state['inView']:
+    if not native_dispatch and not state['inView']:
         await element.evaluate(SCROLL_INTO_VIEW_SCRIPT)
         scrolled = True
         await resolver._assert_page_identity(page, target_id, target.get('scope'))
@@ -170,7 +192,12 @@ async def prepare_mapped_target(resolver, target, action_name, page, mapping, ta
             raise ValueError('element_identity_unavailable')
         element = await element_from_backend(page, backend_id, target_id)
         state = await inspect_action_target(element)
-    assert_action_target(state, action_name)
+    # WHY：原生动作的可操作性与后备由 B-U watchdog 拥有；宿主只保留身份和派发后事件校验。
+    # 来源：eb4126921bea3373f91afc49fb4b59d6eda7fed6 default_action_watchdog.py。
+    if not state['connected']:
+        raise ValueError('target_detached')
+    if not native_dispatch:
+        assert_action_target(state, action_name)
     await resolver._assert_page_identity(page, target_id, target.get('scope'))
     return PreparedActionTarget(
         index=index, element=element, backend_id=backend_id, target_id=target_id,

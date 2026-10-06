@@ -68,6 +68,25 @@ def validate_proposal(proposal, output_schema, proven_paths):
     return target
 
 
+def schema_path_required(schema, path):
+    """A static input binding must remain reachable for every valid invocation."""
+    current = schema
+    for part in path:
+        if not isinstance(current, dict):
+            return False
+        if isinstance(part, str) and current.get('type') == 'object':
+            if part not in current.get('required', []):
+                return False
+            current = current.get('properties', {}).get(part)
+        elif type(part) is int and current.get('type') == 'array':
+            if part < 0 or current.get('minItems', 0) <= part:
+                return False
+            current = current.get('items')
+        else:
+            return False
+    return isinstance(current, dict)
+
+
 def schema_at_path(schema, path):
     current = schema
     for item in path:
@@ -75,7 +94,7 @@ def schema_at_path(schema, path):
             current = current.get('properties', {}).get(item)
         elif current.get('type') == 'array' and type(item) is int:
             maximum = current.get('maxItems')
-            current = current.get('items') if type(maximum) is int and 0 <= item < maximum else None
+            current = current.get('items') if item >= 0 and (maximum is None or type(maximum) is int and item < maximum) else None
         else:
             current = None
         if not isinstance(current, dict):
@@ -264,7 +283,7 @@ def compile_verified_read(request, action, pre, post, output_schema, prior_paths
                 validate_compiled_query_read(value, action, pre, post)
             else:
                 validate_compiled_read(value, output_schema, action, pre, post, [*prior_paths, *paths],
-                                       trace=request.trace)
+                                       trace=getattr(request, 'trace', None), input_schema=getattr(request, 'runtimeInputSchema', None))
             paths.append(value.outputPath)
     except Exception:
         return None, None, [gap('invalid_source', [action.id],
@@ -301,11 +320,11 @@ def validate_compiled_query_read(value, action, pre, post):
         raise ValueError('verified_query_read_cardinality_mismatch')
 
 
-def validate_compiled_read(value, output_schema, action, pre, post, prior_paths, trace=None):
+def validate_compiled_read(value, output_schema, action, pre, post, prior_paths, trace=None, input_schema=None):
     validate_compiled_read_identity(value, action, pre, post)
     if action.name == 'bat_read_fields':
         from .method_read_evidence import validate_method_read_mapping
-        validate_method_read_mapping(value, output_schema, action, trace)
+        validate_method_read_mapping(value, output_schema, action, trace, input_schema)
         return
     proposal = NaturalReadProposal(specification=value.specification, outputPath=value.outputPath,
                                    readPath=value.readPath, expected=value_at_path(value.output, value.readPath))

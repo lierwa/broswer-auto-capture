@@ -27,9 +27,23 @@ class ReadField(Contract):
     normalizePresentation: bool = False
     multiple: bool = False
     maxValues: int = Field(default=1, gt=0, le=300)
+    ordinal: bool = False
+    allowMissing: bool = False
+    contentSource: Literal['page-content'] | None = None
+    valueSource: Literal['page-url'] | None = None
 
     @model_validator(mode='after')
     def bounded_cardinality(self):
+        if self.valueSource is not None and (self.valueType != 'string' or self.multiple
+                or self.attribute is not None or self.selector != ':scope' or self.ordinal
+                or self.contentSource is not None or self.resolveUrl or self.textPrefix is not None
+                or self.textSuffix is not None or self.normalizeWhitespace or self.normalizePresentation):
+            raise ValueError('page_url_field_invalid')
+        if self.contentSource is not None and (self.valueType != 'string' or self.multiple
+                or self.attribute is not None or self.selector != ':scope' or self.ordinal):
+            raise ValueError('content_scope_field_invalid')
+        if self.ordinal and (self.valueType != 'integer' or self.multiple or self.attribute is not None):
+            raise ValueError('ordinal_integer_field_required')
         if self.optionalAttribute and (self.attribute is None or self.multiple):
             raise ValueError('optional_attribute_requires_single_attribute')
         if not self.multiple and self.maxValues != 1:
@@ -68,6 +82,14 @@ class ReadField(Contract):
             value.pop('normalizeWhitespace', None)
         if not self.normalizePresentation:
             value.pop('normalizePresentation', None)
+        if not self.ordinal:
+            value.pop('ordinal', None)
+        if not self.allowMissing:
+            value.pop('allowMissing', None)
+        if self.contentSource is None:
+            value.pop('contentSource', None)
+        if self.valueSource is None:
+            value.pop('valueSource', None)
         return value
 
 
@@ -77,33 +99,73 @@ class ReadSampleCoverage(Contract):
     sampled: int = Field(ge=0)
     sampleLimit: int = Field(gt=0, le=300)
     runtimeTruncated: bool
+    matched: int | None = Field(default=None, ge=0)
+
+    @model_serializer(mode='wrap')
+    def preserve_old_digest(self, serialize):
+        value = serialize(self)
+        if self.matched is None:
+            value.pop('matched', None)
+        return value
 
 
 class ReadSpec(Contract):
     container: str = Field(min_length=1, max_length=2000)
-    fields: dict[str, ReadField] = Field(min_length=1, max_length=100)
+    contentRegion: Literal['common-ancestor'] | None = None
+    fields: dict[str, ReadField] = Field(max_length=100)
     maxItems: int = Field(gt=0, le=300)
     includeOrdinal: bool = False
     requireComplete: bool = False
     maxInputBytes: int | None = Field(default=None, gt=0)
     outputSchema: dict[str, JsonValue]
+    take: int | None = Field(default=None, ge=1, le=300)
+    keyField: str | None = Field(default=None, min_length=1, max_length=200)
+    entryField: str | None = Field(default=None, min_length=1, max_length=200)
+    inheritFields: list[str] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode='after')
     def ordinal_is_host_owned(self):
+        if self.contentRegion is not None and (self.maxItems != 1 or self.entryField is not None
+                or set(self.fields) != {'content'} or self.fields['content'].contentSource != 'page-content'):
+            raise ValueError('content_region_specification_invalid')
+        if not self.fields and self.entryField is None:
+            raise ValueError('read_fields_required')
+        if self.entryField is not None:
+            from .element_entry import entry_field
+            if entry_field(self.outputSchema) != self.entryField or self.entryField in self.fields:
+                raise ValueError('read_entry_field_invalid')
+        record_schema = self.outputSchema.get('items', {}) if self.outputSchema.get('type') == 'array' else self.outputSchema
+        if self.inheritFields and (record_schema.get('type') != 'object'
+                or len(set(self.inheritFields)) != len(self.inheritFields)
+                or any(name not in record_schema.get('properties', {}) for name in self.inheritFields)):
+            raise ValueError('read_inherited_field_invalid')
         if self.includeOrdinal and 'ordinal' in self.fields:
             raise ValueError('read_ordinal_field_reserved')
+        if self.keyField is not None and (self.keyField in self.fields
+                or self.keyField in {'__proto__', 'constructor', 'prototype'}):
+            raise ValueError('read_key_field_reserved')
         return self
 
     @model_serializer(mode='wrap')
     def preserve_explicit_budget_digest(self, serialize):
         # WHY：缺省表示调用方未另设字节预算；旧调用方显式预算的 canonical bytes 必须保持不变。
         value = serialize(self)
+        if self.contentRegion is None:
+            value.pop('contentRegion', None)
+        if not self.inheritFields:
+            value.pop('inheritFields', None)
         if not self.includeOrdinal:
             value.pop('includeOrdinal', None)
         if not self.requireComplete:
             value.pop('requireComplete', None)
         if self.maxInputBytes is None:
             value.pop('maxInputBytes', None)
+        if self.take is None:
+            value.pop('take', None)
+        if self.keyField is None:
+            value.pop('keyField', None)
+        if self.entryField is None:
+            value.pop('entryField', None)
         return value
 
 
@@ -131,6 +193,10 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
       selfMatched,
       ...(field.sampleLimit === undefined ? {} : {totalMatches: selected.length + (selfMatched ? 1 : 0)}),
       values: matches.slice(0, limit).map((node) => {
+        if (field.valueSource === 'page-url') {
+          // WHY：地址来自本运行实际文档，不能把模型文本或列表编号当成导航证据。
+          return {value: node.ownerDocument.URL, hasShadow: false};
+        }
         if (field.resolveUrl) {
           const resolved = node[field.attribute];
           return {value: typeof resolved === 'string' && resolved !== ''
@@ -168,7 +234,8 @@ def assert_read_paths(output, paths):
             value = value[key]
 
 
-async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None, required_paths=()):
+async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None, required_paths=(), inherited=None,
+                      content_readiness=False):
     resolver = TargetResolver(browser)
     target_id = None
     if page is not None:
@@ -185,7 +252,8 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None
             error.add_note('bat_read_scope_pre')
             raise
     try:
-        elements = await resolver.resolve_collection(specification.container, scope, page=page)
+        from .content_region import resolve_read_regions
+        elements = await resolve_read_regions(browser, specification, resolver, scope=scope, page=page)
     except RuntimeError as error:
         if ('bat_read_collection_query' not in getattr(error, '__notes__', ())
                 or 'DOM Error while querying' not in str(error)):
@@ -199,8 +267,9 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None
         # WHY：动态选择必须读取完整集合；截断会把“已读末项”误当成真实末项。
         raise FieldReadError('read_collection_limit', field_name='container',
                              match_count=len(elements), reason='complete_collection_required')
-    elements = elements[:specification.maxItems]
-    output = await project_field_records(browser, specification, elements)
+    elements = elements[:min(specification.maxItems, specification.take or specification.maxItems)]
+    output = await project_field_records(browser, specification, elements, inherited=inherited,
+                                        content_readiness=content_readiness)
     if specification.outputSchema.get('type') == 'object':
         if specification.maxItems != 1 or len(output) != 1:
             raise FieldReadError('read_single_object_required', field_name='container',
@@ -221,30 +290,72 @@ async def read_fields(browser, specification: ReadSpec, *, scope=None, page=None
     return output
 
 
-async def project_field_records(browser, specification: ReadSpec, elements, *, field_samples=None):
+async def project_field_records(browser, specification: ReadSpec, elements, *, field_samples=None, inherited=None,
+                                verify_inherited=False, content_readiness=False):
     """Share field projection without changing the caller-owned collection boundary."""
     output, consumed, native_context = [], 0, {}
+    # WHY：准备阶段验证后备；正式阶段已有输入不用投影后备，避免无关 DOM 缺失导致失败。
+    fields = {name: field for name, field in specification.fields.items()
+              if verify_inherited or name not in specification.inheritFields
+              or not isinstance(inherited, dict) or name not in inherited}
+    key_page = await browser.get_current_page() if specification.keyField else None
+    key_url = await key_page.get_url() if key_page else None
+    entry_document = None
+    if specification.entryField is not None:
+        from .element_entry import entry_document_id
+        entry_document = await entry_document_id(await browser.get_current_page())
     for ordinal, element in enumerate(elements, start=1):
-        fragments = await project_fields(browser, element, specification.fields, native_context,
-                                         field_samples=field_samples)
+        fragments = await project_fields(browser, element, fields, native_context,
+                                         field_samples=field_samples, content_readiness=content_readiness)
         consumed += sum(len(value.encode()) for values in fragments.values()
                         for value in values if isinstance(value, str))
         if specification.maxInputBytes is not None and consumed > specification.maxInputBytes:
             raise ValueError('read_input_limit')
-        record = {name: read_projected_field(name, fragments.get(name), field)
-                  for name, field in specification.fields.items()
-                  if not (field.optionalAttribute and fragments.get(name) == [None])}
+        record = {name: ordinal if field.ordinal else read_projected_field(name, fragments.get(name), field)
+                  for name, field in fields.items()
+                  if field.ordinal or not ((field.optionalAttribute and fragments.get(name) == [None])
+                       or (field.allowMissing and fragments.get(name) == []))}
+        if specification.inheritFields:
+            if not isinstance(inherited, dict):
+                raise ValueError('read_inherited_input_missing')
+            # WHY：只复制本运行实际绑定的同名字段；缺省字段保持缺省，结果仍过正式 JSON 合同。
+            record.update({name: inherited[name] for name in specification.inheritFields if name in inherited})
         if specification.includeOrdinal:
             # WHY：纯函数筛选/排序后仍返回原集合身份，不能将过滤后下标当成 DOM ordinal。
             record['ordinal'] = ordinal
+        if specification.entryField is not None:
+            from .element_entry import live_entry
+            record[specification.entryField] = await live_entry(browser, element, specification.container, ordinal,
+                                                                document_root=entry_document)
+            consumed += len(json.dumps(record[specification.entryField], ensure_ascii=False).encode())
+            if specification.maxInputBytes is not None and consumed > specification.maxInputBytes:
+                raise ValueError('read_input_limit')
+        if specification.keyField is not None:
+            # WHY：同一运行按真实链接优先建立身份；无链接时使用实际字段摘要，不依赖临时 DOM 编号。
+            links = {name: record[name] for name, field in specification.fields.items()
+                     if field.attribute == 'href' and name in record}
+            from .element_entry import entry_key_record
+            values = entry_key_record(record, specification.keyField, specification.entryField)
+            record[specification.keyField] = digest(links or {'url': key_url, 'ordinal': ordinal, 'record': values})
         output.append(record)
     return output
 
 
-async def project_fields(browser, element, fields, native_context, *, field_samples=None):
+async def project_fields(browser, element, fields, native_context, *, field_samples=None, content_readiness=False):
+    content_fields = {name: field for name, field in fields.items() if field.contentSource is not None}
+    if content_fields:
+        if len(fields) != 1:
+            raise ValueError('content_scope_field_invalid')
+        from .page_content import capture_region
+        name = next(iter(content_fields))
+        return {name: [await capture_region(browser, element, readiness=content_readiness)]}
+    fields = {name: field for name, field in fields.items() if not field.ordinal}
+    if not fields:
+        return {}
     projection = [{'name': name, 'selector': field.selector, 'multiple': field.multiple,
                    'maxValues': field.maxValues, 'attribute': field.attribute,
-                   'resolveUrl': field.resolveUrl, 'textSource': field.textSource}
+                   'resolveUrl': field.resolveUrl, 'textSource': field.textSource,
+                   'valueSource': field.valueSource}
                   for name, field in fields.items()]
     # WHY：采样只限制宿主本次投影，不改写正式 ReadSpec 或把业务值全部取回后再截取。
     if field_samples is not None:
@@ -320,9 +431,15 @@ def read_value(name, value, field):
     if field.valueType == 'string':
         return value
     if field.valueType == 'integer':
-        return int(value)
+        try:
+            return int(value)
+        except ValueError as error:
+            raise FieldReadError('read_number_invalid', field_name=name, match_count=1, reason='invalid_number_text') from error
     if field.valueType == 'number':
-        result = float(value)
+        try:
+            result = float(value)
+        except ValueError as error:
+            raise FieldReadError('read_number_invalid', field_name=name, match_count=1, reason='invalid_number_text') from error
         if not math.isfinite(result):
             raise ValueError('read_number_not_finite')
         return result

@@ -1,0 +1,45 @@
+@import "./theme-tokens.css";
+@import "./popup-palette.css";
+
+/* WHY：浮窗属于浏览器界面，首帧和实时明暗均使用浏览器偏好，不等待工作台或后台状态。 */
+:root { color-scheme: light dark; --canvas: var(--sand-2); --panel: var(--sand-1); --text: var(--sand-12);
+  --muted: var(--sand-11); --border: var(--sand-6); --soft-border: var(--sand-4); --accent: var(--amber-9);
+  --track: var(--sand-8); --success: var(--green-11); }
+@media (prefers-color-scheme: dark) { :root { --canvas: var(--sand-1); --panel: var(--sand-2); } }
+html, body, #root { margin: 0; padding: 0; height: auto; min-height: 0; width: 340px; background: var(--panel); color: var(--text); }
+.bat-theme { min-height: 0; --default-font-family: var(--font-body); --heading-font-family: var(--font-display);
+  --cursor-button: pointer; --cursor-switch: pointer; }
+.bat-popup, .bat-popup * { box-sizing: border-box; }
+.bat-popup { font-family: var(--font-body); font-size: 13px; line-height: 1.5; width: 340px; padding: 0; }
+.bat-popup svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+/* WHY：键盘焦点留在真实控件上，以中性色描边区分，避免权限整行出现品牌色外框。 */
+.bat-popup .rt-Button:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--sand-8); background: var(--sand-3); }
+.bat-popup .bat-switch:focus-visible::before { outline: 2px solid var(--sand-8); outline-offset: 2px; }
+.bat-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 16px; gap: 12px; }
+.bat-header strong { font: 650 17px var(--font-display); letter-spacing: 1.2px; }
+.bat-header > span { font-size: 12px; color: var(--muted); }
+.bat-connection-card { margin: 0 14px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--canvas); }
+.bat-allow-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.bat-allow-row label { font-size: 14px; font-weight: 600; cursor: pointer; }
+.bat-status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 6px; }
+.bat-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sand-9); flex-shrink: 0; }
+.bat-popup[data-connected="true"] .bat-status { color: var(--success); }
+.bat-popup[data-connected="true"] .bat-status-dot { background: var(--success); }
+.bat-status-dot.is-working { background: var(--accent); animation: bat-pulse 1s ease infinite; }
+.bat-profile { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; margin-top: 15px; }
+.bat-profile > svg { color: var(--muted); width: 21px; height: 21px; }
+.bat-profile > div { min-width: 0; }
+.bat-profile span { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.bat-profile strong { display: block; font-size: 14px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bat-state-description { font-size: 12px; color: var(--muted); line-height: 1.65; margin: 12px 0 0; min-height: 19px; }
+.bat-permissions { margin: 16px 18px; display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 12px; }
+.bat-permissions > svg { width: 14px; height: 14px; margin-top: 2px; }
+.bat-permissions strong { font-size: 12px; font-weight: 500; color: var(--text); }
+.bat-permissions p { margin: 3px 0 0; line-height: 1.5; }
+.bat-footer { border-top: 1px solid var(--soft-border); display: flex; justify-content: space-between; align-items: center;
+  margin: 0 18px; padding: 11px 0 13px; color: var(--muted); font-size: 11px; }
+.bat-footer svg { width: 12px; height: 12px; }
+.bat-feedback { margin: 0 18px 14px; font-size: 12px; color: var(--red-11); line-height: 1.65; }
+@keyframes bat-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .bat-popup *, .bat-popup *::before { animation: none !important; transition: none !important; } }

@@ -31,31 +31,29 @@ test("步骤展示只改变冻结的 presentation，不改写执行图", () => {
   const step = { id: chain.stepId, title: "查看指定条目", goal: "打开用户指定条目并读取所需信息。" }
   const presentation = createStepChainPresentation(chain, step)
   assert.equal(fallback.stages.length, 1)
-  assert.deepEqual(presentation.stages.map((stage) => stage.nodeIds), [["first"], ["second"]])
-  assert.deepEqual(presentation.stages.map((stage) => stage.title), ["等待条件满足", "等待条件满足"])
+  assert.deepEqual(presentation.stages.map((stage) => stage.nodeIds), [["first", "second"]])
+  assert.deepEqual(presentation.stages.map((stage) => stage.title), [step.title])
   assert.deepEqual(presentation.overviewLayout.map((item) => item.stageId), presentation.stages.map((stage) => stage.id))
   assert.equal(executableChainDigest(chain), before)
   assert.throws(() => createStepChainPresentation(chain, { ...step, id: "another-step" }),
     /链路展示结构与当前执行图不一致/)
 })
 
-test("展示分组只合并有类型化关系的动作支持节点并保持执行 digest", () => {
+test("业务阶段引用完整技术路径并保持执行 digest", () => {
   const chain = groupedFixtureChain(randomUUID()), before = executableChainDigest(chain)
   const presentation = createStepChainPresentation(chain, { id: chain.stepId,
     title: "读取指定记录", goal: "输入条件、选择候选并读取字段。" })
-  assert.deepEqual(presentation.stages.map((stage) => stage.nodeIds), [
-    ["input", "keys", "results-ready"],
-    ["candidate-read", "candidate-select", "candidate-click", "detail-ready"],
-    ["field-read", "output-transform"],
-  ])
-  assert.match(presentation.stages[0]!.title, /输入内容.*发送按键/)
-  assert.equal(presentation.stages[1]!.title, "点击候选：results-list")
-  assert.equal(presentation.stages[2]!.title, "读取字段：标题、正文")
+  assert.deepEqual(presentation.stages.map((stage) => stage.nodeIds), [[
+    "input", "keys", "results-ready", "candidate-read", "candidate-select", "candidate-click", "detail-ready",
+    "field-read", "output-transform",
+  ]])
+  assert.equal(presentation.stages[0]!.title, "读取指定记录")
+  assert.equal(presentation.stages[0]!.summary, "输入条件、选择候选并读取字段。")
   assert.equal(new Set(presentation.stages.flatMap((stage) => stage.nodeIds)).size, 9)
   assert.equal(executableChainDigest(chain), before)
 })
 
-test("展示分组不会把带写副作用的同名能力隐藏进动作阶段", () => {
+test("阶段保留有写副作用节点的真实身份和类型", () => {
   const chain = groupedFixtureChain(randomUUID())
   for (const id of ["candidate-read", "output-transform"]) {
     const node = chain.nodes.find((item) => item.id === id)
@@ -64,7 +62,8 @@ test("展示分组不会把带写副作用的同名能力隐藏进动作阶段",
   const presentation = createStepChainPresentation(chain, { id: chain.stepId,
     title: "读取指定记录", goal: "输入条件、选择候选并读取字段。" })
   for (const id of ["candidate-read", "output-transform"]) {
-    assert.deepEqual(presentation.stages.find((stage) => stage.nodeIds.includes(id))?.nodeIds, [id])
+    assert.equal(presentation.stages[0]!.nodeIds.includes(id), true)
+    assert.equal(chain.nodes.find(node => node.id === id)?.kind, "capability")
   }
 })
 

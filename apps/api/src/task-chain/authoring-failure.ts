@@ -6,6 +6,20 @@ export class RequirementClarificationRequired extends Error {
   }
 }
 
+/** WHY：只保存固定代码/异常类，不保存原异常正文、URL、页面内容或凭据。 */
+export function authoringFailureCode(error: unknown): string {
+  if (error instanceof RuntimeCleanupRequiredError && error.primary.status === "failed") {
+    return authoringFailureCode(error.primary.error)
+  }
+  const coded = error && typeof error === "object" && "code" in error ? error.code : undefined
+  const reason = error && typeof error === "object" && "reason" in error ? error.reason : undefined
+  const message = typeof coded === "string" ? `${coded}:${typeof reason === "string" ? reason : ""}`
+    : error instanceof Error ? error.message : "unknown"
+  const safe = /^(?:(?:hybrid_|upstream_|workflow_|daily_chrome_|account_|content_|ordinary_|read_|target_)[a-z0-9_]{1,100}|[A-Za-z]{1,60}Error)$/
+  const parts = message.split(":").slice(0, 3).filter(part => safe.test(part))
+  return parts.length ? parts.join(":") : "authoring_failure_unclassified"
+}
+
 export function failureLayer(error: unknown, stage: string): string {
   if (error instanceof RuntimeCleanupRequiredError && error.primary.status === "failed") {
     return failureLayer(error.primary.error, stage)
@@ -63,6 +77,10 @@ export function authoringFailureMessage(error: unknown): string {
   }
   if (message.includes("hybrid_navigation_outside_authorized_scope")) {
     return "浏览器尝试离开已确认的网站范围，系统已立即停止；请检查需求中的目标来源后重新准备。"
+  }
+  if (message.startsWith("hybrid_completed_source_required:")) {
+    const [, action, index] = message.split(":")
+    return `代表试做未完成，第 ${index} 个动作 ${action} 未通过。首次失败、读取合同和模型调用已保留在技术详情中。`
   }
   if (message === "hybrid_completed_source_required") {
     return "代表任务没有正常结束或输出不符合已确认合同，系统没有发布不完整链路。"

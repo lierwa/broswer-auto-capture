@@ -34,7 +34,7 @@ function startupFailure(options: { resume?: boolean; missingReport?: boolean; un
   options.unconfirmed ? null : false)
   const repository = { plan: () => plan, requirement: () => requirement, chain: () => chain, runs: () => [],
     saveExecution: (value: unknown) => taskExecutionSchema.parse(value), saveCleanupAudit: (value: unknown) => { audits.push(value) } }
-  const store = { snapshot: () => ({ active: null, confirmedVersion: requirement.version }) }
+  const store = { snapshot: () => ({ active: null, confirmedVersion: requirement.version }), releasedBrowserWindowOwners: () => [] }
   const host = { group: async (input: Parameters<TaskRuntimeHost["group"]>[0]) => {
     if (options.handoffAttempted) input.onHandoffFailure?.("delivery", "fixture_handoff_unconfirmed")
     if (!options.missingReport) input.onCleanup?.(report)

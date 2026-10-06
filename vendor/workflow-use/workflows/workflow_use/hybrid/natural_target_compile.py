@@ -1,14 +1,26 @@
 """Compile a callback-proven DOM target into an existing replay locator."""
 
-from .capability import TARGET_ACTIONS
+from .capability import TARGET_ACTIONS, OPTIONAL_TARGET_ACTIONS
 from .dom_evidence import DomQueryCandidate, unbound_collection_choice
 from .evidence import gap
 from .history_target import HistoryTargetIdentity
 
 
-def natural_target(action, pre):
-    if action.name not in TARGET_ACTIONS:
+def natural_target(action, pre, requirement_text='', input_schema=None, post=None):
+    if action.name not in TARGET_ACTIONS and not (
+            action.name in OPTIONAL_TARGET_ACTIONS and action.args.get('index') is not None):
         return None, [], []
+    if action.name == 'click' and input_schema is not None:
+        from .element_entry import compiled_entry_target
+        mismatch = any(fact.kind == 'input_entry_mismatch' for fact in pre.facts)
+        context_navigation = any(fact.kind == 'input_entry_context' for fact in pre.facts) and post is not None \
+            and (pre.url != post.url or pre.tabId != post.tabId)
+        if mismatch or context_navigation:
+            # WHY：来源中的错误条目不能退回固定名字/XPath；辅助弹窗控件仍可沿既有准备机制编译。
+            return None, [], [gap('missing_binding', [action.id], 'input_entry_target_unproven', 'collect_evidence')]
+        entry = compiled_entry_target(action, pre, input_schema)
+        if entry is not None:
+            return entry[0], entry[1], []
     facts = [fact for fact in pre.facts if fact.kind == 'dom_structure'
              and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
     if len(facts) != 1:
@@ -45,7 +57,7 @@ def natural_target(action, pre):
                 'withinItem': (candidate.withinItem.model_dump(mode='json')
                                if candidate.withinItem is not None else None)}, fact.sourceRefs, []
     raw_history = value.get('historyTarget')
-    if action.name == 'click' and unbound_collection_choice(value):
+    if action.name == 'click' and unbound_collection_choice(value, requirement_text):
         # WHY：同一集合里的第 N 个元素只是一次试做的坐标；没有完整候选读取时，
         # history XPath 会把动态业务选择伪装成可复跑的固定目标。
         return None, [], [gap('missing_binding', [action.id],

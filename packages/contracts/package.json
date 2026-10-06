@@ -17,6 +17,9 @@
     "./ai": "./src/ai.ts",
     "./browser": "./src/browser.ts",
     "./browser-profile": "./src/browser-profile.ts",
+    "./browser-account": "./src/browser-account.ts",
+    "./platform-account": "./src/platform-account.ts",
+    "./account-directory": "./src/account-directory.ts",
     "./interview": "./src/interview.ts",
     "./task": "./src/task.ts"
   },
@@ -25,7 +28,7 @@
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
-    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-f0ef768f.tgz",
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.4-1464cd24.tgz",
     "ajv": "8.20.0",
     "zod": "4.1.8"
   },

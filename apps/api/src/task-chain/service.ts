@@ -8,6 +8,7 @@ import {
 import type { TaskSummary } from "@browser-capture/contracts/task"
 import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
 import { z } from "zod"
+import { randomUUID } from "node:crypto"
 import type { AIModelProvider } from "../ai/model.js"
 import type { BrowserService } from "../browser/service.js"
 import type { ProductStore } from "../database/store.js"
@@ -22,7 +23,8 @@ import { saveExecutionReview } from "./execution-review.js"
 import { executionDetail } from "./execution-detail.js"
 import { projectExecutionResult } from "./execution-result.js"
 import { ExecutionPacingController } from "./execution-pacing.js"
-import { TaskPlanExecutor, verifyClosedExecutionBrowser } from "./plan-executor.js"
+import { recoverExecutionResources } from "./resource-recovery.js"
+import { TaskPlanExecutor, verifyClosedExecutionBrowser, exitedOwnedRunner } from "./plan-executor.js"
 import { readStartupFailure } from "../upstream-browser/source-lifecycle-diagnostics.js"
 import { recordPlanValidation } from "./plan-validation.js"
 import { TaskPreparationCoordinator } from "./preparation.js"
@@ -31,13 +33,14 @@ import { queuedDraftExecution, queuedExecution } from "./queued-runs.js"
 import { TaskContractRepository } from "./repository.js"
 import { syncConfirmedRequirement } from "./requirement.js"
 import { TaskRuntimeHost, type RuntimeCapabilityFactory } from "./runtime-host.js"
-import { projectTaskSummary, releaseReference, workspaceSnapshot } from "./workspace-projection.js"
+import { TaskSummaryProjector, releaseReference, workspaceSnapshot } from "./workspace-projection.js"
 
 type QueueItem = { taskId: string; id: string; resume: boolean }
 
 export class TaskChainService {
   readonly repository: TaskContractRepository
   readonly product: TaskProductService
+  private readonly summaries: TaskSummaryProjector
   private readonly preparation: TaskPreparationCoordinator
   private readonly authoring: TaskChainAuthoring
   private readonly executor: TaskPlanExecutor
@@ -46,8 +49,6 @@ export class TaskChainService {
   private readonly cleanupInFlight = new Set<string>()
   private readonly controllers = new Map<string, AbortController>()
   private readonly queue: QueueItem[] = []
-  private drainWork: Promise<void> | null = null
-  private draining = false
   private closing = false
 
   constructor(private readonly store: ProductStore, private readonly browser: BrowserService,
@@ -55,6 +56,7 @@ export class TaskChainService {
     private readonly diagnosticsDirectory?: string) {
     this.repository = new TaskContractRepository(store)
     this.product = new TaskProductService(store, this.repository)
+    this.summaries = new TaskSummaryProjector(store, this.repository, this.product)
     this.host = new TaskRuntimeHost(this.repository, browser, ai, capabilityFactory, upstream)
     this.authoring = new TaskChainAuthoring(this.repository, ai, upstream)
     this.executor = new TaskPlanExecutor(store, this.repository, this.host)
@@ -66,6 +68,8 @@ export class TaskChainService {
   snapshot(taskId: string) {
     return workspaceSnapshot(this.store, this.repository, this.product, taskId)
   }
+  /** WHY：仅供服务器启动接线验证实际 controller；HTTP 无此权限标志。 */
+  ownsStartupController(taskId: string, id: string) { return this.controllers.has(`${taskId}:${id}`) }
 
   executionDetail(taskId: string, executionId: string, includeContent = true) {
     const record = this.repository.execution(taskId, executionId)
@@ -92,7 +96,8 @@ export class TaskChainService {
       conflict("原浏览器现场未被确认，请刷新后查看当前状态。")
     }
     if (!this.upstream.managedWindowAction) throw new DomainError("browser_handoff_unavailable", "浏览器现场控制不可用。", 503)
-    const outcome = await this.upstream.managedWindowAction({ action: command.action, ownerId, leaseId: ownerId })
+    const controllerReleased = command.action === "end" && exitedOwnedRunner(record, this.repository.cleanupAudits(taskId, record.id).at(-1))
+    const outcome = await this.upstream.managedWindowAction({ action: command.action, ownerId, leaseId: ownerId, ...(controllerReleased ? { controllerReleased: true } : {}), browserMode: record.browser?.mode ?? (record.browser?.headless ? "dedicated-headless" : "daily") })
       .catch((error: unknown) => {
         // WHY：OS 前台限制不改变业务完成或原窗口租约；只投影已知固定错误。
         if (command.action === "focus" && error instanceof UpstreamProtocolError
@@ -109,6 +114,9 @@ export class TaskChainService {
       throw new DomainError("browser_handoff_owner_changed", "浏览器现场归属无法核验。", 409)
     }
     const latest = this.repository.execution(taskId, command.executionId)
+    if (command.action === "inspect" && latest.sequence === command.expectedSequence && outcome.window.active
+      && latest.browserHandoff.status === "active" && latest.browserHandoff.targetDigest === outcome.window.targetDigest
+      && !latest.browserHandoff.reason) return this.snapshot(taskId)
     if (!(latest.browserHandoff.status === "active" || latest.browserHandoff.status === "unavailable"
       && command.action !== "focus" || latest.browserHandoff.status === "pending"
       && command.action === "inspect") || latest.browserHandoff.leaseId !== ownerId) {
@@ -149,12 +157,6 @@ export class TaskChainService {
 
   async dispatchAsync(taskId: string, raw: unknown): Promise<TaskChainDispatchResponse> {
     const command = taskChainCommandSchema.parse(raw)
-    if (command.type === "run_task" && !this.store.operation("task-execution:run", command.requestId, command)) {
-      const previous = this.repository.executions(taskId).find(record => record.status === "cleanup_required")
-      if (previous) await this.dispatchAsync(taskId, { type: "cleanup_execution",
-        requestId: stableUuid(command.requestId, "cleanup-before-rerun"), executionId: previous.id,
-        expectedSequence: previous.sequence })
-    }
     if (command.type === "cleanup_execution") {
       const key = `${taskId}:${command.executionId}`
       if (this.cleanupInFlight.has(key)) conflict("正在核验本次运行的资源清理，请等待结果。")
@@ -178,12 +180,16 @@ export class TaskChainService {
     this.store.task(taskId)
     if (command.type === "cancel_authoring") this.cancelAuthoring(taskId, command.jobId)
     else if (command.type === "resume_preparation_human") conflict("人工恢复需要等待现场核验，请使用异步命令入口。")
-    else if (command.type === "prepare_task") this.preparation.start(taskId, command,
-      (job, run) => this.startAuthoring(taskId, job, run))
+    else if (command.type === "prepare_task") {
+      if (!this.store.operation("task-product:prepare", command.requestId, command)) this.assertDirectRunAvailable(taskId)
+      this.preparation.start(taskId, command, (job, run) => this.startAuthoring(taskId, job, run))
+    }
     else if (command.type === "continue_preparation") this.preparation.continue(taskId, command,
       (job, run) => this.startAuthoring(taskId, job, run))
-    else if (command.type === "recover_preparation_compilation") this.preparation.recoverCompilation(taskId, command,
-      (job, run) => this.startAuthoring(taskId, job, run))
+    else if (command.type === "recover_preparation_compilation") {
+      if (!this.store.operation("task-product:recover-compilation", command.requestId, command)) this.assertDirectRunAvailable(taskId)
+      this.preparation.recoverCompilation(taskId, command, (job, run) => this.startAuthoring(taskId, job, run))
+    }
     else if (command.type === "trial_task_draft") acceptedExecution = this.trialDraft(taskId, command)
     else if (command.type === "publish_task_draft") this.publishDraft(taskId, command)
     else if (command.type === "review_execution") savedReview = saveExecutionReview(this.store, this.repository, taskId, command)
@@ -244,19 +250,19 @@ export class TaskChainService {
   }
 
   projectTasks(tasks: TaskSummary[]) {
-    return tasks.map((task) => projectTaskSummary(task, this.store, this.repository, this.product))
+    return tasks.map((task) => this.summaries.project(task))
   }
 
   isActive(taskId: string) {
     return [...this.controllers.keys()].some((key) => key.startsWith(`${taskId}:`))
       || this.queue.some((item) => item.taskId === taskId)
   }
-  isAnyActive() { return this.controllers.size > 0 || this.queue.length > 0 || this.activeWork.size > 0 || this.draining }
+  isAnyActive() { return this.controllers.size > 0 || this.queue.length > 0 || this.activeWork.size > 0 }
 
   async close() {
     this.closing = true
     for (const controller of this.controllers.values()) controller.abort()
-    await Promise.allSettled([...this.activeWork, ...(this.drainWork ? [this.drainWork] : [])])
+    await Promise.allSettled([...this.activeWork])
   }
 
   private cancelAuthoring(taskId: string, jobId: string) {
@@ -273,7 +279,7 @@ export class TaskChainService {
     assertDraftToken(draft, command.expectedRevision, command.expectedChecksum)
     const input = parseTaskValue(draft.content.plan.inputContract, command.input)
     const mode = this.product.nextTrialMode(draft, input)
-    const record = this.enqueueDraftTrial(command.requestId, draft, input, mode)
+    const record = this.enqueueDraftTrial(command.requestId, draft, input, mode, this.store.executionBrowser(command.browser, taskId))
     this.store.recordOperation("task-draft:trial", command.requestId, command, record.id)
     this.scheduleDrain()
     return this.acceptedExecution(command.requestId, record)
@@ -284,7 +290,7 @@ export class TaskChainService {
     this.host.assertExecutable(draft.taskId, draft.content.steps.map((step) => step.chain))
     const record = queuedDraftExecution(draft.taskId, requestId, draft, input, { nodeDelayMs: 0 }, mode)
     // WHY：同一次准备的探索与两次原有验证使用其快照；普通草稿试跑才读取当前选择。
-    record.browser = this.store.executionBrowser(browser)
+    record.browser = this.store.executionBrowser(browser, draft.taskId)
     this.repository.saveExecution(record)
     this.repository.saveCandidate(taskExecutionCandidateSchema.parse({ executionId: record.id, taskId: draft.taskId,
       draft: draftReference(draft), content: structuredClone(draft.content), createdAt: record.createdAt }))
@@ -312,7 +318,7 @@ export class TaskChainService {
     const requirement = syncConfirmedRequirement(this.store, this.repository, taskId)
     if (!requirement) conflict("只能运行当前已确认需求。")
     const closure = this.host.assertExecutable(taskId, release.content.steps.map((step) => step.chain))
-    const browser = this.store.executionBrowser(command.browser)
+    const browser = this.store.executionBrowser(command.browser, taskId)
     if (release.content.plan.browserHandoff === "keep_open" && browser.headless) {
       conflict("发布版本要求交付原页面，请使用可见浏览器运行。")
     }
@@ -342,7 +348,7 @@ export class TaskChainService {
   private resumeExecution(taskId: string, command: Extract<TaskChainCommand, { type: "resume_execution" }>) {
     if (this.store.operation("task-execution:resume", command.requestId, command)) return
     const record = this.repository.execution(taskId, command.executionId)
-    this.assertDirectRunAvailable(taskId, record.id)
+    this.assertDirectRunAvailable(taskId)
     if (record.sequence !== command.expectedSequence) conflict("运行状态已变化，请刷新后重试。")
     if (!["paused", "waiting_for_human"].includes(record.status)) conflict("当前运行不在可恢复状态。")
     // WHY：正式可见运行只能从已确认的同一现场恢复；不能在丢失原窗口时静默重开来源页。
@@ -366,15 +372,18 @@ export class TaskChainService {
       status: "pending", attempt: record.cleanup.attempt + 1, code: null, evidenceDigest: null,
       updatedAt: new Date().toISOString(),
     }, "cleanup_required")
-    const browserClosed = pending.cleanupResume !== null && prior?.activeResources !== false
+    const runnerReleased = prior?.activeResources === false && prior.stages.every(stage => stage.status !== "unconfirmed")
+    const releasedWindow = pending.cleanupResume !== null && !runnerReleased
       && await verifyClosedExecutionBrowser(record, prior, this.upstream, this.controllers.has(`${taskId}:${record.id}`))
-    const confirmed = pending.cleanupResume !== null && (prior?.activeResources === false || browserClosed)
+    const browserClosed = releasedWindow === "closed"
+    const confirmed = pending.cleanupResume !== null && (runnerReleased || Boolean(releasedWindow))
     const code = confirmed ? null : "cleanup_owner_verification_unavailable"
-    const facts = { executionId: record.id, ownerId: prior?.ownerId ?? stableUuid(record.id, "cleanup-owner"),
+    const facts = { executionId: record.id, ownerId: browserClosed ? stableUuid(record.id, "managed-window")
+      : prior?.ownerId ?? record.browserHandoff.ownerId ?? stableUuid(record.id, "managed-window"),
       attempt: pending.cleanup.attempt, status: confirmed ? "confirmed" as const : "unconfirmed" as const,
       code, activeResources: confirmed ? false : null, stages: confirmed
         ? prior?.stages.map((stage) => stage.stage === "browser_close"
-          ? { ...stage, status: "confirmed" as const, code: null } : stage) ?? [] : prior?.stages ?? [] }
+          ? { ...stage, status: releasedWindow === "retained" ? "not_required" as const : "confirmed" as const, code: null } : stage) ?? [] : prior?.stages ?? [] }
     const evidenceDigest = digestJson(facts)
     this.repository.saveCleanupAudit(executionCleanupAuditSchema.parse({ id: stableUuid(record.id, "cleanup-audit",
       String(pending.cleanup.attempt)), taskId, ...facts, source: "owner_verification", evidenceDigest,
@@ -395,6 +404,14 @@ export class TaskChainService {
     this.store.recordOperation("task-execution:cleanup", command.requestId, command, record.id)
   }
 
+  /** WHY：运行/账号共用资源恢复入口；按实际浏览器隔离，不要求用户操作某条历史任务。 */
+  async recoverBrowserResources(kind: "daily" | "dedicated", requestId: string = randomUUID()) {
+    if (this.closing) return
+    await recoverExecutionResources(this.store, kind, requestId,
+      (taskId, command) => this.dispatchAsync(taskId, command), (taskId, command) => this.controlBrowserHandoff(taskId, command),
+      (taskId, id) => this.controllers.has(`${taskId}:${id}`) || this.cleanupInFlight.has(`${taskId}:${id}`))
+  }
+
   private cancelExecution(taskId: string, executionId: string) {
     const record = this.repository.execution(taskId, executionId)
     if (record.status === "cleanup_required") conflict("请先完成本次运行的资源清理。")
@@ -408,15 +425,10 @@ export class TaskChainService {
     record.updatedAt = new Date().toISOString(); this.repository.saveExecution(record)
   }
 
-  private assertDirectRunAvailable(taskId: string, resumingExecutionId?: string) {
-    const cleanupRequired = this.repository.executions(taskId).some((record) => record.status === "cleanup_required"
-      || ["pending", "unconfirmed"].includes(record.cleanup.status))
-    if (cleanupRequired) conflict("暂时无法再次运行：上次浏览器连接的释放未能确认。原失败记录仍可查看。")
-    if (this.store.activeBrowserWindowLease(resumingExecutionId)) {
-      conflict("另一项运行的原浏览器窗口仍在使用，请先从该运行结束窗口。")
-    }
-    if (this.browser.owner() || this.draining || this.queue.length || this.controllers.size) {
-      conflict("另一项浏览器工作正在进行，请等待完成后再运行。")
+  private assertDirectRunAvailable(taskId: string) {
+    // WHY：历史现场与清理事实只属于原 owner；不同任务不得共享一个全局浏览器锁。
+    if (this.closing || this.isActive(taskId) || this.browser.owner()?.taskId === taskId) {
+      conflict("本任务正在处理，请等待本次操作完成。")
     }
   }
 
@@ -440,31 +452,30 @@ export class TaskChainService {
   }
 
   private scheduleDrain() {
-    if (this.drainWork || this.closing) return
-    const work = this.drain().finally(() => { if (this.drainWork === work) this.drainWork = null })
-    this.drainWork = work
+    if (this.closing) return
+    for (const item of this.queue.splice(0)) {
+      const controller = new AbortController(), key = `${item.taskId}:${item.id}`
+      this.controllers.set(key, controller)
+      let work!: Promise<unknown>
+      work = this.executeQueued(item, controller).catch(() => {
+        // WHY：执行器负责原失败落盘；未处理的宿主异常不能退出服务并中断其它任务。
+        console.error("task_execution_orchestration_failed", { taskId: item.taskId, executionId: item.id })
+      }).finally(() => {
+        this.controllers.delete(key); this.activeWork.delete(work)
+      })
+      this.activeWork.add(work)
+    }
   }
 
-  private async drain() {
-    if (this.draining || this.closing) return
-    this.draining = true
-    try {
-      while (this.queue.length && !this.closing) {
-        const item = this.queue.shift()!, controller = new AbortController(), key = `${item.taskId}:${item.id}`
-        this.controllers.set(key, controller)
-        try {
-          const record = this.repository.execution(item.taskId, item.id)
-          const pacing = new ExecutionPacingController(record.pacing)
-          await this.executor.execute(record, controller.signal, item.resume, pacing)
-          recordPlanValidation(this.repository, record)
-          this.preparation.onExecutionSettled(record)
-        } finally { this.controllers.delete(key) }
-        const settled = this.repository.execution(item.taskId, item.id)
-        if (settled.status === "cleanup_required") await this.dispatchAsync(item.taskId, { type: "cleanup_execution",
-          requestId: stableUuid(settled.id, "automatic-cleanup", String(settled.sequence)), executionId: settled.id,
-          expectedSequence: settled.sequence }).catch(() => undefined)
-      }
-    } finally { this.draining = false }
+  private async executeQueued(item: QueueItem, controller: AbortController) {
+    const record = this.repository.execution(item.taskId, item.id)
+    await this.executor.execute(record, controller.signal, item.resume, new ExecutionPacingController(record.pacing))
+    recordPlanValidation(this.repository, record)
+    this.preparation.onExecutionSettled(record)
+    const settled = this.repository.execution(item.taskId, item.id)
+    if (settled.status === "cleanup_required") await this.dispatchAsync(item.taskId, { type: "cleanup_execution",
+      requestId: stableUuid(settled.id, "automatic-cleanup", String(settled.sequence)), executionId: settled.id,
+      expectedSequence: settled.sequence }).catch(() => undefined)
   }
 }
 

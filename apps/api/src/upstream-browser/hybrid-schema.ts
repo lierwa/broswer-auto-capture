@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { elementEntrySchema } from "./element-entry-contract.js"
 import { budgetSchema, versionReferenceSchema, jsonValueSchema, keySchema, resultSpecSchema, valueBindingSchema, valuePathSchema,
   valueSchemaSchema } from "@browser-capture/contracts"
 
@@ -27,7 +28,7 @@ const binding = z.object({ id: z.string(), actionRef: z.string(), argumentPath: 
   kind: z.enum(["runtime_input", "prior_output", "authorized_constant", "sample_evidence"]),
   sourceRef: z.string(), transform: z.null(), proofRefs: z.array(reference) }).strict()
 const naturalBinding = binding.extend({ binding: valueBindingSchema.optional(),
-  derivation: z.enum(["anchor_navigation", "prior_verified_read", "repeat_destination", "selection_function"]).optional() }).strict()
+  derivation: z.enum(["anchor_navigation", "prior_verified_read", "repeat_destination", "selection_function", "prior_browser_context"]).optional() }).strict()
 export const naturalBindingFactValueSchema = z.object({ actionRef: z.string(), argumentPath: z.string(),
   binding: valueBindingSchema, provenance: z.enum(["runtime_input", "native_parameter", "task_literal", "plan_entry_url", "node_output"]),
   taskQuote: z.string().nullable().optional(), sourceReadRef: z.string().nullable().optional() }).strict()
@@ -59,8 +60,16 @@ const historyTargetIdentitySchema = z.object({
   schemaVersion: z.literal("browser-use.dom-interacted-element/v1"), nodeName: z.string().min(1),
   xPath: z.string().min(1), elementHash: z.string().regex(/^-?\d+$/),
   stableHash: z.string().regex(/^-?\d+$/).nullable(), axNameDigest: hash.nullable(),
+  requireAxName: z.boolean().optional(),
+  textDigest: hash.optional(), requireText: z.boolean().optional(),
   attributes: z.array(z.object({ name: z.enum(["name", "id", "aria-label"]), digest: hash }).strict()).max(3),
 }).strict().superRefine((value, context) => {
+  if (value.requireAxName && value.axNameDigest === null) {
+    context.addIssue({ code: "custom", message: "fixed_target_name_required" })
+  }
+  if (value.requireText && !value.textDigest) {
+    context.addIssue({ code: "custom", message: "fixed_target_text_required" })
+  }
   if (new Set(value.attributes.map((item) => item.name)).size !== value.attributes.length) {
     context.addIssue({ code: "custom", message: "duplicate_history_target_attribute" })
   }
@@ -71,6 +80,9 @@ const targetOrdinalBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("node"), nodeId: z.string().min(1), path: valuePathSchema }).strict(),
 ])
 export const hybridTargetSchema = z.discriminatedUnion("strategy", [
+  z.object({ strategy: z.literal("entry"), entryBinding: z.object({ source: z.literal("input"), path: valuePathSchema }).strict().optional(),
+    entry: elementEntrySchema.optional(), withinEntry: z.string().min(1).max(2000).regex(/^:scope > /u)
+      .refine(value => !value.includes(","), "entry_descendant_scope_required").optional() }).strict(),
   z.object({ strategy: z.literal("ordinal"), container: z.string().min(1), ordinal: z.number().int().positive(),
     scope: targetScopeSchema.optional() }).strict(),
   z.object({ strategy: z.literal("title"), role: z.string().min(1), name: z.string().min(1) }).strict(),
@@ -84,6 +96,9 @@ export const hybridTargetSchema = z.discriminatedUnion("strategy", [
 ])
 const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.string().nullable(),
   optionalAttribute: z.boolean().optional(),
+  ordinal: z.boolean().optional(), allowMissing: z.boolean().optional(),
+  contentSource: z.literal("page-content").optional(),
+  valueSource: z.literal("page-url").optional(),
   textSource: z.enum(["rendered", "textContent"]).optional(),
   resolveUrl: z.boolean().optional(), valueType: z.enum(["string", "number", "integer", "boolean"]),
   textPrefix: z.string().min(1).max(100).optional(), textSuffix: z.string().min(1).max(100).optional(),
@@ -91,6 +106,19 @@ const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.str
   multiple: z.boolean().optional(),
   maxValues: z.number().int().min(1).max(300).optional() }).strict()
   .superRefine((value, context) => {
+    if (value.valueSource && (value.valueType !== "string" || value.multiple || value.attribute !== null
+      || value.selector !== ":scope" || value.ordinal || value.contentSource || value.resolveUrl
+      || value.textPrefix !== undefined || value.textSuffix !== undefined
+      || value.normalizeWhitespace || value.normalizePresentation)) {
+      context.addIssue({ code: "custom", message: "page_url_field_invalid" })
+    }
+    if (value.contentSource && (value.valueType !== "string" || value.multiple || value.attribute !== null
+      || value.selector !== ":scope" || value.ordinal)) {
+      context.addIssue({ code: "custom", message: "content_scope_field_invalid" })
+    }
+    if (value.ordinal === true && (value.valueType !== "integer" || value.multiple === true || value.attribute !== null)) {
+      context.addIssue({ code: "custom", message: "ordinal_requires_single_integer" })
+    }
     if (value.optionalAttribute === true && (value.attribute === null || value.multiple === true)) {
       context.addIssue({ code: "custom", message: "optional_attribute_requires_single_attribute" })
     }
@@ -110,17 +138,32 @@ const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.str
     }
   })
 export const readSpecificationSchema = z.object({ container: z.string().min(1),
+  contentRegion: z.literal("common-ancestor").optional(),
   fields: z.record(z.string().min(1), readFieldSchema),
   includeOrdinal: z.boolean().optional(),
   requireComplete: z.boolean().optional(),
+  take: z.number().int().min(1).max(300).optional(), keyField: z.string().min(1).max(200).optional(),
+  entryField: z.string().min(1).max(200).optional(),
+  inheritFields: z.array(z.string().min(1)).max(100).optional(),
   maxItems: z.number().int().min(1).max(300), maxInputBytes: z.number().int().min(1).optional(),
-  outputSchema: valueSchemaSchema }).strict()
+  outputSchema: valueSchemaSchema }).strict().superRefine((value, context) => {
+    if (value.contentRegion && (value.maxItems !== 1 || value.entryField !== undefined
+      || Object.keys(value.fields).join() !== "content" || value.fields.content?.contentSource !== "page-content")) {
+      context.addIssue({ code: "custom", message: "content_region_specification_invalid" })
+    }
+    const inherited = value.inheritFields ?? []
+    const record = value.outputSchema.type === "array" ? value.outputSchema.items : value.outputSchema
+    if (new Set(inherited).size !== inherited.length
+      || inherited.length && (record.type !== "object" || inherited.some(name => !Object.hasOwn(record.properties, name)))) {
+      context.addIssue({ code: "custom", message: "read_inherited_field_invalid" })
+    }
+  })
 export const requiredReadPathsSchema = z.array(z.array(z.union([z.string(), z.number().int().nonnegative()])).min(1))
 const settlePolicySchema = z.object({ maxMs: z.number().int().min(1).max(30000),
   maxAttempts: z.number().int().min(1).max(100), intervalMs: z.number().int().min(10).max(1000) }).strict()
 const factPostconditionSchema = z.object({
   kind: z.enum(["url", "url_digest", "title", "target_value", "target_text", "target_state",
-    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "focused_element", "read_fields"]),
+    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "focused_element", "read_fields", "active_tab"]),
   bindingArgument: z.string().min(1).optional(), equals: jsonValueSchema.optional(),
   changed: z.literal(true).optional(), unchanged: z.literal(true).optional(),
   ready: z.literal(true).optional(), transition: z.literal(true).optional(),
@@ -147,8 +190,10 @@ export const hybridPostconditionSchema = z.union([
   factPostconditionSchema,
   z.object({ kind: z.literal("output_schema"), schemaDigest: hash.nullable() }).strict(),
 ])
+export const hybridOrdinaryActionNameSchema = z.enum(["navigate", "switch", "go_back", "wait", "click", "input", "scroll",
+  "send_keys", "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for"])
 const workflowStepOperation = z.object({ name: z.literal("browser.workflow-step"), version: z.literal(2),
-  actionName: z.enum(["navigate", "go_back", "wait", "click", "input", "scroll", "send_keys", "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for"]) }).strict()
+  actionName: hybridOrdinaryActionNameSchema }).strict()
 const readFieldsOperation = z.object({ name: z.literal("browser.read-fields"), version: z.literal(2), specification: readSpecificationSchema }).strict()
 const invokeOperation = z.object({ name: z.literal("task-chain.invoke"), version: z.literal(1), chain: versionReferenceSchema,
   input: valueBindingSchema, budget: budgetSchema }).strict()
@@ -167,7 +212,11 @@ const deterministicBase = { id: z.string(), kind: z.literal("deterministic"),
   postconditions: z.array(hybridPostconditionSchema).min(1), outputs: z.array(z.object({ schema: valueSchemaSchema, sourceRef: z.string() }).strict()),
   proofRefs: z.array(reference).min(1), requirementClauseRefs: z.array(z.string()).optional() }
 const deterministic = z.object({ ...deterministicBase, bindings: z.array(binding) }).strict()
-const naturalDeterministic = z.object({ ...deterministicBase, operation: naturalOperation, bindings: z.array(naturalBinding) }).strict()
+const naturalDeterministic = z.object({ ...deterministicBase, operation: naturalOperation, bindings: z.array(naturalBinding),
+  // WHY：原生动作不强制页面变化；读取/子链等已有输出证明仍须声明。
+  postconditions: z.array(hybridPostconditionSchema),
+}).strict().refine(value => value.operation.name === "browser.workflow-step" || value.postconditions.length > 0,
+  "non_action_postconditions_required")
 const semantic = z.object({ id: z.string(), kind: z.literal("explicit_llm"),
   operationId: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/),
   purpose: z.enum(["classify", "extract_semantics", "summarize", "rank_candidates", "semantic_dedupe"]),

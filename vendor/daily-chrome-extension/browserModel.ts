@@ -68,8 +68,14 @@ export class BrowserModel {
   private _knownTabs = new Map<number, Tab>();
   // Subset of _knownTabs we've attached the debugger to and assigned a sessionId.
   private _tabSessions = new Map<number, TabSession>();
+  // WHY：控制会话失效与物理页面释放是不同事实；此映射只用于原拥有者清理。
+  private _detachedTabs = new Map<string, number>();
+  private _closedTargets = new Set<string>();
   private _autoAttach = false;
   private _nextSessionId = 1;
+  private _announcedSessions = new Set<string>();
+  private _borrowedSessions = new Map<string, TabSession>();
+  private _runtimeReplayed = new Set<number>();
 
   constructor(sendToExtension: SendCommand) {
     this._sendToExtension = sendToExtension;
@@ -81,6 +87,14 @@ export class BrowserModel {
   // `Target.attachedToTarget` etc. would be answered into a black hole.
   connectOverCDP(sendToCDPClient: SendToCDPClient): void {
     this._sendToCDPClient = sendToCDPClient;
+    this._announcedSessions.clear();
+    this._borrowedSessions.clear();
+    this._runtimeReplayed.clear();
+  }
+  prepareOwnerConnection(targets: string[]) {
+    for (const session of this._tabSessions.values()) if (targets.includes(session.targetInfo?.targetId)) {
+      this._runtimeReplayed.delete(session.tabId);
+    }
   }
 
   private _emit(message: CDPMessage): void {
@@ -98,6 +112,12 @@ export class BrowserModel {
   }
 
   onTabRemoved(tabId: number): void {
+    const targetId = this._tabSessions.get(tabId)?.targetInfo?.targetId;
+    if (targetId) this._closedTargets.add(targetId);
+    for (const [target, tab] of this._detachedTabs) if (tab === tabId) {
+      this._closedTargets.add(target);
+      this._detachedTabs.delete(target);
+    }
     this._knownTabs.delete(tabId);
     this._detachTab(tabId);
   }
@@ -121,11 +141,20 @@ export class BrowserModel {
     // Child CDP sessions (workers, oopifs) keep their own sessionId.
     const sessionId = source.sessionId || tabSession.sessionId;
     this._emit({ sessionId, method, params });
+    // WHY：原生选取事件属于具体已批准tab；只投递给该tab的临时借用，detach后停止。
+    if (!source.sessionId && ['Overlay.inspectNodeRequested', 'Overlay.inspectModeCanceled'].includes(method)) {
+      for (const [alias, borrowed] of this._borrowedSessions) {
+        if (borrowed === tabSession) this._emit({ sessionId: alias, method, params });
+      }
+    }
   }
 
   onDebuggerDetach(source: Debuggee): void {
-    if (source.tabId !== undefined)
+    if (source.tabId !== undefined) {
+      const targetId = this._tabSessions.get(source.tabId)?.targetInfo?.targetId;
+      if (targetId) this._detachedTabs.set(targetId, source.tabId);
       this._detachTab(source.tabId);
+    }
   }
 
   // ─── Playwright → model commands ──────────────────────────────────────
@@ -134,7 +163,9 @@ export class BrowserModel {
   // Called in response to Playwright's `Target.setAutoAttach` on the root session.
   async enableAutoAttach(): Promise<void> {
     this._autoAttach = true;
-    const tabIds = [...this._knownTabs.keys()];
+    // WHY：失去控制的旧tab只保留清理权，不因其它运行的discovery再次接管。
+    const detached = new Set(this._detachedTabs.values());
+    const tabIds = [...this._knownTabs.keys()].filter(tabId => !detached.has(tabId));
     await Promise.all(tabIds.map(tabId => this._attachTab(tabId).catch(logUnhandledError)));
   }
 
@@ -149,11 +180,18 @@ export class BrowserModel {
 
   async closeTarget(targetId: string | undefined): Promise<{ success: boolean }> {
     const tabSession = targetId ? this._findTabSession(s => s.targetInfo?.targetId === targetId) : undefined;
-    if (!tabSession)
-      return { success: false };
-    await this._sendToExtension('chrome.tabs.remove', [tabSession.tabId]);
+    const tabId = tabSession?.tabId ?? (targetId ? this._detachedTabs.get(targetId) : undefined);
+    if (tabId === undefined) {
+      if (!targetId) return { success: false };
+      if (this._closedTargets.has(targetId)) return { success: true };
+      // WHY：owner 已由 relay 核验；重启丢失内存映射时直接复用 Chrome 的原生 targetId/tabId 事实。
+      const result = await this._sendToExtension('bat.closeOwnedTarget', [targetId]);
+      if (result?.success === true) this._closedTargets.add(targetId);
+      return { success: result?.success === true };
+    }
+    await this._sendToExtension('chrome.tabs.remove', [tabId]);
     // WHY：原生 remove 成功 ACK 可先于 onRemoved；沿用原幂等入口，避免枚举已关闭的 debugger。
-    this.onTabRemoved(tabSession.tabId);
+    this.onTabRemoved(tabId);
     return { success: true };
   }
 
@@ -184,7 +222,7 @@ export class BrowserModel {
   }
 
   async getTargetInfo(sessionId: string | undefined, targetId?: string): Promise<any> {
-    const session = sessionId ? this._findTabSession(s => s.sessionId === sessionId)
+    const session = sessionId ? this._borrowedSessions.get(sessionId) ?? this._findTabSession(s => s.sessionId === sessionId)
       : targetId ? this._findTabSession(s => s.targetInfo?.targetId === targetId)
       : this._tabSessions.values().next().value;
     return session ? this._currentTargetInfo(session) : undefined;
@@ -220,7 +258,7 @@ export class BrowserModel {
     // 1. sessionId is a relay-level tab session (pw-tab-N) → strip and route by tabId.
     // 2. sessionId is a child CDP session (worker, oopif) → route to its owning tab,
     //    keep the sessionId so the extension forwards it to chrome.debugger.
-    let tabSession = this._findTabSession(s => s.sessionId === sessionId);
+    let tabSession = this._borrowedSessions.get(sessionId) ?? this._findTabSession(s => s.sessionId === sessionId);
     let cdpSessionId: string | undefined;
     if (!tabSession) {
       tabSession = this._findTabSession(s => s.childSessions.has(sessionId));
@@ -228,6 +266,12 @@ export class BrowserModel {
     }
     if (!tabSession)
       throw new Error(`No tab found for sessionId: ${sessionId}`);
+    if (method === 'Runtime.enable' && !cdpSessionId && !this._runtimeReplayed.has(tabSession.tabId)) {
+      // WHY：Chrome debugger仍拥有旧Runtime订阅；新SDK需要原生重发已有执行上下文。
+      // 每次连接只作用于已经准入的任务tab，不重attach、不影响个人tab。
+      this._runtimeReplayed.add(tabSession.tabId);
+      await this._sendToExtension('chrome.debugger.sendCommand', [{ tabId: tabSession.tabId }, 'Runtime.disable', {}]);
+    }
     return await this._sendToExtension('chrome.debugger.sendCommand', [
       { tabId: tabSession.tabId, sessionId: cdpSessionId },
       method,
@@ -239,8 +283,15 @@ export class BrowserModel {
 
   private async _attachTab(tabId: number): Promise<TabSession> {
     const existing = this._tabSessions.get(tabId);
-    if (existing)
+    if (existing) {
+      // WHY：原 debugger 租约仍在，但更换 SDK 后新客户端没有旧 attached 事件。
+      // 只重发已准入 session；不再 attach、不枚举个人标签、不扩展所有权。
+      if (!this._announcedSessions.has(existing.sessionId)) {
+        existing.targetInfo = await this._currentTargetInfo(existing);
+        this._announceSession(existing);
+      }
       return existing;
+    }
     await this._sendToExtension('chrome.debugger.attach', [{ tabId }, '1.3']);
     const result = await this._sendToExtension('chrome.debugger.sendCommand', [
       { tabId },
@@ -250,15 +301,39 @@ export class BrowserModel {
     const sessionId = `pw-tab-${this._nextSessionId++}`;
     const tabSession: TabSession = { tabId, sessionId, targetInfo, childSessions: new Set() };
     this._tabSessions.set(tabId, tabSession);
+    this._announceSession(tabSession);
+    return tabSession;
+  }
+
+  hasSession(sessionId: string): boolean {
+    return this._borrowedSessions.has(sessionId) || !!this._findTabSession(session => session.sessionId === sessionId);
+  }
+
+  borrowTarget(targetId: string, parentSessionId: string): { sessionId: string } {
+    const tab = this._findTabSession(session => session.targetInfo?.targetId === targetId);
+    if (!tab) throw new Error('daily_chrome_target_not_authorized');
+    const sessionId = `pw-borrow-${this._nextSessionId++}`;
+    this._borrowedSessions.set(sessionId, tab);
+    this._emit({ sessionId: parentSessionId, method: 'Target.attachedToTarget', params: {
+      sessionId, targetInfo: { ...tab.targetInfo, attached: true }, waitingForDebugger: false,
+    } });
+    return { sessionId };
+  }
+
+  releaseBorrow(sessionId: string): void {
+    this._borrowedSessions.delete(sessionId);
+  }
+
+  private _announceSession(session: TabSession): void {
+    this._announcedSessions.add(session.sessionId);
     this._emit({
       method: 'Target.attachedToTarget',
       params: {
-        sessionId,
-        targetInfo: { ...targetInfo, attached: true },
+        sessionId: session.sessionId,
+        targetInfo: { ...session.targetInfo, attached: true },
         waitingForDebugger: false,
       },
     });
-    return tabSession;
   }
 
   private _detachTab(tabId: number): void {
@@ -266,6 +341,9 @@ export class BrowserModel {
     if (!tabSession)
       return;
     this._tabSessions.delete(tabId);
+    for (const [id, borrowed] of this._borrowedSessions) {
+      if (borrowed === tabSession) this._borrowedSessions.delete(id);
+    }
     this._emit({
       method: 'Target.detachedFromTarget',
       params: {

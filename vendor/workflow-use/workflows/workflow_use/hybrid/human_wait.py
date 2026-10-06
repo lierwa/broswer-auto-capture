@@ -10,9 +10,13 @@ from pydantic import Field, field_validator
 from .evidence import Contract, digest
 
 
-class HumanWaitParams(Contract):
+class HumanRequestParams(Contract):
     reason: Literal['login', 'captcha', 'confirmation', 'access']
     prompt: str = Field(min_length=1, max_length=500)
+
+
+class HumanWaitParams(HumanRequestParams):
+    """Legacy v1 evidence; existing compiled chains keep their original condition."""
     resumeUrl: str = Field(min_length=1, max_length=2048)
 
     @field_validator('resumeUrl')
@@ -41,7 +45,7 @@ class HumanWaitControl:
     async def request(self, params):
         if self.pending is not None:
             raise ValueError('hybrid_human_wait_already_pending')
-        if not self.allowed_url(params.resumeUrl):
+        if isinstance(params, HumanWaitParams) and not self.allowed_url(params.resumeUrl):
             raise ValueError('hybrid_human_resume_origin_denied')
         before = await self.identity()
         result = ActionResult(extracted_content='Human request registered. Continue only after host confirmation.',
@@ -57,7 +61,8 @@ class HumanWaitControl:
         current = await self.identity()
         if (current['sessionId'] != pending['before']['sessionId']
                 or current['tabId'] != pending['before']['tabId']
-                or current['url'] != pending['params'].resumeUrl):
+                or (isinstance(pending['params'], HumanWaitParams)
+                    and current['url'] != pending['params'].resumeUrl)):
             raise ValueError('hybrid_human_resume_state_mismatch')
         pending['after'] = current
         return {'resumed': True}
@@ -89,13 +94,24 @@ class HumanWaitControl:
             # WHY：等待在 Agent 的 on_step_end 中，位于原生 step_timeout 外；模型不能自行确认。
             await pending['event'].wait()
             current = await self.identity()
-            if current != pending['after']:
+            legacy = isinstance(pending['params'], HumanWaitParams)
+            if (current['sessionId'] != pending['after']['sessionId']
+                    or current['tabId'] != pending['after']['tabId']
+                    or (legacy and current != pending['after'])):
                 raise ValueError('hybrid_human_resume_state_changed')
             await after_step(agent)
             if not collector.observations:
                 raise ValueError('hybrid_human_post_observation_missing')
+            post = collector.observations[-1]
+            if not legacy:
+                # WHY：确认后的授权内跳转可以继续；证据使用采集层实际稳定观察，不使用ACK时的旧URL。
+                if (self.browser.id != current['sessionId'] or self.browser.agent_focus_target_id != current['tabId']
+                        or post.tabId != current['tabId'] or not self.allowed_url(post.url)):
+                    raise ValueError('hybrid_human_resume_state_changed')
+                current = {**current, 'url': post.url}
             collector.observations[-1].facts.append(collector.value_fact('verified_human_resume', {
-                'schemaVersion': 'bat.human-resume/v1', 'actionRef': action_ref,
+                'schemaVersion': ('bat.human-resume/v1' if isinstance(pending['params'], HumanWaitParams)
+                                  else 'bat.human-resume/v2'), 'actionRef': action_ref,
                 'waitpointId': pending['id'], 'params': params, 'argsDigest': digest(params),
                 'before': pending['before'], 'after': current, 'resumed': True,
                 'resultDigest': pending['resultDigest']}))
@@ -110,10 +126,10 @@ def register_human_wait_tool(tools):
     tools._bat_human_wait = None
 
     @tools.registry.action('Request the user to handle login, CAPTCHA, confirmation or access in this same '
-        'browser tab. Give a short safe prompt and the exact authorized URL to return to afterwards. '
+        'browser tab. Give a short safe prompt. After confirmation, observe the actual page and continue. '
         'Never request passwords, cookies or CAPTCHA values. The host waits for explicit user confirmation.',
-        param_model=HumanWaitParams)
-    async def bat_request_human(params: HumanWaitParams):
+        param_model=HumanRequestParams)
+    async def bat_request_human(params: HumanRequestParams):
         if tools._bat_human_wait is None:
             return ActionResult(error='hybrid_human_wait_unavailable')
         return await tools._bat_human_wait.request(params)

@@ -3,6 +3,8 @@ import test from "node:test"
 import { detectNaturalPreparations } from "../src/upstream-browser/hybrid-preparation.js"
 import { applyPreparationGraphs } from "../src/upstream-browser/hybrid-materializer.js"
 import { assertWorkflowRuntimeSupported } from "../src/upstream-browser/retirement.js"
+import { materializeTargetReadinessCommand } from "../src/upstream-browser/hybrid-runtime.js"
+import { hybridCommandSchema } from "../src/upstream-browser/hybrid-protocol.js"
 
 const digest = (value: number) => value.toString(16).repeat(64).slice(0, 64)
 const source = (value: number) => [{ ref: `sha256:${digest(value)}`, digest: digest(value) }]
@@ -84,4 +86,29 @@ test("目标就绪性与 workflow-step/read-fields 属于同一个 hybrid Browse
     { kind: "capability", capability: { name: "browser.workflow-step", version: 2 } },
     { kind: "capability", capability: { name: "browser.unknown", version: 1 } },
   ] }] as never), /mixed_browser_runtime_unsupported/)
+})
+
+test("入口消费者的准备前后就绪检查使用本次单项输入，不遗留未解析绑定", () => {
+  const input = fixture()
+  const binding = { source: "input", path: ["__batRecordEntry"] }
+  input.compilation.segments[1]!.target = { strategy: "entry", entryBinding: binding } as never
+  const preparations = detectNaturalPreparations({ compilation: input.compilation as never,
+    request: input.request as never, assertFact: () => {} })
+  const graph = applyPreparationGraphs({ nodes: [{ id: "s-a-0003" }, { id: "s-a-0004" }],
+    edges: [{ from: "s-a-0003", port: "success", to: "s-a-0004" }] } as never, preparations, "s-a-0003")
+  const gates = graph.nodes.filter(node => node.kind === "capability" && node.capability.name === "browser.target-readiness")
+  assert.equal(gates.length, 2)
+  for (const gate of gates) {
+    if (gate.kind !== "capability") throw Error("gate_required")
+    assert.deepEqual(gate.input, { targetEntry: binding })
+    for (const title of ["First record", "Different record"]) {
+      const entry = { kind: "element", tabId: "ABCD", url: "https://example.test/list",
+        selector: "button", ordinal: 1, text: title, backendNodeId: 7, documentRootId: 2 }
+      const command = hybridCommandSchema.parse({ ...gate.capability,
+        ...materializeTargetReadinessCommand(gate.config as Record<string, unknown>, { targetEntry: entry }) })
+      assert.equal(command.name, "browser.target-readiness")
+      if (command.name !== "browser.target-readiness") throw Error("readiness_required")
+      assert.deepEqual(command.target, { strategy: "entry", entry })
+    }
+  }
 })

@@ -20,13 +20,16 @@ const uvEnvironment = {
 const sourceDigest = await verifyForkSource(root)
 // WHY: 环境直接消费受管 fork 与原始 frozen lock，来源由 vendor 清单校验。
 await mkdir(path.dirname(environment), { recursive: true })
-if (!process.argv.includes("--check")) {
+if (!process.argv.includes("--check") && !process.argv.includes("--record-verified-source")) {
   run(uv, ["python", "install", "3.12"], uvEnvironment)
   const managedPython = run(uv, ["python", "find", "--managed-python", "3.12"], uvEnvironment)
   if (existsSync(environment) && !(await usesManagedPython(managedPython))) {
     await rm(environment, { recursive: true, force: true })
   }
   run(uv, ["sync", "--managed-python", "--frozen", "--python", "3.12", "--project", source], uvEnvironment)
+  // WHY：账号适配依赖独立固定；不改上游frozen lock，sync之后安装防止被移除。
+  run(python, ["-m", "ensurepip", "--upgrade"])
+  run(python, ["-m", "pip", "install", "--no-cache-dir", "-r", path.join(root, "apps/api/python/account-requirements.txt")])
 }
 if (!existsSync(python)) throw new Error("hybrid_python_missing:run_upstream_setup")
 if (!(await usesManagedPython())) throw new Error("hybrid_python_not_managed:run_upstream_setup")
@@ -40,6 +43,10 @@ if (JSON.stringify(versions.python) !== "[3,12]" || versions.browserUse !== "0.1
   throw new Error("hybrid_runtime_version_or_source_mismatch")
 }
 const manifest = { mode: "workflow-use-hybrid/v2", commit: pinnedCommit, sourceDigest, versions }
+const accountVersions = JSON.parse(run(python, ["-c", "import importlib.metadata as m,json;print(json.dumps({k:m.version(k) for k in ['playwright','pyee','greenlet','xhshow','pycryptodome','tinycss2','webencodings']}))"]))
+for (const [name, version] of Object.entries({ playwright: "1.61.0", pyee: "13.0.1", greenlet: "3.5.6", xhshow: "0.2.0", pycryptodome: "3.23.0", tinycss2: "1.4.0", webencodings: "0.5.1" })) {
+  if (accountVersions[name] !== version) throw new Error(`account_runtime_version_mismatch:${name}`)
+}
 const manifestPath = path.join(path.dirname(environment), "source.json")
 if (!process.argv.includes("--check")) await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n")
 else {

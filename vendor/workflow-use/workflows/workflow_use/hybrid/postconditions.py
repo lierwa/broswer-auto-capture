@@ -14,7 +14,9 @@ from workflow_use.workflow.step_verifier import StepVerifier, VerificationCheck,
 from .evidence import Contract, digest
 from .natural_effects import read_page_effect, read_target_state, read_target_value
 from .natural_reads import deterministic_read_schema
+from .navigation import navigation_destination_matches
 from .read import ReadPaths, ReadSpec, read_fields
+from .page_content import CONTENT_SCHEMA, CONTENT_LIMIT
 from .rendered_field_text import FieldReadError
 from .semantic import bounded_schema
 from .target_scroll import read_target_in_view
@@ -44,13 +46,13 @@ class PostconditionNotMet(RuntimeError):
 _CHECK_KINDS = frozenset({
     'url', 'url_digest', 'title', 'target_value', 'target_text', 'target_state',
     'target_in_view', 'target_visible', 'scroll_position', 'visible_overlays',
-    'media_playback', 'focused_element', 'read_fields',
+    'media_playback', 'focused_element', 'read_fields', 'active_tab',
 })
 _FIELD_READ_CODES = frozenset({
     'read_container_resolution_failed', 'read_collection_limit', 'read_single_object_required',
     'read_output_schema_mismatch', 'read_field_projection_failed', 'read_field_value_limit',
     'ambiguous_or_missing_read_field', 'read_field_not_text', 'read_text_affix_invalid',
-    'read_boolean_invalid', 'read_number_not_finite', 'read_field_native_projection_failed',
+    'read_boolean_invalid', 'read_number_not_finite', 'read_number_invalid', 'read_field_native_projection_failed',
 })
 _VALUE_READ_CODES = frozenset({'page_unavailable', 'target_scope_mismatch', 'read_input_limit'})
 _CHECK_REASONS = _FIELD_READ_CODES | _VALUE_READ_CODES | frozenset({
@@ -73,7 +75,7 @@ def _safe_check_error(error):
 class Postcondition(Contract):
     kind: Literal['url', 'url_digest', 'title', 'target_value', 'target_text', 'target_state',
                   'target_in_view', 'target_visible', 'scroll_position', 'visible_overlays',
-                  'media_playback', 'focused_element', 'read_fields']
+                  'media_playback', 'focused_element', 'read_fields', 'active_tab']
     bindingArgument: str | None = None
     equals: JsonValue = None
     clauseRef: str | None = None
@@ -86,6 +88,7 @@ class Postcondition(Contract):
     transition: bool | None = None
     consumerRef: str | None = None
     requiredPaths: ReadPaths | None = None
+    inherited: JsonValue = None
 
     @model_validator(mode='after')
     def one_authority(self):
@@ -105,10 +108,14 @@ class Postcondition(Contract):
             budget_bounded = (self.read.maxInputBytes is not None
                               and self.read.maxInputBytes <= 128000
                               and deterministic_read_schema(self.read.outputSchema))
+            content_bounded = (self.read.outputSchema == CONTENT_SCHEMA and self.read.maxItems == 1
+                and set(self.read.fields) == {'content'}
+                and self.read.fields['content'].contentSource == 'page-content'
+                and self.read.maxInputBytes is not None and self.read.maxInputBytes <= CONTENT_LIMIT * 2)
             # WHY：ResultSpec 的业务原文不应被迫声明 maxLength；DOM 读取已有字段/记录上限时，
             # ConsumerReadiness 复用 ReadSpec 的字节预算即可保证轮询有界。
             if self.bindingArgument is not None or not (
-                    bounded_schema(self.read.outputSchema) or budget_bounded):
+                    bounded_schema(self.read.outputSchema) or budget_bounded or content_bounded):
                 raise ValueError('bounded_postcondition_read_required')
             if (self.ready is True or self.transition is True) and (
                     self.consumerRef is None or self.settle is None):
@@ -124,8 +131,7 @@ class Postcondition(Contract):
 
 
 def declared_checks(raw: list[dict], args: dict, target: dict | None, allow_unresolved_target=False):
-    if not raw:
-        raise ValueError('postconditions_required')
+    # WHY：普通动作沿原生执行结果完成；只有已声明的附加页面条件才需要校验。
     settle_policy(raw)
     target_checks = any(isinstance(item, dict) and str(item.get('kind', '')).startswith('target_') for item in raw)
     resolved_target = materialize_target(target, dict(args), allow_unresolved=allow_unresolved_target) \
@@ -151,6 +157,10 @@ def declared_checks(raw: list[dict], args: dict, target: dict | None, allow_unre
                                      if condition.transition else {}),
                                   **({'ready': True} if condition.ready else {}),
                                   **({'read': condition.read.model_dump()} if condition.read else {}),
+                                  **({'inherited': condition.inherited} if condition.inherited is not None else {}),
+                                  **({'navigationDestination': True} if condition.kind == 'url' and condition.bindingArgument else {}),
+                                  **({'navigationScope': True} if condition.kind == 'read_fields' and any(
+                                      item.kind == 'url' and item.bindingArgument for item in conditions) else {}),
                                   **({'requiredPaths': condition.requiredPaths} if condition.requiredPaths else {}),
                                   **({'scope': _runtime_read_scope(condition, conditions, args)}
                                      if condition.scope else {}),
@@ -216,6 +226,9 @@ def settle_policy(raw):
 
 
 async def verify_declared(browser, checks, policy=None):
+    # WHY：没有附加条件时不调用 StepVerifier；其 SKIPPED 不是原生动作失败。
+    if not checks:
+        return
     for check in checks:
         check.parameters['_batAttemptCount'] = 0
     if policy is None:
@@ -315,6 +328,8 @@ def _bind_attempt_reads(checks, identity):
         if parameters.get('_stablePageIdentity') != key:
             parameters.pop('stableDigest', None)
             parameters['_stablePageIdentity'] = key
+        if parameters.get('navigationScope') and navigation_destination_matches(parameters.get('scope', {}).get('url'), url):
+            parameters['_runtimeReadScope'] = {'url': url, 'urlDigest': digest(url)}
         owner = parameters.get('_actionResultOwner')
         if owner is not None:
             if owner != {'sessionId': session_id, 'targetId': target_id}:
@@ -357,10 +372,13 @@ async def check_fact(parameters, browser):
         passed = parameters.get('baselineUnavailable') is True or actual != parameters['expected']
     elif parameters.get('unchanged') is True:
         passed = actual == parameters['expected']
+    elif parameters.get('navigationDestination') is True:
+        passed = navigation_destination_matches(parameters['expected'], actual)
     else:
         passed = actual != parameters['expected'] if parameters.get('changed') is True else actual == parameters['expected']
-    if parameters['kind'] == 'read_fields' and (
-            parameters.get('ready') is True or parameters.get('transition') is True):
+    # WHY：ready 只声明投影可读取；成功的受管读取已核验合同和页面身份，不要求动态内容逐字不变。
+    # 依据：原生 B-U eb41269 Tools.extract 单次内容快照；此处不调用其模型提取。
+    if parameters['kind'] == 'read_fields' and parameters.get('transition') is True:
         if not passed:
             parameters.pop('stableDigest', None)
             parameters['_batFailureReason'] = 'projection_not_ready'
@@ -399,13 +417,17 @@ def readiness_projection_unavailable(parameters, error):
         return False
     if isinstance(error, FieldReadError):
         return True
-    return str(error) in {'page_unavailable', 'read_single_object_required', 'target_scope_mismatch'}
+    return str(error) in {'page_unavailable', 'read_single_object_required', 'target_scope_mismatch',
+                          'content_image_not_loaded', 'content_image_resource_missing'}
 
 
 async def read_check_value(parameters, browser):
     return await read_fields(browser, ReadSpec.model_validate(parameters['read']),
                              scope=parameters.get('_runtimeReadScope', parameters.get('scope')),
-                             page=_ATTEMPT_PAGE.get(), required_paths=parameters.get('requiredPaths', ())) if parameters['kind'] == 'read_fields' else (
+                             page=_ATTEMPT_PAGE.get(), required_paths=parameters.get('requiredPaths', ()),
+                             inherited=parameters.get('inherited'),
+                             content_readiness=parameters.get('ready') is True or parameters.get('transition') is True
+                             ) if parameters['kind'] == 'read_fields' else (
            await read_fact(parameters['kind'], parameters['target'], browser,
                            parameters.get('_retainedElement'),
                            include_focus='focused' in (_safe_target_state(parameters.get('expected')) or {})))
@@ -421,6 +443,11 @@ def transition_baseline_unavailable(error):
 
 
 async def read_fact(kind, target, browser, retained_element=None, *, include_focus=False):
+    if kind == 'active_tab':
+        target_id = browser.agent_focus_target_id
+        if not target_id:
+            raise ValueError('page_unavailable')
+        return str(target_id)
     if kind.startswith('target_'):
         if kind == 'target_visible':
             return await read_visible_target(browser, target)

@@ -1,4 +1,5 @@
 """Run-scoped live identity stamps around the public BrowserStateSummary API."""
+import asyncio
 import time
 from copy import copy
 
@@ -176,11 +177,13 @@ class SourceObservationScope:
             self.stamps = self.stamps[-8:]
             return summary
         except Exception as error:
+            refresh = (outcome in ('changed_during_capture', 'snapshot_document_mismatch')
+                       and self.browser.id == session_id and _same_owned_tab(before, after)
+                       and after['targetId'] == self.browser.agent_focus_target_id)
+            connection = await _failure_connection(self.browser, before)
             self.record('state_capture', outcome, getattr(summary, 'url', None), before, after,
-                        native_step=step, error=error, error_phase=phase)
-            if (outcome in ('changed_during_capture', 'snapshot_document_mismatch')
-                    and self.browser.id == session_id and _same_owned_tab(before, after)
-                    and after['targetId'] == self.browser.agent_focus_target_id):
+                        native_step=step, error=error, error_phase=phase, connection=connection)
+            if refresh:
                 # WHY：同一受控 tab 的页面过渡不是来源损坏；不交付混合快照，
                 # 动作后沿用 snapshot settle，模型观察交回原生 step 重试，不增设循环。
                 if allow_transition:
@@ -236,14 +239,15 @@ class SourceObservationScope:
         return refreshed
 
     def record(self, phase, outcome, summary_url, baseline, current, document=None, native_step=None,
-               error=None, error_phase=None):
+               error=None, error_phase=None, connection=None):
         agent = self.callbacks.agent
         step = native_step if native_step is not None else getattr(getattr(agent, 'state', None), 'n_steps', None)
         self.diagnostics.append({'schemaVersion': 'bat.observation-diagnostic/v1', 'phase': phase,
             'outcome': outcome, 'nativeStepNumber': step,
             'summaryUrlDigest': digest(summary_url) if isinstance(summary_url, str) else None,
             'summaryDocumentDigest': document, 'baseline': safe_sample(baseline), 'current': safe_sample(current),
-            **_error_diagnostic(error, error_phase)})
+            **_error_diagnostic(error, error_phase),
+            **({'connection': connection} if connection is not None else {})})
 
     def record_live_url(self, summary, tab_id, live_url):
         baseline = next((sample for candidate, sample in reversed(self.stamps) if candidate is summary), None)
@@ -303,6 +307,20 @@ def _same_owned_tab(baseline, current):
         and baseline['targetId'] is not None and baseline['targetId'] == current['targetId']
         and baseline['documentDigest'] is not None
         and current['documentDigest'] is not None)
+
+
+async def _failure_connection(browser, baseline):
+    # WHY：失败时只取受控CDP的计数/同一目标存在性，不记录页面或创建恢复目标。
+    result = {'focusPresent': bool(browser.agent_focus_target_id),
+              'events': list(getattr(browser, '_bat_target_events', []))[-16:]}
+    try:
+        pages = (await asyncio.wait_for(browser._cdp_client_root.send.Target.getTargets(), 1))['targetInfos']
+        result['livePageCount'] = sum(page.get('type') == 'page' for page in pages)
+        result['baselineTargetPresent'] = bool(baseline and any(
+            page.get('targetId') == baseline['targetId'] for page in pages))
+    except Exception:
+        result['targetQueryFailed'] = True
+    return result
 
 
 def _error_diagnostic(error, phase):

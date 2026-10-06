@@ -324,8 +324,9 @@ function sameReference(value: unknown, expected: EvidenceReference) {
 }
 
 function segmentScope(segment: Compilation["segments"][number]) {
-  if (!segment.target || typeof segment.target !== "object" || Array.isArray(segment.target)) return null
-  const scope = (segment.target as Record<string, unknown>).scope
+  const scope = isRecord(segment.target) ? segment.target.scope
+    : segment.operation?.name === "browser.workflow-step"
+      ? untargetedReadCondition({ target: segment.target, postconditions: segment.postconditions })?.scope : undefined
   if (!isRecord(scope) || typeof scope.url !== "string") return null
   return { url: scope.url, ...(typeof scope.urlDigest === "string" ? { urlDigest: scope.urlDigest } : {}) }
 }
@@ -351,13 +352,11 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
 
 export type HybridBrowserState = Readonly<{ sessionId: string; tabId: string; url: string;
   documentId?: string | undefined; observationDigest: string; observedAt: string }>
-
 /** 当前运行 scope 只存在于一个 capability 闭包内；失败会清空，实例之间不会共享。 */
 export class HybridRuntimeScopeState {
   private previous: { nodeId: string; browser: HybridBrowserState } | null = null
   private resumed: { nodeId: string; browser: HybridBrowserState } | null = null
   private pendingDocument: HybridBrowserState | null = null
-
   async commandConfig(name: string, config: Record<string, unknown>, observe: () => Promise<HybridBrowserState>, nodeId?: string) {
     this.pendingDocument = null
     try {
@@ -377,7 +376,6 @@ export class HybridRuntimeScopeState {
     }
     catch (error) { this.clear(); throw error }
   }
-
   private async resolveCommandConfig(name: string, config: Record<string, unknown>, observe: () => Promise<HybridBrowserState>) {
     const readOnlySameDocument = config[RUNTIME_SCOPE_READ_ONLY]
     const { [RUNTIME_SCOPE_FROM]: _marker, [RUNTIME_SCOPE_READ_ONLY]: _mode,
@@ -391,8 +389,14 @@ export class HybridRuntimeScopeState {
     const sameDocument = Boolean(this.previous.browser.documentId && browser.documentId
       && this.previous.browser.documentId === browser.documentId
       && this.previous.browser.sessionId === browser.sessionId && this.previous.browser.tabId === browser.tabId)
-    if (readOnlySameDocument === true ? !sameDocument : !sameBrowserPage(this.previous.browser, browser)) {
-      throw new Error("hybrid_runtime_scope_page_changed")
+    // WHY：普通动作仍匹配并验证实际目标；同一文档的 URL 更新不等于页面所有权改变。
+    if (readOnlySameDocument === true ? !sameDocument
+      : !sameBrowserPage(this.previous.browser, browser) && !(name === "browser.workflow-step" && sameDocument)) {
+      throw new Error("hybrid_runtime_scope_page_changed", { cause: {
+        phase: "scope_mismatch", status: "failed", sameDocument, sameSession: this.previous.browser.sessionId === browser.sessionId,
+        sameTab: this.previous.browser.tabId === browser.tabId,
+        sameUrl: this.previous.browser.url === browser.url,
+      } })
     }
     if (config[RUNTIME_SCOPE_SAME_DOCUMENT] === true && !sameDocument) throw new Error("hybrid_runtime_scope_document_changed")
     if (config[RUNTIME_SCOPE_SAME_DOCUMENT] === true) this.pendingDocument = browser
@@ -444,7 +448,7 @@ function scopePredecessors(name: string, config: Record<string, unknown>) {
 
 function assertExistingScope(name: string, config: Record<string, unknown>) {
   const scope = name === "browser.read-fields" ? config.scope
-    : isRecord(config.target) ? config.target.scope : scrollReadCondition(config)?.scope
+    : isRecord(config.target) ? config.target.scope : untargetedReadCondition(config)?.scope
   if (!isRecord(scope) || typeof scope.url !== "string" || !scope.url) {
     throw new Error("hybrid_runtime_scope_static_scope_missing")
   }
@@ -452,23 +456,24 @@ function assertExistingScope(name: string, config: Record<string, unknown>) {
 
 function replaceScope(name: string, config: Record<string, unknown>, scope: { url: string; urlDigest: string }) {
   if (name === "browser.read-fields") return { ...config, scope }
-  if (scrollReadCondition(config)) return { ...config,
+  if (untargetedReadCondition(config)) return { ...config,
     postconditions: (config.postconditions as Record<string, unknown>[]).map((condition) =>
       condition.kind === "read_fields" ? { ...condition, scope } : condition) }
   const target = config.target as Record<string, unknown>
   const previous = isRecord(target.scope) ? target.scope.url : undefined
   const postconditions = Array.isArray(config.postconditions) ? config.postconditions.map((condition) =>
-    isRecord(condition) && condition.kind === "read_fields" && condition.transition === true
+    isRecord(condition) && condition.kind === "read_fields" && (condition.transition === true || condition.ready === true)
       && isRecord(condition.scope) && condition.scope.url === previous ? { ...condition, scope } : condition)
     : config.postconditions
   // WHY：同页按钮的消费者读取也跟随当前运行URL；跨页消费者仍保留自己的目的地证明。
   return { ...config, target: { ...target, scope }, postconditions }
 }
 
-function scrollReadCondition(config: Record<string, unknown>) {
-  if (config.actionName !== "scroll" || config.target !== null || !Array.isArray(config.postconditions)) return undefined
-  const reads = config.postconditions.filter((item) => isRecord(item) && item.kind === "read_fields" && item.transition === true)
-  // WHY：无元素目标的原生滚动，以已证明的消费者读取作为作用域；不虚构locator。
+function untargetedReadCondition(config: Record<string, unknown>) {
+  if (config.target !== null || !Array.isArray(config.postconditions)) return undefined
+  const reads = config.postconditions.filter((item) => isRecord(item) && item.kind === "read_fields"
+    && (item.transition === true || item.ready === true))
+  // WHY：无元素目标的动作仍可拥有读取作用域；沿用源边界证明，不固化代表 URL 或虚构 locator。
   return reads.length === 1 && isRecord(reads[0]) ? reads[0] : undefined
 }
 

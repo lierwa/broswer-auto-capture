@@ -5,6 +5,9 @@ export type BrowserMode = z.infer<typeof browserModeSchema>
 export const browserEnvironmentSchema = z.object({
   mode: browserModeSchema, revision: z.number().int().nonnegative(),
 }).strict()
+export const taskBrowserEnvironmentSchema = browserEnvironmentSchema.extend({
+  override: browserModeSchema.nullable(),
+})
 export function executionBrowser(mode: BrowserMode) {
   return { mode, headless: mode === "dedicated-headless" }
 }

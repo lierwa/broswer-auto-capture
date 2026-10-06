@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import { eventsForStep } from "./chainWorkbenchProjection.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 
-export type WorkbenchContextMode = "execution" | "history" | "diagnostics" | "preparation" | "start" | null
+export type WorkbenchContextMode = "history" | "diagnostics" | "preparation" | "start" | null
 
 export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const view = useSyncExternalStore(connection.subscribe, connection.snapshot, connection.snapshot)
@@ -32,9 +32,11 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   // WHY：新准备的首个 build 需要首次定位；同批 prefix/final/草稿/运行不能随快照重新定位。
   if (nextCanvasGeneration !== canvasGeneration) setCanvasGeneration(nextCanvasGeneration)
   const source = build ? undefined : workspace?.draft?.content ?? workspace?.release?.value.content
-  const plan = source?.plan
-  const steps = source?.steps ?? []
-  const step = steps.find((item) => item.stepId === stepId) ?? steps[0]
+  const plan = build ? workspace?.activity?.plan : source?.plan ?? workspace?.activity?.plan
+  const steps = build || !source ? workspace?.activity?.steps ?? [] : source.steps
+  const completedBuilds = build || !source ? workspace?.activity?.completedBuilds ?? [] : []
+  const scopeStepId = stepId ?? build?.stepId ?? steps[0]?.stepId
+  const step = steps.find(item => item.stepId === scopeStepId)
   const chain = step?.chain
   const presentation = step?.presentation
   const canvasPresentation = build?.presentation ?? presentation
@@ -55,19 +57,22 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
   const chainEvents = useMemo(() => step ? eventsForStep(step.stepId, visibleExecutionId, view.eventBatch,
     selectedCall?.run.binding.runId ?? selectedRunId) : null,
     [step?.stepId, visibleExecutionId, view.eventBatch, selectedCall?.run.binding.runId, selectedRunId])
-  const selectedNode = (build?.nodes ?? chain?.nodes)?.find((node) => node.id === selectedNodeId) ?? null
-  const selectedStage = canvasPresentation?.stages.find((stage) => stage.id === selectedStageId)
-    ?? canvasPresentation?.stages.find((stage) => selectedNode && stage.nodeIds.includes(selectedNode.id)) ?? null
-  const executionRunning = Boolean(selectedExecution && ["queued", "running", "waiting_for_human", "paused", "cleanup_required"]
-    .includes(selectedExecution.status))
+  const inspectionBuild = build && (!stepId || stepId === build.stepId) ? build
+    : completedBuilds.find(item => item.stepId === scopeStepId)
+  const inspectedPresentation = inspectionBuild?.presentation ?? presentation
+  const selectedNode = (inspectionBuild?.nodes ?? chain?.nodes)?.find((node) => node.id === selectedNodeId) ?? null
+  const selectedStage = inspectedPresentation?.stages.find((stage) => stage.id === selectedStageId)
+    ?? inspectedPresentation?.stages.find((stage) => selectedNode && stage.nodeIds.includes(selectedNode.id)) ?? null
+  const executionRunning = Boolean(selectedExecution && (["queued", "running"].includes(selectedExecution.status)
+    || ["waiting_for_human", "paused"].includes(selectedExecution.status) && selectedExecution.browserHandoff.status === "active"))
 
   useEffect(() => {
-    if (!step && stepId) setStepId(null)
-    else if (step && step.stepId !== stepId) setStepId(step.stepId)
-  }, [step?.stepId, stepId])
+    if (stepId && stepId !== build?.stepId && !steps.some(item => item.stepId === stepId)
+      && !completedBuilds.some(item => item.stepId === stepId)) setStepId(null)
+  }, [steps, build?.stepId, completedBuilds, stepId])
   useEffect(() => {
     setSelectedNodeId(null); setSelectedStageId(null)
-  }, [chain?.id, chain?.version, build?.stepId, build ? workspace?.activity?.id : undefined])
+  }, [workspace?.taskId, draft?.id, draft?.revision, build ? workspace?.activity?.id : undefined])
   useEffect(() => { setSelectedRunId(null) }, [visibleExecutionId, step?.stepId])
   useEffect(() => {
     if (active && workspace?.activity && (["failed", "interrupted"].includes(workspace.activity.status)
@@ -83,14 +88,21 @@ export function useLiveChain(connection: TaskChainConnection, active: boolean) {
 
   return {
     view, workspace, source, plan, requirement, steps, step, chain, displayChain: chain, presentation, canvasPresentation, draft, release, build,
+    inspectionBuild, completedBuilds, scopeStepId,
     // WHY：准备批次身份保留到其草稿、复验、发布和运行；build sequence 不参与画布身份。
-    canvasKey: `${nextCanvasGeneration.taskId}:${nextCanvasGeneration.authoringJobId ?? "existing"}:${build?.stepId ?? step?.stepId ?? "chain"}`,
+    canvasKey: `${nextCanvasGeneration.taskId}:${nextCanvasGeneration.authoringJobId ?? "existing"}`,
     selectedExecution, acceptedExecutionId, detail, calls, selectedCall, selectedRunId, setSelectedRunId,
     chainEvents, selectedNode, selectedStage,
     runDialogMode, selectedNodeId, selectedStageId,
     contextMode, executionRunning, activityRunning, setStepId, setRunDialogMode,
     setSelectedStageId, setSelectedNodeId, setContextMode,
     openContext, closeContext,
+    openTerminal: () => {
+      const terminal = chain?.nodes.find(node => node.kind === "terminal" && node.status === "completed")
+        ?? chain?.nodes.find(node => node.kind === "terminal")
+      if (terminal) { setSelectedNodeId(terminal.id); setSelectedStageId(null); setContextMode(null) }
+      else openContext("history")
+    },
   }
 }
 
@@ -127,7 +139,7 @@ export type LiveChainModel = ReturnType<typeof useLiveChain>
 
 export function preparationPhaseLabel(phase: string) {
   return ({ forming_plan: "核验准备计划草案", awaiting_representative_input: "等待代表输入",
-    preexecuting: "生成节点", compiling: "生成节点", validating_sample: "草稿试跑",
+    preexecuting: "浏览器试做", compiling: "生成节点", validating_sample: "草稿试跑",
     awaiting_verification_input: "等待另一组输入", validating_verification: "独立复跑检查",
     ready: "草稿可发布" } as Record<string, string>)[phase] ?? "草稿生成"
 }

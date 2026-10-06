@@ -1,6 +1,7 @@
 """Read-method arguments preserve type ownership and never expose a full authoring dataset."""
 import json
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
@@ -12,6 +13,9 @@ from workflow_use.hybrid.method_read_tool import (
 from workflow_use.hybrid.natural_reads import NaturalReadFailure
 from workflow_use.hybrid.read_sampling import ReadSample
 from workflow_use.hybrid.rendered_field_text import FieldReadError
+from workflow_use.hybrid.content_css import background_urls
+from workflow_use.hybrid.method_completion import content_read_refs
+from workflow_use.hybrid.method_read_tool import _safe_read_error
 
 
 ITEM = {'type': 'object', 'properties': {'count': {'type': 'integer'},
@@ -72,6 +76,20 @@ class MethodReadMappingTests(unittest.TestCase):
         self.assertEqual(first.specification.fields['labels'].maxValues, 8)
         wire = json.loads(original.model_dump_json())
         self.assertFalse(set(wire['fields']['count']) & {'valueType', 'multiple', 'maxValues'})
+
+    def test_collection_rows_inherit_required_root_parameters_without_page_reads(self):
+        schema = {'type': 'object', 'properties': {'amount': {'type': 'integer'}},
+                  'required': ['amount'], 'additionalProperties': False}
+        output = {'type': 'array', 'items': {**ITEM,
+                  'properties': {**ITEM['properties'], **schema['properties']},
+                  'required': [*ITEM['required'], 'amount']}, 'maxItems': 20}
+        mapping = expand_method_read_params(parameters(maxItems=20), output,
+                                           inherit_fields=['amount'], input_schema=schema)
+        self.assertEqual(mapping.specification.inheritFields, ['amount'])
+        self.assertNotIn('amount', mapping.specification.fields)
+        with self.assertRaisesRegex(NaturalReadFailure, 'natural_read_schema_mismatch'):
+            expand_method_read_params(parameters(), output, inherit_fields=['amount'],
+                                     input_schema={**schema, 'required': []})
 
     def test_model_cannot_supply_derived_types_or_legacy_records(self):
         for key, value in [('valueType', 'string'), ('multiple', False), ('maxValues', 3)]:
@@ -181,6 +199,33 @@ class MethodReadToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hidden.error, 'bat_read_fields_failed')
         self.assertEqual(json.loads(success.extracted_content)['readRef'], 'r1')
         self.assertEqual(len(records.records), 1)
+
+
+class ContentBoundaryTests(unittest.TestCase):
+    def test_css_parser_preserves_quoted_urls_and_rejects_unproven_variants(self):
+        self.assertEqual(background_urls([{'image': 'linear-gradient(red, blue), url("https://example.test/a(b).png")'}]),
+                         ['https://example.test/a(b).png'])
+        with self.assertRaisesRegex(ValueError, 'content_css_resource_unproven'):
+            background_urls([{'image': 'image-set(url("a.png") 1x, url("b.png") 2x)'}])
+        self.assertEqual(_safe_read_error(ValueError('content_css_resource_unproven'), []),
+                         'content_css_resource_unproven')
+
+    def test_implicit_done_refines_same_document_and_rejects_other_document(self):
+        def record(reference, container, *, document=7, tab='tab'):
+            return SimpleNamespace(readRef=reference, parameters=SimpleNamespace(container=container),
+                sample=SimpleNamespace(documentRootId=document,
+                    pageIdentity={'targetId': tab, 'url': 'https://example.test/a'}))
+        records = SimpleNamespace(records=[record('r1', '#scope'), record('r2', '#scope')])
+        self.assertEqual(content_read_refs(records), ['r2'])
+        records.records.append(record('r3', '#other'))
+        self.assertEqual(content_read_refs(records), ['r3'])
+        records.records.append(record('r4', '#other', document=8))
+        with self.assertRaisesRegex(ValueError, 'completion_content_scope_ambiguous'):
+            content_read_refs(records)
+        records.records.pop()
+        records.records.append(record('r4', '#other', tab='other'))
+        with self.assertRaisesRegex(ValueError, 'completion_content_scope_ambiguous'):
+            content_read_refs(records)
 
 
 if __name__ == '__main__':

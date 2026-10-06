@@ -22,6 +22,7 @@ import { parseCompilationCheckpoint, receiveCompilation, type CompilationCheckpo
 import { projectRoot } from "./helpers.js"
 import { projectActivity } from "../src/task-chain/workspace-projection.js"
 import { RequirementClarificationRequired } from "../src/task-chain/authoring-failure.js"
+import { storedStepBuilds } from "../src/task-chain/preparation-step-builds.js"
 
 const schema: ValueSchema = { type: "array", items: { type: "object", properties: {
   title: { type: "string" } }, required: ["title"], additionalProperties: false } }
@@ -126,6 +127,28 @@ test("原生回调到跨进程 ACK、SQLite、正式候选和普通执行器，�
       overviewLayout: result.presentations[0]!.overviewLayout,
       focusLayouts: result.presentations[0]!.focusLayouts,
     })
+    const saved = h.repository.job(h.job.taskId, h.job.id)
+    const completed = storedStepBuilds(h.repository, saved)
+    assert.equal(completed.length, 1)
+    assert.equal(completed[0]!.stepId, h.step.id)
+    assert.deepEqual(completed[0]!.nodes, finalBuild.nodes)
+    assert.equal("payload" in completed[0]!, false)
+    assert.equal("authorRequestId" in completed[0]!, false)
+    // WHY：下一步的当前快照覆盖后，先前步骤仍通过同一准备拥有的产物展示；不会提前产生链路版本。
+    const next = structuredClone(saved)
+    next.status = "running"
+    next.authoring!.build = { ...finalBuild, stepId: "next-step", phase: "prefix" }
+    h.repository.saveJob(next)
+    assert.deepEqual(storedStepBuilds(h.repository, h.repository.job(h.job.taskId, h.job.id)), completed)
+    const projected = projectActivity({ ...next, type: "prepare", preparation: {
+      phase: "preexecuting", candidatePlan: h.plan, inputRequest: null,
+    } as NonNullable<TaskAuthoringJob["preparation"]> }, h.repository)
+    assert.deepEqual(projected!.completedBuilds, completed)
+    assert.equal(projected!.build!.stepId, "next-step")
+    assert.doesNotThrow(() => taskAuthoringActivitySchema.parse(projected))
+    const foreign = { ...saved, id: randomUUID() }
+    assert.throws(() => storedStepBuilds(h.repository, foreign), /identity_mismatch/)
+    h.repository.saveJob(saved)
     let calls = 0
     const run = await new TaskChainRuntime().execute({ chain, request: requestFor(chain, null), capabilities: {
       browserCommandCount: () => calls,

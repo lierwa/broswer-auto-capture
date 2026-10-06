@@ -1,11 +1,30 @@
 """Action-owned tab convergence through the existing public Browser API."""
 import asyncio
+from urllib.parse import parse_qs, urlsplit
 
 from browser_use.browser.events import SwitchTabEvent
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, stop_before_delay, wait_fixed
 
 
 NAVIGATION_ACTIONS = frozenset({'click', 'send_keys'})
+
+
+def navigation_destination_matches(expected, actual):
+    """Allow server-added query keys without relaxing the requested destination."""
+    if not isinstance(expected, str) or not isinstance(actual, str):
+        return False
+    try:
+        before, after = urlsplit(expected), urlsplit(actual)
+        if before.scheme not in {'http', 'https'} or before.scheme != after.scheme:
+            return False
+        if (before.netloc.lower(), before.path or '/', before.fragment) != \
+                (after.netloc.lower(), after.path or '/', after.fragment):
+            return False
+        requested, landed = parse_qs(before.query, keep_blank_values=True), parse_qs(after.query, keep_blank_values=True)
+        # WHY：新增跟踪/展示参数可以接受；已指定的查询词、多值、路径和站点绝不能被重定向替换。
+        return all(landed.get(name) == values for name, values in requested.items())
+    except ValueError:
+        return False
 
 
 class NavigationTabPending(ValueError):
@@ -97,6 +116,10 @@ async def reconcile_captured_navigation(collector, results):
 def cross_tab_navigation_allowed(action, pre, post):
     if pre.tabId == post.tabId:
         return True
+    if action.name == 'switch':
+        before, after = _observed_tabs(pre), _observed_tabs(post)
+        return (before is not None and after is not None and post.tabId in before & after
+                and action.args.get('tab_id') == post.tabId[-4:])
     if action.name not in NAVIGATION_ACTIONS and not (
             action.name == 'navigate' and action.args.get('new_tab') is True):
         return False

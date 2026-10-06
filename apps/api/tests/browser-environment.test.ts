@@ -100,36 +100,43 @@ test("准备环境快照跨存储重启保留并投影，旧任务不补写未�
   } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
 })
 
-test("原连接清理未确认禁止更换环境；切换期间禁止并发启动或再次切换", async () => {
+test("实际账号操作保留清理与互斥保护，保存下次偏好不加入连接清理", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-environment-"))
   const store = await ProductStore.open(directory)
   let release!: (report: typeof confirmed) => void
   const service = new BrowserEnvironmentService(store, { withSession: async () => { throw new Error("unused") },
     close: () => new Promise(resolve => { release = resolve }) }, () => {})
   try {
-    const pending = service.select({ mode: "dedicated-visible", expectedRevision: 0 })
+    const pending = service.exclusive(() => service.disconnectIdle())
     assert.throws(() => service.assertStable(), /浏览器环境正在切换/)
-    await assert.rejects(service.select({ mode: "dedicated-headless", expectedRevision: 0 }), /浏览器环境正在切换/)
+    await assert.rejects(service.exclusive(async () => {}), /浏览器环境正在切换/)
+    await service.select({ mode: "dedicated-visible", expectedRevision: 0 })
     release(unconfirmed)
     await assert.rejects(pending, /原浏览器连接清理未确认/)
-    assert.deepEqual(service.snapshot(), { mode: "daily", revision: 0 })
+    assert.deepEqual(service.snapshot(), { mode: "dedicated-visible", revision: 1 })
     service.assertStable()
   } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
 })
 
-test("任务占用时不得清理其连接或改变选择", async () => {
+test("任务占用时可以保存下次偏好，不核验占用、不关闭连接、不修改当前运行快照", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-environment-"))
   const store = await ProductStore.open(directory)
-  let closes = 0
+  let closes = 0, availabilityChecks = 0, disconnects = 0
   const service = new BrowserEnvironmentService(store, { withSession: async () => { throw new Error("unused") },
-    close: async () => { closes++; return confirmed } }, () => { throw new Error("busy task") })
+    close: async () => { closes++; return confirmed } }, () => { availabilityChecks++; throw new Error("busy task") },
+    async () => { disconnects++ })
   try {
-    await assert.rejects(service.select({ mode: "dedicated-visible", expectedRevision: 0 }), /busy task/)
-    assert.equal(closes, 0); assert.equal(service.snapshot().revision, 0)
+    const execution = store.executionBrowser()
+    await service.select({ mode: "dedicated-visible", expectedRevision: 0 })
+    assert.deepEqual(execution, { mode: "daily", headless: false })
+    assert.deepEqual(store.executionBrowser(), { mode: "dedicated-visible", headless: false })
+    assert.equal(closes, 0); assert.equal(disconnects, 0); assert.equal(availabilityChecks, 0)
+    await assert.rejects(service.select({ mode: "dedicated-headless", expectedRevision: 0 }), /浏览器选择已变化/)
+    assert.deepEqual(service.snapshot(), { mode: "dedicated-visible", revision: 1 })
   } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
 })
 
-test("HTTP 入口只接受同源切换；账号窗口占用时不切换、不清理、不启动任务", async () => {
+test("HTTP 同源保存偏好不受活动任务、保留窗口和账号窗口限制，也不清理连接", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-environment-http-"))
   let closes = 0
   const app = await createApplication({ root: process.cwd(), directory,
@@ -141,13 +148,13 @@ test("HTTP 入口只接受同源切换；账号窗口占用时不切换、不清
       headers: { ...headers, origin: "https://foreign.test" }, payload: { mode: "dedicated-visible", expectedRevision: 0 } })
     assert.equal(refused.statusCode, 403); assert.equal(closes, 0)
     app.browserProfile.isBusy = () => true
-    const busy = await app.app.inject({ method: "PUT", url: "/api/browser-environment", headers,
-      payload: { mode: "dedicated-visible", expectedRevision: 0 } })
-    assert.equal(busy.statusCode, 409); assert.equal(closes, 0)
-    app.browserProfile.isBusy = () => false
+    app.taskChain.isAnyActive = () => true
+    const retained = { taskId: randomUUID(), executionId: randomUUID() }
+    app.store.activeBrowserWindowLease = () => retained
     const saved = await app.app.inject({ method: "PUT", url: "/api/browser-environment", headers,
       payload: { mode: "dedicated-visible", expectedRevision: 0 } })
-    assert.equal(saved.statusCode, 200); assert.equal(closes, 1)
+    assert.equal(saved.statusCode, 200); assert.equal(closes, 0)
     assert.deepEqual(saved.json(), { mode: "dedicated-visible", revision: 1 })
+    assert.deepEqual(app.store.activeBrowserWindowLease(), retained)
   } finally { await app.app.close(); await rm(directory, { recursive: true, force: true }) }
 })

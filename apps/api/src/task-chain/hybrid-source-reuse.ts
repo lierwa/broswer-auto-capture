@@ -6,7 +6,7 @@ import type { HybridSourceResult } from "../upstream-browser/hybrid-exploration.
 import type { TaskContractRepository } from "./repository.js"
 import type { plannedProgression } from "./authoring-progression.js"
 
-const exploration = z.object({ mode: z.literal("workflow-use-authoring/v3"), sources: z.array(z.object({ stepId: z.string(), closed: z.boolean(),
+export const sourceReferencesSchema = z.object({ mode: z.literal("workflow-use-authoring/v3"), sources: z.array(z.object({ stepId: z.string(), closed: z.boolean(),
   artifact: z.object({ artifactId: z.string(), digest: z.string(), mediaType: z.literal(hybridSourceMediaType) }) })) }).passthrough()
 type Progression = Pick<ReturnType<typeof plannedProgression>, "resolve" | "acceptSource" | "finish">
 
@@ -17,7 +17,7 @@ export function reusableHybridSources(repository: TaskContractRepository, job: T
   const previous = repository.job(job.taskId, sourceJobId)
   if (previous.id === job.id || previous.key !== job.key || previous.status !== "failed"
     || !["compiling", "compiled"].includes(previous.authoring?.stage ?? "")) return undefined
-  const parsed = exploration.safeParse(previous.authoring?.exploration)
+  const parsed = sourceReferencesSchema.safeParse(previous.authoring?.exploration)
   if (!parsed.success || parsed.data.sources.length !== plan.steps.length) return undefined
   const sources: Array<{ step: TaskPlan["steps"][number]; stepInput: JsonValue; result: HybridSourceResult }> = []
   for (const [index, reference] of parsed.data.sources.entries()) {

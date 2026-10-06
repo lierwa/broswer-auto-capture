@@ -7,7 +7,8 @@
     "debugger",
     "activeTab",
     "tabs",
-    "tabGroups"
+    "tabGroups",
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -22,8 +23,12 @@
     "service_worker": "lib/background.mjs",
     "type": "module"
   },
+  "externally_connectable": {
+    "matches": ["http://127.0.0.1/*", "http://localhost/*"]
+  },
   "action": {
     "default_title": "B-A-T 日常 Chrome",
+    "default_popup": "status.html",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

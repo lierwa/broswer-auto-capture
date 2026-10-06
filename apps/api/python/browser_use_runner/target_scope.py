@@ -1,18 +1,20 @@
 """Instance-scoped target ownership around the pinned Browser-Use session manager."""
 import asyncio
 import inspect
+from contextvars import ContextVar
 from importlib.metadata import version
 
 from browser_use.browser.session_manager import SessionManager
 
 from browser_use_runner.popup_resume import PopupResumeAdapter
 from browser_use_runner.connection_policy import disconnected_handler
+from browser_use_runner.target_events import TargetEvents
 
 
 class TargetScope:
     _active = None
 
-    def __init__(self, browser, targets, on_owned, prepare_targets=None, *, prevent_reconnect=False):
+    def __init__(self, browser, targets, on_owned, prepare_targets=None, *, prevent_reconnect=False, allow_storage_import=False):
         self.browser = browser
         self.owned = set(targets)
         self.on_owned = on_owned
@@ -24,6 +26,11 @@ class TargetScope:
         self.original_start = None
         self.start_wrapper = None
         self.prevent_reconnect, self.connection_lost = prevent_reconnect, False
+        self.allow_storage_import, self.importing_storage = allow_storage_import, False
+        self.target_events = TargetEvents(browser)
+        self.previous_events = getattr(browser, '_bat_target_events', None)
+        self.recovering_focus = ContextVar('bat_owned_focus_recovery', default=False)
+        object.__setattr__(browser, '_bat_target_events', self.target_events.events)
 
     def install(self):
         if version('browser-use') != '0.13.8' or version('cdp-use') != '1.4.5':
@@ -46,6 +53,15 @@ class TargetScope:
         if self.prevent_reconnect:
             self._replace(self.browser, '_auto_reconnect', disconnected_handler(
                 lambda: setattr(self, 'connection_lost', True)))
+        original_create = self.browser._cdp_create_new_page
+
+        async def create_page(*args, **kwargs):
+            # WHY：只禁止原生恢复补造应急页；任务自身明确的新标签动作继续复用原能力。
+            if self.recovering_focus.get():
+                raise ValueError('hybrid_attached_window_target_missing')
+            return await original_create(*args, **kwargs)
+
+        self._replace(self.browser, '_cdp_create_new_page', create_page)
 
     def _replace(self, owner, name, replacement):
         original = getattr(owner, name)
@@ -96,12 +112,33 @@ class TargetScope:
             if self.accepts(event.get('targetInfo', {})):
                 await original_attached(event)
 
-        async def recover(_target_id):
-            # WHY：个人浏览器的任务页丢失后必须失败，不能切换用户页面或创建无来源应急页。
-            raise ValueError('hybrid_attached_window_target_missing')
+        original_pages, original_recover = manager.get_all_page_targets, manager._recover_agent_focus
+
+        def owned_pages():
+            pages = [target for target in original_pages() if target.target_id in self.owned]
+            if not self.recovering_focus.get():
+                return pages
+            # WHY：失效目标仍可能留在原生_targets；恢复只选已存在于原session池的任务页。
+            return [target for target in pages if manager.get_all_sessions_for_target(target.target_id)]
+
+        async def recover(crashed_target_id):
+            self.ensure_connection()
+            token = self.recovering_focus.set(True)
+            try:
+                if not owned_pages():
+                    raise ValueError('hybrid_attached_window_target_missing')
+                # WHY：复用SDK原恢复锁/事件和现存任务页，不能把个人标签作为兜底。
+                await original_recover(crashed_target_id)
+                self.require_focus()
+            finally:
+                self.recovering_focus.reset(token)
 
         self._replace(manager, '_handle_target_attached', attached)
         self._replace(manager, '_recover_agent_focus', recover)
+        self._replace(manager, 'get_all_page_targets', owned_pages)
+        # WHY：保留原生失效事件与focus清除事实；不在诊断层恢复或重放动作。
+        self._replace(manager, '_handle_target_detached', self.target_events.detached(manager))
+        self._replace(manager, '_get_session_for_target', self.target_events.session_lookup(manager))
 
     def _scope_enumeration(self, client):
         original = client.send.Target.getTargets
@@ -133,14 +170,23 @@ class TargetScope:
         watchdog = self.browser._storage_state_watchdog
         if watchdog is None or id(watchdog) in self.storage_watchdogs:
             return
+        original_load = watchdog._load_storage_state
 
         async def skip_unconfigured_storage(path=None):
+            if self.allow_storage_import:
+                return
             if path is not None or self.browser.browser_profile.storage_state is not None:
                 raise ValueError('hybrid_attached_window_storage_state_disallowed')
 
+        async def load_owned_storage(path=None):
+            if self.allow_storage_import and self.importing_storage:
+                return await original_load(path)
+            return await skip_unconfigured_storage(path)
+
         # WHY：上游保存前先取焦点，且无保存路径仍轮询 Cookie；个人实例不导入、导出或轮询登录态。
-        for name in ('_start_monitoring', '_save_storage_state', '_load_storage_state'):
+        for name in ('_start_monitoring', '_save_storage_state'):
             self._replace(watchdog, name, skip_unconfigured_storage)
+        self._replace(watchdog, '_load_storage_state', load_owned_storage)
         self.storage_watchdogs.add(id(watchdog))
 
     def require_focus(self):
@@ -178,6 +224,7 @@ class TargetScope:
         self.clear_operation_state()
 
     def clear_operation_state(self):
+        self.target_events.events.clear()
         if self.browser._dom_watchdog is not None:
             self.browser._dom_watchdog.clear_cache()
         # WHY：同一 SDK 连接借给下一独立运行时，不能继承上一运行的 DOM、选择器或下载产物。
@@ -194,6 +241,11 @@ class TargetScope:
             watchdog._stopping = True
 
     def close(self):
+        if getattr(self.browser, '_bat_target_events', None) is self.target_events.events:
+            if self.previous_events is None:
+                object.__delattr__(self.browser, '_bat_target_events')
+            else:
+                object.__setattr__(self.browser, '_bat_target_events', self.previous_events)
         for owner, name, original, replacement in reversed(self.restorations):
             if getattr(owner, name) is replacement:
                 setattr(owner, name, original)

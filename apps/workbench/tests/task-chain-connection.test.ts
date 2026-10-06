@@ -97,25 +97,45 @@ test("响应丢失后只重试同一最小意图命令", async () => {
   assert.equal(connection.snapshot().pending, null)
 })
 
-test("账号浏览器占用时可在错误处关闭并自动重试原幂等命令", async () => {
-  let taskPosts = 0, profileCloses = 0
-  const connection = new TaskChainConnection(taskId, async (url, init) => {
-    if (String(url) === "/api/browser-profile") {
-      profileCloses++
-      return Response.json({ status: "closed", openedAt: null })
-    }
-    if (init?.method !== "POST") return Response.json(snapshot)
-    taskPosts++
-    return taskPosts === 1
-      ? Response.json({ error: "请先完成账号操作。", code: "browser_profile_busy" }, { status: 409 })
-      : Response.json({ snapshot: { ...snapshot, stateSequence: 3 }, acceptedExecution: null })
+test("未知写回执不能被只读失败、dismiss 或另一命令解除；明确拒绝后可取消", async () => {
+  const posts: string[] = []
+  const connection = new TaskChainConnection(taskId, async (_url, init) => {
+    if (init?.method !== "POST") throw Error("read_failure")
+    posts.push(String(init.body))
+    if (posts.length === 1) throw Error("lost_response")
+    return Response.json({ error: "明确拒绝", code: "task_busy" }, { status: 409 })
   })
-  const command = { type: "prepare_task" as const, requestId: id(4), requirementVersion: 1 }
-  assert.equal(await connection.dispatch(command), false)
-  assert.equal(connection.snapshot().errorCode, "browser_profile_busy")
-  assert.equal(await connection.closeBrowserProfileAndRetry(), true)
-  assert.equal(profileCloses, 1)
-  assert.equal(taskPosts, 2)
+  const command = { type: "prepare_task" as const, requestId: id(80), requirementVersion: 1 }
+  await connection.dispatch(command)
+  await connection.reload(); await connection.reloadHistory("executions"); await connection.reloadDiagnostics()
+  await connection.readHistoricalExecutionEvents(id(81))
+  connection.dismiss()
+  assert.equal(connection.snapshot().pendingUncertain, true)
+  assert.deepEqual(connection.snapshot().pending, command)
+  assert.equal(await connection.dispatch({ ...command, requestId: id(82) }), false)
+  assert.equal(await connection.controlHandoff("end", id(81), 2), false)
+  assert.equal(posts.length, 1)
+  await connection.retry()
+  assert.equal(posts[0], posts[1]); assert.equal(connection.snapshot().pendingUncertain, false)
+  connection.dismiss(); assert.equal(connection.snapshot().pending, null)
+})
+
+test("窗口 focus/end 回执丢失只重试原 action/owner/sequence/requestId", async () => {
+  for (const action of ["focus", "end"] as const) {
+    const posts: string[] = []
+    const connection = new TaskChainConnection(taskId, async (_url, init) => {
+      if (init?.method !== "POST") return Response.json(snapshot)
+      posts.push(String(init.body))
+      if (posts.length === 1) throw Error("lost_handoff")
+      return Response.json({ ...snapshot, stateSequence: 3 })
+    })
+    assert.equal(await connection.controlHandoff(action, id(83), 2), false)
+    await connection.reloadDiagnostics(); connection.dismiss()
+    assert.equal(connection.snapshot().pendingUncertain, true)
+    assert.equal(await connection.controlHandoff("inspect", id(83), 2), false)
+    assert.equal(await connection.retry(), true)
+    assert.equal(posts[0], posts[1]); assert.equal(connection.snapshot().pendingHandoff, null)
+  }
 })
 
 test("accepted execution 固定运行并按 sequence 续接同一次事件流", async () => {
@@ -273,4 +293,36 @@ test("回流立即busy且双击不重复发送；当前版本变化仍携带精�
   const message = requirementRevisionMessage(savedReview.summary, savedReview.feedback, reviewContext)
   assert.match(message, /"version":1,"digest"|"version":1,"revision":2/)
   assert.match(message, /未重新确认前不要覆盖或执行/)
+})
+
+test("历史 stale 反馈核验立即busy，双击仅一次读取/提交并保留原话和旧版本", async () => {
+  let reads = 0, posts = 0, sends = 0, finish!: (value: Response) => void
+  const bodies: typeof reviewCommand[] = []
+  const execution = { contractVersion: CONTRACT_VERSION, kind: "execution", id: reviewCommand.executionId, taskId,
+    authorizationId: id(87), plan: { id: id(88), version: 1, digest: "c".repeat(64) }, requirement: reviewContext.requirement,
+    release: reviewContext.release, status: "completed", sequence: 9, currentStepId: null, currentRunId: null,
+    steps: [], input: null, inputDigest: "d".repeat(64), output: null, reason: "原运行完成",
+    createdAt: "2026-09-30T00:00:00.000Z", updatedAt: "2026-09-30T00:00:00.000Z" }
+  const connection = new TaskChainConnection(taskId, async (url, init) => {
+    if (init?.method === "POST") {
+      posts++; bodies.push(JSON.parse(String(init.body)))
+      return posts === 1 ? Response.json({ error: "序列已变", code: "execution_review_stale" }, { status: 409 })
+        : Response.json({ snapshot, acceptedExecution: null, savedReview })
+    }
+    if (String(url).includes("/execution?")) { reads++; return new Promise(resolve => { finish = resolve }) }
+    return Response.json(snapshot)
+  })
+  const send = async () => { sends++; return true }
+  await connection.submitReview(reviewCommand, send)
+  const first = connection.retryStaleReview(reviewCommand.executionId, send)
+  assert.equal(connection.snapshot().reviewIntents[reviewCommand.executionId]?.busy, true)
+  assert.equal(await connection.retryStaleReview(reviewCommand.executionId, send), false)
+  assert.equal(reads, 1)
+  finish(Response.json({ execution, requirement: null, content: null, calls: [] }))
+  assert.equal(await first, true)
+  assert.equal(posts, 2); assert.equal(sends, 1)
+  assert.equal(bodies[1]!.expectedSequence, 9)
+  assert.equal(bodies[1]!.executionId, reviewCommand.executionId)
+  assert.equal(bodies[1]!.feedback, reviewCommand.feedback)
+  assert.notEqual(bodies[1]!.requestId, bodies[0]!.requestId)
 })

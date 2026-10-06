@@ -35,7 +35,7 @@ type CompilerDependencies = { verifySource?: typeof verifyForkSource; openBridge
   createRunner?: (root: string, signal: AbortSignal) => Pick<RunnerProcess, "startCompiler" | "request" | "close"> }
 type AuthoringDependencies = { verifySource?: typeof verifyForkSource; openBridge?: typeof openModelBridge;
   createRunner?: (root: string, signal: AbortSignal, onDiagnostic?: (line: string) => void) =>
-    Pick<RunnerProcess, "startHybrid" | "request" | "close" | "envBoolean"> }
+    Pick<RunnerProcess, "startHybrid" | "request" | "close" | "envBoolean"> & Partial<Pick<RunnerProcess, "handoff">> }
 
 export async function recompileHybridSource(input: Omit<z.infer<typeof hybridCompileRequestSchema>, "id" | "type" | "request">
   & { root: string; signal: AbortSignal; canonicalRequest: string; annotation?: HybridSourceAnnotation;
@@ -93,7 +93,8 @@ export async function recompileHybridSource(input: Omit<z.infer<typeof hybridCom
 /** WHY：浏览器与模型桥共同退出后才返回来源；候选写入者不在仍打开的会话中冒充 closed。 */
 export async function withHybridAuthoring<T>(input: { root: string; subject: ReturnType<AI["forSubject"]>;
   selection: ModelSelection; signal: AbortSignal; allowedOrigins: string[]; directory: string; ownerId: string;
-  headless?: boolean;
+  headless?: boolean; profilePath?: string;
+  managedWindow?: { ownerId: string; resume: boolean }; preserveWindow?: boolean;
   onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
   work: (session: HybridAuthorSession) => Promise<T>, dependencies: AuthoringDependencies = {}) {
   const fork = await (dependencies.verifySource ?? verifyForkSource)(input.root)
@@ -117,9 +118,9 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
   let primary: RuntimePrimaryOutcome<T>
   try {
     await runner.startHybrid({ allowedOrigins: input.allowedOrigins,
-      profilePath: path.join(input.directory, "browser-profile", "default"),
+      profilePath: input.profilePath ?? path.join(input.directory, "browser-profile", "default"),
       headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
-      managedWindow: { ownerId: input.ownerId, resume: false } })
+      managedWindow: input.managedWindow ?? { ownerId: input.ownerId, resume: false } })
     const value = await work({ author: async (source, options) => {
       const offset = reports.length
       let compilationError: unknown
@@ -151,7 +152,13 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
     } })
     primary = { status: "completed", value }
   } catch (error) { primary = { status: "failed", error } }
-  const cleanup = await runner.close()
+  let cleanup
+  try { cleanup = input.preserveWindow && runner.handoff && primary.status === "completed"
+    ? (await runner.handoff()).report : await runner.close() }
+  catch (error) {
+    if (primary.status === "completed") primary = { status: "failed", error }
+    cleanup = await runner.close()
+  }
   let bridgeFailure: unknown
   try { await bridge.close() } catch (error) { bridgeFailure = error } finally {
     diagnostics?.recordRuntimeOutcome(primary, cleanup, bridgeFailure)

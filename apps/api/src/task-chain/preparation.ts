@@ -12,6 +12,7 @@ import { createTaskDraft, draftReference, recordDraftTrial, releaseReference } f
 import { projectPreparationPlan } from "./preparation-plan-projection.js"
 import type { TaskContractRepository } from "./repository.js"
 import { syncConfirmedRequirement } from "./requirement.js"
+import { validatePreparationResearch } from "./preparation-research.js"
 
 type WorkStarter = (job: TaskAuthoringJob, run: (signal: AbortSignal) => Promise<unknown>) => void
 type ValidationEnqueuer = (requestId: string, draft: TaskDraft, input: JsonValue,
@@ -26,12 +27,13 @@ export class TaskPreparationCoordinator {
     if (this.store.operation("task-product:prepare", command.requestId, command)) return
     const requirement = syncConfirmedRequirement(this.store, this.repository, taskId)
     if (!requirement || requirement.version !== command.requirementVersion) conflict("只能准备当前已确认需求。")
+    const research = validatePreparationResearch(this.repository, taskId, requirement, command.research)
     if (this.repository.jobs(taskId).some((job) => job.type === "prepare"
       && ["queued", "running", "waiting_for_human"].includes(job.status))) conflict("当前草稿生成尚未结束。")
     const now = new Date().toISOString(), job = this.repository.saveJob({ id: stableUuid(command.requestId, "prepare"),
       taskId, type: "prepare", key: `${requirement.id}:${requirement.version}:prepare`, status: "queued", sequence: 0,
       reason: "正在生成任务草稿。", resultId: null, browserRunId: null, waitpoint: null, audit: null,
-      browser: this.store.executionBrowser(),
+      browser: this.store.executionBrowser(command.browser, taskId),
       preparation: { phase: "forming_plan", plan: null, chains: [], candidatePlan: null, draft: null,
         planCandidates: [],
         representativeInput: null, verificationInput: null, inputRequest: null, requirementReturn: null,
@@ -39,7 +41,7 @@ export class TaskPreparationCoordinator {
     this.store.recordOperation("task-product:prepare", command.requestId, command, job.id)
     startWork(job, async (signal) => {
       // WHY：每次准备只投影当前确认草案；旧失败 job 的候选计划仅供历史查看。
-      const plan = await this.authoring.plan(job, requirement, signal)
+      const plan = await this.authoring.plan(job, requirement, signal, research)
       const current = this.repository.job(taskId, job.id)
       current.preparation = { phase: "forming_plan", plan: planReference(plan), chains: [], candidatePlan: plan, draft: null,
         planCandidates: [],
@@ -54,16 +56,19 @@ export class TaskPreparationCoordinator {
 
   compilationRecovery(taskId: string, job: TaskAuthoringJob | null) {
     if (!job || job.type !== "prepare" || job.status !== "failed"
-      || job.preparation?.phase !== "preexecuting") return null
-    // WHY：离线恢复只检查本次明确指定的 job，不搜索更早失败任务。
-    const sourceJobId = job.id
+      || !job.preparation || !["preexecuting", "validating_sample", "validating_verification"].includes(job.preparation.phase)) return null
+    // WHY：恢复记录显式保留原来源 owner；只沿该引用核验，不搜索或猜测历史任务。
+    const sourceJobId = job.preparation.recoveredFromJobId ?? job.id
     if (!["compiling", "compiled"].includes(job.authoring?.stage ?? "")) {
       return { sourceJobId, available: false,
         reason: "代表试做尚未形成完整可复用来源；请先处理浏览器试做的失败原因。" }
     }
     try {
       if (job.preparation.requirementReturn) conflict("试做发现新的业务歧义，请返回需求对话确认。")
-      if (this.repository.draft(taskId)) conflict("当前已有活动草稿，请先查看或处理该草稿。")
+      const draft = this.repository.draft(taskId)
+      // WHY：恢复继续本次已授权准备；不能被准备前的旧草稿挡住，也不能覆盖准备后产生的编辑。
+      if (job.preparation.draft) requireJobDraft(this.repository, job)
+      else if (draft && draft.updatedAt >= job.createdAt) conflict("准备开始后草稿已变化，请先查看或处理该草稿。")
       const { requirement, plan, input } = this.recoveryContext(taskId, job)
       const probe = { ...job, id: stableUuid(job.id, "recovery-probe") }
       this.authoring.assertReusableSources(probe, requirement, plan, input, sourceJobId)
@@ -105,8 +110,14 @@ export class TaskPreparationCoordinator {
     const requirement = syncConfirmedRequirement(this.store, this.repository, taskId)
     const preparation = job.preparation, reference = preparation?.plan
     if (!requirement || !preparation || !reference) conflict("原需求或方案引用已不可用，不能离线恢复。")
-    // WHY：恢复方案必须重新从当前同版确认草案确定投影；历史候选与旧来源只供查看。
-    const plan = projectPreparationPlan(requirement, reference.version)
+    // WHY：备注也是冻结计划的一部分；先核验原计划摘要，再用其资料重建，不能恢复时静默丢弃。
+    const saved = preparation.candidatePlan
+    if (saved && (saved.id !== reference.id || digestJson(saved) !== reference.digest))
+      conflict("原方案摘要不一致，不能离线恢复。")
+    const notes = saved?.steps.flatMap(step => step.preparationResearch ? [step.preparationResearch] : []) ?? []
+    if (notes.length > 1) conflict("准备资料引用不唯一，不能离线恢复。")
+    const research = validatePreparationResearch(this.repository, taskId, requirement, notes[0])
+    const plan = projectPreparationPlan(requirement, reference.version, research)
     if (plan.id !== reference.id || digestJson(plan) !== reference.digest || !sameRequirement(plan, requirement)) {
       conflict("原方案与当前已确认需求不一致，不能离线恢复。")
     }

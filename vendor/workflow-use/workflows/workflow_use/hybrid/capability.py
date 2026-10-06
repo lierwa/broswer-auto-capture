@@ -11,7 +11,6 @@ from .postconditions import (PostconditionNotMet, SettlePolicy, capture_check_ba
 from .native_event_capture import NativeEventCapture
 from .navigation import (NAVIGATION_ACTIONS, navigation_tab_ids, reconcile_new_navigation_tab,
                          navigation_action_owner, assert_navigation_owner)
-from .physical_input import dispatch_physical_click
 from .registry import ActionRegistry
 from .scroll_observation import inspect_page_scroll, scroll_dispatch_metadata, scroll_failure_code
 from .target_preparation import current_document_id, verify_event_target
@@ -20,9 +19,12 @@ from .targets import TARGET_ORDINAL_ARGUMENT, TargetResolver, materialize_target
 from .visible_wait import VisibleWaitParams, register_visible_wait_tool
 
 # A capability admission set is deliberately separate from the complete public action registry.
-ORDINARY_ACTIONS = frozenset({'navigate', 'go_back', 'wait', 'click', 'input', 'scroll', 'send_keys',
+ORDINARY_ACTIONS = frozenset({'navigate', 'switch', 'go_back', 'wait', 'click', 'input', 'scroll', 'send_keys',
                               'dropdown_options', 'select_dropdown', 'bat_scroll_to', 'bat_wait_for'})
 TARGET_ACTIONS = frozenset({'click', 'input', 'dropdown_options', 'select_dropdown'})
+# WHY：上游 ScrollAction.index 可选；有目标时复用同一身份解析，无目标时保留 viewport 语义。
+# Source: browser-use eb4126921bea3373f91afc49fb4b59d6eda7fed6 tools/service.py:1256.
+OPTIONAL_TARGET_ACTIONS = frozenset({'scroll'})
 EVENT_HIT_ACTIONS = frozenset({'click', 'input', 'select_dropdown'})
 EVENT_FOCUS_ACTIONS = frozenset({'send_keys'})
 TARGET_READY_POLICY = SettlePolicy(maxMs=30000, maxAttempts=100, intervalMs=300)
@@ -32,6 +34,8 @@ RETRYABLE_TARGET_ERRORS = frozenset({
     'target_detached', 'target_disabled', 'target_document_changed',
     'target_not_in_view', 'target_not_visible', 'target_preparation_invalid',
     'target_preparation_unavailable', 'target_read_only',
+    # WHY：遮挡与隐藏同属可操作就绪；仅等待同一目标，持续遮挡仍在原预算内失败，不重派动作。
+    'target_hit_blocked',
 })
 MISSING_TARGET_ERRORS = frozenset({
     'missing_history_target', 'missing_item_target', 'missing_stable_target', 'missing_structure_container',
@@ -58,6 +62,10 @@ class OrdinaryCapability:
 
     async def execute_checked(self, action_name, args, target, postconditions, *, native_dialog_policy=None):
         self.last_event_diagnostic = None
+        if action_name == 'switch' and isinstance(args.get('tab_id'), str) and len(args['tab_id']) == 4:
+            from .context_bindings import native_switch_parameters
+            await native_switch_parameters(self.browser, args)
+            args = {**args, 'tab_id': str(await self.browser.get_target_id_from_tab_id(args['tab_id']))}
         checks = declared_checks(postconditions, args, target)
         policy = settle_policy(postconditions)
         await capture_check_baselines(self.browser, checks)
@@ -66,7 +74,7 @@ class OrdinaryCapability:
         consumer_index = action_result_readiness(action_name, postconditions)
         owner = navigation_action_owner(self.browser, prior_tabs) if consumer_index is not None else None
         prepared = await self.resolve_target(target, action_name=action_name) \
-            if action_name in TARGET_ACTIONS and target is not None else None
+            if action_name in TARGET_ACTIONS | OPTIONAL_TARGET_ACTIONS and target is not None else None
         before_page = await safe_page_identity(self.browser)
         validation_target = safe_validation_target(prepared)
         if owner is not None:
@@ -131,7 +139,7 @@ class OrdinaryCapability:
             return await self.execute_target_scroll(parameters, target)
         if action_name == 'bat_wait_for':
             return await self.execute_visible_wait(parameters, target)
-        if action_name in TARGET_ACTIONS:
+        if action_name in TARGET_ACTIONS or action_name in OPTIONAL_TARGET_ACTIONS and target is not None:
             if target is None:
                 raise ValueError('stable_target_required')
             target = materialize_target(target, parameters)
@@ -141,18 +149,22 @@ class OrdinaryCapability:
             raise ValueError('unexpected_target')
         elif TARGET_ORDINAL_ARGUMENT in parameters:
             raise ValueError('unexpected_target_binding')
+        if action_name == 'switch':
+            from .context_bindings import native_switch_parameters
+            parameters = await native_switch_parameters(self.browser, parameters)
         action = self.registry.validate_action(action_name, parameters)
         # WHY: 复用 Tools.act 的浏览器动作、超时和错误语义；普通节点没有模型或文件系统句柄。
         if prepared is not None and action_name in EVENT_HIT_ACTIONS:
             intended = {'targetId': prepared.target_id, 'frameId': prepared.frame_id,
                         'sessionId': prepared.session_id}
-            dispatch = (lambda: self._physical_click(prepared, native_dialog_policy)) \
-                if action_name == 'click' else (lambda: self._act(action, native_dialog_policy))
+            # WHY：探索与复跑必须复用同一原生动作；B-U 自带点击后备，不能换成另一套物理点击。
+            # 来源：browser-use eb4126921bea3373f91afc49fb4b59d6eda7fed6 Tools.act/_click_by_index。
+            dispatch = lambda: self._act(action, native_dialog_policy)
             result, capture = await self._dispatch_captured(
                 action_name, dispatch, intended, prepared.element)
             if result.error:
                 raise RuntimeError('ordinary_action_failed')
-            event_count = verify_event_target(capture, require_trusted=action_name == 'click')
+            event_count = verify_event_target(capture)
             self.last_event_diagnostic = safe_event_target(capture)
             metadata = result.metadata if isinstance(result.metadata, dict) else {}
             result.metadata = {**metadata, 'batActionPreparation': {
@@ -214,7 +226,7 @@ class OrdinaryCapability:
             nonlocal last_error
             try:
                 return await (self.targets.resolve_action_index(target) if action_name is None
-                              else self.targets.prepare_action_target(target, action_name))
+                              else self.targets.prepare_action_target(target, action_name, native_dispatch=True))
             except Exception as error:
                 last_error = error
                 raise
@@ -229,6 +241,9 @@ class OrdinaryCapability:
         except TimeoutError:
             if isinstance(last_error, ValueError) and str(last_error) in MISSING_TARGET_ERRORS:
                 raise RuntimeError('ordinary_target_missing') from last_error
+            if isinstance(last_error, ValueError) and str(last_error) in RETRYABLE_TARGET_ERRORS:
+                # WHY：截止时保留最后实际失败及其安全诊断，不能把已知遮挡覆盖成无原因超时。
+                raise last_error
             raise
 
         except ValueError as error:
@@ -237,7 +252,7 @@ class OrdinaryCapability:
             raise
 
     async def target_readiness(self, action_name, target):
-        if action_name not in TARGET_ACTIONS or target is None:
+        if action_name not in TARGET_ACTIONS | OPTIONAL_TARGET_ACTIONS or target is None:
             raise ValueError('hybrid_target_readiness_command_invalid')
         try:
             document_id = await current_document_id(self.browser)
@@ -275,10 +290,6 @@ class OrdinaryCapability:
         if failure is not None:
             raise failure
         return result, capture
-
-    async def _physical_click(self, prepared, dialog_policy):
-        return await self._with_dialog_bridge(
-            lambda: dispatch_physical_click(self.browser, prepared), dialog_policy)
 
     async def _act(self, action, dialog_policy=None):
         return await self._with_dialog_bridge(

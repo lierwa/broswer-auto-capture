@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { budgetSchema, contractVersionSchema, entityVersionReferenceSchema, identitySchema, keySchema, taskIdentitySchema, textSchema } from "./common.js"
+import { artifactReferenceSchema, budgetSchema, contractVersionSchema, entityVersionReferenceSchema, identitySchema, keySchema, taskIdentitySchema, textSchema } from "./common.js"
 import { completionConditionSchema, valueBindingSchema, valuePathSchema, type ValueBinding } from "./binding.js"
 import { invocationModeSchema, predicateBindings } from "./node.js"
 import { requirementReferenceSchema } from "./requirement.js"
@@ -67,6 +67,12 @@ export const taskPlanEntryUrlsSchema = z.array(z.string().url().refine((value) =
   try { return ["http:", "https:"].includes(new URL(value).protocol) } catch { return false }
 }, "plan_entry_url_protocol_invalid")).min(1).max(32)
 
+export const taskPreparationResearchSchema = z.object({
+  sourceJobId: identitySchema, sourceSequence: z.number().int().nonnegative(), stepId: keySchema,
+  artifact: artifactReferenceSchema, notes: z.string().trim().min(1).max(8000),
+}).strict()
+export type TaskPreparationResearch = z.infer<typeof taskPreparationResearchSchema>
+
 export const taskPlanStepSchema = z.object({
   id: keySchema, title: textSchema, goal: textSchema, dependsOn: z.array(keySchema),
   inputContract: taskDataContractSchema, outputContract: taskDataContractSchema,
@@ -75,7 +81,11 @@ export const taskPlanStepSchema = z.object({
   completion: z.array(completionConditionSchema).min(1), risks: z.array(textSchema),
   // 旧计划允许缺失；新的语义计划 schema 会把它提升为必填，禁止从旧输出合同猜测结果形态。
   resultSpec: resultSpecSchema.optional(),
+  // WHY：准备资料随计划版本冻结；只指导重新观察，不是业务要求、动作证据或运行输入。
+  preparationResearch: taskPreparationResearchSchema.optional(),
 }).strict().superRefine((step, context) => {
+  if (step.preparationResearch && step.preparationResearch.stepId !== step.id)
+    context.addIssue({ code: "custom", path: ["preparationResearch"], message: "preparation_research_step_mismatch" })
   if (!step.resultSpec) return
   if (step.resultSpec.mode === "execution" && step.outputContract.schema.type !== "null") {
     context.addIssue({ code: "custom", path: ["resultSpec"], message: "execution_result_requires_null_output" })

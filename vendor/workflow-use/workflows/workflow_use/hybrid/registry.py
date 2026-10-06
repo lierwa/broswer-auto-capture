@@ -35,6 +35,13 @@ class ActionRegistry(Contract):
             raise ValueError('unsupported_action')
         if self._action_model is None:
             raise ValueError('live_registry_required')
+        if name == 'bat_read_fields' and isinstance(args, dict) and 'maxItems' in args:
+            # WHY：新模型界面隐藏宿主预算，但既存来源的显式预算仍按原受限合同校验，不改历史动作。
+            from .method_read_tool import MethodReadToolParams
+            Draft202012Validator(MethodReadToolParams.model_json_schema()).validate(args)
+            parameters = MethodReadToolParams.model_validate(args)
+            result = self._action_model.model_validate({name: {key: value for key, value in args.items() if key != 'maxItems'}})
+            return result.model_copy(update={'root': result.root.model_copy(update={name: parameters})})
         self._validator.validate({name: args})
         result = self._action_model.model_validate({name: args})
         # WHY：TS 的 JSON number 会把 4.0 序列化为 4；复用 JSON Schema 的值语义，

@@ -1,5 +1,6 @@
 """C interaction contract: prepare once, dispatch once, then retry only declared facts."""
 import json
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -120,6 +121,42 @@ class PreparationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, prepared)
         self.assertEqual(capability.targets.prepare_action_target.await_count, 2)
+
+    async def test_transient_blocked_target_waits_within_existing_preparation_budget(self):
+        capability = OrdinaryCapability.__new__(OrdinaryCapability)
+        capability.target_settle = SettlePolicy(maxMs=200, maxAttempts=3, intervalMs=10)
+        prepared = SimpleNamespace(index=7)
+        capability.targets = SimpleNamespace(prepare_action_target=AsyncMock(
+            side_effect=[ValueError('target_hit_blocked'), prepared]))
+        self.assertIs(await capability.resolve_target({'strategy': 'history'}, action_name='click'), prepared)
+        self.assertEqual(capability.targets.prepare_action_target.await_count, 2)
+
+    async def test_permanent_blocking_remains_bounded_and_ambiguity_is_not_retried(self):
+        for reason, attempts in [('target_hit_blocked', 3), ('ambiguous_stable_target', 1)]:
+            capability = OrdinaryCapability.__new__(OrdinaryCapability)
+            capability.target_settle = SettlePolicy(maxMs=200, maxAttempts=3, intervalMs=10)
+            capability.targets = SimpleNamespace(prepare_action_target=AsyncMock(side_effect=ValueError(reason)))
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
+                await capability.resolve_target({'strategy': 'history'}, action_name='click')
+            self.assertEqual(capability.targets.prepare_action_target.await_count, attempts)
+
+    async def test_preparation_timeout_preserves_the_last_concrete_blocking_diagnostic(self):
+        capability = OrdinaryCapability.__new__(OrdinaryCapability)
+        capability.target_settle = SettlePolicy(maxMs=60, maxAttempts=3, intervalMs=10)
+        failure = ValueError('target_hit_blocked')
+        failure.diagnostic = {'pointerBlocked': False, 'hitRelation': 'outside'}
+        attempts = 0
+        async def prepare(*_):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise failure
+            await asyncio.sleep(0.2)
+        capability.targets = SimpleNamespace(prepare_action_target=prepare)
+        with self.assertRaisesRegex(ValueError, 'target_hit_blocked') as raised:
+            await capability.resolve_target({'strategy': 'history'}, action_name='click')
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(raised.exception.diagnostic, failure.diagnostic)
 
     async def test_settle_retries_facts_without_redispatching_the_action(self):
         capability = OrdinaryCapability.__new__(OrdinaryCapability)

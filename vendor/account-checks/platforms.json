@@ -1,0 +1,429 @@
+{
+  "schemaVersion": 1,
+  "version": "20261003.2",
+  "platforms": [
+    {
+      "id": "bilibili",
+      "name": "哔哩哔哩",
+      "url": "https://www.bilibili.com/",
+      "scopeLabel": "网站账号",
+      "origins": [
+        "https://www.bilibili.com",
+        "https://api.bilibili.com",
+        "https://passport.bilibili.com"
+      ],
+      "cookieUrls": [
+        "https://www.bilibili.com/",
+        "https://api.bilibili.com/"
+      ],
+      "cookieDomains": [
+        "bilibili.com"
+      ],
+      "sharedServices": [
+        "B站网页与创作中心"
+      ],
+      "source": {
+        "package": "mediacrawler",
+        "file": "media_platform/bilibili/client.py",
+        "function": "pong"
+      },
+      "host": "https://api.bilibili.com",
+      "envelope": "data",
+      "transferReady": true,
+      "transferReason": null,
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [
+        "SESSDATA",
+        "bili_jct",
+        "DedeUserID",
+        "DedeUserID__ckMd5"
+      ],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "xiaohongshu",
+      "name": "小红书",
+      "url": "https://www.xiaohongshu.com/",
+      "scopeLabel": "网站账号 / 创作后台",
+      "origins": [
+        "https://www.xiaohongshu.com",
+        "https://edith.xiaohongshu.com",
+        "https://creator.xiaohongshu.com"
+      ],
+      "cookieUrls": [
+        "https://www.xiaohongshu.com/",
+        "https://creator.xiaohongshu.com/"
+      ],
+      "cookieDomains": [
+        "xiaohongshu.com"
+      ],
+      "sharedServices": [
+        "小红书网页与创作平台"
+      ],
+      "source": {
+        "package": "mediacrawler",
+        "file": "media_platform/xhs/client.py",
+        "function": "pong"
+      },
+      "host": "https://edith.xiaohongshu.com",
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "weibo",
+      "name": "微博",
+      "url": "https://m.weibo.cn/",
+      "scopeLabel": "网站账号",
+      "origins": [
+        "https://m.weibo.cn",
+        "https://weibo.com",
+        "https://passport.weibo.com"
+      ],
+      "cookieUrls": [
+        "https://m.weibo.cn/",
+        "https://weibo.com/"
+      ],
+      "cookieDomains": [
+        "weibo.cn",
+        "weibo.com"
+      ],
+      "sharedServices": [
+        "微博移动网页与网页版"
+      ],
+      "source": {
+        "package": "mediacrawler",
+        "file": "media_platform/weibo/client.py",
+        "function": "pong"
+      },
+      "host": "https://m.weibo.cn",
+      "envelope": "data",
+      "transferReady": true,
+      "transferReason": null,
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [
+        "SUB",
+        "SUBP",
+        "ALF"
+      ],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "zhihu",
+      "name": "知乎",
+      "url": "https://www.zhihu.com/",
+      "scopeLabel": "网站账号",
+      "origins": [
+        "https://www.zhihu.com"
+      ],
+      "cookieUrls": [
+        "https://www.zhihu.com/"
+      ],
+      "cookieDomains": [
+        "zhihu.com"
+      ],
+      "sharedServices": [
+        "知乎网页"
+      ],
+      "source": {
+        "package": "mediacrawler",
+        "file": "media_platform/zhihu/client.py",
+        "function": "pong"
+      },
+      "host": "https://www.zhihu.com",
+      "transferReady": true,
+      "transferReason": null,
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [
+        "z_c0",
+        "_xsrf"
+      ],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "douyin",
+      "name": "抖音",
+      "url": "https://creator.douyin.com/creator-micro/content/upload",
+      "scopeLabel": "创作者后台",
+      "origins": [
+        "https://creator.douyin.com",
+        "https://www.douyin.com",
+        "https://sso.douyin.com"
+      ],
+      "cookieUrls": [
+        "https://creator.douyin.com/",
+        "https://www.douyin.com/"
+      ],
+      "cookieDomains": [
+        "douyin.com"
+      ],
+      "sharedServices": [
+        "抖音网页版与创作者后台"
+      ],
+      "source": {
+        "package": "social-auto-upload",
+        "file": "uploader/douyin_uploader/main.py",
+        "function": "cookie_auth"
+      },
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "kuaishou",
+      "name": "快手",
+      "url": "https://www.kuaishou.com/",
+      "scopeLabel": "网站账号 / 创作者后台",
+      "origins": [
+        "https://www.kuaishou.com",
+        "https://cp.kuaishou.com",
+        "https://passport.kuaishou.com"
+      ],
+      "cookieUrls": [
+        "https://www.kuaishou.com/",
+        "https://cp.kuaishou.com/"
+      ],
+      "cookieDomains": [
+        "kuaishou.com"
+      ],
+      "sharedServices": [
+        "快手网页与创作者平台"
+      ],
+      "source": {
+        "package": "mediacrawler",
+        "file": "media_platform/kuaishou/client.py",
+        "function": "pong"
+      },
+      "host": "https://www.kuaishou.com/graphql",
+      "envelope": "data",
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "tieba",
+      "name": "百度贴吧",
+      "url": "https://tieba.baidu.com/",
+      "scopeLabel": "贴吧账号",
+      "origins": [
+        "https://tieba.baidu.com",
+        "https://passport.baidu.com"
+      ],
+      "cookieUrls": [
+        "https://tieba.baidu.com/"
+      ],
+      "cookieDomains": [
+        "baidu.com"
+      ],
+      "sharedServices": [
+        "百度统一登录，可能影响百家号等百度服务"
+      ],
+      "source": {
+        "package": "mediacrawler",
+        "file": "media_platform/tieba/client.py",
+        "function": "pong"
+      },
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "channels",
+      "name": "微信视频号",
+      "url": "https://channels.weixin.qq.com/platform/post/create",
+      "scopeLabel": "视频号助手",
+      "origins": [
+        "https://channels.weixin.qq.com"
+      ],
+      "cookieUrls": [
+        "https://channels.weixin.qq.com/"
+      ],
+      "cookieDomains": [
+        "channels.weixin.qq.com"
+      ],
+      "sharedServices": [
+        "视频号助手，不含微信个人号和公众号"
+      ],
+      "source": {
+        "package": "social-auto-upload",
+        "file": "uploader/tencent_uploader/main.py",
+        "function": "cookie_auth"
+      },
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "baijiahao",
+      "name": "百家号",
+      "url": "https://baijiahao.baidu.com/builder/rc/home",
+      "scopeLabel": "创作者后台",
+      "origins": [
+        "https://baijiahao.baidu.com",
+        "https://passport.baidu.com"
+      ],
+      "cookieUrls": [
+        "https://baijiahao.baidu.com/"
+      ],
+      "cookieDomains": [
+        "baidu.com"
+      ],
+      "sharedServices": [
+        "百度统一登录，可能影响贴吧等百度服务"
+      ],
+      "source": {
+        "package": "social-auto-upload",
+        "file": "uploader/baijiahao_uploader/main.py",
+        "function": "cookie_auth"
+      },
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "alipay-life",
+      "name": "支付宝生活号",
+      "url": "https://c.alipay.com/page/life-account/index?_appScene=CONTENT&appId=2030022469359777",
+      "scopeLabel": "生活号创作后台",
+      "origins": [
+        "https://c.alipay.com",
+        "https://auth.alipay.com"
+      ],
+      "cookieUrls": [
+        "https://c.alipay.com/"
+      ],
+      "cookieDomains": [
+        "alipay.com"
+      ],
+      "sharedServices": [
+        "支付宝共享认证，不能承诺与钱包身份隔离"
+      ],
+      "source": {
+        "package": "social-auto-upload",
+        "file": "uploader/alipay_uploader/main.py",
+        "function": "cookie_auth"
+      },
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "hupu",
+      "name": "虎扑",
+      "url": "https://bbs.hupu.com/newpost?tabkey=2",
+      "scopeLabel": "社区发布页",
+      "origins": [
+        "https://bbs.hupu.com",
+        "https://passport.hupu.com"
+      ],
+      "cookieUrls": [
+        "https://bbs.hupu.com/"
+      ],
+      "cookieDomains": [
+        "hupu.com"
+      ],
+      "sharedServices": [
+        "虎扑社区"
+      ],
+      "source": {
+        "package": "social-auto-upload",
+        "file": "uploader/hupu_uploader/main.py",
+        "function": "cookie_auth"
+      },
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "tiktok",
+      "name": "TikTok",
+      "url": "https://www.tiktok.com/tiktokstudio/upload?lang=en",
+      "scopeLabel": "TikTok Studio",
+      "origins": [
+        "https://www.tiktok.com"
+      ],
+      "cookieUrls": [
+        "https://www.tiktok.com/"
+      ],
+      "cookieDomains": [
+        "tiktok.com"
+      ],
+      "sharedServices": [
+        "TikTok Studio与网页"
+      ],
+      "source": {
+        "package": "social-auto-upload",
+        "file": "uploader/tk_uploader/main_chrome.py",
+        "function": "cookie_auth"
+      },
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    },
+    {
+      "id": "youtube",
+      "name": "YouTube",
+      "url": "https://studio.youtube.com/",
+      "scopeLabel": "YouTube Studio",
+      "origins": [
+        "https://studio.youtube.com",
+        "https://www.youtube.com",
+        "https://accounts.google.com"
+      ],
+      "cookieUrls": [
+        "https://studio.youtube.com/",
+        "https://www.youtube.com/",
+        "https://accounts.google.com/"
+      ],
+      "cookieDomains": [
+        "youtube.com",
+        "google.com"
+      ],
+      "sharedServices": [
+        "Google统一登录，可能影响其它Google服务"
+      ],
+      "source": {
+        "package": "social-auto-upload",
+        "file": "uploader/youtube_uploader/main.py",
+        "function": "cookie_auth"
+      },
+      "transferReady": false,
+      "transferReason": "此平台的认证键或共享SSO影响范围尚未核验；请在目标浏览器登录。",
+      "evidenceVersion": "20261003.2",
+      "engineeringState": "ready",
+      "cookieNames": [],
+      "localStorageKeys": {}
+    }
+  ],
+  "evidenceSha256": "0ffe2ed6a3d90d5023837cd93c8e44e889b1647f100cff9db6315d211c97b2d8"
+}

@@ -4,7 +4,7 @@ from jsonschema import Draft202012Validator
 from pydantic import Field, JsonValue, model_validator
 
 from .evidence import Contract, EvidenceRef, ObservationFact, digest, gap
-from .natural_reads import VerifiedNaturalRead, schema_at_path, value_at_path
+from .natural_reads import VerifiedNaturalRead, schema_at_path, schema_path_required, value_at_path
 from .natural_result_binding import build_result_derivation_fields
 from .summary_compile import compiled_summary_fields, summary_capture_fields
 from .method_read_schema import compatible_read_schema, representative_schema
@@ -187,7 +187,8 @@ def _compiled_fields(trace, segments, output_schema, assembly_fields, runtime_in
         binding = field.binding
         target_schema = schema_at_path(output_schema, field.path)
         if binding['source'] == 'input':
-            if schema_at_path(runtime_input_schema, binding['path']) != target_schema:
+            if not schema_path_required(runtime_input_schema, binding['path']) \
+                    or schema_at_path(runtime_input_schema, binding['path']) != target_schema:
                 raise ValueError('natural_output_input_schema_mismatch')
         elif binding['source'] == 'constant':
             value = binding['value']
@@ -256,6 +257,15 @@ def _static_output_fields(final_output, output_schema, covered, input_value, inp
     def visit(value, schema, path):
         if any(path[:len(owner)] == owner for owner in covered):
             return
+        # WHY：相同字段路径的继承优先于值匹配；多个字段恰好相同不应丢失合法输入绑定。
+        try:
+            if schema_path_required(input_schema, path) and schema_at_path(input_schema, path) == schema \
+                    and digest(_value_at(input_value, path)) == digest(value):
+                fields.append({'binding': {'source': 'input', 'path': path}, 'path': path, 'sampleValue': value})
+                covered.append(path)
+                return
+        except (ValueError, TypeError, AttributeError):
+            pass
         matches = _input_matches(input_value, input_schema, value, schema)
         if len(matches) == 1:
             fields.append({'binding': {'source': 'input', 'path': matches[0]},
@@ -282,7 +292,7 @@ def _input_matches(input_value, input_schema, expected, expected_schema):
     matches = []
 
     def visit(value, schema, path):
-        if schema == expected_schema and digest(value) == digest(expected):
+        if schema_path_required(input_schema, path) and schema == expected_schema and digest(value) == digest(expected):
             matches.append(path)
         if isinstance(value, dict) and isinstance(schema, dict) and schema.get('type') == 'object':
             properties = schema.get('properties', {})

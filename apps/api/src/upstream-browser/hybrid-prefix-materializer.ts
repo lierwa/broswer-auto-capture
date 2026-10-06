@@ -39,13 +39,8 @@ export async function materializeHybridPrefix(input: { response: unknown; reques
   connectSummaryNodes(edges, summaries, "")
   const graph = upgradeStableGraph(nodes, edges)
   signal.throwIfAborted()
-  // WHY：片段没有入口或终点；缺口之后的现场/控制依赖未闭合，不能用样本 scope 冒充稳定节点。
-  const barrier = compilation.coverage.findIndex(row => row.disposition === "not_compilable")
-  const allowed = new Set(compilation.coverage.slice(0, barrier < 0 ? undefined : barrier)
-    .flatMap(row => row.ownerSegmentId ? [row.ownerSegmentId] : []))
-  const retained = closedNodes(graph.nodes.filter(node => allowed.has(node.id)
-    || compilation.segments.some(segment => allowed.has(segment.id)
-      && (node.id === `selection-${segment.id.slice(2)}` || summaries.get(segment.id)?.nodes.some(item => item.id === node.id)))))
+  // WHY：缺口不能抹掉后续已证实片段；保留闭合依赖，原 prefix 边仍禁止跨缺口，且没有运行/发布权限。
+  const retained = closedNodes(graph.nodes)
   const ids = new Set(retained.map(node => node.id))
   applyReadRequirements(retained, graph.edges.filter(edge => ids.has(edge.from) && ids.has(edge.to)))
   return { nodes: retained, edges: graph.edges.filter(edge => ids.has(edge.from) && ids.has(edge.to)) }

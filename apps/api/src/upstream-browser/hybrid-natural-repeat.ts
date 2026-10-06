@@ -400,7 +400,7 @@ export function materializeNaturalRepeats(repeats: ValidatedNaturalRepeat[], inp
     input.variables[cursorVariable] = contract(cursorVariable, { type: "integer", minimum: 0, maximum: maxIterations })
     const continuation = bindContinuationVariable(method, mode, input)
     initializers.set(`loop-${method.id}`, continuation.initializer)
-    branches.push({ id: `first-${method.id}`, label: "读取本页或进入下一页", kind: "branch", writes: [],
+    branches.push({ id: `first-${method.id}`, label: "是否首次读取？", kind: "branch", writes: [],
       outputContract: unit, outcomes: [...requiredNodeOutcomes.branch], predicate: { operator: "equals",
         left: { source: "variable", name: cursorVariable, path: [] }, right: { source: "constant", value: 0 } } })
     return { id: `loop-${method.id}`, label: "逐页读取并累积", kind: "loop", writes: [], outputContract: unit,

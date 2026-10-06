@@ -281,7 +281,8 @@ function draftEntryUrls(markdown: string) {
   const headings = [...markdown.matchAll(/^##\s+试做入口\s*$/gmu)]
   if (headings.length !== 1) throw new Error("interview_entry_section_required")
   const body = markdown.slice(headings[0]!.index! + headings[0]![0].length).split(/^#{1,6}\s+/mu, 1)[0]!
-  const lines = body.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
+  // WHY：模型可以在入口列表后解释来源依据；解释段不是额外入口，不改变编号或授权 URL。
+  const lines = body.split(/\r?\n/u).map((line) => line.trim()).filter(line => /^\d+\./u.test(line))
   if (!lines.length) throw new Error("interview_entry_required")
   const seen = new Set<string>()
   return lines.map((line, index) => {

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import { createHash } from 'node:crypto';
+
 /**
  * WebSocket server that bridges Playwright MCP and Chrome Extension.
  *
@@ -37,6 +39,7 @@ import { raceAgainstDeadline } from './timeoutRunner.js';
 const playwrightExtensionId = ''; // B-A-T 必须显式提供其独立扩展身份。
 import { logUnhandledError } from './log.js';
 import { ExtensionProtocolV2 } from './cdpRelayV2.js';
+import { CDPOwnerScopes } from './cdpOwnerScopes.js';
 import * as protocol from './protocol.js';
 import { z } from 'zod';
 
@@ -71,6 +74,7 @@ export class CDPRelayServer {
   private _cdpPath: string;
   private _extensionPath: string;
   private _cdpConnection: WebSocket | null = null;
+  private _scopes = new CDPOwnerScopes();
   private _extensionConnection: ExtensionConnection | null = null;
   private _protocolVersion: number;
   private _token: string | undefined;
@@ -78,7 +82,8 @@ export class CDPRelayServer {
   private _extensionConnectionPromise = new ManualPromise<void>();
   private _taskCreationDispatched = false;
 
-  constructor(browserChannel: string, executablePath?: string, customUserDataDir?: string, profileDirectory?: string, private options?: { token?: string; extensionId: string; requestAuthorization?: boolean }) {
+  constructor(browserChannel: string, executablePath?: string, customUserDataDir?: string, profileDirectory?: string,
+    private options?: { token?: string; extensionId: string; requestAuthorization?: boolean; requestPopup?: (url: string) => void }) {
     this._browserChannel = browserChannel;
     this._executablePath = executablePath;
     this._customUserDataDir = customUserDataDir;
@@ -95,8 +100,11 @@ export class CDPRelayServer {
       return this._extensionConnection.send(method as keyof ExtensionCommandV2, params);
     };
     this._handler = new ExtensionProtocolV2(sendCommand);
+    this._handler.connectOverCDP(msg => { this._sendToCDPClient(msg); this._scopes.event(msg); });
 
-    const uuid = crypto.randomUUID();
+    // WHY：端口随服务重启变化；已授权 Profile 的不可猜测路径稳定，原 owner 可验证是同一授权传输。
+    const uuid = this.options?.token ? createHash('sha256')
+      .update(`bat-daily-cdp:${this.options.token}:${profileDirectory ?? ''}`).digest('hex') : crypto.randomUUID();
     this._cdpPath = `/devtools/browser/${uuid}`; // 沿用 B-A-T 既有 loopback endpoint 合同。
     this._extensionPath = `/extension/${uuid}`;
 
@@ -109,11 +117,12 @@ export class CDPRelayServer {
       },
       onHeaders: () => {},
       onUpgrade: () => undefined,
-      isAllowedPathname: pathname => pathname === this._cdpPath || pathname === this._extensionPath,
+      isAllowedPathname: pathname => pathname === this._cdpPath || pathname === this._extensionPath
+        || pathname.startsWith(`${this._cdpPath}/`) && this._scopes.accepts(pathname.slice(this._cdpPath.length + 1)),
       onConnection: (request, url, ws) => {
         debugLogger(`New connection to ${url.pathname}`);
-        if (url.pathname === this._cdpPath)
-          this._handlePlaywrightConnection(ws);
+        if (url.pathname.startsWith(this._cdpPath))
+          this._handlePlaywrightConnection(ws, url.pathname.slice(this._cdpPath.length + 1) || undefined);
         else if (request.headers.origin === `chrome-extension://${this.options?.extensionId}`)
           this._handleExtensionConnection(ws);
         else
@@ -127,8 +136,9 @@ export class CDPRelayServer {
     this._wsHost = await this._wsServer.listen(0, undefined, '');
   }
 
-  cdpEndpoint() {
-    return `${this._wsHost}${this._cdpPath}`;
+  cdpEndpoint(owner?: string, targets: string[] = []) {
+    if (owner) { this._scopes.register(owner, targets); this._handler.prepareOwnerConnection(targets); }
+    return `${this._wsHost}${this._cdpPath}${owner ? `/${owner}` : ''}`;
   }
 
   extensionEndpoint() {
@@ -149,12 +159,9 @@ export class CDPRelayServer {
     const { timedOut } = await raceAgainstDeadline(async () => {
       await this._extensionConnectionPromise;
       await this._handler.ready();
-      // WHY：原批准页现会退出；沿原模型 attach 本连接引导页，复用 Chrome 的 debugger 生命周期。
-      // 不增加心跳协议/定时重连，不枚举或 attach 用户个人标签。
+      // WHY：原 WebSocket/令牌握手证明连接；零目标为空闲连接，不要求额外引导窗口。
+      // 原模型继续 autoAttach 后续 operation 创建的目标，不枚举个人标签。
       await this._handler.handleCDPCommand('Target.setAutoAttach', { autoAttach: true, flatten: true }, undefined);
-      const targets = await this._handler.handleCDPCommand('Target.getTargets', {}, undefined);
-      if (!targets?.result.targetInfos.length)
-        throw new Error('daily_chrome_initial_target_not_attached');
     }, deadline);
     if (timedOut) {
       const profile = this._profileDirectory ? ` "${this._profileDirectory}"` : '';
@@ -179,7 +186,13 @@ export class CDPRelayServer {
     else if (this.options?.requestAuthorization)
       url.searchParams.set('persistAuthorization', '1');
     const href = url.toString();
-
+    if (this.options?.requestPopup) {
+      this.options.requestPopup(this._wsServer.popupRequest(href, reason => {
+        this._extensionConnectionPromise.reject(new Error(reason === 'paused' ? 'daily_chrome_connection_paused' : 'daily_chrome_authorization_rejected'));
+      }));
+      return;
+    }
+    // WHY：已有授权复用原 Chrome launcher 直接握手；工作台不再是运行连接的必经中转。
     this.openPage(this._wsServer.browserRedirect(href));
   }
 
@@ -234,31 +247,33 @@ export class CDPRelayServer {
     this._closeExtensionConnection(reason);
   }
 
-  private _handlePlaywrightConnection(ws: WebSocket): void {
+  private _handlePlaywrightConnection(ws: WebSocket, owner?: string): void {
     if (!this.isConnected() && !this._canVerifyUnstartedTask()) {
       debugLogger('Rejecting Playwright connection: extension not connected');
       ws.close(1000, 'Extension not connected');
       return;
     }
-    if (this._cdpConnection) {
+    if (!owner && this._cdpConnection) {
       debugLogger('Rejecting second Playwright connection');
       ws.close(1000, 'Another CDP client already connected');
       return;
     }
-    this._cdpConnection = ws;
-    this._handler.connectOverCDP(msg => this._sendToCDPClient(msg));
+    if (owner) this._scopes.connect(ws, owner);
+    else this._cdpConnection = ws;
     ws.on('message', async (data: RawData) => {
       try {
-        await this._handlePlaywrightMessage(JSON.parse(data.toString()));
+        await this._handlePlaywrightMessage(JSON.parse(data.toString()), ws, owner);
       } catch (error: any) {
-        debugLogger(`Error while handling Playwright message\n${data.toString()}\n`, error);
+        // WHY：CDP消息可能携带认证Cookie；诊断只保存错误类别，不打印请求/参数/错误正文。
+        debugLogger('Error while handling Playwright message', error?.name ?? 'Error');
       }
     });
     ws.on('close', () => {
       // WHY：B-A-T 的交付/人工恢复沿原租约更换 SDK 连接；原扩展保留自身已准入目标。
-      // 一个时刻仍只允许一个 CDP client；撤销/服务退出才调用原 extension.close。
+      // 客户端独立断开；撤销/服务退出才关闭原 extension 与所有客户端。
       if (this._cdpConnection === ws)
         this._cdpConnection = null;
+      this._scopes.disconnect(ws);
       debugLogger('Playwright WebSocket closed');
     });
     ws.on('error', (error: Error) => {
@@ -281,6 +296,7 @@ export class CDPRelayServer {
   }
 
   private _closeCDPConnection(reason: string) {
+    this._scopes.close(reason);
     if (this._cdpConnection?.readyState === ws.OPEN)
       this._cdpConnection.close(1000, reason);
   }
@@ -314,23 +330,34 @@ export class CDPRelayServer {
     this._extensionConnectionPromise.resolve();
   }
 
-  private async _handlePlaywrightMessage(message: CDPCommand): Promise<void> {
+  private async _handlePlaywrightMessage(message: CDPCommand, client = this._cdpConnection, owner?: string): Promise<void> {
     debugLogger('← Playwright:', `${message.method} (id=${message.id})`);
     const { id, sessionId, method, params } = message;
     try {
-      const result = await this._handleCDPCommand(method, params, sessionId);
-      this._sendToCDPClient({ id, ...(sessionId ? { sessionId } : {}), result });
+      if (owner) this._scopes.check(owner, method, params, sessionId);
+      let result = await this._handleCDPCommand(method, params, sessionId);
+      if (owner) {
+        result = this._scopes.response(owner, method, params, result);
+        if (method === 'Target.createTarget') await this._handler.handleCDPCommand('Target.attachToTarget', { targetId: result.targetId }, undefined);
+      }
+      client?.send(JSON.stringify({ id, ...(sessionId ? { sessionId } : {}), result }));
     } catch (e) {
       debugLogger('Error in the extension:', e);
-      this._sendToCDPClient({
+      client?.send(JSON.stringify({
         id,
         ...(sessionId ? { sessionId } : {}),
         error: { message: (e as Error).message }
-      });
+      }));
     }
   }
 
   private async _handleCDPCommand(method: string, params: any, sessionId: string | undefined): Promise<any> {
+    // WHY：Playwright公开 new_cdp_session 先借用 browser root；Chrome debugger只有tab。
+    // 沿原relay的root分派，不创建/attach新的浏览器目标，也不扩大已准入tab范围。
+    if (sessionId === 'bat-browser-root' && method === 'Target.attachToTarget')
+      return this._handler.borrowCDPSession(params?.targetId);
+    if (sessionId === 'bat-browser-root')
+      sessionId = undefined;
     if (!this.isConnected()) {
       if (method === 'Target.getTargets' && !sessionId && this._canVerifyUnstartedTask())
         return { targetInfos: [] };
@@ -339,6 +366,14 @@ export class CDPRelayServer {
         throw new Error('daily_chrome_extension_disconnected');
     }
     switch (method) {
+      case 'Target.attachToBrowserTarget': {
+        if (sessionId) throw new Error('daily_chrome_browser_root_invalid');
+        return { sessionId: 'bat-browser-root' };
+      }
+      case 'Target.detachFromTarget': {
+        if (!sessionId && params?.sessionId === 'bat-browser-root') return {};
+        break;
+      }
       case 'Browser.getVersion': {
         return {
           protocolVersion: '1.3',

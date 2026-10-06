@@ -1,10 +1,12 @@
 import {
-  CONTRACT_VERSION, taskPlanExecutionIssues, taskPlanSchema, type TaskPlan, type TaskRequirement,
+  CONTRACT_VERSION, taskPlanExecutionIssues, taskPlanSchema, type TaskPlan, type TaskRequirement, type TaskPreparationResearch,
 } from "@browser-capture/contracts"
 import { digestJson, stableUuid } from "@browser-capture/runtime"
 import { browserGrantLimits } from "@browser-capture/browser"
 import { parsePreparationDraft } from "../interview/preparation-draft.js"
 import { sourceSupportsEntry } from "../interview/source-resolution.js"
+import { confirmedItemSteps } from "./record-plan.js"
+import { projectBusinessPlanSteps } from "./business-plan-projection.js"
 
 /** WHY：预算是宿主技术上界；访谈草案与模型都不能填写图执行预算。 */
 export function planningEnvelope(invocations: number) {
@@ -25,7 +27,7 @@ export function aggregatePlanBudget(steps: TaskPlan["steps"]) {
 }
 
 /** WHY：计划仅是确认版本的技术投影；入口必须逐条引用同版所选来源，不能从模型记忆或正文猜。 */
-export function projectPreparationPlan(requirement: TaskRequirement, version: number): TaskPlan {
+export function projectPreparationPlan(requirement: TaskRequirement, version: number, research?: TaskPreparationResearch): TaskPlan {
   if (!requirement.confirmation || !requirement.confirmationFacts?.entries?.length) {
     throw new Error("preparation_entries_unconfirmed")
   }
@@ -50,14 +52,20 @@ export function projectPreparationPlan(requirement: TaskRequirement, version: nu
     chain: { id: stableUuid(requirement.taskId, id, String(version), stepId), version: 1 },
     budget: planningEnvelope(1), completion: [completion],
     risks: requirement.authorization.risks, resultSpec: draft.resultSpec }
+  // WHY：新草案逐步投影真实业务分析；固定二步只读取历史确认版本，不能覆盖新任务步骤。
+  const steps = draft.steps ? projectBusinessPlanSteps(step, draft)
+    : draft.repeated ? confirmedItemSteps(step, draft.selectionGoal!, draft.maximum) : [step]
+  if (research && !steps.some(item => item.id === research.stepId)) throw new Error("preparation_research_step_missing")
   const plan = taskPlanSchema.parse({ contractVersion: CONTRACT_VERSION, kind: "plan", id,
     taskId: requirement.taskId, version,
     requirement: { id: requirement.id, version: requirement.version, revision: requirement.revision,
       digest: digestJson(requirement) },
     summary: requirement.goal, entryUrls: entries.map((entry) => entry.url), browserHandoff: draft.browserHandoff,
     inputContract, outputContract,
-    steps: [step], output: { source: "node", nodeId: stepId, path: [] },
-    budget: aggregatePlanBudget([step]), completion: [completion], evidence: [],
+    steps: steps.map(item => research?.stepId === item.id ? { ...item, preparationResearch: research } : item),
+    output: draft.outputSchema.type === "null" ? { source: "constant", value: null }
+      : { source: "node", nodeId: steps[draft.resultSource ?? steps.length - 1]!.id, path: [] },
+    budget: aggregatePlanBudget(steps), completion: [completion], evidence: [],
     authorizationScope: requirement.authorization.scope })
   const issues = taskPlanExecutionIssues(plan)
   if (issues.length) throw new Error(`preparation_plan_projection_invalid:${issues.join(",")}`)

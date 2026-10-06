@@ -4,10 +4,14 @@ from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.filesystem.file_system import FileSystem
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, create_model
-from .method_completion import complete_from_read_refs
+from .method_completion import complete_from_read_refs, content_read_refs
+from .page_content import content_result
 
 
 COMPLETION_FAILURES = {
+    'completion_content_scope_ambiguous': (
+        'completion_content_scope_ambiguous: Different regions or pages were captured. '
+        'Capture one combined region for this step, or explicitly select the readRef that supplies the confirmed result.'),
     'completion_read_reference_invalid': 'completion_read_reference_invalid',
     'completion_read_path_conflict': (
         'completion_read_path_conflict: Select one representative readRef per output path. '
@@ -40,7 +44,8 @@ class AuthorTools(Tools):
             success=(StrictBool, Field(description='Whether the requested task was completed successfully.')),
             reason=(str, Field(min_length=1, max_length=4000,
                                description='Observed reason for completion or inability to complete.')),
-            readRefs=(list[str], Field(max_length=100, description=(
+            readRefs=(list[str], Field(default=[] if content_result(self._bat_result_spec) else ...,
+                max_length=100, description=(
                 'References returned by successful bat_read_fields calls that supply the result. '
                 'Do not copy page values. For execution-only or unsuccessful preparation use an empty list.'))))
 
@@ -51,7 +56,11 @@ class AuthorTools(Tools):
                 return ActionResult(is_done=True, success=False, extracted_content=params.reason,
                     metadata={'batCompletion': {'success': False, 'reason': params.reason}})
             try:
-                output = complete_from_read_refs(self._bat_field_read_records, params.readRefs,
+                references = params.readRefs
+                if content_result(self._bat_result_spec) and not references:
+                    # WHY：范围采集只交付宿主已保存的产物，不要求模型补齐最终业务参数。
+                    references = content_read_refs(self._bat_field_read_records)
+                output = complete_from_read_refs(self._bat_field_read_records, references,
                     self._bat_output_schema, self._bat_result_spec)
                 wrapped = output if self._bat_output_schema.get('type') == 'object' else {'value': output}
                 data = output_model.model_validate(wrapped)

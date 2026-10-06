@@ -4,12 +4,14 @@ import {
   type TaskExecution, type TaskRequirement, type VersionReference,
 } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
+import { LRUCache } from "lru-cache"
 import type { ProductStore } from "../database/store.js"
 import { conflict, DomainError } from "../errors.js"
 import type { TaskContractRepository } from "./repository.js"
 import { syncConfirmedRequirement } from "./requirement.js"
 
 export class TaskProductService {
+  private readonly readinessCache = new LRUCache<string, { revision: string; validations: RunnableReleaseValidation[] }>({ max: 32 })
   constructor(private readonly store: ProductStore, private readonly repository: TaskContractRepository) {}
 
   currentRelease(taskId: string, requirement = syncConfirmedRequirement(this.store, this.repository, taskId)) {
@@ -58,13 +60,25 @@ export class TaskProductService {
 
   draftReadiness(draft: TaskDraft): { phase: "sample_needed" | "verification_needed" | "ready";
     distinctInputRequired: boolean } {
-    const validations = this.validatedDraftTrials(draft)
+    const validations = this.readinessValidations(draft)
     const varying = taskInputRequiresVariation(draft.content.plan.inputContract)
     if (independentTrialPair(validations, varying)) return { phase: "ready", distinctInputRequired: false }
     if (validations.some((item) => item.phase === "sample")) {
       return { phase: "verification_needed", distinctInputRequired: varying }
     }
     return { phase: "sample_needed", distinctInputRequired: false }
+  }
+
+  private readinessValidations(draft: TaskDraft) {
+    const revision = this.store.readRevision()
+    const key = digestJson({ taskId: draft.taskId, draft: draft.id, revision: draft.revision,
+      checksum: draft.checksum, records: draft.validation.records })
+    const cached = revision === null ? undefined : this.readinessCache.get(key)
+    if (cached?.revision === revision) return cached.validations
+    const validations = this.validatedDraftTrials(draft)
+    // WHY：只复用同数据库事实的轻量摘要；发布入口仍在事务中完整校验，不依赖缓存授权。
+    if (revision !== null && this.store.readRevision() === revision) this.readinessCache.set(key, { revision, validations })
+    return validations
   }
 
   private validatedDraftTrials(draft: TaskDraft) {

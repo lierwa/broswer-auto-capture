@@ -30,11 +30,11 @@ for (const trigger of ["worker_exit", "rerun"] as const) test(`${trigger} verifi
     let checks = 0, accepted = 0
     const service = Object.assign(Object.create(TaskChainService.prototype), {
       store, repository, controllers: new Map(), cleanupInFlight: new Set(), activeWork: new Set(),
-      queue: [{ taskId, id: pending.id }], draining: false, closing: false,
+      queue: trigger === "worker_exit" ? [{ taskId, id: pending.id }] : [], draining: false, closing: false,
       executor: { execute: async () => pending },
       preparation: { onExecutionSettled: () => {} }, snapshot: () => ({ taskId }),
       upstream: { managedWindowAction: async (input: { action: string; ownerId: string; leaseId: string }) => {
-        checks++; assert.deepEqual(input, { action: "verify_closed", ownerId: owner, leaseId: owner })
+        checks++; assert.deepEqual(input, { action: "verify_closed", ownerId: owner, leaseId: owner, browserMode: "daily" })
         return { report: { status: "confirmed" }, window: { ownerId: owner, leaseId: owner, active: false } }
       } }, dispatch: () => {
         accepted++; const old = repository.execution(taskId, original.id)
@@ -107,6 +107,55 @@ test("终态 pending 重启保留业务结论并进入同次清理，confirmed �
     assert.ok(path.resolve(directory).startsWith(`${path.resolve(tmpdir())}${path.sep}bat-cleanup-terminal-`))
     await rm(directory, { recursive: true, force: true })
   }
+})
+
+// WHY：保护历史错误 owner 恢复、真正活跃目标释放、未知子进程拒绝，以及人工现场保留四个资源边界。
+for (const branch of ["legacy_startup", "owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "live_child", "refusal", "foreign_owner", "human_wait"] as const)
+test(`cleanup closure: ${branch}`, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-cleanup-closure-")), store = await ProductStore.open(directory)
+  try {
+    const repository = new TaskContractRepository(store), taskId = store.taskAction({ type: "create", requestId: randomUUID() })
+    const original = saveTerminal(repository, taskId, "failed").execution, owner = stableUuid(original.id, "managed-window")
+    const record = repository.saveExecution({ ...original, release: original.plan, status: "cleanup_required",
+      ...(branch === "legacy_startup" ? { steps: original.steps.map(step => ({ ...step, runIds: [], invocationIds: [] })) } : {}),
+      cleanupResume: { status: original.status, reason: original.reason, result: original.result },
+      cleanup: { ...original.cleanup, status: "unconfirmed", code: "runtime_cleanup_report_missing", evidenceDigest: "b".repeat(64) },
+      browserHandoff: { status: branch === "human_wait" ? "active" : "unavailable", purpose: branch === "human_wait" ? "human_wait" : null,
+        ownerId: owner, leaseId: owner, targetDigest: branch === "human_wait" ? "b".repeat(64) : null, reason: null, updatedAt: original.updatedAt } })
+    const timeout = ["exited_process", "protocol_timeout"].includes(branch)
+    const report = cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => {
+      if (timeout && ["capability_close", "browser_close"].includes(stage)) return { stage, status: "not_required", code: null }
+      if (timeout && stage === "close_protocol") return { stage, status: "unconfirmed", code: "cleanup_close_protocol_timeout" }
+      if ((branch === "live_child" || branch === "exited_process") && stage === "child_exit") return { stage, status: "unconfirmed", code: "cleanup_child_exit_timeout" }
+      if (branch === "live_child" && stage === "process_tree") return { stage, status: "unconfirmed", code: "cleanup_process_tree_unconfirmed" }
+      return stage === "browser_close" ? { stage, status: "unconfirmed", code: "cleanup_browser_close_failed" }
+        : { stage, status: "confirmed", code: null }
+    }), timeout ? false : null)
+    repository.saveCleanupAudit({ ...report, id: randomUUID(), taskId, executionId: record.id, attempt: 1,
+      ownerId: branch === "legacy_startup" ? stableUuid(record.id, "cleanup-owner") : branch === "foreign_owner" ? randomUUID() : owner,
+      source: branch === "legacy_startup" ? "owner_verification" : "runner",
+      ...(branch === "legacy_startup" ? { stages: [] } : {}), createdAt: original.updatedAt })
+    const actions: string[] = []
+    const service = Object.assign(Object.create(TaskChainService.prototype), { store, repository, controllers: new Map(),
+      cleanupInFlight: new Set(), activeWork: new Set(), queue: [], snapshot: () => ({ taskId }),
+      preparation: { onExecutionSettled() {} }, upstream: { async managedWindowAction(input: { action: string; ownerId: string; leaseId: string; controllerReleased?: boolean }) {
+        actions.push(input.action); assert.equal(input.ownerId, owner); assert.equal(input.leaseId, owner)
+        assert.equal(input.controllerReleased, input.action === "end" ? true : undefined)
+        if (branch === "refusal") throw Error("synthetic_connection_refused")
+        if (branch === "inspection_unavailable" && input.action === "verify_closed") throw Error("synthetic_empty_bridge")
+        return { report: { status: "confirmed" }, window: { ownerId: owner, leaseId: owner,
+          active: branch === "human_wait" || ["owned_target", "exited_process", "protocol_timeout"].includes(branch) && input.action !== "end",
+          reason: branch === "human_wait" ? "hybrid_attached_window_handoff_verified" : null } }
+      } } }) as TaskChainService
+    await service.dispatchAsync(taskId, { type: "cleanup_execution", requestId: randomUUID(), executionId: record.id, expectedSequence: record.sequence })
+    const restored = repository.execution(taskId, record.id)
+    const confirmed = ["legacy_startup", "owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "human_wait"].includes(branch)
+    assert.equal(restored.status, confirmed ? "failed" : "cleanup_required")
+    assert.deepEqual(confirmed ? restored.result : restored.cleanupResume?.result, original.result)
+    assert.deepEqual(actions, branch === "live_child" || branch === "foreign_owner" ? [] : ["owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "refusal"].includes(branch) ? ["verify_closed", "end"] : ["verify_closed"])
+    if (branch === "human_wait") assert.equal(restored.browserHandoff.status, "active")
+    if (branch === "legacy_startup") assert.equal(repository.cleanupAudits(taskId, record.id).at(-1)!.ownerId, owner)
+  } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
 })
 
 function saveTerminal(repository: TaskContractRepository, taskId: string, status: "completed" | "failed", confirmed = false) {

@@ -22,7 +22,7 @@ export function useBrowserEnvironment(open: boolean) {
     return () => abort.abort()
   }, [open])
   async function select(mode: BrowserMode) {
-    if (!state || busy) return
+    if (!state || busy) return false
     setBusy(true); setError("")
     try {
       const response = await fetch("/api/browser-environment", { method: "PUT",
@@ -31,7 +31,8 @@ export function useBrowserEnvironment(open: boolean) {
       const raw: unknown = await response.json()
       if (!response.ok) throw new Error(failure.parse(raw).error)
       setState(browserEnvironmentSchema.parse(raw))
-    } catch (error) { setError(error instanceof Error ? error.message : "浏览器选择未能保存。") }
+      return true
+    } catch (error) { setError(error instanceof Error ? error.message : "浏览器选择未能保存。"); return false }
     finally { setBusy(false) }
   }
   return { state, busy, error, select }

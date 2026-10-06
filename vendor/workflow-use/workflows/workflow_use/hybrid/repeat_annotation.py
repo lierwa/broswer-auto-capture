@@ -119,8 +119,27 @@ def _repeated_reads(trace):
         if len(values) != 1 or not isinstance(values[0].get('outputPath'), list):
             continue
         value = values[0]
+        # WHY：区域对象/单值的纠正或刷新不是集合翻页；输出绑定仍由已选成功 readRef 证明。
+        if not isinstance(value_at_path(value.get('output'), value.get('readPath', [])), list):
+            continue
         groups.setdefault(digest(value['outputPath']), []).append({'action': action, 'read': value})
-    return [group for group in groups.values() if len(group) > 1]
+    return [group for group in groups.values() if len(group) > 1 and not _read_confirmation(trace, group)]
+
+
+def _read_confirmation(trace, group):
+    keys = ('outputPath', 'readPath', 'specification', 'output', 'coverage', 'containerIdsDigest',
+            'documentRootId', 'targetId', 'urlDigest')
+    first = group[0]['read']
+    if any(first.get(key) is None for key in keys) or any(item['read'].get('stable') is not True for item in group):
+        return False
+    signature = digest({key: first[key] for key in keys})
+    if any(digest({key: item['read'].get(key) for key in keys}) != signature for item in group[1:]):
+        return False
+    positions = {action.id: index for index, action in enumerate(trace.actions)}
+    between = trace.actions[positions[group[0]['action'].id]:positions[group[-1]['action'].id] + 1]
+    # WHY：同文档同范围的重复确认不产生新批次；已确定的只读事实不再让模型猜循环。
+    # TRADE-OFF：任何推进动作、身份缺失或样本差异仍保留原循环准入，不吞真实分页。
+    return all(action.effect == 'read' and action.name in ('bat_read_fields', 'find_elements') for action in between)
 
 
 def _annotation_input(request, trace, group):

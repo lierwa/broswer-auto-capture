@@ -1,5 +1,7 @@
 import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
+import { assertBrowserContextOutput, BROWSER_CONTEXT_OUTPUT } from "./hybrid-browser-context.js"
+import { assertInputEntryTarget } from "./hybrid-element-entry.js"
 import { jsonValueSchema, requiredNodeOutcomes, valueBindingSchema, type StableChainNode,
   type StableChainNodeV2, type TaskDataContract, type ValueBinding, type ValueSchema } from "@browser-capture/contracts"
 import { naturalSummarySegmentSchema, type HybridCompilation, type HybridSegment } from "./hybrid-schema.js"
@@ -53,8 +55,7 @@ export function materializeHybridNodes(input: { compilation: HybridCompilation; 
 }
 
 function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }>, context: SourceContext, model: string, compilation: HybridCompilation,
-  resolveChild?: ResolveHybridChild, runtimeScope?: RuntimeScopeDecision, missingTargetOutcome = false,
-  repeats: ValidatedNaturalRepeat[] = []): StableChainNode {
+  resolveChild?: ResolveHybridChild, runtimeScope?: RuntimeScopeDecision, missingTargetOutcome = false, repeats: ValidatedNaturalRepeat[] = []): StableChainNode {
   const base = { id: segment.id, label: segment.id, writes: [] }
   if (segment.kind === "explicit_llm") {
     if (context.version !== 1) throw new Error("explicit_llm_declaration_missing")
@@ -96,25 +97,18 @@ function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }
     || segment.target !== null || segment.expectedEffect.kind !== "navigation")) {
     throw new Error("hybrid_anchor_navigation_segment_invalid")
   }
-  const bindings: Record<string, ValueBinding> = {}
-  for (const decision of segment.bindings) {
-    if (decision.kind === "sample_evidence") throw new Error("hybrid_sample_value_leak")
-    if (context.version === 2) {
-      if (!("binding" in decision) || decision.binding === undefined) throw new Error("hybrid_natural_binding_missing")
-      bindings[decision.argumentPath] = rewriteBinding(
-        assertRepeatAwareBinding(decision, segment.id, repeats, context.request, context.payload), compilation)
-      continue
-    }
-    const clause = context.authority.requirement.clauses.find((item) => item.id === decision.sourceRef)
-    const expression = z.object({ actionName: z.string(), argumentPath: z.string(), binding: jsonValueSchema,
-      actionRefs: z.array(z.string()).nullable().optional(), selectionRef: z.string().nullable().optional() }).strict().parse(clause?.expression)
-    if (expression.argumentPath !== decision.argumentPath) throw new Error("hybrid_binding_mismatch")
-    bindings[decision.argumentPath] = rewriteBinding(expression.binding, compilation)
-  }
+  const bindings = materializeBindings(segment, context, compilation, repeats)
   if (context.version === 2 && operation.name === "browser.read-fields") {
     assertNaturalReadSegment(segment, context, compilation)
+    const read = operation.specification as { inheritFields?: string[] }
+    if (read.inheritFields?.length) bindings.record = { source: "input", path: [] }
   }
   let target = segment.target
+  if (context.version === 2) assertInputEntryTarget(segment, context.request, context.payload, compilation)
+  if (target?.strategy === "entry") {
+    if (bindings.targetEntry || !target.entryBinding) throw new Error("hybrid_reserved_target_input")
+    bindings.targetEntry = target.entryBinding
+  }
   let targetOrdinalInput: string | undefined
   if (target?.strategy === "structure" && target.ordinalBinding) {
     if (bindings.targetOrdinal) throw new Error("hybrid_reserved_target_input")
@@ -126,17 +120,50 @@ function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }
   const readScope = segment.target && "scope" in segment.target ? segment.target.scope : undefined
   const runtimeConfig = runtimeScope?.runtimeScopeFrom ? { [RUNTIME_SCOPE_FROM]: runtimeScope.runtimeScopeFrom,
     ...(runtimeScope.readOnlySameDocument ? { [RUNTIME_SCOPE_READ_ONLY]: true } : {}) } : {}
+  const inheritedRead = segment.postconditions.some(condition => condition.kind === "read_fields"
+    && (condition.read as { inheritFields?: string[] } | undefined)?.inheritFields?.length)
+  if (inheritedRead) bindings.record = { source: "input", path: [] }
+  const contextOutput = context.version === 2 && assertBrowserContextOutput(segment, context.request, context.payload)
   const config = operation.name === "browser.read-fields" ? { specification: operation.specification,
     ...(readScope ? { scope: readScope } : {}), ...runtimeConfig }
     : { actionName: operation.actionName, target, postconditions: segment.postconditions,
       ...(targetOrdinalInput ? { targetOrdinalInput } : {}),
+      ...(inheritedRead ? { inheritedReadInput: "record" } : {}),
       ...(missingTargetOutcome ? { missingTargetOutcome: true } : {}),
-      ...runtimeConfig }
+      ...(contextOutput ? { [BROWSER_CONTEXT_OUTPUT]: true } : {}), ...runtimeConfig }
   return { ...base, kind: "capability", capability: { name: operation.name, version: operation.version }, input: bindings,
     config: jsonValueSchema.parse(config), effect: segment.expectedEffect.kind === "external_write" ? "external_write"
       : segment.expectedEffect.kind === "read" || segment.expectedEffect.kind === "none" ? "read" : "idempotent_write",
     timeoutMs: 180_000, outputContract: segment.outputs[0] ? contract(segment.id, segment.outputs[0].schema) : unit,
     outcomes: [...requiredNodeOutcomes.capability] }
+}
+
+function materializeBindings(segment: Exclude<HybridSegment, { kind: "function" | "explicit_llm" }>,
+  context: SourceContext, compilation: HybridCompilation, repeats: ValidatedNaturalRepeat[]): Record<string, ValueBinding> {
+  const bindings: Record<string, ValueBinding> = {}
+  for (const decision of segment.bindings) {
+    if (decision.kind === "sample_evidence") throw new Error("hybrid_sample_value_leak")
+    if (context.version === 2) {
+      if (!("binding" in decision) || decision.binding === undefined) throw new Error("hybrid_natural_binding_missing")
+      if ("derivation" in decision && decision.derivation === "prior_browser_context") {
+        const value = decision.binding
+        const producer = value.source === "node" ? compilation.segments.find(item =>
+          item.id === `s-${value.nodeId}` || item.id === value.nodeId) : undefined
+        if (producer?.kind !== "deterministic" || !assertBrowserContextOutput(producer, context.request, context.payload)) {
+          throw new Error("hybrid_browser_context_producer_missing")
+        }
+      }
+      bindings[decision.argumentPath] = rewriteBinding(
+        assertRepeatAwareBinding(decision, segment.id, repeats, context.request, context.payload), compilation)
+      continue
+    }
+    const clause = context.authority.requirement.clauses.find((item) => item.id === decision.sourceRef)
+    const expression = z.object({ actionName: z.string(), argumentPath: z.string(), binding: jsonValueSchema,
+      actionRefs: z.array(z.string()).nullable().optional(), selectionRef: z.string().nullable().optional() }).strict().parse(clause?.expression)
+    if (expression.argumentPath !== decision.argumentPath) throw new Error("hybrid_binding_mismatch")
+    bindings[decision.argumentPath] = rewriteBinding(expression.binding, compilation)
+  }
+  return bindings
 }
 
 

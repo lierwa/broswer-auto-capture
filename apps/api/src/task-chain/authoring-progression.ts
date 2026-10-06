@@ -41,7 +41,7 @@ export function plannedProgression(plan: TaskPlan, input: JsonValue) {
   const acceptSource = (stepId: string, stepInput: JsonValue,
     source: Pick<HybridSourceResult, "request" | "canonicalRequest" | "output">) => {
     const step = acceptingStep(stepId, stepInput)
-    const result = representativeSourceOutput(step.outputContract, source)
+    const result = representativeSourceOutput(step.outputContract, source, stepInput)
     record(step, result.output, result.samplePaths, result.countPaths)
   }
   const finish = () => {

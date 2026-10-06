@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
-import { dailyChromeConnection, resolveDailyChromeEndpoint } from "../src/upstream-browser/daily-chrome-connection.js"
+import { dailyChromeConnection, resolveDailyChromeEndpoint as nativeEndpoint } from "../src/upstream-browser/daily-chrome-connection.js"
+
+const resolveDailyChromeEndpoint = (source: Parameters<typeof nativeEndpoint>[0]) =>
+  nativeEndpoint({ probeEndpoint: async () => true, ...source })
 
 const browserPath = "/devtools/browser/test-browser-123"
 const endpoint = `ws://127.0.0.1:9222${browserPath}`
@@ -9,12 +12,17 @@ const ownerId = "a81d8a80-50ae-48aa-a06c-558ccf08f76a"
 const config = { allowedOrigins: ["https://example.test"], headless: false,
   profilePath: "/tmp/bat-daily-chrome-metadata", managedWindow: { ownerId, resume: false } }
 
+test("关闭浏览器遗留的连接文件不能作为活动连接或窗口占有", async () => {
+  assert.equal(await nativeEndpoint({ platform: "darwin", homeDirectory: "/Users/test-user",
+    readPortFile: async () => `9222\n${browserPath}`, probeEndpoint: async () => false }), undefined)
+})
+
 test("macOS resolves only the standard daily Chrome connection file", async () => {
   const filenames: string[] = []
   assert.equal(await resolveDailyChromeEndpoint({ platform: "darwin", homeDirectory: "/Users/test-user",
     environment: { LOCALAPPDATA: "/unrelated", XDG_CONFIG_HOME: "/unrelated" },
     readPortFile: async (filename) => { filenames.push(filename); return `9222\n${browserPath}\n` } }), endpoint)
-  assert.deepEqual(filenames, ["/Users/test-user/Library/Application Support/Google/Chrome/DevToolsActivePort"])
+  assert.deepEqual(filenames.map(value => value.replaceAll("\\", "/")), ["/Users/test-user/Library/Application Support/Google/Chrome/DevToolsActivePort"])
 })
 
 test("Windows uses LOCALAPPDATA or the standard home-directory fallback", async () => {
@@ -42,7 +50,7 @@ test("Linux uses XDG_CONFIG_HOME or the standard .config fallback", async () => 
     assert.equal(await resolveDailyChromeEndpoint({ platform: "linux", homeDirectory: "/home/test-user",
       environment: scenario.environment,
       readPortFile: async (filename) => { filenames.push(filename); return `9222\n${browserPath}` } }), endpoint)
-    assert.deepEqual(filenames, [scenario.expected])
+    assert.deepEqual(filenames.map(value => value.replaceAll("\\", "/")), [scenario.expected])
   }
 })
 

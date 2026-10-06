@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { jsonValueSchema, resultSpecSchema } from "@browser-capture/contracts"
-import { hybridTargetSchema, readSpecificationSchema, targetScopeSchema, requiredReadPathsSchema } from "./hybrid-schema.js"
+import { hybridTargetSchema, readSpecificationSchema, targetScopeSchema, requiredReadPathsSchema,
+  hybridOrdinaryActionNameSchema } from "./hybrid-schema.js"
 import { valueSchemaSchema } from "@browser-capture/contracts"
 import { hybridCompilerResponseSchema, compilationGapSchema } from "./hybrid-schema.js"
 import { hybridVerifiedChildSchema } from "./hybrid-invoke.js"
@@ -11,14 +12,19 @@ import { pythonCleanupResultSchema } from "./cleanup.js"
 
 const id = z.uuid()
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
+export const executionStorageSchema = z.object({ cookies: z.array(z.object({ name: z.string(), value: z.string(),
+  domain: z.string(), path: z.string(), expires: z.number(), httpOnly: z.boolean(), secure: z.boolean(),
+  sameSite: z.enum(["Strict", "Lax", "None"]) }).strict()), origins: z.array(z.object({ origin: z.url(),
+    localStorage: z.array(z.object({ name: z.string(), value: z.string() }).strict()) }).strict()) }).strict()
 export const hybridStartRequestSchema = z.object({ id, type: z.literal("hybrid_start"), config: z.object({
   headless: z.boolean(), profilePath: z.string().min(1),
+  storageState: executionStorageSchema.optional(),
   connectionOwnerId: id.optional(),
   allowedOrigins: z.array(z.string().url()).min(1).max(32),
   allowedSites: z.array(z.object({ scheme: z.enum(["http", "https"]), domain: z.string().min(1).max(253),
     port: z.number().int().min(1).max(65_535).nullable(), includeSubdomains: z.boolean() }).strict()).min(1).max(32),
-  managedWindow: z.object({ ownerId: id, resume: z.boolean() }).strict().optional(),
-  existingBrowser: z.object({ ownerId: id, resume: z.boolean(),
+  managedWindow: z.object({ ownerId: id, resume: z.boolean(), releasedOwners: z.array(id).optional() }).strict().optional(),
+  existingBrowser: z.object({ ownerId: id, resume: z.boolean(), releasedOwners: z.array(id).optional(),
     cdpUrl: z.url().refine((value) => {
       const url = new URL(value)
       return url.protocol === "ws:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
@@ -39,11 +45,11 @@ export const profileRecoverRequestSchema = z.object({ id, type: z.literal("profi
   profilePath: z.string().min(1), ownerId: id, leaseId: id, runner: runnerOwnershipSchema }).strict()
 export const hybridCommandSchema = z.discriminatedUnion("name", [
   z.object({ name: z.literal("browser.workflow-step"), version: z.literal(2),
-    actionName: z.enum(["navigate", "go_back", "wait", "click", "input", "scroll", "send_keys", "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for"]),
+    actionName: hybridOrdinaryActionNameSchema,
     args: z.record(z.string(), jsonValueSchema), target: hybridTargetSchema.nullable(),
-    postconditions: z.array(z.record(z.string(), jsonValueSchema)).min(1) }).strict(),
+    postconditions: z.array(z.record(z.string(), jsonValueSchema)) }).strict(),
   z.object({ name: z.literal("browser.read-fields"), version: z.literal(2), specification: readSpecificationSchema,
-    scope: targetScopeSchema.optional(), requiredPaths: requiredReadPathsSchema.optional() }).strict(),
+    scope: targetScopeSchema.optional(), requiredPaths: requiredReadPathsSchema.optional(), inherited: jsonValueSchema.optional() }).strict(),
   z.object({ name: z.literal("browser.target-readiness"), version: z.literal(1),
     actionName: z.enum(["click", "input", "dropdown_options", "select_dropdown"]), target: hybridTargetSchema }).strict(),
 ])
@@ -60,9 +66,18 @@ export const hybridReleaseResultSchema = pythonCleanupResultSchema.safeExtend({
 })
 export const hybridHandoffRequestSchema = z.object({ id, type: z.literal("hybrid_handoff") }).strict()
 export const hybridManagedWindowRequestSchema = z.object({ id, type: z.literal("hybrid_managed_window"),
-  action: z.enum(["focus", "inspect", "end", "verify_closed"]), profilePath: z.string().min(1), ownerId: id, leaseId: id }).strict()
+  action: z.enum(["focus", "inspect", "page", "end", "verify_closed"]), profilePath: z.string().min(1), ownerId: id, leaseId: id,
+  cdpUrl: z.url().optional(), legacyEndpointVerified: z.boolean().optional(), controllerReleased: z.boolean().optional(),
+  browserMode: z.enum(["daily", "dedicated-visible", "dedicated-headless"]).optional() }).strict()
+export const accountSessionRequestSchema = z.object({ id, type: z.literal("hybrid_account_session"),
+  action: z.enum(["open_page", "check", "observe", "auth_read", "auth_prepare", "auth_write", "auth_restore", "auth_abandon", "pick_marker", "clear_marker"]),
+  profilePath: z.string().min(1), ownerId: id, leaseId: id, kind: z.enum(["daily", "dedicated"]),
+  cdpUrl: z.url().optional(), legacyEndpointVerified: z.boolean().optional(),
+  platformId: z.string().min(1).max(120), catalogVersion: z.string(), evidenceSha256: hash,
+  payload: jsonValueSchema.default(null) }).strict()
 export const hybridManagedWindowResultSchema = z.object({ leaseId: id, ownerId: id,
-  targetDigest: hash.nullable(), active: z.boolean(), reason: z.string().max(100).nullable() }).strict()
+  targetDigest: hash.nullable(), active: z.boolean(), reason: z.string().max(100).nullable(),
+  page: z.object({ url: z.string().max(8192) }).strict().optional() }).strict()
 export const hybridWindowLeaseSchema = hybridManagedWindowResultSchema.extend({
   targetDigest: hash, active: z.literal(true), reason: z.null(),
 }).strict()
@@ -72,6 +87,7 @@ export const hybridBrowserStateSchema = z.object({ sessionId: z.string().min(1),
 export const hybridExecuteResultSchema = z.object({ output: jsonValueSchema, browser: hybridBrowserStateSchema,
   browserCommands: z.number().int().nonnegative(), modelCalls: z.literal(0) }).strict()
 export type HybridRunnerRequest = z.infer<typeof hybridStartRequestSchema> | z.infer<typeof hybridProfileStartRequestSchema>
+  | z.infer<typeof accountSessionRequestSchema>
   | z.infer<typeof profileOwnerRequestSchema> | z.infer<typeof profileRecoverRequestSchema>
   | z.infer<typeof hybridExecuteRequestSchema>
   | z.infer<typeof hybridObserveRequestSchema> | z.infer<typeof hybridHandoffRequestSchema>
@@ -86,6 +102,7 @@ export const hybridCompileRequestSchema = z.object({ id, type: z.literal("hybrid
   verifiedChildren: z.array(hybridVerifiedChildSchema).max(100).default([]) }).strict()
 
 export const hybridAuthorSourceSchema = z.object({ task: z.string().min(1).max(100000), input: jsonValueSchema,
+  readOnly: z.boolean().optional(),
   inputSchema: valueSchemaSchema, outputSchema: valueSchemaSchema, resultSpec: resultSpecSchema,
   requirementId: z.string(), requirementVersion: z.number().int().positive(),
   planId: z.string(), planVersion: z.number().int().positive(), stepId: z.string(), callMode: z.enum(["once", "each", "batch"]),

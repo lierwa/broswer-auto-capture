@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto"
+import { resolveContentReceipts } from "./content-receipts.js"
+import { BROWSER_CONTEXT_OUTPUT, browserContextOutputSchema } from "./hybrid-browser-context.js"
+import { elementEntrySchema } from "./element-entry-contract.js"
+import { isDeepStrictEqual } from "node:util"
 import path from "node:path"
 import { z } from "zod"
 import { jsonValueSchema, type JsonValue, type TaskDataContract } from "@browser-capture/contracts"
 import type { NodeCapabilityResult, TaskChainCapabilities } from "@browser-capture/runtime"
 import { RunnerProcess } from "./service.js"
-import { RuntimeCleanupRequiredError, type RuntimePrimaryOutcome } from "./cleanup.js"
+import { cleanupReport, RUNNER_CLEANUP_STAGES, RuntimeCleanupRequiredError, type RuntimePrimaryOutcome } from "./cleanup.js"
 import { verifyForkSource } from "../../../../vendor/workflow-use/verify-source.mjs"
 import { hybridBrowserStateSchema, hybridCommandSchema, hybridExecuteRequestSchema,
   hybridExecuteResultSchema, hybridObserveRequestSchema } from "./hybrid-protocol.js"
@@ -27,6 +31,7 @@ export function materializeHybridWorkflowCommand(config: Record<string, unknown>
   const target: Record<string, unknown> | unknown = rawTarget && typeof rawTarget === "object" && !Array.isArray(rawTarget)
     ? { ...rawTarget as Record<string, unknown> } : rawTarget
   const hasReserved = Object.hasOwn(input, TARGET_ORDINAL_INPUT)
+  materializeEntryTarget(target, input)
   if (target && typeof target === "object" && Object.hasOwn(target, "ordinalBinding")) {
     throw new Error("hybrid_unmaterialized_target_binding")
   }
@@ -42,7 +47,17 @@ export function materializeHybridWorkflowCommand(config: Record<string, unknown>
   } else if (marker !== undefined || hasReserved) {
     throw new Error("hybrid_reserved_target_input")
   }
-  const { targetOrdinalInput: _marker, missingTargetOutcome: _missingTargetOutcome, ...commandConfig } = config
+  const { targetOrdinalInput: _marker, missingTargetOutcome: _missingTargetOutcome, [BROWSER_CONTEXT_OUTPUT]: _context,
+    inheritedReadInput, ...commandConfig } = config
+  if (_context !== undefined && _context !== true) throw new Error("hybrid_browser_context_output_marker_invalid")
+  if (inheritedReadInput === "record") {
+    const record = input.record
+    if (record === null || typeof record !== "object" || Array.isArray(record)) throw new Error("hybrid_inherited_read_input_missing")
+    delete input.record
+    commandConfig.postconditions = (commandConfig.postconditions as Record<string, unknown>[]).map(condition =>
+      condition.kind === "read_fields" && (condition.read as { inheritFields?: string[] } | undefined)?.inheritFields?.length
+        ? { ...condition, inherited: record } : condition)
+  }
   return { ...commandConfig, target, args: input }
 }
 
@@ -51,8 +66,9 @@ type HybridRunner = Pick<RunnerProcess, "close" | "envBoolean" | "request" | "st
   & Partial<Pick<RunnerProcess, "handoff">>
 
 type HybridCapabilitiesInput = { root: string; directory: string; ownerId: string;
+  profilePath?: string;
   signal: AbortSignal; allowedOrigins: string[]; canRestoreByNavigation?: boolean; headless?: boolean;
-  managedWindow?: { ownerId: string; resume: boolean };
+  managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] };
   handoffPurpose?: () => "delivery" | "human_wait" | null;
   onHandoff?: (purpose: "delivery" | "human_wait", lease: Awaited<ReturnType<RunnerProcess["handoff"]>>["lease"]) => void;
   onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
@@ -62,7 +78,11 @@ type HybridCapabilitiesInput = { root: string; directory: string; ownerId: strin
 export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
   work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T> {
   const owner = new AbortController()
-  await verifyForkSource(input.root)
+  try { await verifyForkSource(input.root) } catch (error) {
+    // WHY：源码前检发生在创建 runner 之前；没有本次资源，不能伪造清理占用。
+    input.onCleanup?.(cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => ({ stage, status: "not_required", code: null })), false))
+    throw error
+  }
   const runnerSignal = AbortSignal.any([input.signal, owner.signal])
   const diagnostics = SourceLifecycleDiagnostics.open(input.directory, input.ownerId)
   const onDiagnostic = diagnostics ? (line: string) => diagnostics.acceptPythonLine(line) : undefined
@@ -73,7 +93,7 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
   let primary: RuntimePrimaryOutcome<T>
   try {
     await runner.startHybrid({ allowedOrigins: input.allowedOrigins,
-      profilePath: path.join(input.directory, "browser-profile", "default"),
+      profilePath: input.profilePath ?? path.join(input.directory, "browser-profile", "default"),
       headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
       managedWindow: input.managedWindow ?? { ownerId: input.ownerId, resume: false } })
     const admit = (capabilities: TaskChainCapabilities) => {
@@ -101,24 +121,38 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
                 browser: await observe(this) }
             }
             const config = z.record(z.string(), z.unknown()).parse(invocation.config)
+            const contextOutput = config[BROWSER_CONTEXT_OUTPUT] === true
+            if (contextOutput && (invocation.node.capability.name !== "browser.workflow-step"
+              || !isDeepStrictEqual(invocation.node.outputContract.schema, browserContextOutputSchema))) {
+              throw new Error("hybrid_browser_context_output_contract_invalid")
+            }
             missingTargetOutcome = config.missingTargetOutcome === true
             const scoped = await runtimeScope.commandConfig(invocation.node.capability.name, config, () => observe(this), invocation.node.id)
             invocation.signal.throwIfAborted()
             const command = hybridCommandSchema.parse({ ...invocation.node.capability,
+              ...(invocation.node.capability.name === "browser.read-fields"
+                && (("specification" in scoped ? scoped.specification : undefined) as { inheritFields?: string[] } | undefined)?.inheritFields?.length
+                ? { inherited: invocation.input.record } : {}),
               ...(invocation.node.capability.name === "browser.workflow-step"
                 ? materializeHybridWorkflowCommand(scoped, invocation.input)
                 : invocation.node.capability.name === "browser.target-readiness"
-                  ? materializeTargetReadinessCommand(scoped) : scoped) })
+                  ? materializeTargetReadinessCommand(scoped, invocation.input) : scoped) })
             // One admitted provider command; errors after dispatch still consume the attempted action budget.
             admit(this)
             const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({
               id: randomUUID(), type: "hybrid_execute", actionRef: invocation.node.id, command })))
             invocation.signal.throwIfAborted()
             runtimeScope.succeed(invocation.node.id, result.browser)
-            return { outcome: "success", output: hybridCapabilityOutput(invocation.node.outputContract, result.output),
+            const output = await resolveContentReceipts(result.output, config,
+              input.profilePath ?? path.join(input.directory, "browser-profile", "default"), input.ownerId)
+            return { outcome: "success", output: contextOutput ? { url: result.browser.url, tabId: result.browser.tabId }
+              : hybridCapabilityOutput(invocation.node.outputContract, output),
               browser: result.browser }
           })
         } catch (error) {
+          if (error instanceof Error && error.message === "hybrid_runtime_scope_page_changed") {
+            diagnostics?.recordScopeMismatch(error.cause)
+          }
           runtimeScope.clear()
           const browser = await observe(this).catch(() => null)
           const external = hybridExternalFailure(error, browser)
@@ -137,6 +171,11 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
     })
     primary = { status: "completed", value }
   } catch (error) { primary = { status: "failed", error } }
+  return finishHybridRunner(input, runner, diagnostics, primary)
+}
+
+async function finishHybridRunner<T>(input: HybridCapabilitiesInput, runner: HybridRunner,
+  diagnostics: ReturnType<typeof SourceLifecycleDiagnostics.open>, primary: RuntimePrimaryOutcome<T>): Promise<T> {
   const purpose = primary.status === "completed" ? input.handoffPurpose?.() : null
   let cleanup: Awaited<ReturnType<HybridRunner["close"]>>
   if (purpose && input.managedWindow && runner.handoff) {
@@ -204,9 +243,23 @@ async function verifyHybridResume(
       : associationFailed ? { reason: "hybrid_browser_checkpoint_association_invalid" } : {}) }
 }
 
-function materializeTargetReadinessCommand(config: Record<string, unknown>) {
+export function materializeTargetReadinessCommand(config: Record<string, unknown>, rawInput: Record<string, unknown>) {
   const { consumerSegmentId: _consumerSegmentId, ...command } = config
+  const target = command.target && typeof command.target === "object" && !Array.isArray(command.target)
+    ? { ...command.target as Record<string, unknown> } : command.target
+  materializeEntryTarget(target, { ...rawInput })
+  command.target = target
   return command
+}
+
+function materializeEntryTarget(target: unknown, input: Record<string, unknown>) {
+  if (target && typeof target === "object" && (target as Record<string, unknown>).strategy === "entry") {
+    const entryTarget = target as Record<string, unknown>
+    if (!entryTarget.entryBinding || entryTarget.entry) throw new Error("hybrid_entry_binding_invalid")
+    entryTarget.entry = elementEntrySchema.parse(input.targetEntry)
+    delete entryTarget.entryBinding
+    delete input.targetEntry
+  } else if (Object.hasOwn(input, "targetEntry")) throw new Error("hybrid_reserved_target_input")
 }
 
 export function hybridExternalFailure(error: unknown,

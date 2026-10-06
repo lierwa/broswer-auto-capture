@@ -103,7 +103,9 @@ function preparationNodes(preparation: z.infer<typeof hybridPreparationSchema>,
     status: { type: "string", enum: ["ready", "missing", "blocked", "ambiguous"] }, documentId: { type: "string" },
   }, required: ["status", "documentId"], additionalProperties: false })
   const readiness = (id: string): Extract<StableChainNodeV2, { kind: "capability" }> => ({ id, label: "目标就绪性",
-    kind: "capability", capability: { name: "browser.target-readiness", version: 1 }, input: {},
+    kind: "capability", capability: { name: "browser.target-readiness", version: 1 },
+    input: consumer.target.strategy === "entry" && consumer.target.entryBinding
+      ? { targetEntry: consumer.target.entryBinding } : {},
     config: jsonValueSchema.parse({ consumerSegmentId: preparation.consumerSegmentId, actionName: consumer.actionName,
       target: consumer.target }), effect: "read", timeoutMs: 5_000,
     outputContract: readinessContract, writes: [] })

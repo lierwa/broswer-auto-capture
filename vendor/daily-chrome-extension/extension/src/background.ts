@@ -15,8 +15,9 @@
  */
 
 import { debugLog } from './relayConnection';
-import { PendingConnections } from './pendingConnection';
-import { ConnectedTabGroup, ungroupTabs, uniqueGroupStyle } from './connectedTabGroup';
+import { PendingConnections, openRelayConnection } from './pendingConnection';
+import { ConnectedTabs, ungroupTabs } from './connectedTabGroup';
+import { PopupBridge } from './popupBridge';
 
 type PageMessage = {
   type: 'connectionRequested';
@@ -38,7 +39,7 @@ type PageMessage = {
 };
 
 class PlaywrightExtension {
-  private _connections = new Map<number, ConnectedTabGroup>();
+  private _connections = new Map<number, ConnectedTabs>();
   private _lastConnectionId = 0;
   private _pendingConnections = new PendingConnections();
   // Service worker restarts lose all connection state, so any existing
@@ -47,7 +48,14 @@ class PlaywrightExtension {
 
   constructor() {
     chrome.runtime.onMessage.addListener(this._onMessage.bind(this));
-    chrome.action.onClicked.addListener(this._onActionClicked.bind(this));
+    new PopupBridge(async (configuration, token) => {
+      await this._cleanupPromise;
+      if (this._connections.size) throw new Error('当前连接仍在使用，请先断开连接。');
+      const connection = await openRelayConnection(configuration.mcpRelayUrl);
+      await this._connectOwnedWindow(connection, configuration.clientName, token);
+    }, () => this._connectionStatus(), () => {
+      for (const group of this._connections.values()) group.close('User paused connection');
+    });
     // WHY：分组标题不能证明 owner；服务重启不按名称处理个人或其它扩展的历史分组。
     this._cleanupPromise = Promise.resolve();
   }
@@ -65,7 +73,7 @@ class PlaywrightExtension {
       }
       case 'connectToTab': {
         // Token-bypass (no specific pick) falls back to the connect page itself
-        // so `ConnectedTabGroup` always has a concrete tab to start from. Both
+        // so `ConnectedTabs` always has a concrete tab to start from. Both
         // sender.tab and UI-supplied tabs come from chrome.tabs.query / runtime
         // message sender, where `id` is always defined.
         this._connectTab(sender.tab!.id!, message.clientName, message.authorizationToken).then(
@@ -75,11 +83,7 @@ class PlaywrightExtension {
       }
       case 'getConnectionStatus':
         sendResponse({
-          connections: [...this._connections].map(([id, group]) => ({
-            id,
-            clientName: group.clientName,
-            connectedTabIds: group.connectedTabIds(),
-          })),
+          connections: this._connectionStatus(),
         });
         return false;
       case 'disconnect':
@@ -95,6 +99,8 @@ class PlaywrightExtension {
 
   private async _connectTab(selectorTabId: number, clientName: string | undefined, authorizationToken?: string): Promise<void> {
     try {
+      const settings = await chrome.storage.local.get('bat-connection-enabled');
+      if (settings['bat-connection-enabled'] === false) throw new Error('浏览器连接已暂停，请在扩展中开启「允许连接」。');
       await this._cleanupPromise;
       if (this._connections.size)
         throw new Error('daily_chrome_connection_busy');
@@ -104,34 +110,27 @@ class PlaywrightExtension {
       if (!connection)
         throw new Error('Pending client connection closed');
 
-      // WHY：首次信任只允许新任务窗口，不能把选中的个人页或扩展批准页交给 Agent。
-      const window = await chrome.windows.create({ url: 'about:blank', focused: true });
-      const tab = window.tabs?.[0];
-      if (!tab?.id) {
-        connection.close('Task window could not be created');
-        throw new Error('daily_chrome_task_window_missing');
-      }
+      await this._connectOwnedWindow(connection, clientName, authorizationToken);
+      await chrome.tabs.remove(selectorTabId).catch(() => {});
+    } catch (error: any) {
+      debugLog('Failed to connect task window');
+      throw error;
+    }
+  }
 
+  private async _connectOwnedWindow(connection: Awaited<ReturnType<typeof openRelayConnection>>,
+    clientName: string | undefined, authorizationToken: string | undefined) {
+    // WHY：授权只建立连接，不创建业务页面；窗口由原 operation 创建并登记所有权。
+    try {
       const id = ++this._lastConnectionId;
-      const taken = [...this._connections.values()].map(group => group.groupStyle);
-      const group = new ConnectedTabGroup(connection, tab, clientName, uniqueGroupStyle(clientName, taken),
-        tabId => this._pendingConnections.has(tabId), authorizationToken);
+      const group = new ConnectedTabs(connection, undefined, clientName, authorizationToken);
       group.onclose = () => {
         this._connections.delete(id);
-        // 只回收本连接创建的空白引导页；任务目标的关闭仍由 B-A-T 原 owner 合同承担。
-        void chrome.tabs.remove(tab.id!).catch(() => {});
       };
       this._connections.set(id, group);
 
-      await Promise.all([
-        chrome.tabs.update(tab.id, { active: true }),
-        chrome.windows.update(tab.windowId, { focused: true }),
-      ]).catch(() => {});
-
-      if (tab.id !== selectorTabId)
-        await chrome.tabs.remove(selectorTabId).catch(() => {});
-    } catch (error: any) {
-      debugLog('Failed to connect task window');
+    } catch (error) {
+      connection.close('Task window could not be initialized');
       throw error;
     }
   }
@@ -147,11 +146,9 @@ class PlaywrightExtension {
       group.releaseTab(tabId);
   }
 
-  private async _onActionClicked(): Promise<void> {
-    await chrome.tabs.create({
-      url: chrome.runtime.getURL('status.html'),
-      active: true
-    });
+  private _connectionStatus() {
+    return [...this._connections].map(([id, group]) => ({ id, clientName: group.clientName,
+      connectedTabIds: group.connectedTabIds() }));
   }
 }
 

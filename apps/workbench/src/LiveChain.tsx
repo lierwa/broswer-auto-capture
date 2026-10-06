@@ -1,92 +1,109 @@
-import { useState } from "react"
-import { Badge, Button, Callout, Dialog, DropdownMenu, Select } from "@radix-ui/themes"
+import { useEffect, useRef, useState } from "react"
+import { Badge, Button, Dialog, DropdownMenu } from "@radix-ui/themes"
 import { Ellipsis, History, MessageSquare, Play, Wrench } from "lucide-react"
 import { DraftControls } from "./ChainRevisionEditor.js"
 import { ChainRunDialog } from "./ChainRunDialog.js"
+import { PrepareTaskDialog } from "./PrepareTaskDialog.js"
 import { LiveChainCanvas, LiveChainCanvasToolbar } from "./LiveChainCanvas.js"
 import { WorkbenchContext } from "./WorkbenchContext.js"
 import { executionStatus, executionOutcome, executionFailureReason } from "./ExecutionPresentation.js"
+import { ExecutionActions } from "./ExecutionActions.js"
 import { preparationActivityLabel, useLiveChain, type LiveChainModel } from "./useLiveChain.js"
 import type { TaskChainConnection } from "./taskChainConnection.js"
 import type { TaskExecutionReviewReceipt } from "@browser-capture/contracts"
 
-export function LiveChain({ connection, active, theme, onInterview, onRequirementView, onRequirementRevision }: {
+export function LiveChain({ connection, active, theme, onInterview, onRequirementView, onRequirementRevision, attentionRequest }: {
   connection: TaskChainConnection
   active: boolean
   theme: "light" | "dark"
   onInterview(): void
   onRequirementView(version: number): void
   onRequirementRevision(review: TaskExecutionReviewReceipt): Promise<boolean>
+  attentionRequest?: { source: "interview" | "preparation" | "execution"; id: string; token: string } | undefined
 }) {
   const model = useLiveChain(connection, active)
   const [publishOpen, setPublishOpen] = useState(false)
+  const [prepareOpen, setPrepareOpen] = useState(false)
+  const [focusExecutionId, setFocusExecutionId] = useState<string | null>(null)
   const { view, workspace } = model
+  const handledAttention = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!active || !workspace || !attentionRequest || attentionRequest.source === "interview"
+      || handledAttention.current === attentionRequest.token) return
+    handledAttention.current = attentionRequest.token
+    setFocusExecutionId(attentionRequest.source === "execution" ? attentionRequest.id : null)
+    model.openContext(attentionRequest.source === "preparation" ? "preparation" : "history")
+  }, [active, Boolean(workspace), attentionRequest?.token])
   if (!workspace) return <section className="chain-workbench chain-loading"><p role="status">
     {view.error || "正在读取任务工作区…"}</p><Button onClick={() => void connection.reload()}>重新连接</Button></section>
   return <section className="chain-workbench" aria-label="链路画布">
     <WorkbenchToolbar model={model} connection={connection} onInterview={onInterview}
-      onPublish={() => setPublishOpen(true)} />
-    {view.error && <Callout.Root className="workbench-alert" color="red"><Callout.Text>{view.error}</Callout.Text>
-      {view.pending && <Button size="1" onClick={() => view.pending?.type === "review_execution"
-        ? model.openContext("execution") : void connection.retry()}>重试同一请求</Button>}
-      {view.errorCode === "browser_profile_busy" && <Button size="1" variant="soft"
-        onClick={() => void connection.closeBrowserProfileAndRetry()}>关闭账号浏览器后重试</Button>}
-    </Callout.Root>}
-    <ExecutionStrip model={model} />
-    {!model.build && (!model.chain || !model.presentation) ? <div className="chain-layout"
+      onPublish={() => setPublishOpen(true)} onPrepare={() => setPrepareOpen(true)} />
+    {!model.build && (!model.chain || !model.presentation) && !model.plan?.steps.length ? <div className="chain-layout"
       data-inspector-open={Boolean(model.contextMode)}>
-        <EmptyCanvas model={model} connection={connection} onInterview={onInterview} />
-        <WorkbenchContext model={model} connection={connection}
-          onRequirementView={onRequirementView}
+        <EmptyCanvas model={model} connection={connection} onInterview={onInterview} onPrepare={() => setPrepareOpen(true)} />
+        <WorkbenchContext model={model} connection={connection} focusExecutionId={focusExecutionId} onFocusHandled={() => setFocusExecutionId(null)}
+          onPrepare={() => setPrepareOpen(true)} onRequirementView={onRequirementView}
           onRequirementRevision={onRequirementRevision} />
       </div>
       : <div className="chain-layout" data-inspector-open={Boolean(model.selectedNode || model.selectedStage || model.contextMode)}>
         <LiveChainCanvas model={model} active={active} theme={theme} />
-        <WorkbenchContext model={model} connection={connection}
-          onRequirementView={onRequirementView}
+        <WorkbenchContext model={model} connection={connection} focusExecutionId={focusExecutionId} onFocusHandled={() => setFocusExecutionId(null)}
+          onPrepare={() => setPrepareOpen(true)} onRequirementView={onRequirementView}
           onRequirementRevision={onRequirementRevision} />
       </div>}
     {model.runDialogMode && <ChainRunDialog open mode={model.runDialogMode} workspace={workspace} connection={connection}
       onOpenChange={(open) => { if (!open) model.setRunDialogMode(null) }} />}
     <PublishDialog open={publishOpen} onOpenChange={setPublishOpen} model={model} connection={connection} />
+    <PrepareTaskDialog open={prepareOpen} onOpenChange={setPrepareOpen} workspace={workspace} connection={connection} />
   </section>
 }
 
-function WorkbenchToolbar({ model, connection, onInterview, onPublish }: {
+function WorkbenchToolbar({ model, connection, onInterview, onPublish, onPrepare }: {
   model: LiveChainModel
   connection: TaskChainConnection
   onInterview(): void
   onPublish(): void
+  onPrepare(): void
 }) {
-  const { workspace, draft, release, steps, step, activityRunning, executionRunning, view } = model
+  const { workspace, draft, release, activityRunning, executionRunning, view } = model
   if (!workspace) return null
   const activity = workspace.activity
-  return <header className="chain-command-bar">
+  const execution = model.selectedExecution
+  const runPending = view.pending?.type === "run_task" || view.pending?.type === "trial_task_draft"
+  const uncertain = runPending && view.pendingUncertain
+  return <header className="chain-command-bar" aria-label="运行控制">
     <div className="chain-surface-identity">
       <Badge color={model.build ? "gray" : draft ? "amber" : release ? "green" : "gray"} variant="soft">
         {model.build ? "生成片段" : draft ? "工作草稿" : release ? `已发布 V${release.reference.version}` : "等待生成"}
       </Badge>
+      <ExecutionState model={model} />
       {activity && (model.build || model.chain && model.presentation) && <button className="activity-chip" data-status={activity.status}
         onClick={() => model.openContext("preparation")}>
-        <i aria-hidden="true" />{preparationActivityLabel(activity.phase, activity.status)}</button>}
-      {steps.length > 1 && step && <Select.Root value={step.stepId} onValueChange={model.setStepId}>
-        <Select.Trigger aria-label="任务步骤" /><Select.Content>{steps.map((item) =>
-          <Select.Item value={item.stepId} key={item.stepId}>{model.plan?.steps.find((entry) => entry.id === item.stepId)?.title
-            ?? item.stepId}</Select.Item>)}</Select.Content>
-      </Select.Root>}
+        <i aria-hidden="true" />{!model.build ? "准备记录：" : ""}{preparationActivityLabel(activity.phase, activity.status)}</button>}
+      {model.build?.compilation && <button className="activity-chip" data-status={model.build.compilation.issues.length ? "failed" : activity?.status}
+        onClick={() => model.openContext("preparation")}>
+        <i aria-hidden="true" />已记录 {model.build.compilation.observedActions} 个动作
+        {model.build.compilation.issues.length > 0 ? " · 编译有缺口" : ""}
+      </button>}
       {model.presentation && <LiveChainCanvasToolbar model={model} />}
     </div>
     <div className="chain-run-controls">
+      {execution && <ExecutionActions execution={execution} connection={connection} />}
+      {view.error && !model.runDialogMode && !runPending && !(view.pending?.type === "review_execution"
+        && (model.selectedNode?.kind === "terminal" || model.contextMode === "history")) && <span className="run-action-error" role="alert" title={view.error}>{view.error}
+        {(view.pending || view.pendingHandoff) && <Button size="1" variant="ghost" disabled={view.busy} onClick={() => view.pending?.type === "review_execution"
+          ? model.openTerminal() : void connection.retry()}>重试</Button>}</span>}
       {(model.chain || model.build) && activity?.status === "waiting_for_human" && <Button size="1" onClick={() => model.openContext("preparation")}>
         {activity.waitpoint?.status === "waiting" ? "处理人工请求" : activity.inputRequest ? "处理所需输入" : "查看等待原因"}</Button>}
       {(model.chain || model.build) && activity && ["failed", "interrupted"].includes(activity.status) && <Button size="1" variant="soft"
         onClick={() => model.openContext("preparation")}>查看原因与继续操作</Button>}
       {draft && <DraftControls readiness={workspace.draftReadiness} busy={view.busy || activityRunning || Boolean(model.build)} running={executionRunning}
         onTrial={() => model.setRunDialogMode("trial")} onPublish={onPublish} />}
-      {!draft && release && <Button size="1" disabled={view.busy || activityRunning
-        || executionRunning && model.selectedExecution?.status !== "cleanup_required" || Boolean(model.build)}
-        onClick={() => model.setRunDialogMode("run")}><Play size={13} fill="currentColor" />
-        {model.selectedExecution ? "再次运行" : "运行"}</Button>}
+      {uncertain ? <Button size="1" onClick={() => model.setRunDialogMode(view.pending?.type === "trial_task_draft" ? "trial" : "run")}>核验启动</Button>
+        : !draft && release && <Button size="1" disabled={view.busy || view.pendingUncertain || activityRunning || executionRunning || Boolean(model.build)}
+          onClick={() => model.setRunDialogMode("run")}><Play size={13} fill="currentColor" />
+          {model.selectedExecution ? "再次运行" : "运行"}</Button>}
       <DropdownMenu.Root><DropdownMenu.Trigger><Button size="1" variant="ghost" color="gray" aria-label="更多操作">
         <Ellipsis size={15} /></Button></DropdownMenu.Trigger><DropdownMenu.Content align="end">
         {draft && release && <DropdownMenu.Item disabled={activityRunning || executionRunning || Boolean(model.build)} onSelect={() => model.setRunDialogMode("run")}>
@@ -94,30 +111,30 @@ function WorkbenchToolbar({ model, connection, onInterview, onPublish }: {
         <DropdownMenu.Item onSelect={() => model.openContext("history")}><History size={13} />历史记录</DropdownMenu.Item>
         <DropdownMenu.Item onSelect={() => model.openContext("diagnostics")}><Wrench size={13} />诊断详情</DropdownMenu.Item>
         {workspace.requirement && <DropdownMenu.Item disabled={view.busy || activityRunning || executionRunning}
-          onSelect={() => void connection.dispatch({ type: "prepare_task", requestId: crypto.randomUUID(),
-            requirementVersion: workspace.requirement!.version })}>重新准备当前需求</DropdownMenu.Item>}
+          onSelect={onPrepare}>重新准备当前需求</DropdownMenu.Item>}
         <DropdownMenu.Separator /><DropdownMenu.Item onSelect={onInterview}><MessageSquare size={13} />返回需求对话</DropdownMenu.Item>
       </DropdownMenu.Content></DropdownMenu.Root>
     </div>
   </header>
 }
 
-function ExecutionStrip({ model }: { model: LiveChainModel }) {
+function ExecutionState({ model }: { model: LiveChainModel }) {
   const execution = model.selectedExecution
   const accepted = model.acceptedExecutionId
   if (!execution && !accepted) return null
   const outcome = execution ? executionOutcome(execution) : null
-  return <button className="execution-strip" data-tone={outcome?.status ?? "accepted"}
-    onClick={() => model.openContext("execution")} aria-live="polite">
-    <i aria-hidden="true" /><span><strong>{outcome ? executionStatus(outcome.status) : "已提交"}</strong>
-      <small>{outcome?.status === "failed" && execution ? executionFailureReason(execution, model.detail?.startupFailure)
-        : outcome?.result?.summary ?? (execution ? "查看本次结果" : "排队中")}</small></span>
-    <span className="execution-strip-action">{outcome?.status === "failed" ? "查看失败原因" : "查看结果"}</span>
-  </button>
+  const state = execution?.status === "cleanup_required" ? `${outcome ? executionStatus(outcome.status) : ""} · 资源待核验`
+    : outcome ? executionStatus(outcome.status) : "已提交"
+  const reason = outcome?.status === "failed" && execution
+    ? executionFailureReason(model.detail?.execution ?? execution, model.detail?.startupFailure)
+    : ["waiting_for_human", "paused"].includes(execution?.status ?? "") ? model.detail?.execution.reason ?? "请在网站处理后继续" : null
+  return <span className="run-state" data-tone={outcome?.status ?? "accepted"} aria-live="polite"
+    title={`运行 ${execution?.id ?? accepted}`}><i aria-hidden="true" /><strong>{state}</strong>
+    <small>{(execution?.id ?? accepted)?.slice(0, 8)}</small>{reason && <span title={reason}>{reason}</span>}</span>
 }
 
-function EmptyCanvas({ model, connection, onInterview }: {
-  model: LiveChainModel; connection: TaskChainConnection; onInterview(): void
+function EmptyCanvas({ model, connection, onInterview, onPrepare }: {
+  model: LiveChainModel; connection: TaskChainConnection; onInterview(): void; onPrepare(): void
 }) {
   const workspace = model.workspace
   return <div className="empty-chain-canvas">
@@ -130,8 +147,7 @@ function EmptyCanvas({ model, connection, onInterview }: {
       : workspace?.activity && ["failed", "interrupted"].includes(workspace.activity.status)
         ? <Button onClick={() => model.openContext("preparation")}>查看原因与继续操作</Button>
       : workspace?.requirement && !workspace.activity ? <Button disabled={model.view.busy}
-        onClick={() => void connection.dispatch({ type: "prepare_task", requestId: crypto.randomUUID(),
-          requirementVersion: workspace.requirement!.version })}>生成草稿</Button>
+        onClick={onPrepare}>生成草稿</Button>
         : !workspace?.activity && <Button variant="soft" onClick={onInterview}>前往需求对话</Button>}
   </div>
 }

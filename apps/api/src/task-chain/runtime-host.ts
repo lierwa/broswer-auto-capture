@@ -1,5 +1,6 @@
 import { assertExecutionBrowserSupported, assertWorkflowRuntimeSupported, usesHybridBrowserRuntime } from "../upstream-browser/retirement.js"
 import { z } from "zod"
+import { persistContentArtifacts } from "./content-artifacts.js"
 import {
   CONTRACT_VERSION, parseTaskValue, taskRunSchema, type JsonValue, type TaskChain, type TaskRun,
   type TaskDataContract, type TaskBudget, type TaskConsumption, type TaskExecution, type TaskRunMode, type TaskRunRequest,
@@ -40,7 +41,7 @@ type RuntimeGroup = Readonly<{
   scopeBudgets?: Readonly<Record<string, TaskBudget>>;
   onConsumption?: (scopeId: string, snapshot: BudgetSnapshot) => void;
   onCleanup?: (report: RunnerCleanupReport) => void;
-  managedWindow?: { ownerId: string; resume: boolean };
+  managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] };
   handoffPurpose?: () => "delivery" | "human_wait" | null;
   onHandoff?: (purpose: "delivery" | "human_wait", lease: z.infer<typeof hybridWindowLeaseSchema>) => void;
   onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
@@ -251,6 +252,12 @@ export class TaskRuntimeHost {
         // WHY：正式运行只释放本 operation；同任务父连接由已有取消、交付和服务退出边界关闭。
         connectionOwnerId: input.taskId,
         allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation,
+        // WHY：由已核验的不可变 invoke 闭包证明只读；请求/自然语言不能声明免身份检查。
+        publicRead: closure.every(chain => chain.nodes.every(node => node.kind === "capability"
+          ? node.capability.name === "browser.workflow-step"
+            ? z.object({ actionName: z.literal("navigate") }).passthrough().safeParse(node.config).success
+            : node.effect === "read" && ["browser.read-fields", "browser.target-readiness"].includes(node.capability.name)
+          : !["llm", "browser", "human"].includes(node.kind))),
         ...(input.browser ? { headless: input.browser.headless,
           browserMode: input.browser.mode ?? (input.browser.headless ? "dedicated-headless" : "daily") } : {}),
         ...(input.managedWindow ? { managedWindow: input.managedWindow } : {}),
@@ -301,6 +308,10 @@ export class TaskRuntimeHost {
         prepare?.(scopeId)
       }
       const capabilities: TaskChainCapabilities = { ...base,
+        ...(base.capability ? { capability: async (invocation) => {
+          const result = await base.capability!.call(capabilities, invocation)
+          return persistContentArtifacts(this.repository, chain.taskId, request.binding.runId, invocation.config, result)
+        } } : {}),
         ...(prepare ? { browserCommandCount: () => ledger.scopeConsumption(scopeId).browserCommands } : {}),
         accountConsumption: (delta, accountingMode) => {
           const { activeMs: _childActiveMs, ...withoutActiveMs } = delta

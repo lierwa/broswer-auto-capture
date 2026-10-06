@@ -99,6 +99,31 @@ test("过期 execution 会把恢复中的 step 结算为 blocked", async () => {
   assert.equal(current.record.steps[0]?.reason, "需求或计划版本已变化，原授权不能继续执行。")
 })
 
+test("恢复完成状态步骤时保留 null 输出，后步仍能绑定它", async () => {
+  // WHY：只隔离已完成/等待步骤的恢复绑定；浏览器清理组合由本文件现有 execute 测试覆盖。
+  const current = fixture(false), plan = structuredClone(current.repository.plan("", "", 1))
+  const chain = current.repository.chain("", "", 1), first = plan.steps[0]!
+  const next = { ...first, id: "next", dependsOn: [first.id],
+    input: { source: "node" as const, nodeId: first.id, path: [] }, invocation: { mode: "once" as const },
+    inputContract: { ...first.inputContract, schema: { type: "null" as const } } }
+  plan.steps = [first, next]
+  plan.output = { source: "node", nodeId: "next", path: [] }
+  plan.outputContract = first.outputContract
+  const prior = current.record.steps[0]!
+  current.record.steps = [{ ...prior, status: "completed", output: null },
+    { ...structuredClone(prior), stepId: "next", status: "paused" }]
+  const executor = current.executor as unknown as { runSteps(record: TaskExecution, currentPlan: typeof plan,
+    chains: TaskChain[], execute: (chain: TaskChain, request: { input: JsonValue }) => Promise<TaskRun>,
+    signal: AbortSignal, resume: boolean): Promise<void> }
+  let calls = 0
+  await executor.runSteps(current.record, plan, [chain, chain], async (selected, request) => {
+    assert.equal(request.input, null); calls++
+    return completedRun(selected, request as never, { id: "next", value: "已恢复" })
+  }, new AbortController().signal, true)
+  assert.equal(calls, 1)
+  assert.equal(current.record.steps[1]!.status, "completed")
+})
+
 function fixture(failFirst: boolean, cleanup?: RunnerCleanupReport, primaryError?: Error,
   failureMode: "external" | "deterministic" = "external", confirmedVersion = 1) {
   const taskId = "access-pressure-task", now = "2026-09-13T00:00:00.000Z"

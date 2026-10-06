@@ -4,6 +4,7 @@ from .causal import DELAYED_EFFECTS, clock_value, continuous_wait_boundary
 from .evidence import gap
 from .natural_readiness import NATURAL_SETTLE
 from .postconditions import declared_checks
+from .fixed_control_dispatch import document_identity
 
 
 def bind_recorded_playback(trace, registry, segments):
@@ -23,6 +24,14 @@ def bind_recorded_playback(trace, registry, segments):
 
 def bind_action_playback(action, observations, owners):
     post = observations.get(action.postObservationRef)
+    before = observations.get(action.preObservationRef)
+    # WHY：新页自动播放是页面观察，不能把进入详情/后台页改造成播放任务。
+    if action.name == 'navigate' or (before is not None and post is not None
+            and (before.tabId != post.tabId or before.url != post.url)):
+        return []
+    before_document, after_document = document_identity(before), document_identity(post)
+    if before_document is not None and after_document is not None and before_document != after_document:
+        return []
     fact, ambiguous = recorded_playing(post)
     if ambiguous:
         return [playback_gap(action, 'media_playback_fact_ambiguous')]

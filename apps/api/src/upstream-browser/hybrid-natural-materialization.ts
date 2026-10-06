@@ -6,6 +6,7 @@ import { hybridNaturalRequestSchema, naturalBindingFactValueSchema, readSpecific
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
 import { jsonValueAtPath } from "./hybrid-json-path.js"
 import { assertSelectionValueBinding } from "./hybrid-selection.js"
+import { assertPriorBrowserContext } from "./hybrid-browser-context.js"
 
 type NaturalContext = { version: 2; request: z.infer<typeof hybridNaturalRequestSchema>;
   payload: ReturnType<typeof naturalPayloadContext> }
@@ -15,7 +16,8 @@ export function assertNaturalBinding(raw: unknown, trace: z.infer<typeof hybridN
   const decision = z.object({ actionRef: z.string(), argumentPath: z.string(), sourceRef: z.string(),
     binding: valueBindingSchema, proofRefs: z.array(z.object({ ref: z.string(),
       digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
-    derivation: z.enum(["anchor_navigation", "prior_verified_read", "selection_function"]).optional() }).passthrough().parse(raw)
+    derivation: z.enum(["anchor_navigation", "prior_verified_read", "selection_function", "prior_browser_context"]).optional() }).passthrough().parse(raw)
+  if (decision.derivation === "prior_browser_context") return assertPriorBrowserContext(decision, trace, payload)
   if (decision.derivation === "selection_function") return assertSelectionValueBinding(decision, trace, payload.assertFact)
   if (decision.derivation === "anchor_navigation") {
     return assertAnchorNavigationBinding(decision, trace, payload)
@@ -227,6 +229,13 @@ export function assertNaturalReadSegment(segment: Extract<HybridSegment, { kind:
     }
     context.payload.assertFact(fact, observation.id)
     const value = z.object({ actionRef: z.string(), specification: readSpecificationSchema }).passthrough().parse(fact.value)
+    for (const name of value.specification.inheritFields ?? []) {
+      const input = context.request.runtimeInputSchema, schema = value.specification.outputSchema
+      const output = schema.type === "array" ? schema.items : schema
+      if (input.type !== "object" || output.type !== "object" || !isDeepStrictEqual(input.properties[name], output.properties[name])
+        || !input.properties[name] || output.required.includes(name) && !input.required.includes(name)
+          && !Object.hasOwn(value.specification.fields, name)) throw new Error("hybrid_natural_read_input_schema_mismatch")
+    }
     if (value.actionRef !== actionRef || !isDeepStrictEqual(
       { ...value.specification, maxInputBytes: value.specification.maxInputBytes ?? 128000 }, segment.operation.specification)
       || !isDeepStrictEqual(output.schema, value.specification.outputSchema)) {

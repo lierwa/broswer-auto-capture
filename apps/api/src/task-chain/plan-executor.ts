@@ -13,19 +13,42 @@ import { executionCleanupAuditSchema, RuntimeCleanupRequiredError, RUNNER_CLEANU
   type ExecutionCleanupAudit, type RunnerCleanupReport } from "../upstream-browser/cleanup.js"
 import { UpstreamProtocolError, type UpstreamBrowserRuntime } from "../upstream-browser/service.js"
 
+export function exitedOwnedRunner(record: TaskExecution, prior: ExecutionCleanupAudit | undefined) {
+  // WHY：close ACK/自然退出超时不是进程仍活跃；已确认的进程树终止同样证明原控制器已退出。
+  return prior?.ownerId === stableUuid(record.id, "managed-window") && prior.stages.length === RUNNER_CLEANUP_STAGES.length
+    && RUNNER_CLEANUP_STAGES.every(name => prior.stages.some(stage => stage.stage === name
+      && (["browser_close", "close_protocol", "child_exit"].includes(name) || stage.status !== "unconfirmed")))
+    && prior.stages.some(stage => ["child_exit", "process_tree"].includes(stage.stage) && stage.status === "confirmed")
+}
+
 export async function verifyClosedExecutionBrowser(record: TaskExecution, prior: ExecutionCleanupAudit | undefined,
   upstream: UpstreamBrowserRuntime, controllerActive: boolean) {
-  const ownerId = stableUuid(record.id, "managed-window")
-  if (!prior || prior.ownerId !== ownerId || !upstream.managedWindowAction || controllerActive
-    || prior.stages.length !== RUNNER_CLEANUP_STAGES.length
-    || !RUNNER_CLEANUP_STAGES.every(name => prior.stages.some(stage => stage.stage === name
-      && (name === "browser_close" || stage.status !== "unconfirmed")))
-    || !prior.stages.some(stage => stage.stage === "child_exit" && stage.status === "confirmed")) return false
+  const ownerId = stableUuid(record.id, "managed-window"), exited = exitedOwnedRunner(record, prior)
+  const missingStartup = prior?.source === "owner_verification" && prior.stages.length === 0
+    && [ownerId, stableUuid(record.id, "cleanup-owner")].includes(prior.ownerId) && Boolean(record.release)
+    && record.steps.every(step => step.runIds.length === 0) && record.browserHandoff.ownerId === ownerId
+    && record.browserHandoff.leaseId === ownerId && !record.browserHandoff.purpose && !record.browserHandoff.targetDigest
+  if (!upstream.managedWindowAction || controllerActive || !missingStartup && !exited) return false
   // WHY：复用原 owner 核验与退出审计；不关闭用户 Chrome，也不把另一个 relay 的空列表当成证明。
   try {
-    const result = await upstream.managedWindowAction({ action: "verify_closed", ownerId, leaseId: ownerId })
+    const browserMode = record.browser?.mode ?? (record.browser?.headless ? "dedicated-headless" : "daily")
+    let result
+    try { result = await upstream.managedWindowAction({ action: "verify_closed", ownerId, leaseId: ownerId, browserMode }) }
+    catch (error) {
+      // WHY：重启后的只读 relay 可能无法证明物理目标；已证实控制器退出才允许原 owner 的原生 end。
+      if (!exited || record.browserHandoff.purpose === "human_wait") throw error
+      result = await upstream.managedWindowAction({ action: "end", ownerId, leaseId: ownerId, browserMode, controllerReleased: true })
+    }
+    if (exited && record.browserHandoff.purpose === "human_wait" && record.browserHandoff.status === "active"
+      && result.report.status === "confirmed" && result.window.active && result.window.ownerId === ownerId
+      && result.window.leaseId === ownerId && (browserMode !== "daily" || result.window.reason === "hybrid_attached_window_handoff_verified"))
+      return "retained" as const
+    // WHY：正常退出报告只剩 owned 浏览器未释放时自动结束；人工等待和缺失 runner 报告不能取得额外关闭权限。
+    if (exited && result.report.status === "confirmed" && result.window.active
+      && result.window.ownerId === ownerId && result.window.leaseId === ownerId && record.browserHandoff.purpose !== "human_wait")
+      result = await upstream.managedWindowAction({ action: "end", ownerId, leaseId: ownerId, browserMode, controllerReleased: true })
     return result.report.status === "confirmed" && result.window.ownerId === ownerId
-      && result.window.leaseId === ownerId && result.window.active === false
+      && result.window.leaseId === ownerId && result.window.active === false ? "closed" as const : false
   } catch { return false }
 }
 
@@ -63,7 +86,9 @@ export class TaskPlanExecutor {
         requirementVersion: record.requirement.version, purpose: record.mode ?? "replay", chains, input: record.input, signal,
         ...(record.browser || !record.mode || record.mode === "replay"
           ? { browser: record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER } : {}),
-        ...(managedWindow ? { managedWindow: { ownerId: browserRunId, resume: resumingWindow },
+        ...(managedWindow ? { managedWindow: { ownerId: browserRunId, resume: resumingWindow,
+          releasedOwners: resumingWindow ? [] : this.store.releasedBrowserWindowOwners(record.browser?.mode === "daily"
+            || (!record.browser?.mode && !record.browser?.headless) ? "daily" : "dedicated") },
           handoffPurpose: () => record.status === "waiting_for_human" || record.status === "paused" ? "human_wait" as const
             : record.status === "completed" && plan.browserHandoff === "keep_open" ? "delivery" as const : null,
           onHandoff: (purpose, lease) => {
@@ -104,7 +129,7 @@ export class TaskPlanExecutor {
             this.confirmCleanup(record, observedCleanup.report.evidenceDigest)
             this.settleReleasedStartup(record, observedCleanup, resumingWindow)
           } else {
-            const evidence = this.saveOwnerVerification(record, stableUuid(record.id, "cleanup-owner"), false,
+            const evidence = this.saveOwnerVerification(record, record.browserHandoff.ownerId ?? stableUuid(record.id, "managed-window"), false,
               "runtime_cleanup_report_missing")
             this.requireCleanup(record, "runtime_cleanup_report_missing", evidence)
           }
@@ -160,6 +185,10 @@ export class TaskPlanExecutor {
         { classification: "budget", code: "execution_budget_exceeded", repairable: false })
     }
     // WHY：没有任何链路调用的上游启动失败不授权模型修图；类型与调用事实分类，不猜原生授权或网络根因。
+    if (error instanceof Error && error.message.startsWith("workflow_fork_") && record.steps.every(step => step.runIds.length === 0)) {
+      return this.finish(record, "failed", `运行失败：${error.message}`,
+        { classification: "external", code: "workflow_source_preflight_failed", repairable: false })
+    }
     if (error instanceof UpstreamProtocolError && record.steps.every(step => step.runIds.length === 0)) {
       return this.finish(record, "failed", `运行失败：${error.message}`,
         { classification: "external", code: error.code, repairable: false })
@@ -230,7 +259,8 @@ export class TaskPlanExecutor {
     for (const step of plan.steps) {
       const progress = record.steps.find((item) => item.stepId === step.id)!
       if (progress.status === "completed" || progress.status === "partial") {
-        if (progress.output !== null) context.nodeOutputs[step.id] = progress.output
+        // WHY：完成状态的 null 也是已完成输出；恢复不能把它当成未执行。
+        context.nodeOutputs[step.id] = progress.output
         continue
       }
       if (["paused", "waiting_for_human"].includes(progress.status) && !resume) return

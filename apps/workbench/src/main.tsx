@@ -14,11 +14,12 @@ import "@radix-ui/themes/styles.css";
 import "@xyflow/react/dist/style.css";
 import "@agent-platform/ai-connect-react/styles.css";
 import { useTasks } from "./useTasks.js";
-import { TaskSidebar, TaskMenu } from "./TaskSidebar.js";
+import { TaskSidebar } from "./TaskSidebar.js";
 import { TaskWorkspace } from "./TaskWorkspace.js";
 import { useModelSettings } from "./useModelSettings.js";
 import { BrowserEnvironmentDialog } from "./BrowserEnvironmentDialog.js";
 import { useTaskAttention } from "./useTaskAttention.js";
+import { useDailyChromePopupBridge } from "./useDailyChromePopupBridge.js";
 import "./styles.css";
 import "./chat.css";
 import "./workbench.css";
@@ -33,12 +34,15 @@ function subscribe(callback: () => void) {
 function App() {
   const model = useTasks();
   const [theme, setTheme] = useState<"light" | "dark">("dark");
+  useDailyChromePopupBridge();
   const compact = useSyncExternalStore(
     subscribe,
     () => matchMedia("(max-width: 1099px)").matches,
     () => false,
   );
   const [sidebarOpen, setSidebarOpen] = useState(() => innerWidth >= 1100);
+  // WHY：缩窄窗口不能把桌面侧栏变成遮住当前运行 Dialog 的第二个模态窗口。
+  useEffect(() => { if (compact) setSidebarOpen(false) }, [compact]);
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [browserProfileOpen, setBrowserProfileOpen] = useState(false);
   const modelSettings = useModelSettings();
@@ -53,6 +57,7 @@ function App() {
     if (compact) setSidebarOpen(false);
   }
   const attention = useTaskAttention(model.tasks, model.ready);
+  const [attentionRequest, setAttentionRequest] = useState<{ taskId: string; source: "interview" | "preparation" | "execution"; id: string; token: string }>();
   const sidebar = (
     <TaskSidebar
       model={model}
@@ -83,7 +88,7 @@ function App() {
           </aside>
         )}
         {compact && (
-          <Dialog.Root open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <Dialog.Root open={sidebarOpen && !browserProfileOpen && !modelSettingsOpen} onOpenChange={setSidebarOpen}>
             <Dialog.Content className="task-nav-drawer" maxWidth="300px">
               <Dialog.Title className="sr-only">任务列表</Dialog.Title>
               <Dialog.Description className="sr-only">
@@ -109,26 +114,31 @@ function App() {
               <h1 title={task?.title ?? "浏览器工作台"}>{task?.title ?? "浏览器工作台"}</h1>
             </div>
             <div className="status-group">
-              {attention.visible.length > 0 && <DropdownMenu.Root>
+              <DropdownMenu.Root>
                 <DropdownMenu.Trigger><IconButton className="task-attention-trigger" variant="ghost"
-                  color="gray" aria-label={attention.actionCount
-                    ? `任务提醒，${attention.actionCount} 项待处理` : "任务提醒"}>
+                  color="gray" aria-label={attention.unreadCount
+                    ? `任务提醒，${attention.unreadCount} 条未读` : "任务提醒"}>
                   <Bell aria-hidden="true" size={17} />
-                  {attention.actionCount > 0 && <span className="task-attention-count" aria-hidden="true">
-                    {attention.actionCount > 9 ? "9+" : attention.actionCount}</span>}
+                  {attention.unreadCount > 0 && <span className="task-attention-count" aria-hidden="true">
+                    {attention.unreadCount > 9 ? "9+" : attention.unreadCount}</span>}
                 </IconButton></DropdownMenu.Trigger>
                 <DropdownMenu.Content className="task-attention-menu" align="end">
                   <DropdownMenu.Label>任务提醒</DropdownMenu.Label>
+                  {attention.unreadCount > 0 && <DropdownMenu.Item className="task-attention-read-all"
+                    onSelect={attention.markAllRead}>全部标为已读</DropdownMenu.Item>}
+                  {!attention.visible.length && <div className="task-attention-empty">暂无任务提醒</div>}
                   {attention.visible.map((item) => <DropdownMenu.Item key={`${item.id}:${item.attention!.id}`}
-                    onSelect={() => { select(item.id); if (item.attention!.kind !== "action_required") attention.dismiss(item) }}>
+                    data-unread={attention.isUnread(item)} onSelect={() => {
+                      select(item.id); attention.markRead(item);
+                      setAttentionRequest({ taskId: item.id, source: item.attention!.source, id: item.attention!.id, token: crypto.randomUUID() });
+                    }}>
                     <span className="task-attention-entry"><strong>{item.title}</strong>
-                      <small>{item.attention!.message}</small></span>
+                      <small>{item.attention!.message}</small><span className="task-attention-action">查看详情 →</span></span>
                   </DropdownMenu.Item>)}
                 </DropdownMenu.Content>
-              </DropdownMenu.Root>}
-              {task && <TaskMenu task={task} model={model} />}
-              <Tooltip content="浏览器环境">
-                <IconButton variant="ghost" color="gray" aria-label="浏览器环境"
+              </DropdownMenu.Root>
+              <Tooltip content="浏览器设置">
+                <IconButton variant="ghost" color="gray" aria-label="浏览器设置"
                   onClick={() => setBrowserProfileOpen(true)}>
                   <CircleUserRound aria-hidden="true" size={18} />
                 </IconButton>
@@ -187,6 +197,7 @@ function App() {
                   theme={theme}
                   otherRunning={running?.id !== id ? running : undefined}
                   modelSettings={modelSettings}
+                  attentionRequest={attentionRequest?.taskId === id ? attentionRequest : undefined}
                 />
               )
             );
@@ -228,7 +239,8 @@ function App() {
           selectOnConnect
           requiredSurface="agentSession"
         />
-        <BrowserEnvironmentDialog open={browserProfileOpen} onOpenChange={setBrowserProfileOpen} />
+        <BrowserEnvironmentDialog open={browserProfileOpen} onOpenChange={setBrowserProfileOpen}
+          onTask={id => { select(id); setBrowserProfileOpen(false); }} />
       </main>
     </Theme>
   );

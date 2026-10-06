@@ -9,6 +9,7 @@ from .field_read_evidence import FieldReadEvidenceFailure
 from .method_read_tool import MethodReadRecord, MethodReadToolParams, expand_method_read_params, method_read_model_result
 from .natural_reads import VerifiedNaturalRead, schema_at_path, value_at_path
 from .read import ReadSampleCoverage
+from .entry_selection import assert_entry_sample
 
 
 def verified_method_read(*, records, start, arguments, results, result_ref, action_ref):
@@ -47,10 +48,14 @@ def _validated_record(record, arguments, records, start):
     try:
         params = MethodReadToolParams.model_validate(arguments)
         checked = MethodReadRecord.model_validate(record.model_dump(mode='json'))
-        expanded, expected = records.resolve(params, before=start)
+        expanded, expected = records.resolve(params, before=start, selection=checked.selection)
+        assert_entry_sample(checked.selection, checked.sample)
     except Exception as error:
         raise FieldReadEvidenceFailure('natural_field_read_mapping_invalid') from error
     if (digest(checked.parameters) != digest(expanded) or digest(expected) != digest(checked.mapping)):
+        raise FieldReadEvidenceFailure('natural_field_read_mapping_mismatch')
+    if checked.selection is not None and (checked.selection.targetId != checked.sample.pageIdentity['targetId']
+            or checked.selection.urlDigest != digest(checked.sample.pageIdentity['url'])):
         raise FieldReadEvidenceFailure('natural_field_read_mapping_mismatch')
     return checked
 
@@ -98,6 +103,10 @@ def _validate_sample_output(specification, output, coverage, document_root_id, r
     maximum = source['maxItems'] if source.get('type') == 'array' else specification.maxItems
     expected_count = min(coverage.total, maximum, 3)
     actual_count = len(selected) if isinstance(selected, list) else 1
+    if specification.take is not None and (coverage.matched is None
+            or coverage.matched > specification.maxItems
+            or coverage.total != min(coverage.matched, specification.take)):
+        raise FieldReadEvidenceFailure('natural_field_read_take_coverage_mismatch')
     if (coverage.sampleLimit != 3 or coverage.sampled != expected_count
             or actual_count != coverage.sampled or coverage.total > maximum
             or coverage.runtimeTruncated or type(document_root_id) is not int or document_root_id <= 0):
@@ -108,16 +117,21 @@ def _validate_sample_output(specification, output, coverage, document_root_id, r
                                       kind='missing_effect_proof', resolution='collect_evidence')
 
 
-def validate_method_read_mapping(value, output_schema, action, trace=None):
+def validate_method_read_mapping(value, output_schema, action, trace=None, input_schema=None):
     if action.name != 'bat_read_fields':
         raise ValueError('verified_read_action_mismatch')
     try:
         params = MethodReadToolParams.model_validate(action.args)
         if params.readRef is None:
-            expected = expand_method_read_params(params, output_schema)
+            if params.indices is not None:
+                from .entry_selection import proven_entry_container
+                container = proven_entry_container(action, trace, value)
+                params = params.model_copy(update={'indices': None, 'container': container})
+            expected = expand_method_read_params(params, output_schema,
+                inherit_fields=value.specification.inheritFields, input_schema=input_schema)
         else:
             from .method_read_reference import referenced_method_mapping
-            expected = referenced_method_mapping(params.readRef, action, trace, output_schema)
+            expected = referenced_method_mapping(params.readRef, action, trace, output_schema, input_schema)
     except Exception as error:
         raise ValueError('verified_read_mapping_invalid') from error
     if (expected.outputPath != value.outputPath or expected.readPath != value.readPath

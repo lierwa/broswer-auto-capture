@@ -7,9 +7,45 @@ import { TaskChainAuthoring } from "../src/task-chain/authoring.js"
 import { reusableHybridSources } from "../src/task-chain/hybrid-source-reuse.js"
 import { UpstreamProtocolError } from "../src/upstream-browser/service.js"
 import { hybridSourceMediaType } from "../src/upstream-browser/hybrid-artifact.js"
+import { TaskPreparationCoordinator } from "../src/task-chain/preparation.js"
 
 const hash = "a".repeat(64)
 const selection = { connectionId: randomUUID(), modelId: "fixture", reasoningEffort: "medium" as const }
+
+test("试跑失败后的恢复沿明确来源 owner，且只替换本次未修改的草稿", () => {
+  const reference = { id: "draft", revision: 1, checksum: hash }
+  let draft = { ...reference, updatedAt: "2026-10-06T05:00:00.000Z" }
+  const owners: string[] = []
+  const coordinator = new TaskPreparationCoordinator({} as never, { draft: () => draft } as never,
+    { assertReusableSources: (...args: unknown[]) => { owners.push(args[4] as string) } } as never,
+    () => { throw Error("unexpected_execution") }, () => {})
+  Object.assign(coordinator, { recoveryContext: () => ({ requirement: {}, plan: {}, input: null }) })
+  const job = { id: "recovered", taskId: "task", type: "prepare", status: "failed",
+    createdAt: "2026-10-06T04:00:00.000Z", authoring: { stage: "compiled" },
+    preparation: { phase: "validating_sample", draft: reference, recoveredFromJobId: "source-owner" } } as TaskAuthoringJob
+  assert.equal(coordinator.compilationRecovery("task", job)?.available, true)
+  assert.deepEqual(owners, ["source-owner"])
+  draft = { ...draft, revision: 2 }
+  assert.equal(coordinator.compilationRecovery("task", job)?.available, false)
+  assert.equal(owners.length, 1)
+})
+
+test("离线恢复允许准备前的旧草稿，保护准备后新建或编辑的草稿", () => {
+  const createdAt = "2026-10-06T04:00:00.000Z"
+  for (const updatedAt of ["2026-10-05T04:00:00.000Z", createdAt, "2026-10-06T05:00:00.000Z"]) {
+    let sourceChecks = 0
+    const coordinator = new TaskPreparationCoordinator({} as never,
+      { draft: () => ({ updatedAt }) } as never,
+      { assertReusableSources: () => { sourceChecks++ } } as never,
+      () => { throw new Error("unexpected_execution") }, () => {})
+    Object.assign(coordinator, { recoveryContext: () => ({ requirement: {}, plan: {}, input: null }) })
+    const job = { id: "failed-job", type: "prepare", status: "failed", createdAt,
+      preparation: { phase: "preexecuting" }, authoring: { stage: "compiling" } } as TaskAuthoringJob
+    const recovery = coordinator.compilationRecovery("task", job)
+    assert.equal(recovery?.available, updatedAt < createdAt)
+    assert.equal(sourceChecks, updatedAt < createdAt ? 1 : 0)
+  }
+})
 
 function fixture() {
   const taskId = randomUUID(), sourceJobId = randomUUID()

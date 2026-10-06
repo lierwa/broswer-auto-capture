@@ -51,7 +51,7 @@ class ConnectedTaskScope:
     async def start(self, config, domains, diagnostic):
         self.validate(config)
         window = AttachedWindow(self.profile_path, config.existingBrowser.ownerId,
-                                self.endpoint, diagnostic=diagnostic)
+                                self.endpoint, diagnostic=diagnostic, released_owners=config.existingBrowser.releasedOwners)
         self.active, self.last_window, self.release_task = window, window, None
         try:
             if self.started:

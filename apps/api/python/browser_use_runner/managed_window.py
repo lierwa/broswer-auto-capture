@@ -19,6 +19,9 @@ from pydantic import Field
 
 from workflow_use.hybrid.evidence import Contract
 from browser_use_runner.connection_policy import disconnected_handler
+from browser_use_runner.window_lease_archive import owner_path
+from browser_use_runner.managed_replay import prepare_replay
+from browser_use_runner.managed_targets import ManagedTargets, load_owned_storage
 
 
 class WindowLease(Contract):
@@ -33,7 +36,11 @@ class WindowLease(Contract):
     sessionId: str | None = None
     targetId: str | None = None
     creatorPid: int
-    status: Literal['starting', 'running', 'handoff']
+    status: Literal['starting', 'running', 'handoff', 'ended']
+    ownedTargets: list[str] = Field(default_factory=list)
+    targetCreationPending: bool = False
+    retainedProcess: bool = False
+    headless: bool = False
 
 
 def _target_digest(target_id):
@@ -147,12 +154,22 @@ def _state(lease, active, reason=None):
 
 
 class ManagedWindow:
-    def __init__(self, profile_path, owner_id, *, headless=False):
+    @staticmethod
+    def has_lease(profile_path, owner_id):
+        file = owner_path(Path(profile_path).resolve().parent / 'managed-window-lease.json', owner_id)
+        if not file.exists():
+            return False
+        return WindowLease.model_validate_json(file.read_text(encoding='utf-8')).ownerId == UUID(str(owner_id))
+
+    def __init__(self, profile_path, owner_id, *, headless=False, released_owners=()):
         path = Path(profile_path)
         if not path.is_absolute():
             raise ValueError('hybrid_profile_path_absolute_required')
         self.profile_path = path.resolve()
-        self.path = self.profile_path.parent / 'managed-window-lease.json'
+        self.base_path = self.profile_path.parent / 'managed-window-lease.json'
+        self.path = owner_path(self.base_path, owner_id)
+        self.released_owners = {UUID(str(value)) for value in released_owners}
+        self.scope = None
         self.owner_id = UUID(str(owner_id))
         self.transferred = False
         self.acquired = False
@@ -181,11 +198,16 @@ class ManagedWindow:
 
     def _reserve(self):
         self.profile_path.parent.mkdir(parents=True, exist_ok=True)
-        lease = WindowLease(leaseId=self.owner_id, ownerId=self.owner_id,
-                            profilePath=str(self.profile_path), creatorPid=os.getpid(), status='starting')
+        reused = prepare_replay(self)
+        replace_receipt = reused.pop('_replaceReceipt', False)
+        lease = WindowLease(leaseId=self.owner_id, ownerId=self.owner_id, headless=self.headless,
+                            profilePath=str(self.profile_path), creatorPid=os.getpid(), status='starting', **reused)
         try:
-            with self.path.open('x', encoding='utf-8') as stream:
-                stream.write(lease.model_dump_json())
+            if replace_receipt:
+                self._save(lease)
+            else:
+                with self.path.open('x', encoding='utf-8') as stream:
+                    stream.write(lease.model_dump_json())
         except FileExistsError as error:
             raise ValueError('hybrid_managed_window_busy') from error
         self.acquired = True
@@ -215,6 +237,8 @@ class ManagedWindow:
             return {'leaseId': str(UUID(str(lease_id))), 'ownerId': str(self.owner_id),
                     'targetDigest': None, 'active': False,
                     'reason': 'hybrid_managed_window_lease_missing_verified'}
+        if lease.status == 'ended':
+            return _state(lease, False, 'hybrid_managed_window_ended_verified')
         active, reason = self._verify(lease)
         if active and lease.status == 'handoff':
             return _state(lease, True)
@@ -236,8 +260,22 @@ class ManagedWindow:
             raise ValueError('hybrid_managed_window_not_visible')
         return _state(lease, True)
 
+    def page(self, lease_id):
+        lease = self._load(lease_id)
+        if lease.status != 'handoff' or not self._verify(lease)[0]:
+            raise ValueError('hybrid_managed_window_unavailable')
+        page = next((item for item in _cdp_json(lease.cdpPort, '/json/list')
+                     if item.get('id') == lease.targetId and item.get('type') == 'page'), None)
+        if page is None:
+            raise ValueError('hybrid_managed_window_target_missing')
+        return {**_state(lease, True), 'page': {'url': page.get('url', '')}}
+
     def end(self, lease_id, *, allow_controlled=False):
         lease = self._load(lease_id)
+        if lease.status == 'ended':
+            return _state(lease, False)
+        if lease.retainedProcess:
+            raise ValueError('hybrid_managed_window_scoped_end_required')
         if lease.status != 'handoff' and not allow_controlled:
             raise ValueError('hybrid_managed_window_controlled')
         if lease.browserPid is None and lease.status == 'starting' and lease.creatorPid == os.getpid():
@@ -265,7 +303,7 @@ class ManagedWindow:
         self.acquired = False
         return _state(lease, False)
 
-    async def start(self, *, resume, allowed_domains):
+    async def start(self, *, resume, allowed_domains, storage_state=None):
         if resume and self.headless:
             raise ValueError('hybrid_managed_window_headless_handoff_unsupported')
         if resume:
@@ -276,17 +314,22 @@ class ManagedWindow:
         else:
             lease = self._reserve()
             try:
-                lease = await self._launch(lease)
+                if not lease.retainedProcess:
+                    lease = await self._launch(lease)
             except Exception:
                 self.end(lease.leaseId, allow_controlled=True)
                 raise
-        profile = BrowserProfile(headless=self.headless, use_cloud=False, keep_alive=False,
+        profile = BrowserProfile(headless=self.headless, use_cloud=False, keep_alive=True,
                                  user_data_dir=str(self.profile_path), enable_default_extensions=False,
                                  allowed_domains=allowed_domains, cdp_url=f'http://127.0.0.1:{lease.cdpPort}',
-                                 is_local=False)
+                                 is_local=False, storage_state=storage_state)
         browser = Browser(browser_profile=profile, cdp_url=profile.cdp_url, is_local=False,
                           **({'id': lease.sessionId} if lease.sessionId else {}))
         browser._auto_reconnect = disconnected_handler(lambda: setattr(self, 'connection_lost', True))
+        if resume and lease.targetId and not lease.ownedTargets:
+            lease.ownedTargets = [lease.targetId]
+            self._save(lease)
+        self.scope = ManagedTargets(self).install(browser, lease)
         try:
             await browser.start()
             if resume:
@@ -294,9 +337,12 @@ class ManagedWindow:
                 if browser.agent_focus_target_id != lease.targetId:
                     raise ValueError('hybrid_managed_window_target_changed')
             else:
+                lease = self._load(self.owner_id)
                 lease.sessionId = browser.id
-                lease.targetId = browser.agent_focus_target_id
+                await browser.get_or_create_cdp_session(lease.targetId, focus=True)
                 self._save(lease)
+            if storage_state is not None:
+                await load_owned_storage(browser, self.scope)
             lease.status = 'running'
             self._save(lease)
             self.transferred = False
@@ -307,7 +353,8 @@ class ManagedWindow:
                 await browser.stop()
             finally:
                 if not resume:
-                    self.end(lease.leaseId, allow_controlled=True)
+                    await self.end_gracefully(lease.leaseId, allow_controlled=True)
+                self.scope.close()
             raise
 
     async def _launch(self, lease):
@@ -326,7 +373,8 @@ class ManagedWindow:
                 continue
         (self.profile_path / 'DevToolsActivePort').unlink(missing_ok=True)
         args = [str(executable), f'--user-data-dir={self.profile_path}', '--remote-debugging-port=0',
-                '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check', 'about:blank']
+                '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check', '--no-startup-window']
+        # WHY：只启动原 Chrome/CDP 进程；ManagedTargets 是本次操作窗口的唯一创建入口。
         # WHY：两个专属模式复用同一 Profile 和既有进程 owner；不要经 SDK 的 Chrome Profile 复制分支。
         if self.headless:
             args.insert(-1, '--headless=new')
@@ -375,14 +423,19 @@ class ManagedWindow:
         await browser.stop()
         if not self._verify(lease)[0]:
             raise ValueError('hybrid_managed_window_unavailable')
+        lease = self._load(self.owner_id)
+        lease.targetId = target_id
         lease.status = 'handoff'
         self._save(lease)
+        self.scope.close()
         self.transferred = True
         # WHY：交付证明原现场仍存活；系统前台权限属于用户显式 focus，不能覆盖完成结果或租约。
         return _state(lease, True)
 
     async def close(self, browser):
         if self.transferred or not self.acquired:
+            if self.scope is not None:
+                self.scope.close()
             return {'stage': 'browser_close', 'status': 'not_required', 'code': None}
         try:
             if browser is not None:
@@ -391,6 +444,9 @@ class ManagedWindow:
                 await self.end_gracefully(self.owner_id, allow_controlled=True)
         except Exception:
             return {'stage': 'browser_close', 'status': 'unconfirmed', 'code': 'cleanup_browser_close_failed'}
+        finally:
+            if self.scope is not None:
+                self.scope.close()
         return {'stage': 'browser_close', 'status': 'confirmed', 'code': None}
 
     async def end_gracefully(self, lease_id, *, allow_controlled=False):
@@ -398,6 +454,19 @@ class ManagedWindow:
         lease = self._load(lease_id)
         if lease.status != 'handoff' and not allow_controlled:
             raise ValueError('hybrid_managed_window_controlled')
+        if lease.status == 'ended':
+            return _state(lease, False)
+        if lease.retainedProcess:
+            if _owner_process(lease) is None and not _profile_process_present(self.profile_path):
+                lease.status = 'ended'
+                lease.targetCreationPending = False
+                self._save(lease)
+                self.acquired = False
+                return _state(lease, False)
+            if not self._verify(lease, require_target=False)[0]:
+                raise ValueError('hybrid_managed_window_cdp_changed')
+            await ManagedTargets(self).end(lease)
+            return _state(lease, False)
         owner = _owner_process(lease)
         if owner is not None:
             # WHY：整浏览器关闭只用于已核验的专属进程；日常 Chrome 的 AttachedWindow 不调用此入口。
@@ -409,7 +478,7 @@ class ManagedWindow:
                     await client.send.Browser.close()
             except Exception:
                 pass  # 连接退出不能算清理证明，仍由原 owner/end 核验并清理。
-            await asyncio.to_thread(psutil.wait_procs, [owner], timeout=0.5)
+            await asyncio.to_thread(psutil.wait_procs, [owner], timeout=5)
         return self.end(lease_id, allow_controlled=allow_controlled)
 
     def ensure_connection(self):

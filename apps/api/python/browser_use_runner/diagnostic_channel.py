@@ -1,10 +1,12 @@
 """Bounded, non-sensitive diagnostics for the managed Browser-Use runner."""
 
 import json
+import math
 import os
 import re
 
 from browser_use_runner.startup_diagnostics import valid_startup_event
+from browser_use_runner.runtime_diagnostics import valid_command_failure
 
 BEFORE_ACTION_STAGES = frozenset({
     'live_current_page', 'live_target_before', 'live_document_session', 'live_document_root',
@@ -40,7 +42,7 @@ class DiagnosticChannel:
     def emit(self, event):
         try:
             keys = set(event)
-            if event.get('phase') in ('before_action_detail', 'author_transport', 'runtime_action_failure', 'attached_startup'):
+            if event.get('phase') in ('before_action_detail', 'author_transport', 'runtime_action_failure', 'attached_startup', 'target_blocked', 'runtime_command_failure'):
                 if self.channel is not None and self._fixed_event(event, keys):
                     self.channel.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + '\n')
                 return
@@ -99,6 +101,21 @@ class DiagnosticChannel:
 
     @staticmethod
     def _fixed_event(event, keys):
+        if event.get('phase') == 'runtime_command_failure':
+            return valid_command_failure(event)
+        if event.get('phase') == 'target_blocked':
+            expected = {'phase', 'status', 'pointerBlocked', 'hitRelation', 'center', 'viewport', 'scrollTop'}
+            center, viewport = event.get('center'), event.get('viewport')
+            def finite(value):
+                return type(value) in (int, float) and math.isfinite(value)
+            return (keys == expected and event.get('status') == 'failed'
+                    and type(event.get('pointerBlocked')) is bool
+                    and event.get('hitRelation') in {'self', 'descendant', 'composed', 'outside'}
+                    and isinstance(center, dict) and set(center) == {'x', 'y'}
+                    and all(finite(value) for value in center.values())
+                    and isinstance(viewport, dict) and set(viewport) == {'width', 'height'}
+                    and all(finite(value) and value > 0 for value in viewport.values())
+                    and finite(event.get('scrollTop')))
         if event.get('phase') == 'attached_startup':
             return valid_startup_event(event)
         if event.get('phase') == 'runtime_action_failure':

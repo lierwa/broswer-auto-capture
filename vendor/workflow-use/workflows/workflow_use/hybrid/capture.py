@@ -21,13 +21,14 @@ from .dom_evidence import (
 from .dom_reference_tool import sanitized_inspection_result
 from .evidence import EvidenceRef, TraceSource, digest, gap
 from .field_read_evidence import FieldReadEvidenceFailure
+from .fixed_target import capture_fixed_target
 from .method_read_evidence import verified_method_read as verified_field_read
 from .history import from_agent_history
 from .host_read_facts import attach_host_read_facts
 from .natural_effects import read_page_effect, read_target_state, read_target_value
 from .natural_facts import binding_facts
 from .natural_reads import NaturalReadFailure, capture_find_elements_read
-from .navigation import NAVIGATION_ACTIONS, navigation_tab_ids, reconcile_captured_navigation
+from .navigation import NAVIGATION_ACTIONS, navigation_tab_ids, reconcile_captured_navigation, navigation_destination_matches
 from .natural_output import build_verified_output_assembly
 from .normalize import normalize_history
 from .post_action_target import (
@@ -47,6 +48,7 @@ from .snapshot_consistency import capture_consistent_post_snapshot, resolve_clos
 from .summary_evidence import SummaryEvidenceFailure, verified_summary
 from .target_scroll import TargetScrollEvidenceFailure, verified_target_scroll
 from .visible_wait import VisibleWaitEvidenceFailure, verified_visible_wait
+from .element_entry import entry_related_backends, entry_target_fact
 
 
 class EvidenceCollector(CaptureSnapshots, ObservationCapture):
@@ -90,6 +92,9 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
             raise ValueError('single_action_capture_required')
         action_id = provisional_action_ref(_step)
         name, arguments = next(iter(raw.items()))
+        if self.field_read_records is not None:
+            self.field_read_records.bind_entry_observation(summary,
+                arguments.get('indices') if name == 'bat_read_fields' else None, self.browser.agent_focus_target_id)
         closed_target_id = resolve_closed_target_id(summary, raw)
         facts = [] if name == 'bat_summarize' else [self.value_fact('natural_binding', item.model_dump(mode='json'))
             for item in binding_facts(action_id, name, arguments, self.input_value,
@@ -104,16 +109,29 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
             # WHY: 节点图是 mutable 快照；任何页面查询/read completion await 之前先复制。
             structure = capture_selector_structure(summary, action_id, selector_index,
                 self.browser.agent_focus_target_id, sanitize_value=self.sanitize_evidence_value)
+            if name == 'click':
+                structure = capture_fixed_target(structure, summary, selector_index, self.requirement_text)
             try:
                 target_identity = capture_target_identity(
                     summary, selector_index, self.browser.agent_focus_target_id)
+                related_backends = entry_related_backends(summary, selector_index, self.browser.agent_focus_target_id)
+                from .entry_descendant import capture_entry_descendants
+                entry_descendants = capture_entry_descendants(summary, selector_index,
+                    self.browser.agent_focus_target_id, self.input_value, self.input_schema)
                 target_element = await callback_target_element(
                     self.browser, summary, selector_index, self.browser.agent_focus_target_id)
                 query_target = None
-                if name == 'click':
+                entry_fact = await entry_target_fact(self.browser, target_identity, self.input_value,
+                    self.input_schema, action_id, related_backends, entry_descendants) if name == 'click' else None
+                if entry_fact is not None:
+                    kind = entry_fact.pop('factKind', 'input_entry_target')
+                    facts.append(self.fact(kind, entry_fact))
+                    if kind == 'input_entry_context':
+                        entry_fact = None
+                if name == 'click' and entry_fact is None and structure.fixedTargetAuthority is None:
                     target_identity, query_target = await verified_collection_query(
                         self.browser, summary, target_identity, self.completed_queries, selector_index)
-                if query_target is None:
+                if query_target is None and entry_fact is None and structure.fixedTargetAuthority is None:
                     target_identity, query_target = await verified_labeled_query(
                         self.browser, summary, target_identity)
                 if query_target is not None:
@@ -125,7 +143,8 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
                     facts.append(self.fact('target_value', target_value(
                         action_id, structure.targetRef, value, self.sanitize_evidence_value)))
             except CollectionReadRequired:
-                raise
+                # WHY：候选读取缺口归编译准入，不能抢先取消原生动作，也不能自动重放动作。
+                structure.limitations.append('collection_read_unproven')
             except Exception:
                 structure.limitations.append('target_effect_read_failed')
         elif name in ('click', 'input', 'dropdown_options', 'select_dropdown'):
@@ -133,6 +152,8 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
                                         None, 'action_target_index_missing')
         if structure is not None:
             facts.append(self.dom_fact(structure))
+        if self.dispatch_audit is not None and target_element is not None:
+            self.dispatch_audit.bind_target_element(target_element)
         redacted_arguments = None
         if name == 'find_elements':
             redacted_action = self.redact_action(deepcopy(raw))
@@ -158,11 +179,11 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
                                              and self.visible_wait_records is not None else None),
                         'summaryStart': (len(self.summary_records.records)
                                          if name == 'bat_summarize' and self.summary_records is not None else None)}
-        if name == 'click' and structure is not None and unbound_collection_choice(structure):
-            # WHY：在第一次试做中要求 Agent 补读候选，动作未派发；不能事后把当前序号编成固定 XPath。
-            raise CollectionReadRequired()
+        # WHY：普通集合绑定缺口归编译准入，不能阻止原生探索；无证明的路径仍禁止发布。
 
     async def after_step(self, agent):
+        if self.field_read_records is not None:
+            self.field_read_records.bind_entry_observation()
         if self.pending is None:
             if self.dispatch_audit is not None:
                 self.dispatch_audit.close()
@@ -268,7 +289,12 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
             return []
         if verified is None:
             return []
-        return [self.value_fact('verified_natural_read', verified.model_dump(mode='json'))]
+        facts = [self.value_fact('verified_natural_read', verified.model_dump(mode='json'))]
+        selection = getattr(self.field_read_records.records[-1], 'selection', None)
+        if selection is not None:
+            facts.append(self.fact('native_entry_selection', {'actionRef': self.pending['actionId'],
+                **selection.model_dump(mode='json')}))
+        return facts
 
     def summary_facts(self, results, step):
         try:
@@ -327,7 +353,7 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
         if name == 'navigate' and isinstance(arguments.get('url'), str):
             try:
                 page = await self.browser.get_current_page()
-                matched = page is not None and await page.get_url() == arguments['url']
+                matched = page is not None and navigation_destination_matches(arguments['url'], await page.get_url())
                 facts.append(self.fact('natural_postcondition', {'actionRef': self.pending['actionId'],
                     'kind': 'url', 'bindingArgument': 'url', 'matched': matched}))
             except Exception:

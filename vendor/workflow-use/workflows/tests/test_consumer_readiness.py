@@ -218,6 +218,15 @@ class RuntimeReadinessTests(unittest.IsolatedAsyncioTestCase):
                 'read': SPECIFICATION.model_dump(mode='json'),
                 'scope': {'url': 'https://example.test/issues'}, 'settle': SETTLE}
 
+    async def test_ready_accepts_valid_dynamic_reads_but_waits_for_missing_content(self):
+        checks = declared_checks([self.condition('ready')], {}, None)
+        unavailable = FieldReadError('read_container_count_invalid', reason='container_not_resolved', match_count=0)
+        with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(
+                side_effect=[unavailable, [{'title': 'Live value 1'}], [{'title': 'Live value 2'}]])):
+            self.assertFalse((await check_fact(checks[0].parameters, object()))[0])
+            self.assertTrue((await check_fact(checks[0].parameters, object()))[0])
+            self.assertTrue((await check_fact(checks[0].parameters, object()))[0])
+
     async def test_transition_requires_change_and_two_identical_consumer_reads(self):
         checks = declared_checks([self.condition('transition')], {}, None)
         with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(

@@ -15,9 +15,6 @@ import {
   type TaskWorkspaceHistoryPage,
   type TaskWorkspaceSnapshot,
 } from "@browser-capture/contracts/api"
-import {
-  browserProfileStateSchema,
-} from "@browser-capture/contracts/browser-profile"
 import { z } from "zod"
 import { jsonLines, reconnect } from "./stateStream.js"
 
@@ -28,11 +25,14 @@ class TaskChainRequestError extends Error {
 type HistoryKind = TaskWorkspaceHistoryPage["kind"]
 type ReviewCommand = Extract<TaskChainCommand, { type: "review_execution" }>
 type ReviewIntent = { command: ReviewCommand; saved: TaskExecutionReviewReceipt | null; busy: boolean; error: string }
+type HandoffIntent = { action: "inspect" | "focus" | "end"; executionId: string; expectedSequence: number; requestId: string }
 type ConnectionView = {
   workspace: TaskWorkspaceSnapshot | null
   error: string
   errorCode: string | null
   pending: TaskChainCommand | null
+  pendingHandoff: HandoffIntent | null
+  pendingUncertain: boolean
   busy: boolean
   acceptedExecution: AcceptedTaskExecution | null
   executionId: string | null
@@ -50,7 +50,7 @@ type ConnectionView = {
 
 export class TaskChainConnection {
   private view: ConnectionView = {
-    workspace: null, error: "", errorCode: null, pending: null, busy: false,
+    workspace: null, error: "", errorCode: null, pending: null, pendingHandoff: null, pendingUncertain: false, busy: false,
     acceptedExecution: null, executionId: null, eventBatch: null,
     executionDetail: null, detailBusy: false, detailError: "", savedReview: null, reviewIntents: {},
     history: {}, historyBusy: null, diagnostics: null, diagnosticsBusy: false,
@@ -67,7 +67,12 @@ export class TaskChainConnection {
   snapshot = () => this.view
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
 
-  private update(value: Partial<ConnectionView>) {
+  private update(value: Partial<ConnectionView>, commandFeedback = false) {
+    // WHY：只读加载不能吞掉尚未确认的写请求；未知状态独立于网络读取错误。
+    if (!commandFeedback && value.pending === undefined && value.pendingHandoff === undefined
+      && (this.view.pending || this.view.pendingHandoff)) {
+      delete value.error; delete value.errorCode
+    }
     if (Object.entries(value).every(([key, next]) => Object.is(this.view[key as keyof ConnectionView], next))) return
     this.view = { ...this.view, ...value }
     for (const listener of this.listeners) listener()
@@ -116,6 +121,24 @@ export class TaskChainConnection {
     const intent = this.view.reviewIntents[executionId]
     if (this.view.errorCode !== "execution_review_stale" || intent?.busy || intent?.saved) return
     this.updateReview(executionId, null); this.dismiss()
+  }
+
+  async retryStaleReview(executionId: string, send: (review: TaskExecutionReviewReceipt) => Promise<boolean>) {
+    const intent = this.view.reviewIntents[executionId]
+    if (!intent || intent.saved || intent.busy || this.view.pendingUncertain
+      || this.view.errorCode !== "execution_review_stale") return false
+    const checking = { ...intent, busy: true, error: "" }
+    this.updateReview(executionId, checking)
+    const detail = await this.readExecutionDetail(executionId, undefined, false)
+    if (this.view.reviewIntents[executionId] !== checking) return false
+    if (!detail || this.view.busy || this.view.pendingUncertain || this.view.errorCode !== "execution_review_stale") {
+      this.updateReview(executionId, { ...checking, busy: false, error: "原运行暂时无法核验，原说明已保留，请重试。" })
+      return false
+    }
+    // WHY：明确拒绝后仅刷新原运行序列；原话、选择与旧版本引用仍归属于原 execution。
+    const command = { ...intent.command, requestId: crypto.randomUUID(), expectedSequence: detail.execution.sequence }
+    this.dismiss(); this.updateReview(executionId, { ...intent, command, busy: false })
+    return this.submitReview(command, send)
   }
 
   accept(raw: unknown) {
@@ -304,7 +327,9 @@ export class TaskChainConnection {
   async dispatch(raw: unknown) {
     if (this.view.busy) return false
     const command = taskChainCommandSchema.parse(raw)
-    this.update({ busy: true, pending: command, error: "", errorCode: null,
+    if (this.view.pendingUncertain && (this.view.pendingHandoff
+      || JSON.stringify(command) !== JSON.stringify(this.view.pending))) return false
+    this.update({ busy: true, pending: command, pendingHandoff: null, error: "", errorCode: null,
       ...(command.type === "review_execution" ? { savedReview: null } : {}) })
     try {
       const response = await this.fetcher(this.endpoint, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -319,14 +344,15 @@ export class TaskChainConnection {
       const accepted = result.snapshot.stateSequence >= (this.view.workspace?.stateSequence ?? -1) ? result.acceptedExecution : null
       const changed = accepted && accepted.executionId !== this.view.executionId
       if (changed) this.detailSequence = -1
-      this.update({ pending: null, error: "", errorCode: null,
+      this.update({ pending: null, pendingUncertain: false, error: "", errorCode: null,
         ...(result.savedReview ? { savedReview: result.savedReview } : {}),
         ...(accepted ? { acceptedExecution: accepted, executionId: accepted.executionId } : {}),
         ...(changed ? { eventBatch: null, executionDetail: null } : {}) })
       return true
     } catch (error) {
-      this.update({ error: error instanceof Error ? error.message : "操作未完成，请刷新后重试。",
-        errorCode: error instanceof TaskChainRequestError ? error.code : null })
+      this.update({ error: error instanceof TaskChainRequestError ? error.message : "操作回执未确认，请重试核验同一请求。",
+        errorCode: error instanceof TaskChainRequestError ? error.code : "request_outcome_unknown",
+        pendingUncertain: !(error instanceof TaskChainRequestError) }, true)
       await this.reload()
       return false
     } finally {
@@ -336,11 +362,15 @@ export class TaskChainConnection {
 
   async controlHandoff(action: "inspect" | "focus" | "end", executionId: string, expectedSequence: number) {
     if (this.view.busy) return false
-    this.update({ busy: true, error: "", errorCode: null })
+    const prior = this.view.pendingHandoff
+    const same = prior?.action === action && prior.executionId === executionId && prior.expectedSequence === expectedSequence
+    if (this.view.pendingUncertain && (this.view.pending || !same)) return false
+    const command = same ? prior : { action, executionId, expectedSequence, requestId: crypto.randomUUID() }
+    this.update({ busy: true, pending: null, pendingHandoff: command, error: "", errorCode: null })
     try {
       const response = await this.fetcher(`/api/task-chain/handoff?taskId=${encodeURIComponent(this.taskId)}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, executionId, expectedSequence, requestId: crypto.randomUUID() }),
+        body: JSON.stringify(command),
       })
       const value: unknown = await response.json()
       if (!response.ok) {
@@ -348,39 +378,23 @@ export class TaskChainConnection {
         throw new TaskChainRequestError(failure.error ?? "浏览器现场操作未完成。", failure.code ?? null)
       }
       this.accept(value)
-      this.update({ error: "", errorCode: null })
+      this.update({ pendingHandoff: null, pendingUncertain: false, error: "", errorCode: null })
       return true
     } catch (error) {
       // WHY：刷新真实现场后再保留本次失败，避免 reload 的成功反馈吞掉聚焦拒绝。
       await this.reload()
-      this.update({ error: error instanceof Error ? error.message : "浏览器现场操作未完成。",
-        errorCode: error instanceof TaskChainRequestError ? error.code : null })
+      this.update({ error: error instanceof TaskChainRequestError ? error.message : "窗口操作回执未确认，请重试核验同一请求。",
+        errorCode: error instanceof TaskChainRequestError ? error.code : "request_outcome_unknown",
+        pendingUncertain: !(error instanceof TaskChainRequestError) }, true)
       return false
     } finally { this.update({ busy: false }) }
   }
 
-  retry = () => this.view.pending ? this.dispatch(this.view.pending) : Promise.resolve(false)
+  retry = () => this.view.pending ? this.dispatch(this.view.pending) : this.view.pendingHandoff
+    ? this.controlHandoff(this.view.pendingHandoff.action, this.view.pendingHandoff.executionId,
+      this.view.pendingHandoff.expectedSequence) : Promise.resolve(false)
 
-  async closeBrowserProfileAndRetry() {
-    const command = this.view.pending
-    if (!command || this.view.busy) return false
-    this.update({ busy: true, error: "正在关闭专用浏览器…", errorCode: null })
-    try {
-      const response = await this.fetcher("/api/browser-profile", { method: "POST",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "close" }) })
-      const value: unknown = await response.json()
-      if (!response.ok) throw new Error((value as { error?: string }).error ?? "专用浏览器没有正常关闭，请重试。")
-      browserProfileStateSchema.parse(value)
-    } catch (error) {
-      this.update({ busy: false, error: error instanceof Error ? error.message : "专用浏览器没有正常关闭，请重试。",
-        errorCode: "browser_profile_close_failed" })
-      return false
-    }
-    this.update({ busy: false, error: "", errorCode: null })
-    return this.dispatch(command)
-  }
-
-  dismiss = () => this.update({ pending: null, error: "", errorCode: null })
+  dismiss = () => { if (!this.view.pendingUncertain) this.update({ pending: null, pendingHandoff: null, error: "", errorCode: null }) }
 }
 
 function preserveWorkspaceReferences(next: TaskWorkspaceSnapshot, previous: TaskWorkspaceSnapshot | null) {

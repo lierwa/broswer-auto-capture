@@ -8,10 +8,62 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "node:os"
 import Fastify from "fastify"
+
+// WHY：释放最后一个任务页不能关闭全局授权，也不能在下一次创建时借用旧窗口。
+test("releasing the last extension target retains the connection and resets its owned window", async () => {
+  // WHY：原扩展源码只能在测试运行时装载，不能把 chrome.* 页面类型引入服务端 TypeScript 边界。
+  const extensionModule = new URL("../../../vendor/daily-chrome-extension/extension/src/relayConnection.ts", import.meta.url).href
+  const { RelayConnection } = await import(extensionModule) as { RelayConnection: new (socket: unknown) => {
+    attachTab(tab: { id: number; windowId: number }): void; detachTab(id: number): void;
+    attachedTabs: Map<number, unknown>; close(reason: string): void } }
+  const event = { addListener() {}, removeListener() {} }
+  const previous = (globalThis as any).chrome
+  const replies: any[] = [], calls = { closed: 0, windows: 0, tabs: 0, detached: 0 }
+  ;(globalThis as any).chrome = {
+    debugger: { onEvent: event, onDetach: event, attach: async () => {}, detach: async () => { calls.detached++ } },
+    tabs: { onCreated: event, onRemoved: event, create: async () => { calls.tabs++ } },
+    windows: { create: async () => { calls.windows++; return { tabs: [{ id: 12, windowId: 10 }] } } },
+  }
+  const socket: any = { readyState: WebSocket.OPEN, send: (message: string) => replies.push(JSON.parse(message)), close: () => { calls.closed++ } }
+  const relay = new RelayConnection(socket)
+  const command = async (id: number, method: string, params: unknown[]) => {
+    socket.onmessage({ data: JSON.stringify({ id, method, params }) })
+    await new Promise(resolve => setImmediate(resolve))
+    return replies.find(reply => reply.id === id)
+  }
+  try {
+    relay.attachTab({ id: 11, windowId: 9 } as any)
+    assert.equal((await command(1, "chrome.debugger.attach", [{ tabId: 11 }, "1.3"])).error, undefined)
+    relay.detachTab(11)
+    assert.equal(relay.attachedTabs.size, 0)
+    assert.equal(calls.closed, 0)
+    const created = await command(2, "chrome.tabs.create", [{ url: "about:blank", newWindow: false }])
+    assert.equal(created.result.windowId, 10)
+    assert.deepEqual(calls, { closed: 0, windows: 1, tabs: 0, detached: 1 })
+  } finally { relay.close("fixture ended"); (globalThis as any).chrome = previous }
+})
 import { WSServer } from "../../../vendor/daily-chrome-extension/wsServer.js"
 import { CDPRelayServer } from "../../../vendor/daily-chrome-extension/cdpRelay.js"
 import { ws } from "../../../vendor/daily-chrome-extension/wsServer.js"
 import { once } from "node:events"
+
+// WHY：授权连接允许没有页面；没有任务时不得为通过 readiness 人工创建/attach 空白窗口。
+test("authorized relay is ready with zero targets and no Chrome commands", async () => {
+  const relay = new CDPRelayServer("chrome", undefined, undefined, undefined,
+    { extensionId: "fixture", token: "H".repeat(43) })
+  ;(relay as any)._openConnectPageInBrowser = async () => {}
+  await relay.start()
+  const extension = new ws(relay.extensionEndpoint(), { origin: "chrome-extension://fixture" })
+  const calls: string[] = []
+  try {
+    await once(extension, "open")
+    extension.on("message", (data: Buffer) => calls.push(JSON.parse(data.toString()).method))
+    extension.send(JSON.stringify({ method: "extension.initialized", params: [] }))
+    await relay.establishExtensionConnection("B-A-T")
+    assert.equal(relay.isConnected(), true)
+    assert.deepEqual(calls, [])
+  } finally { extension.close(); await relay.close() }
+})
 
 // WHY：真实首败在 CDP 请求派发前断开；旧 owner 必须能核验“未创建”，不能永久锁住复跑。
 test("disconnected relay verifies an unstarted task but rejects new browser actions", async () => {

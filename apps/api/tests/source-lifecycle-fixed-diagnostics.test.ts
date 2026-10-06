@@ -7,6 +7,44 @@ import { z } from "zod"
 import { SourceLifecycleDiagnostics, readStartupFailure } from "../src/upstream-browser/source-lifecycle-diagnostics.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
 
+// WHY：超时位置必须进入同 owner 日志，未知源码或异常文本不得穿过边界。
+test("runtime command causes retain trusted source locations and reject raw details", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "bat-source-diagnostic-"))
+  const diagnostics = new SourceLifecycleDiagnostics(directory, "ce0cf9d2-1f8e-4f86-ae6b-e27b42f72383")
+  try {
+    const cause = { errorKind: "timeout_error", code: "external_error",
+      locations: [{ source: "bat_capability", line: 82 }, { source: "sdk_element", line: 90 }] }
+    const event = { phase: "runtime_command_failure", status: "failed", actionRef: "a-0002", causes: [cause] }
+    diagnostics.acceptPythonLine(JSON.stringify(event))
+    for (const invalid of [{ ...event, message: "private" }, { ...event, actionRef: "private/url" },
+      { ...event, causes: [{ ...cause, locations: [{ source: "private", line: 1 }] }] },
+      { ...event, causes: [{ ...cause, locations: Array(9).fill(cause.locations[0]) }] }]) {
+      diagnostics.acceptPythonLine(JSON.stringify(invalid))
+    }
+    const rows = readFileSync(diagnostics.file, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    assert.equal(rows.length, 1)
+    assert.deepEqual(rows[0].causes, [cause])
+    assert.ok(!JSON.stringify(rows).includes("private"))
+  } finally { diagnostics.close(); rmSync(directory, { recursive: true, force: true }) }
+})
+
+// WHY：准备失败也须有脱敏证据；未知页面键绝不能混入 owner 日志。
+test("blocked target diagnostics preserve only fixed geometry", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "bat-source-diagnostic-"))
+  const diagnostics = new SourceLifecycleDiagnostics(directory, "bd380c49-cdd0-4d0c-b3bb-925dc8c39712")
+  try {
+    const event = { phase: "target_blocked", status: "failed", pointerBlocked: false,
+      hitRelation: "outside", center: { x: 100, y: 50 }, viewport: { width: 1000, height: 800 }, scrollTop: 700 }
+    diagnostics.acceptPythonLine(JSON.stringify(event))
+    diagnostics.acceptPythonLine(JSON.stringify({ ...event, text: "private" }))
+    diagnostics.acceptPythonLine(JSON.stringify({ ...event, center: { x: null, y: 50 } }))
+    const rows = readFileSync(diagnostics.file, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].scrollTop, 700)
+    assert.ok(!JSON.stringify(rows).includes("private"))
+  } finally { diagnostics.close(); rmSync(directory, { recursive: true, force: true }) }
+})
+
 // WHY：旧失败只能读取同一 owner 的原始脱敏依据，SDK 包装错误不能覆盖先记录的失败阶段。
 test("historical startup cause is owner-bound, keeps the first failing stage and exposes no stack", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "bat-source-diagnostic-"))

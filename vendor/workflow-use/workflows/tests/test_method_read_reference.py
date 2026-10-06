@@ -81,7 +81,7 @@ async def captured_reads(count=2):
     collector = EvidenceCollector(browser, registry, put_evidence=lambda _kind, value: reference(value),
         redact_action=lambda value: value, output_schema=SCHEMA, field_read_records=records)
     results, arguments, verified = [], [], []
-    first = parameters(maxItems=120, fields={'count': {'selector': '.count', 'normalizeWhitespace': True},
+    first = parameters(maxItems=300, fields={'count': {'selector': '.count', 'normalizeWhitespace': True},
                                             'labels': {'selector': '.label'}})
     for index in range(count):
         params = first if index == 0 else MethodReadToolParams(readRef='r' + str(index))
@@ -123,7 +123,7 @@ class MethodReadReferenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(record.parameters, records.records[0].parameters)
             self.assertIsNot(record.mapping, records.records[0].mapping)
         self.assertTrue(records.records[-1].mapping.specification.fields['count'].normalizeWhitespace)
-        self.assertEqual([call.args[1].maxItems for call in sampler.await_args_list], [120] * 3)
+        self.assertEqual([call.args[1].maxItems for call in sampler.await_args_list], [300] * 3)
         request, registry = compilation_source(records, arguments, results, verified)
         before = request.trace.model_dump(mode='json')
         compiled = compile_request(request, registry, output_schema=SCHEMA)

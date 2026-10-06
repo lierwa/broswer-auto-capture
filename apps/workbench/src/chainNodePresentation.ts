@@ -4,6 +4,7 @@ import {
 } from "@browser-capture/contracts"
 
 export type PresentationChain = Pick<TaskChain, "nodes" | "edges"> & Partial<Pick<TaskChain, "inputContract" | "variables">>
+export type NodeTypePresentation = { kind: ChainNode["kind"]; type: string; capabilityName?: string | undefined }
 
 const chainFamilyLabels: Record<ChainNode["kind"], string> = {
   capability: "通用能力", function: "确定性函数", branch: "分支", browser: "浏览器动作", observe: "现场观察",

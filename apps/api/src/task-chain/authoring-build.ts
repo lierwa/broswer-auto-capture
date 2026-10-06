@@ -15,6 +15,8 @@ import type { HybridSourceResult } from "../upstream-browser/hybrid-captured-sou
 import type { TaskContractRepository } from "./repository.js"
 import { RequirementClarificationRequired } from "./authoring-failure.js"
 import { createPreparationPresentation, createStepChainPresentation } from "./presentation.js"
+import { compilationProgress } from "./authoring-build-progress.js"
+import { saveStepBuild } from "./preparation-step-builds.js"
 
 type Context = { repository: TaskContractRepository; job: TaskAuthoringJob; plan: TaskPlan;
   requirement: TaskRequirement; step: TaskPlanStep; input: JsonValue; model: string; signal: AbortSignal;
@@ -76,6 +78,7 @@ export class AuthoringBuild {
       }
       const build = { authorRequestId: event.id, stepId: step.id, sequence: event.sequence,
         digest: event.digest, phase: payload.phase, payload: event.payload, ...graph,
+        compilation: compilationProgress(response.compilation, source.ordinary.trace),
         ...(presentation ? { presentation } : {}) }
       current.authoring!.build = build
       current.authoring!.stage = payload.phase === "final" ? "compiling" : "exploring"
@@ -83,9 +86,11 @@ export class AuthoringBuild {
       if (payload.phase === "final") {
         const artifact = saveBuildRecord(() => repository.saveArtifact(plan.taskId, job.id,
           "application/vnd.bat.hybrid-online-compilation+json;version=1", z.json().parse(event)))
+        const { authorRequestId: _owner, payload: _payload, ...view } = build
+        const buildArtifact = saveBuildRecord(() => saveStepBuild(repository, job, view))
         const prior = z.object({ steps: z.array(z.json()) }).safeParse(current.authoring!.annotations)
         current.authoring!.annotations = { mode: "online-compilation/v1",
-          steps: [...(prior.success ? prior.data.steps : []), { stepId: step.id, artifact }] }
+          steps: [...(prior.success ? prior.data.steps : []), { stepId: step.id, artifact, buildArtifact }] }
       }
       current.sequence++; current.updatedAt = new Date().toISOString()
       saveBuildRecord(() => repository.saveJob(current))

@@ -6,6 +6,7 @@ from .observation_scope import ObservationRefreshRequired
 from .author_compilation import AuthorCompilationStopped
 
 CAPTURE_ERROR_CODES = frozenset({
+    'author_read_only_action_denied',
     'ambiguous_new_navigation_tab', 'new_navigation_tab_not_ready',
     'new_navigation_tab_disappeared', 'new_navigation_tab_identity_changed', 'navigation_tab_focus_changed',
     'observation_url_changed', 'observation_tab_changed', 'observation_tab_identity_unavailable',

@@ -38,7 +38,10 @@ type ProtocolResponse = {
 
 // Allow-listed chrome.* commands the relay may invoke. They are resolved
 // reflectively and the positional params are spread into the call.
+import { closeOwnedTarget } from './closeOwnedTarget';
+
 const ALLOWED_CHROME_COMMANDS = new Set([
+  'bat.closeOwnedTarget',
   'chrome.debugger.attach',
   'chrome.debugger.detach',
   'chrome.debugger.sendCommand',
@@ -64,8 +67,6 @@ export class RelayConnection {
   private _ownedTabs = new Set<number>();
   private _taskWindowId?: number;
   private _ownedWindows = new Set<number>();
-  // Once we've attached at least one tab, detaching the last one closes the connection.
-  private _hasEverAttached = false;
   private _eventListeners: Array<{ remove: () => void }> = [];
   private _closed = false;
 
@@ -84,10 +85,8 @@ export class RelayConnection {
     this._ws.onclose = () => this._onClose();
   }
 
-  // Signals the end of the initial-tab handshake — call after the initial
-  // round of `attachTab` invocations. The relay holds CDP traffic from
-  // Playwright until it sees this event, so that `Target.setAutoAttach` is
-  // answered from a populated tab model.
+  // Signals readiness after the optional initial-tab attachments. An empty
+  // model is ready too: the operation creates its own owned target later.
   didInitialize(authorizationToken?: string): void {
     this._sendMessage({ method: 'extension.initialized',
       params: authorizationToken ? [{ token: authorizationToken }] : [] });
@@ -131,17 +130,16 @@ export class RelayConnection {
       method: 'chrome.debugger.onDetach',
       params: [{ tabId }, 'target_closed'],
     });
-    this._checkLastTabDetached();
   }
 
   private _notifyTabAttached(tabId: number): void {
     this._attachedTabs.add(tabId);
-    this._hasEverAttached = true;
     this.ontabattached?.(tabId);
   }
 
   private _notifyTabDetached(tabId: number): void {
     this._attachedTabs.delete(tabId);
+    if (!this._attachedTabs.size) this._taskWindowId = undefined;
     this.ontabdetached?.(tabId);
   }
 
@@ -170,16 +168,11 @@ export class RelayConnection {
     this.onclose?.();
   }
 
-  private _checkLastTabDetached(): void {
-    if (this._hasEverAttached && this._attachedTabs.size === 0)
-      this.close('All controlled tabs detached');
-  }
-
   // Forwards chrome.* events concerning attached tabs to the relay, then runs
   // shared detach bookkeeping.
   private _onChromeEvent(fullMethod: string, args: any[]): void {
     const tabId = this._tabIdForEventArgs(fullMethod, args);
-    if (tabId === undefined || !this._attachedTabs.has(tabId))
+    if (tabId === undefined || !(fullMethod === 'chrome.tabs.onRemoved' ? this._ownedTabs : this._attachedTabs).has(tabId))
       return;
     if (fullMethod === 'chrome.tabs.onCreated') {
       const tab = args[0] as chrome.tabs.Tab;
@@ -190,9 +183,13 @@ export class RelayConnection {
     // chrome.debugger.onDetach is the single source of truth for detach bookkeeping.
     if (fullMethod === 'chrome.debugger.onDetach') {
       this._notifyTabDetached(tabId);
-      this._ownedTabs.delete(tabId);
       // WHY：沿用 B-A-T 原断线失败合同，不由扩展擅自恢复 debugger 会话。
-      this._checkLastTabDetached();
+      // WHY：最后一个任务页结束只释放目标；授权连接由显式暂停或宿主关闭结束。
+    }
+    // WHY：debugger终止不证明物理tab已关闭；原创建者仍需有权完成finally清理。
+    if (fullMethod === 'chrome.tabs.onRemoved') {
+      this._ownedTabs.delete(tabId);
+      if (this._attachedTabs.has(tabId)) this._notifyTabDetached(tabId);
     }
   }
 
@@ -244,15 +241,17 @@ export class RelayConnection {
     if (!ALLOWED_CHROME_COMMANDS.has(message.method))
       throw new Error(`Unknown method: ${message.method}`);
     const args = (message.params ?? []) as any[];
+    if (message.method === 'bat.closeOwnedTarget') return closeOwnedTarget(args[0]);
     if (message.method === 'chrome.tabs.create') {
       const { newWindow, ...properties } = args[0] ?? {};
-      const tab = newWindow
+      const tab = newWindow || this._taskWindowId === undefined
         ? (await chrome.windows.create({ url: properties.url ?? 'about:blank', focused: false })).tabs?.[0]
         : await chrome.tabs.create({ ...properties, windowId: this._taskWindowId });
       if (!tab?.id)
         throw new Error('daily_chrome_task_target_missing');
       this._ownedTabs.add(tab.id);
       this._ownedWindows.add(tab.windowId);
+      this._taskWindowId = tab.windowId;
       return tab;
     }
     if (message.method.startsWith('chrome.debugger.')) {

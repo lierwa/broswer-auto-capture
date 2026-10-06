@@ -2,11 +2,11 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { emptyInterview } from "@browser-capture/contracts/interview"
 import { parseInterviewOutput } from "../src/interview/protocol.js"
-import { preparationEntryFacts, projectProvidedDraftSources, recordUserProvidedSources } from "../src/interview/source-resolution.js"
+import { assertRequirementReady, preparationEntryFacts, projectProvidedDraftSources, recordUserProvidedSources } from "../src/interview/source-resolution.js"
 import { authoredInterview, fixture } from "./helpers.js"
 
 const entry = "https://example.org/"
-const markdown = `# 目标\n读取 \`${entry}\` 首页的标题。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n打开首页并读取标题。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n页面标题可见时完成。`
+const markdown = `# 目标\n读取 \`${entry}\` 首页的标题。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n打开首页并读取标题。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n页面标题可见时完成。`
 const draft = { title: "读取首页标题", markdown, brief: null }
 const output = { assistantText: "已整理草案。", question: null, draft }
 
@@ -15,6 +15,14 @@ function selectedState() {
   recordUserProvidedSources(state, entry, 1)
   return projectProvidedDraftSources(state, entry)
 }
+
+test("真实访谈入口列表后的来源解释不被当成第二个入口", () => {
+  // WHY：保护原生模型已正确引用 URL 的实际失败；说明段不能新增或替换入口授权。
+  const markdown = `## 试做入口\n1. ${entry}\n\n该入口由用户明确指定；现场可访问性留给准备任务核查。`
+  const state = projectProvidedDraftSources(selectedState(), markdown)
+  assert.doesNotThrow(() => assertRequirementReady(state, markdown, true))
+  assert.deepEqual(preparationEntryFacts(state, markdown).map(item => item.url), [entry])
+})
 
 // WHY：保护真实失败边界：正文代码格式不改变 URL 身份，入口仍绑定原已选来源。
 test("正文反引号包裹的已选 URL 不阻断正式草案解析或入口来源绑定", () => {

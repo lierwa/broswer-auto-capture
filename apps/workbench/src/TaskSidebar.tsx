@@ -19,7 +19,7 @@ export function TaskSidebar({ model, close, onSelect, afterCreate }: { model: Ta
       <button className="task-select" type="button" aria-label={`打开任务：${task.title}`} aria-current={task.id === model.selected ? "page" : undefined} onClick={() => onSelect(task.id)}><span className="task-name">{task.title}</span>
         <span className="task-status" data-tone={taskTone(task.status)}><i aria-hidden="true" />{taskStatusLabels[task.status]}</span>
       </button>
-      {task.id !== model.selected && <TaskMenu task={task} model={model} />}
+      <TaskMenu task={task} model={model} />
     </div>)}{model.ready && tasks.length === 0 && <p className="task-list-empty">{search ? "没有匹配的任务" : archived ? "暂无归档任务" : "从一个新需求开始"}</p>}</nav>
     <footer className="task-sidebar-footer"><Button variant="ghost" color="gray" onClick={() => setArchived(!archived)}>{archived ? <ArchiveRestore aria-hidden="true" size={15} /> : <Archive aria-hidden="true" size={15} />}{archived ? "返回最近任务" : "已归档任务"}</Button></footer>
   </div>

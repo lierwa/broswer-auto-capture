@@ -1,4 +1,4 @@
-import type { ChainNode, ChainStage, TaskChain, TaskExecutionEventBatch } from "@browser-capture/contracts"
+import { declaredLoopBodyIds, type ChainNode, type ChainStage, type TaskChain, type TaskExecutionEventBatch } from "@browser-capture/contracts"
 import { actionPresentation, bindingSourceLabel, predicateLabel } from "./chainNodePresentation.js"
 import { nodeExecutionEvents } from "./chainExecutionFacts.js"
 
@@ -56,17 +56,8 @@ export function branchRows(node: ChainNode, chain: ControlGraph, batch: TaskExec
 export function loopBodyIds(node: Loop, chain: ControlGraph) {
   const indexed = topology(chain), cached = indexed.bodies.get(node.id)
   if (cached) return cached
-  const body = defineLoopBody(node, chain)
+  const body = declaredLoopBodyIds(node, chain)
   indexed.bodies.set(node.id, body); return body
-}
-function defineLoopBody(node: Loop, chain: ControlGraph) {
-  if (!("body" in node)) return new Set<string>()
-  const exits = new Set(node.body.exits)
-  // WHY：只有声明 body 的出口确实回到当前 loop，才用它划定当前轮；旧链缺定义时不猜列表归属。
-  if (!node.body.exits.every((id) => chain.edges.some((edge) => edge.from === id && edge.to === node.id))) {
-    return new Set<string>()
-  }
-  return reachable(node.body.entry, chain, new Set([node.id]), exits)
 }
 
 export function currentNodeEvents(nodeId: string, chain: ControlGraph, batch: TaskExecutionEventBatch | null) {
@@ -104,6 +95,10 @@ export function isNodeUnselected(nodeId: string, stage: ChainStage | undefined,
     for (const [port, ids] of ports) if (port !== event.outcome && ports.has(event.outcome ?? "") && ids.has(nodeId)) return true
   }
   return false
+}
+
+export function exclusiveBranchIds(stage: ChainStage, branchId: string, port: string, chain: ControlGraph) {
+  return stageExclusions(stage, chain).get(branchId)?.get(port) ?? new Set<string>()
 }
 
 /** WHY：独占路径和外来入口只由版本图决定，与节点事件和选中状态无关。 */

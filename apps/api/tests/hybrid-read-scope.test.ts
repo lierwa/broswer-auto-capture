@@ -9,6 +9,27 @@ const documentDigest = "a".repeat(64)
 const fact = (kind: string, value: JsonValue) => ({ id: kind, kind, value, sourceRefs: [] })
 const identity = { targetId: "tab", documentDigest }
 const sample = (url: string) => ({ ...identity, urlDigest: digestRuntimeUrl(url), stable: true })
+
+test("无元素动作的唯一读取条件从编译到执行绑定本次页面，不固化代表URL", async () => {
+  for (const actionName of ["scroll", "send_keys"]) for (const readiness of [{ ready: true }, { transition: true }]) {
+    const source = fixture()
+    const before = source.trace.observations[0]!
+    source.trace.observations[1] = { ...before, id: "pre" }
+    const condition = { kind: "read_fields", ...readiness,
+      scope: { url: oldUrl, urlDigest: digestRuntimeUrl(oldUrl) } }
+    const segment = { id: "s2", kind: "deterministic", operation: { name: "browser.workflow-step", actionName },
+      target: null, postconditions: [condition] }
+    const input = { ...source, compilation: { ...source.compilation, segments: [source.compilation.segments[0]!, segment] } }
+    assert.deepEqual(classifyRuntimeScopeDecisions(input), [{ segmentId: "s2", runtimeScopeFrom: "s1" }])
+    const state = new HybridRuntimeScopeState(); state.succeed("s1", browser(nextUrl))
+    const config = await state.commandConfig("browser.workflow-step", { actionName, target: null,
+      postconditions: [condition], [RUNTIME_SCOPE_FROM]: "s1" }, async () => browser(nextUrl))
+    assert.ok("postconditions" in config)
+    assert.deepEqual(config.postconditions, [{ ...condition, scope: { url: nextUrl, urlDigest: digestRuntimeUrl(nextUrl) } }])
+    condition.scope = { url: nextUrl, urlDigest: digestRuntimeUrl(nextUrl) }
+    assert.equal(classifyRuntimeScopeDecisions(input)[0]!.limitation, "runtime_scope_static_scope_unproven")
+  }
+})
 function fixture() {
   const previous = { id: "post", tabId: "tab", url: oldUrl, facts: [
     fact("url_digest", digestRuntimeUrl(oldUrl)), fact("document_identity", identity)] }
@@ -242,6 +263,21 @@ test("循环读取只接受已证明的初始或推进前驱，并核验当前�
   }
 })
 
+test("受管导航后的普通节点接纳同文档URL更新并拒绝身份替换", async () => {
+  const workflow = { actionName: "click", target: { strategy: "css", value: "#continue", scope: { url: oldUrl } },
+    postconditions: [], [RUNTIME_SCOPE_FROM]: "navigate" }
+  const state = new HybridRuntimeScopeState(); state.succeed("navigate", browser())
+  const current = browser(nextUrl)
+  const scoped = await state.commandConfig("browser.workflow-step", workflow, async () => current)
+  const { [RUNTIME_SCOPE_FROM]: _marker, ...plain } = workflow
+  assert.deepEqual(scoped, { ...plain, target: { ...workflow.target, scope: { url: nextUrl, urlDigest: digestRuntimeUrl(nextUrl) } } })
+  for (const changed of [{ ...current, tabId: "other" }, { ...current, sessionId: "other" },
+    { ...current, documentId: "other" }, { ...current, documentId: undefined }]) {
+    const guard = new HybridRuntimeScopeState(); guard.succeed("navigate", browser())
+    await assert.rejects(guard.commandConfig("browser.workflow-step", workflow, async () => changed), /scope_page_changed/)
+  }
+})
+
 test("复跑只读以当前同文档URL绑定且不调用模型或重派动作", async () => {
   const state = new HybridRuntimeScopeState(); state.succeed("s1", browser())
   let observations = 0
@@ -266,4 +302,22 @@ test("原有精确URL边界仍拒绝同文档URL变化", async () => {
   const state = new HybridRuntimeScopeState(); state.succeed("s1", browser())
   const { [RUNTIME_SCOPE_READ_ONLY]: _readMode, ...exact } = config
   await assert.rejects(state.commandConfig("browser.read-fields", exact, async () => browser(nextUrl)), /scope_page_changed/)
+})
+
+test("同页点击的ready和transition跟随逐项URL，跨页读取仍保留目的地", async () => {
+  for (const readiness of [{ ready: true }, { transition: true }]) {
+    const state = new HybridRuntimeScopeState(); state.succeed("entry", browser(nextUrl))
+    const destination = "https://example.test/destination"
+    const result = await state.commandConfig("browser.workflow-step", {
+      actionName: "click", target: { strategy: "history", scope: { url: oldUrl } },
+      [RUNTIME_SCOPE_FROM]: "entry", postconditions: [
+        { kind: "read_fields", ...readiness, scope: { url: oldUrl } },
+        { kind: "read_fields", ...readiness, scope: { url: destination } },
+      ],
+    }, async () => browser(nextUrl))
+    assert.ok("postconditions" in result)
+    const conditions = result.postconditions as { scope: { url: string } }[]
+    assert.equal(conditions[0]!.scope.url, nextUrl)
+    assert.equal(conditions[1]!.scope.url, destination)
+  }
 })

@@ -4,6 +4,9 @@ import { jsonValueSchema, parseTaskValue, type JsonValue, type TaskPlan, type Va
 import { plannedProgression } from "../src/task-chain/authoring-progression.js"
 import { representativeSourceOutput } from "../src/upstream-browser/hybrid-method-evidence.js"
 import { digestNaturalPayload, naturalSourceContext } from "../src/upstream-browser/hybrid-natural-payload.js"
+import { contentValueSchema } from "../src/upstream-browser/page-content-contract.js"
+import { materializeHybridNodes } from "../src/upstream-browser/hybrid-materializer-nodes.js"
+import { readSpecificationSchema } from "../src/upstream-browser/hybrid-schema.js"
 
 const hash = "a".repeat(64), url = "https://example.test/list"
 const item: ValueSchema = { type: "object", properties: { name: { type: "string", minLength: 1 } },
@@ -16,7 +19,7 @@ function contract(schema: ValueSchema) {
 }
 
 function fixture(schema: ValueSchema = { type: "object", properties: { records: collection },
-  required: ["records"], additionalProperties: false }) {
+  required: ["records"], additionalProperties: false }, captureContent = false) {
   const outputContract = contract(schema)
   const sample: JsonValue[] = [{ name: "one" }, { name: "two" }, { name: "three" }]
   const output: JsonValue = { records: sample }
@@ -44,7 +47,8 @@ function fixture(schema: ValueSchema = { type: "object", properties: { records: 
     const plan = { id: "plan", version: 1, sourceDigest: hash, stepId: "step", inputSchemaDigest: hash,
       outputSchemaDigest: hash, callMode: "once", entryUrls: [url], semanticOperations: [],
       resultSpec: { contractVersion: "bat-result-spec/v1", mode: "data", schema,
-        fields: [{ path: ["records"], description: "Names", producerRef: "records" }], derivations: [], edgeCases: [] } }
+        fields: [{ path: captureContent ? [] : ["records"], description: "Names",
+          producerRef: captureContent ? "page-content" : "records" }], derivations: [], edgeCases: [] } }
     const trace = { completed: true, source: { historyRef: "source:history" }, actions, observations,
       finalResultRef: { ref: "final", digest: digest(output) } }
     const request = { compilerVersion: "bat-hybrid/2", actionRegistryVersion: hash,
@@ -54,6 +58,54 @@ function fixture(schema: ValueSchema = { type: "object", properties: { records: 
   }
   return { outputContract, method, value, action, done, actions, observations, fact, sample, output, source }
 }
+
+test("当前页地址方法经过真实来源交接及物化，不能夹带与方法不同的投影", () => {
+  const f = fixture()
+  Object.assign(f.method.fields.name, { selector: ":scope", valueSource: "page-url" })
+  Object.assign(f.action.args.fields.name, { selector: ":scope", valueSource: "page-url" })
+  f.sample.forEach(value => Object.assign(value as object, { name: url }))
+  const source = f.source()
+  assert.deepEqual(representativeSourceOutput(f.outputContract, source).output, f.output)
+  const native = naturalSourceContext(source.canonicalRequest), specification = readSpecificationSchema.parse(f.method)
+  const context = { version: 2 as const, request: native.ordinary,
+    payload: { assertFact: native.assertFact } as Extract<Parameters<typeof materializeHybridNodes>[0]["context"],
+      { version: 2 }>["payload"] }
+  const compilation = { compilerVersion: "bat-hybrid/2", coverage: [{ actionRef: f.action.id,
+    ownerSegmentId: "read-url", disposition: "compiled" }], segments: [{ id: "read-url", kind: "deterministic",
+    operation: { name: "browser.read-fields", version: 1, specification: { ...specification, maxInputBytes: 128000 } },
+    bindings: [], target: null, postconditions: [], expectedEffect: { kind: "read" },
+    outputs: [{ sourceRef: f.fact.id, schema: specification.outputSchema }] }] }
+  const node = materializeHybridNodes({ compilation: compilation as never, context,
+    model: "unused", runtimeScopes: new Map(), repeats: [] }).nodes[0]!
+  assert.equal(node.kind, "capability")
+  if (node.kind === "capability") {
+    assert.equal((node.config as { specification: typeof specification }).specification.fields.name?.valueSource, "page-url")
+  }
+  Object.assign(f.action.args.fields.name, { valueSource: null })
+  assert.throws(() => representativeSourceOutput(f.outputContract, f.source()), /hybrid_method_field_evidence_mismatch/)
+})
+
+test("范围读取只要求容器，宿主证明完成产物，不要求最终参数或模型输出技术引用", () => {
+  const f = fixture(contentValueSchema, true)
+  const output = { content: JSON.stringify({ html: "<section>whole region</section>" }) }
+  for (const key of Object.keys(f.output as object)) Reflect.deleteProperty(f.output as object, key)
+  Object.assign(f.output as object, output)
+  Object.assign(f.method, { container: "#region", fields: { content: { selector: ":scope", attribute: null,
+    valueType: "string", contentSource: "page-content" } }, maxItems: 1, outputSchema: contentValueSchema })
+  Object.assign(f.value, { output, outputPath: [], readPath: [],
+    coverage: { scope: "current_dom_matches", total: 1, sampled: 1, sampleLimit: 3, runtimeTruncated: false } })
+  Object.assign(f.action, { args: { container: "#region" } })
+  f.done.args.readRefs = []
+  assert.deepEqual(representativeSourceOutput(f.outputContract, f.source()).output, output)
+  Object.assign(f.method, { contentRegion: "common-ancestor" })
+  Object.assign(f.action, { args: { regions: "#region" } })
+  assert.deepEqual(representativeSourceOutput(f.outputContract, f.source()).output, output)
+  Object.assign(f.action, { args: { container: "#region" } })
+  assert.throws(() => representativeSourceOutput(f.outputContract, f.source()), /hybrid_method_capture_contract_invalid/)
+  Reflect.deleteProperty(f.method, "contentRegion")
+  Object.assign(f.action, { args: { container: "#other-region" } })
+  assert.throws(() => representativeSourceOutput(f.outputContract, f.source()), /hybrid_method_action_evidence_mismatch/)
+})
 
 function planFor(outputContract: ReturnType<typeof contract>): TaskPlan {
   return { steps: [{ id: "step", inputContract: contract({ type: "null" }), outputContract,
@@ -70,6 +122,27 @@ test("合法宿主方法样本可少于最终minItems，但原正式合同保持
   assert.throws(() => parseTaskValue(value.outputContract, value.output))
 })
 
+test("页面样本合并只能继承本输入同路径字段，拒绝模型填值和其他记录", () => {
+  const schema: ValueSchema = { type: "object", properties: { records: collection, label: { type: "string" } },
+    required: ["records", "label"], additionalProperties: false }
+  const value = fixture(schema)
+  ;(value.output as Record<string, JsonValue>).label = "real-input"
+  const source = value.source()
+  source.request.runtimeInputSchema = { type: "object", properties: { label: { type: "string" } },
+    required: ["label"], additionalProperties: false }
+  const plan = source.request.plan as Record<string, JsonValue>
+  ;(plan.resultSpec as Record<string, JsonValue>).fields = [{ path: [], description: "Observed and inherited", producerRef: "all" }]
+  const { digest: _digest, ...body } = plan
+  plan.digest = digest(body)
+  source.canonicalRequest = JSON.stringify(source.request)
+  assert.doesNotThrow(() => representativeSourceOutput(value.outputContract, source, { label: "real-input" }))
+  assert.throws(() => representativeSourceOutput(value.outputContract, source, { label: "other-record" }), /origin_unverified/)
+  assert.throws(() => representativeSourceOutput(value.outputContract, source, { elsewhere: "real-input" }), /origin_unverified/)
+  ;(source.request.runtimeInputSchema as Record<string, JsonValue>).required = []
+  source.canonicalRequest = JSON.stringify(source.request)
+  assert.throws(() => representativeSourceOutput(value.outputContract, source, { label: "real-input" }), /origin_unverified/)
+})
+
 test("done伪造引用、重复引用及重复宿主readRef均被拒绝", () => {
   const missing = fixture(); missing.done.args.readRefs = ["r9"]
   assert.throws(() => representativeSourceOutput(missing.outputContract, missing.source()), /read_ref_missing/)
@@ -77,6 +150,30 @@ test("done伪造引用、重复引用及重复宿主readRef均被拒绝", () => 
   assert.throws(() => representativeSourceOutput(duplicate.outputContract, duplicate.source()), /read_ref_duplicate/)
   const duplicatedFact = fixture(); duplicatedFact.observations[0]!.facts.push(duplicatedFact.fact)
   assert.throws(() => representativeSourceOutput(duplicatedFact.outputContract, duplicatedFact.source()), /read_ref_duplicate/)
+})
+
+test("对象后备读取允许代表输入缺省，实际输入存在时必须对应本项", () => {
+  const schema: ValueSchema = { type: "object", properties: { name: { type: "string", minLength: 1 },
+    size: { type: "string" } }, required: ["name", "size"], additionalProperties: false }
+  const value = fixture(schema), output = value.output as Record<string, JsonValue>
+  delete output.records; output.name = "detail-name"; output.size = "XL"
+  const fields = { name: { selector: ".name", attribute: null, valueType: "string" },
+    size: { selector: ".size", attribute: null, valueType: "string" } }
+  Object.assign(value.value, { output, outputPath: [], readPath: [],
+    specification: { container: "body", fields, maxItems: 1, requireComplete: true, outputSchema: schema, inheritFields: ["name"] },
+    coverage: { scope: "current_dom_matches", total: 1, sampled: 1, sampleLimit: 3, runtimeTruncated: false } })
+  Object.assign(value.action.args, { container: "body", outputPath: [], maxItems: 1,
+    fields: { name: { selector: ".name", attribute: null }, size: { selector: ".size", attribute: null } } })
+  const source = value.source()
+  source.request.runtimeInputSchema = jsonValueSchema.parse({ type: "object", properties: { name: schema.properties.name! },
+    required: [], additionalProperties: false })
+  const plan = source.request.plan as Record<string, JsonValue>
+  ;(plan.resultSpec as Record<string, JsonValue>).fields = [{ path: [], description: "Object read", producerRef: "all" }]
+  const { digest: _digest, ...body } = plan; plan.digest = digest(body)
+  source.canonicalRequest = JSON.stringify(source.request)
+  assert.doesNotThrow(() => representativeSourceOutput(value.outputContract, source, {}))
+  assert.doesNotThrow(() => representativeSourceOutput(value.outputContract, source, { name: "detail-name" }))
+  assert.throws(() => representativeSourceOutput(value.outputContract, source, { name: "other-record" }), /inheritance_mismatch/)
 })
 
 test("方法证据必须绑定成功read行动、原后置观察与真实字段定位", () => {
@@ -91,6 +188,44 @@ test("方法证据必须绑定成功read行动、原后置观察与真实字段�
     const value = fixture(); mutate(value)
     assert.throws(() => representativeSourceOutput(value.outputContract, value.source()), /evidence_mismatch/)
   }
+})
+
+test("来源数组逐条继承根参数，任何一条被改写都拒绝", () => {
+  const row: ValueSchema = { ...item, properties: { ...item.properties, amount: { type: "integer" } },
+    required: ["name", "amount"] }
+  const schema: ValueSchema = { type: "array", items: row, minItems: 10, maxItems: 20 }
+  const f = fixture(schema)
+  f.sample.forEach(value => Object.assign(value as object, { amount: 8 }))
+  Object.assign(f.value, { outputPath: [], output: f.sample })
+  Object.assign(f.method, { outputSchema: { ...schema, minItems: 0 }, inheritFields: ["amount"] })
+  f.action.args.outputPath = []
+  const source: { request: Record<string, JsonValue>; canonicalRequest: string; output: JsonValue } = f.source()
+  source.output = f.sample
+  source.request.runtimeInputSchema = jsonValueSchema.parse({ type: "object", properties: { amount: { type: "integer" } },
+    required: ["amount"], additionalProperties: false })
+  const plan = source.request.plan as Record<string, JsonValue>
+  ;(plan.resultSpec as Record<string, JsonValue>).fields = [{ path: [], description: "Selected entries", producerRef: "entries" }]
+  const { digest: _digest, ...body } = plan; plan.digest = digest(body)
+  source.canonicalRequest = JSON.stringify(source.request)
+  assert.doesNotThrow(() => representativeSourceOutput(f.outputContract, source, { amount: 8 }))
+  assert.throws(() => representativeSourceOutput(f.outputContract, source, { amount: 9 }), /inheritance_mismatch/)
+  const native = naturalSourceContext(source.canonicalRequest), specification = readSpecificationSchema.parse(f.method)
+  const context = { version: 2 as const, request: native.ordinary,
+    payload: { assertFact: native.assertFact } as Extract<Parameters<typeof materializeHybridNodes>[0]["context"],
+      { version: 2 }>["payload"] }
+  const compilation = { compilerVersion: "bat-hybrid/2", coverage: [{ actionRef: f.action.id,
+    ownerSegmentId: "read-root", disposition: "compiled" }], segments: [{ id: "read-root", kind: "deterministic",
+    operation: { name: "browser.read-fields", version: 1, specification: { ...specification, maxInputBytes: 128000 } },
+    bindings: [], target: null, postconditions: [], expectedEffect: { kind: "read" },
+    outputs: [{ sourceRef: f.fact.id, schema: specification.outputSchema }] }] }
+  const materialize = () => materializeHybridNodes({ compilation: compilation as never, context,
+    model: "unused", runtimeScopes: new Map(), repeats: [] }).nodes[0]!
+  const node = materialize()
+  assert.equal(node.kind, "capability")
+  if (node.kind === "capability") assert.deepEqual(node.input.record, { source: "input", path: [] })
+  context.request.runtimeInputSchema = { type: "object", properties: { amount: { type: "string" } },
+    required: ["amount"], additionalProperties: false }
+  assert.throws(materialize, /hybrid_natural_read_input_schema_mismatch/)
 })
 
 test("空样本、不稳定、截断、错误数量和缺失文档身份不能放宽输出", () => {

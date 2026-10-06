@@ -50,15 +50,19 @@ export function ExecutionActions({ execution, connection }: {
   execution: NonNullable<LiveChainModel["selectedExecution"]>
   connection: TaskChainConnection
 }) {
-  const busy = connection.snapshot().busy
-  return <div className="context-actions">
-    <BrowserHandoffActions execution={execution} connection={connection} />
+  const busy = connection.snapshot().busy || connection.snapshot().pendingUncertain
+  return <div className="run-controls">
+    {["waiting_for_human", "paused"].includes(execution.status) && execution.browserHandoff.status === "active"
+      && <Button size="1" variant="soft" disabled={busy} onClick={() => void connection.controlHandoff("focus", execution.id, execution.sequence)}>去处理</Button>}
+    {["waiting_for_human", "paused"].includes(execution.status) && execution.browserHandoff.leaseId
+      && ["pending", "unavailable"].includes(execution.browserHandoff.status) && <Button size="1" disabled={busy}
+        onClick={() => void connection.controlHandoff("inspect", execution.id, execution.sequence)}>核验窗口</Button>}
     {["waiting_for_human", "paused"].includes(execution.status)
       && (!execution.release || execution.browserHandoff.status === "active") && <Button size="1" disabled={busy}
       onClick={() => void connection.dispatch({ type: "resume_execution", requestId: crypto.randomUUID(),
-        executionId: execution.id, expectedSequence: execution.sequence })}>处理后继续</Button>}
+        executionId: execution.id, expectedSequence: execution.sequence })}>继续运行</Button>}
     {["queued", "running", "waiting_for_human", "paused"].includes(execution.status) && <Button size="1" color="red"
       variant="soft" disabled={busy} onClick={() => void connection.dispatch({ type: "cancel_execution",
-        executionId: execution.id })}>取消本次运行</Button>}
+        executionId: execution.id })}>停止运行</Button>}
   </div>
 }

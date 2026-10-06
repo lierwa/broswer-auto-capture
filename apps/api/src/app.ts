@@ -26,6 +26,12 @@ import { BrowserEnvironmentService, mountBrowserEnvironment } from "./browser/en
 import { mountBrowserProfile } from "./browser/profile-routes.js"
 import { DailyChromeExtension } from "./browser/daily-extension.js"
 import { mountDailyChromeExtension } from "./browser/daily-extension-routes.js"
+import { AccountRepository } from "./browser/account-repository.js"
+import { AccountIdentities } from "./browser/account-identity.js"
+import { BrowserAccountService } from "./browser/account-service.js"
+import { loadPlatformCatalog } from "./browser/platform-catalog.js"
+import { mountBrowserAccounts } from "./browser/account-routes.js"
+import { accountAvailability } from "./browser/account-availability.js"
 
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
 export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider;
@@ -57,11 +63,25 @@ export async function createApplication(options: AppOptions) {
   try {
     upstream = options.upstreamBrowserRuntime ?? new PythonUpstreamBrowserRuntime({ root: options.root,
       directory: options.directory, subject: ai.forSubject(SHARED_AI_SUBJECT),
-      browserMode: () => store.browserEnvironment().mode, dailyChromeEndpoint: () => dailyChrome.endpoint() })
+      browserMode: () => store.browserEnvironment().mode, dailyChromeEndpoint: ownerId => dailyChrome.endpoint(false, ownerId),
+      dailyChromeInspectionEndpoint: ownerId => dailyChrome.endpoint(false, ownerId, false) })
     taskChain = new TaskChainService(store, browser, aiModel, upstream, options.taskChainCapabilities, options.directory)
   }
   catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
   const browserProfile = new BrowserProfileService(options.root, options.directory)
+  const accountRepository = new AccountRepository(store)
+  const accountAccess = accountAvailability(store, taskChain, browser, browserProfile)
+  const accounts = new BrowserAccountService(accountRepository, new AccountIdentities(options.directory, dailyChrome, accountRepository),
+    upstream, accountAccess.assert, await loadPlatformCatalog(options.root), accountAccess)
+  if (upstream instanceof PythonUpstreamBrowserRuntime) upstream.setAccountPreparation(input =>
+    input.resume ? Promise.resolve() : accountAccess.withStartup(input, () => accounts.prepareStartup(input)))
+  if (upstream instanceof PythonUpstreamBrowserRuntime) upstream.setReleasedAccountOwners(kind => accounts.releasedWindowOwners(kind))
+  if (upstream instanceof PythonUpstreamBrowserRuntime) upstream.setDailyOwnerVerification(async ownerId => {
+    const window = accountRepository.list("maintenance").find(value => value.ownerId === ownerId)
+    if (!window) return false
+    const identity = accountRepository.get("identity", window.browserIdentityId)
+    return identity.kind === "daily" && identity.binding === (await dailyChrome.accountBinding())?.binding
+  })
   const deletion = new TaskDeletionService(store, coordinator, browser, browserProfile, taskChain, options.directory)
   const browserEnvironment = new BrowserEnvironmentService(store, upstream,
     () => { dailyChrome.assertStable(); assertBrowserIdle(browser, taskChain, store, browserProfile) },
@@ -85,17 +105,30 @@ export async function createApplication(options: AppOptions) {
     return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
   })
   mountBrowserEnvironment(app, browserEnvironment, () => deletion.assertWritable())
-  mountDailyChromeExtension(app, dailyChrome, () => deletion.assertWritable())
+  mountBrowserAccounts(app, accounts, () => deletion.assertWritable())
+  mountDailyChromeExtension(app, dailyChrome, () => {
+    deletion.assertWritable(); browserEnvironment.assertStable()
+  })
   mountBrowserProfile(app, browserProfile, browserEnvironment, () => deletion.assertWritable(), () => {
+    if (accounts.isBusy()) throw new DomainError("account_browser_busy", "请先完成账号维护操作。", 409)
     if (browser.owner() || taskChain.isAnyActive()) {
       throw new DomainError("browser_busy", "当前任务正在使用浏览器，请完成或停止后再管理账号。", 409)
     }
   })
-  routes(app, coordinator, browser, browserProfile, taskChain, deletion, store, ai, browserEnvironment, dailyChrome, options.developmentIdentity)
+  routes(app, coordinator, browser, browserProfile, taskChain, deletion, store, ai, browserEnvironment, dailyChrome, accounts, options.developmentIdentity)
   await mountAI(app, { ai, resolveSubject: () => SHARED_AI_SUBJECT })
+  let reconciliation: Promise<unknown> | undefined
+  const reconcile = () => {
+    if (reconciliation) return
+    reconciliation = Promise.all([taskChain.recoverBrowserResources("daily"), taskChain.recoverBrowserResources("dedicated")])
+      .finally(() => { reconciliation = undefined })
+  }
+  const browserLifecycleTimer = setInterval(reconcile, 15000); browserLifecycleTimer.unref()
+  reconcile()
   app.addHook("preClose", async () => {
+    clearInterval(browserLifecycleTimer); await reconciliation
     store.workspaceChanges.close()
-    await browserProfile.shutdown(); await taskChain.close()
+    await accounts.close(); await browserProfile.shutdown(); await taskChain.close()
     let report: { status: string } | undefined
     // WHY：父连接清理异常也不能跳过其它既有资源的退出；失败结论最后保留给服务 owner。
     try { report = await upstream?.close?.() }
@@ -110,12 +143,12 @@ export async function createApplication(options: AppOptions) {
         ? reply.sendFile("index.html") : reply.code(404).send({ error: "页面或接口不存在。", code: "not_found" }))
     }
     await app.ready()
-    return { app, coordinator, store, browser, browserProfile, browserEnvironment, dailyChrome, taskChain }
+    return { app, coordinator, store, browser, browserProfile, browserEnvironment, dailyChrome, taskChain, accounts }
   } catch (error) { await app.close(); throw error }
 }
 function assertBrowserIdle(browser: BrowserService, taskChain: TaskChainService, store: ProductStore,
   profile: BrowserProfileService) {
-  if (browser.owner() || taskChain.isAnyActive() || store.activeBrowserWindowLease()) {
+  if (browser.owner() || taskChain.isAnyActive()) {
     throw new DomainError("browser_busy", "当前任务正在使用或保留浏览器，请先完成或停止并核验现场。", 409)
   }
   if (profile.isBusy()) throw new DomainError("browser_profile_busy", "请先完成专用浏览器账号操作并关闭窗口。", 409)
@@ -136,6 +169,7 @@ const taskHistoryQuery = taskQuery.extend({ kind: z.enum(["releases", "execution
 function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser: BrowserService,
   browserProfile: BrowserProfileService, taskChain: TaskChainService, deletion: TaskDeletionService,
   store: ProductStore, ai: AI, browserEnvironment: BrowserEnvironmentService, dailyChrome: DailyChromeExtension,
+  accounts: BrowserAccountService,
   developmentIdentity?: { pid: number; root: string; stop?: () => void }) {
   mountDevelopmentHealth(app, developmentIdentity)
   app.get("/api/model-settings", () => ({ selection: store.sharedModelSelection(SHARED_AI_SUBJECT) ?? null }))
@@ -168,6 +202,7 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
   app.get("/api/interview", (request) => coordinator.snapshot(taskQuery.parse(request.query).taskId))
   app.get("/api/browser", (request) => browser.snapshot(taskQuery.parse(request.query).taskId))
   app.post("/api/browser", (request) => {
+    if (accounts.isBusy()) throw new DomainError("account_browser_busy", "请先完成账号维护操作。", 409)
     deletion.assertWritable()
     browserEnvironment.assertStable(); dailyChrome.assertStable()
     return browser.control(taskQuery.parse(request.query).taskId, request.body)
@@ -175,11 +210,8 @@ function routes(app: FastifyInstance, coordinator: InterviewCoordinator, browser
   app.get("/api/task-chain", (request) => taskChain.snapshot(taskQuery.parse(request.query).taskId))
   app.post("/api/task-chain", async (request, reply) => {
     deletion.assertWritable()
-    browserEnvironment.assertStable(); dailyChrome.assertStable()
+    browserEnvironment.assertStable(); dailyChrome.assertStable(true)
     const command = taskChainCommandSchema.parse(request.body)
-    if (browserProfile.isBusy() && !["cancel_authoring", "cancel_execution"].includes(command.type)) {
-      throw new DomainError("browser_profile_busy", "请先在浏览器账号设置中完成操作并关闭专用浏览器。", 409)
-    }
     return reply.code(202).send(await taskChain.dispatchAsync(taskQuery.parse(request.query).taskId, command))
   })
   app.post("/api/task-chain/handoff", async (request) => {

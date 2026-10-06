@@ -12,6 +12,7 @@ import {
 } from "@agent-platform/pi-agent-session"
 import type { ProductStore } from "../database/store.js"
 import { DomainError } from "../errors.js"
+import { completedMessageEvents } from "./completed-message-events.js"
 
 const require = createRequire(import.meta.url)
 
@@ -138,7 +139,7 @@ export function createAIModelProvider(
             tools: input.tools ?? [],
             settings: { reasoningEffort: selection.reasoningEffort },
             signal: input.signal,
-            onEvent: bridge.onRuntimeEvent,
+            onEvent: completedMessageEvents(bridge.onRuntimeEvent),
           })
           await bridge.settle(result)
           if (result.status === "cancelled") throw new DOMException("Aborted", "AbortError")

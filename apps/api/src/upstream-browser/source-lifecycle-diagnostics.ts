@@ -7,6 +7,15 @@ import { authorResultIssues } from "./author-result-diagnostics.js"
 import { runnerCleanupCodeSchema, retainedConnectionSchema, type RunnerCleanupReport, type RuntimePrimaryOutcome } from "./cleanup.js"
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
+const scopeMismatchSchema = z.object({ phase: z.literal("scope_mismatch"), status: z.literal("failed"),
+  sameSession: z.boolean(), sameTab: z.boolean(), sameUrl: z.boolean(), sameDocument: z.boolean(),
+}).strict()
+const targetBlockedSchema = z.object({ phase: z.literal("target_blocked"), status: z.literal("failed"),
+  pointerBlocked: z.boolean(), hitRelation: z.enum(["self", "descendant", "composed", "outside"]),
+  center: z.object({ x: z.number(), y: z.number() }).strict(),
+  viewport: z.object({ width: z.number().positive(), height: z.number().positive() }).strict(),
+  scrollTop: z.number(),
+}).strict()
 const targetStateSchema = z.object({
   "aria-expanded": z.boolean().optional(), "aria-checked": z.boolean().optional(),
   "aria-selected": z.boolean().optional(), "aria-disabled": z.boolean().optional(),
@@ -60,6 +69,15 @@ const attachedStartupSchema = z.object({
     context.addIssue({ code: "custom", message: "startup causes belong only to failed stages" })
   }
 })
+const runtimeCauseSchema = attachedStartupSchema.shape.causes.unwrap().element.extend({
+  locations: z.array(z.object({ source: z.enum(["bat_attached_window", "bat_target_scope", "sdk_browser_session",
+    "sdk_session_manager", "sdk_cdp_client", "bat_runner", "bat_capability", "bat_targets", "bat_target_preparation",
+    "bat_postconditions", "bat_event_capture", "sdk_tools", "sdk_element", "sdk_page", "sdk_action_watchdog"]),
+  line: z.number().int().min(1).max(1000000) }).strict()).max(8),
+})
+const runtimeCommandFailureSchema = z.object({ phase: z.literal("runtime_command_failure"), status: z.literal("failed"),
+  actionRef: z.string().regex(/^[A-Za-z0-9._:-]{1,256}$/), causes: z.array(runtimeCauseSchema).min(1).max(4),
+}).strict()
 
 const actionNameSchema = z.enum([
   "bat_inspect_dom", "bat_read_fields", "bat_request_human", "bat_scroll_to", "bat_summarize", "bat_validate_selection", "bat_wait_for", "click", "close", "done",
@@ -212,6 +230,18 @@ export class SourceLifecycleDiagnostics {
   acceptPythonLine(line: string) {
     try {
       const raw: unknown = JSON.parse(line)
+      const commandFailure = runtimeCommandFailureSchema.safeParse(raw)
+      if (commandFailure.success) {
+        // WHY：标准库异常链只转为固定来源位置；原运行结论和动作派发保持不变。
+        this.append({ source: "python", ...commandFailure.data }, new Date().toISOString())
+        return
+      }
+      const blocked = targetBlockedSchema.safeParse(raw)
+      if (blocked.success) {
+        // WHY：仅保存固定几何/布尔状态，不记录页面值；诊断不能替代原运行结论。
+        this.append({ source: "python", ...blocked.data }, new Date().toISOString())
+        return
+      }
       const runtime = runtimeActionFailureSchema.safeParse(raw)
       if (runtime.success) {
         this.append({ source: "python", ...runtime.data }, new Date().toISOString())
@@ -265,6 +295,11 @@ export class SourceLifecycleDiagnostics {
     const issues = code === "author_result_schema_invalid" ? authorResultIssues(error) : []
     this.append({ source: "host", phase: "result_boundary", status, code,
       ...(issues.length ? { issues } : {}) }, new Date().toISOString())
+  }
+
+  recordScopeMismatch(value: unknown) {
+    const event = scopeMismatchSchema.safeParse(value)
+    if (event.success) this.append({ source: "host", ...event.data }, new Date().toISOString())
   }
 
   close() {

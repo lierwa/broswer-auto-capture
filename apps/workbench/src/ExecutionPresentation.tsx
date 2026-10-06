@@ -7,6 +7,7 @@ import {
 import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react"
 import { Button } from "@radix-ui/themes"
 import { useState } from "react"
+import { PageContentValue } from "./PageContentValue.js"
 
 type ExecutionSummary = Pick<TaskExecution, "status" | "result"> & Partial<Pick<TaskExecution, "reason" | "cleanupResume">>
 
@@ -19,17 +20,33 @@ export function executionOutcome(execution: ExecutionSummary) {
 
 export function executionFailureReason(execution: ExecutionSummary, startup?: TaskExecutionDetail["startupFailure"]) {
   const outcome = executionOutcome(execution)
+  const recordedReason = outcome.result?.failure?.reason ?? outcome.reason
+  const startupCode = startup?.code ?? /hybrid_runner_failed:[A-Za-z]+:(hybrid_[a-z_]+)$/.exec(recordedReason ?? "")?.[1]
+  const fixedCause = startupCode ? startupFailureCauses[startupCode] : undefined
   if (startup) {
     const stage = ({ reserve: "无法启动浏览器任务", sdk_connect: "无法连接浏览器",
       task_target_prepare: "无法创建任务窗口", task_target_focus: "无法打开任务窗口" })[startup.stage]
-    const cause = startup.errorKind === "connection_error" ? "浏览器连接已断开。"
+    const cause = fixedCause ?? (startup.errorKind === "connection_error" ? "浏览器连接已断开。"
       : startup.errorKind === "timeout_error" ? "等待浏览器响应超时。"
-      : startup.errorKind === "os_error" ? "浏览器通信异常。" : "具体的底层错误未记录。"
+      : startup.errorKind === "os_error" ? "浏览器通信异常。"
+      : startup.errorKind === "value_error" ? "浏览器启动校验未通过。" : "浏览器启动异常，详情见本次运行记录。")
     return `${stage}。${cause}`
   }
+  if (fixedCause) return `无法启动浏览器任务。${fixedCause}`
   return outcome.result?.failure?.code === "hybrid_runner_failed" && outcome.result.failure.runId === null
-    ? startup === null ? "浏览器启动失败，具体错误未记录。" : "浏览器启动失败。"
+    ? recordedReason ?? "浏览器启动失败，未保存具体原因。"
     : outcome.result?.failure?.reason ?? outcome.reason ?? "未记录失败原因。"
+}
+
+// WHY：优先展示已持久化的固定原因；异常类别并不意味着底层错误未记录。
+const startupFailureCauses: Record<string, string> = {
+  hybrid_attached_window_busy: "此前操作的浏览器窗口租约尚未释放，请再次运行以重新核验。",
+  hybrid_attached_window_owner_mismatch: "原浏览器窗口归属不一致，未接管该窗口。",
+  hybrid_attached_window_profile_changed: "当前 Chrome 与原浏览器身份不一致。",
+  hybrid_attached_window_endpoint_changed: "原浏览器连接地址已变化，需要核验同一 Chrome。",
+  hybrid_attached_window_target_missing: "原任务窗口已经关闭，请重新运行。",
+  hybrid_attached_window_create_unconfirmed: "此前任务窗口的创建结果尚未确认。",
+  hybrid_attached_window_endpoint_required: "Chrome 扩展尚未提供连接，请允许连接后再次运行。",
 }
 
 export function ExecutionFailure({ execution, startup }: {
@@ -118,14 +135,23 @@ function CollectionValue({ schema, values }: { schema: ValueSchema; values: Json
       onClick={() => setPage(current - 1)}>上一页</Button><span>第 {current + 1} / {pages} 页</span>
       <Button size="1" variant="soft" disabled={current + 1 === pages} onClick={() => setPage(current + 1)}>下一页</Button></div>}
     <ol className="context-value-list" start={current * size + 1}>{values.slice(current * size, (current + 1) * size).map((value, index) =>
-      <li key={current * size + index}><details className="result-record-detail" open={values.length === 1}>
-        <summary>记录 {current * size + index + 1}</summary><SchemaValue schema={schema} value={value} /></details></li>)}</ol>
+      <li key={current * size + index}><ResultRecord schema={schema} value={value} ordinal={current * size + index + 1} initiallyOpen={values.length === 1} /></li>)}</ol>
   </div>
 }
 
 function FieldValue({ schema, value }: { schema: ValueSchema | undefined; value: JsonValue }) {
-  if (schema?.type === "string" && typeof value === "string" && value.length > 100) return <p>{value}</p>
+  if (schema?.type === "string" && typeof value === "string" && value.length > 100) return <PageContentValue value={value} />
   return schema ? <SchemaValue schema={schema} value={value} /> : <ResultValue value={value} />
+}
+
+function ResultRecord({ schema, value, ordinal, initiallyOpen }: {
+  schema: ValueSchema; value: JsonValue; ordinal: number; initiallyOpen: boolean
+}) {
+  const [open, setOpen] = useState(initiallyOpen)
+  // WHY：折叠的大产物不提前解析或创建Base64文本DOM；打开后仍按原合同读取。
+  return <details className="result-record-detail" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>记录 {ordinal}</summary>{open && <SchemaValue schema={schema} value={value} />}
+  </details>
 }
 
 function UnrenderableValue({ value }: { value: JsonValue }) {

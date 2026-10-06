@@ -113,3 +113,12 @@ test("schema rejection preserves the only source receipt and closes the owner wi
   assert.deepEqual(h.events, ["start", "response", "source", "close", "bridge-close"])
   assert.equal(h.closeCount, 1)
 })
+
+test("account author handoff failure still closes the runner and model bridge", async () => {
+  const h = harness()
+  Object.assign(h.runner, { handoff: async () => { throw new Error("handoff_failed") } })
+  await assert.rejects(withHybridAuthoring({ ...h.input, preserveWindow: true,
+    managedWindow: { ownerId: h.input.ownerId, resume: true } }, async () => null, h.dependencies), /handoff_failed/)
+  assert.deepEqual(h.events, ["start", "close", "bridge-close"])
+  assert.deepEqual(h.starts[0]?.managedWindow, { ownerId: h.input.ownerId, resume: true })
+})

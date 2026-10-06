@@ -23,7 +23,7 @@ class ReadSample(Contract):
 
 
 async def sample_read_fields(browser, specification: ReadSpec, *, sample_limit: int = 3,
-                             expected_identity: dict[str, str] | None = None, read_path=()) -> ReadSample:
+                             expected_identity: dict[str, str] | None = None, read_path=(), inherited=None) -> ReadSample:
     """Verify bounded first/tail DOM samples twice, not a complete business result."""
     if type(sample_limit) is not int or not 1 <= sample_limit <= 300:
         raise ValueError('read_sample_limit_invalid')
@@ -34,10 +34,10 @@ async def sample_read_fields(browser, specification: ReadSpec, *, sample_limit: 
     before, elements = await _snapshot(browser, specification, expected_identity)
     identity = before['page']
     _validate_collection_budget(specification, len(elements))
-    first, first_total = await _sample_output(browser, specification, elements, sample_field, sample_limit)
+    first, first_total = await _sample_output(browser, specification, elements, sample_field, sample_limit, inherited)
     middle, elements = await _snapshot(browser, specification, identity)
     _assert_snapshot(before, middle)
-    second, second_total = await _sample_output(browser, specification, elements, sample_field, sample_limit)
+    second, second_total = await _sample_output(browser, specification, elements, sample_field, sample_limit, inherited)
     after, _ = await _snapshot(browser, specification, identity)
     _assert_snapshot(before, after)
     if digest(first) != digest(second) or first_total != second_total:
@@ -46,11 +46,12 @@ async def sample_read_fields(browser, specification: ReadSpec, *, sample_limit: 
         raise NaturalReadFailure('read_sample_method_changed')
     # WHY：这里只证明当前 DOM 的有界代表样本；数量与预算事实不能代表分页后的业务全集。
     # 空样本只记录当前无匹配，不能被编译方当成字段投影已获验证。
-    total = first_total if sample_field else len(before['ids'])
+    total = first_total if sample_field else min(len(before['ids']), specification.take or len(before['ids']))
     return ReadSample(specificationDigest=method_digest, output=first, outputDigest=digest(first),
         pageIdentity=identity, documentRootId=before['root'], containerIdsDigest=digest(before['ids']),
         coverage=ReadSampleCoverage(total=total, sampled=min(total, sample_limit, runtime_maximum),
-                                    sampleLimit=sample_limit, runtimeTruncated=total > runtime_maximum))
+                                    sampleLimit=sample_limit, runtimeTruncated=total > runtime_maximum,
+                                    matched=len(before['ids']) if specification.take else None))
 
 
 def _collection_field(specification, read_path):
@@ -75,7 +76,8 @@ async def _snapshot(browser, specification, expected_identity):
     if len(roots) != 1:
         raise NaturalReadFailure('read_sample_document_identity_unavailable')
     root = await backend_id(roots[0])
-    elements = await resolver.resolve_collection(specification.container)
+    from .content_region import resolve_read_regions
+    elements = await resolve_read_regions(browser, specification, resolver)
     identifiers = [await backend_id(element) for element in elements]
     assert_identity(await page_identity(await current_page(browser)), identity)
     return {'page': identity, 'root': root, 'ids': identifiers}, elements
@@ -96,18 +98,32 @@ def _validate_collection_budget(specification, total):
                              reason='complete_collection_required')
 
 
-async def _sample_output(browser, specification, elements, sample_field, sample_limit):
+async def _sample_output(browser, specification, elements, sample_field, sample_limit, inherited):
     samples = ({sample_field: {'limit': min(sample_limit, specification.fields[sample_field].maxValues)}}
                if sample_field else None)
-    count = min(len(elements), specification.maxItems)
+    count = min(len(elements), specification.maxItems, specification.take or specification.maxItems)
     limit = min(sample_limit, count)
     indices = list(range(limit)) if count <= limit else [0, *range(count - limit + 1, count)]
     output = await project_field_records(browser, specification, [elements[index] for index in indices],
-                                         field_samples=samples)
+                                         field_samples=samples, inherited=inherited, verify_inherited=True)
+    key_page = await current_page(browser) if specification.keyField else None
+    key_url = await key_page.get_url() if key_page else None
     if specification.includeOrdinal:
         # WHY：追加场景读取首项与末尾样本，必须保留完整 DOM 的序号，不能把样本下标当作点击身份。
         for record, index in zip(output, indices, strict=True):
             record['ordinal'] = index + 1
+    for record, index in zip(output, indices, strict=True):
+        if specification.entryField is not None:
+            record[specification.entryField]['ordinal'] = index + 1
+        for name, field in specification.fields.items():
+            if field.ordinal:
+                record[name] = index + 1
+        if specification.keyField:
+            links = {name: record[name] for name, field in specification.fields.items()
+                     if field.attribute == 'href' and name in record}
+            from .element_entry import entry_key_record
+            values = entry_key_record(record, specification.keyField, specification.entryField)
+            record[specification.keyField] = digest(links or {'url': key_url, 'ordinal': index + 1, 'record': values})
     schema = specification.outputSchema
     if schema.get('type') == 'object':
         if specification.maxItems != 1 or len(output) != 1:

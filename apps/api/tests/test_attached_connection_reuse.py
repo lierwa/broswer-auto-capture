@@ -4,6 +4,7 @@ import io
 import json
 import tempfile
 import unittest
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -32,7 +33,8 @@ class SDKFixture:
         self.fail_close, self.cancel_create, self.early_attach_rejected = False, False, False
         self.client = CDPClient(self.endpoint)
         self.client.ws = SimpleNamespace(state=State.OPEN)
-        self.client.send = SimpleNamespace(Target=SimpleNamespace(createTarget=self.create,
+        self.client.send = SimpleNamespace(Browser=SimpleNamespace(getVersion=AsyncMock(return_value={'product': 'Chrome/Extension-Bridge'})),
+            Target=SimpleNamespace(createTarget=self.create,
             closeTarget=self.close_target, getTargets=self.get_targets, setAutoAttach=AsyncMock(),
             attachToTarget=self.attach, activateTarget=self.activate), Runtime=SimpleNamespace(runIfWaitingForDebugger=AsyncMock()),
             Network=SimpleNamespace(enable=AsyncMock()))
@@ -149,6 +151,130 @@ class AttachedConnectionReuseTests(unittest.IsolatedAsyncioTestCase):
     async def release(self, owner=None):
         return await self.runner.handle({'id': str(uuid4()), 'type': 'hybrid_release',
                                          'connectionOwnerId': str(owner or self.parent)})
+
+    async def test_native_focus_recovery_uses_owned_list_page_without_creating_fallback(self):
+        await self.runner.start(self.config(self.owner_a))
+        browser, manager = self.sdk.browser, self.sdk.browser.session_manager
+        # 模拟原生已清session但尚留target：最后插入的失效详情不能遮住有效列表页。
+        manager._targets['stale-detail'] = SimpleNamespace(target_id='stale-detail', target_type='page')
+        self.runner.managed_window.scope.owned.add('stale-detail')
+        browser.agent_focus_target_id = None
+        await manager._recover_agent_focus('closed-popup')
+        self.assertEqual(browser.agent_focus_target_id, 'task-1')
+        self.assertEqual(self.sdk.created, ['task-1'])
+        self.assertEqual(self.sdk.activated, ['task-1', 'task-1'])
+        self.assertNotIn('personal', [item.target_id for item in manager.get_all_page_targets()])
+        manager._targets.pop('stale-detail')
+        self.runner.managed_window.scope.owned.remove('stale-detail')
+
+    async def test_offline_end_requires_host_exit_proof_and_only_closes_original_owner(self):
+        from browser_use_runner.hybrid_commands import ManagedWindowRequest
+        from browser_use_runner.window_control import control_window
+        await self.runner.start(self.config(self.owner_a))
+        request = ManagedWindowRequest(id=uuid4(), type='hybrid_managed_window', action='end',
+            profilePath=str(self.profile), ownerId=self.owner_a, leaseId=self.owner_a,
+            browserMode='daily', cdpUrl=self.sdk.endpoint)
+
+        @asynccontextmanager
+        async def connected(_endpoint):
+            yield self.sdk.client
+
+        with patch('browser_use_runner.attached_window._client', connected):
+            with self.assertRaisesRegex(ValueError, 'hybrid_managed_window_controlled'):
+                await control_window(request)
+            with self.assertRaisesRegex(ValueError, 'hybrid_attached_window_owner_mismatch'):
+                await control_window(request.model_copy(update={'leaseId': self.owner_b, 'controllerReleased': True}))
+            self.assertIn('task-1', self.sdk.targets)
+            result = await control_window(request.model_copy(update={'controllerReleased': True}))
+        self.assertFalse(result['active'])
+        self.assertEqual(set(self.sdk.targets), {'personal'})
+        self.assertEqual(self.runner.managed_window._load(self.owner_a).status, 'ended')
+
+    async def test_detached_target_is_closed_even_when_debugger_enumeration_is_empty(self):
+        # 不变量：debugger目标消失不是物理页面已关闭，仍清理原租约目标且不触碰个人页。
+        await self.runner.start(self.config(self.owner_a))
+        window = self.runner.managed_window
+        target = window._load(self.owner_a).targetId
+        with patch.object(self.sdk.client.send.Target, 'getTargets', AsyncMock(return_value={'targetInfos': []})):
+            result = await self.release()
+        self.assertTrue(result['closed'])
+        self.assertNotIn(target, self.sdk.targets)
+        self.assertIn('personal', self.sdk.targets)
+        self.assertEqual(window._load(self.owner_a).status, 'ended')
+
+    async def test_empty_enumeration_and_unconfirmed_close_preserves_cleanup_required(self):
+        await self.runner.start(self.config(self.owner_a))
+        window = self.runner.managed_window
+        target = window._load(self.owner_a).targetId
+        close = AsyncMock(return_value={'success': False})
+        with patch.object(self.sdk.client.send.Target, 'getTargets', AsyncMock(return_value={'targetInfos': []})), \
+             patch.object(self.sdk.client.send.Target, 'closeTarget', close):
+            result = await self.release()
+        close.assert_awaited_once_with({'targetId': target})
+        self.assertFalse(result['closed'])
+        self.assertNotEqual(window._load(self.owner_a).status, 'ended')
+        self.assertIn(target, self.sdk.targets)
+
+    async def test_native_cdp_closed_target_keeps_native_enumeration_proof(self):
+        # 不变量：原生CDP真实关闭不需要再次发送会报NoTarget的close；不能套用扩展的枚举缺口。
+        await self.runner.start(self.config(self.owner_a))
+        window = self.runner.managed_window
+        target = window._load(self.owner_a).targetId
+        await self.sdk.close_target({'targetId': target})
+        close = AsyncMock(side_effect=ValueError('No target with given id found'))
+        with patch.object(self.sdk.client.send.Browser, 'getVersion', AsyncMock(return_value={'product': 'Chrome/140.0'})), \
+             patch.object(self.sdk.client.send.Target, 'closeTarget', close):
+            result = await self.release()
+        close.assert_not_awaited()
+        self.assertTrue(result['closed'])
+        self.assertEqual(window._load(self.owner_a).status, 'ended')
+
+    async def test_empty_bridge_enumeration_cannot_confirm_inspect_or_verify_closed(self):
+        await self.runner.start(self.config(self.owner_a))
+        window = self.runner.managed_window
+        lease = window._load(self.owner_a)
+        lease.status = 'handoff'
+        window._save(lease)
+        @asynccontextmanager
+        async def client(_endpoint):
+            yield self.sdk.client
+        with patch('browser_use_runner.attached_window._client', client), \
+             patch.object(self.sdk.client.send.Target, 'getTargets', AsyncMock(return_value={'targetInfos': []})):
+            for operation in (window.inspect, window.verify_closed):
+                with self.assertRaisesRegex(ValueError, 'hybrid_attached_window_end_unconfirmed'):
+                    await operation(self.owner_a)
+                self.assertEqual(window._load(self.owner_a).status, 'handoff')
+
+    async def test_popup_registered_during_close_requires_its_own_ack(self):
+        # 不变量：旧目标ACK不能替代异步登记的新popup的关闭证据，即便新popup已失去debugger。
+        await self.runner.start(self.config(self.owner_a))
+        window = self.runner.managed_window
+        target = window._load(self.owner_a).targetId
+        original = self.sdk.close_target
+        async def close_with_popup(params):
+            result = await original(params)
+            info = {'targetId': 'owned-popup', 'type': 'page', 'url': 'about:blank', 'openerId': target}
+            self.sdk.targets['owned-popup'] = info
+            self.assertTrue(window.scope.accepts(info))
+            return result
+        with patch.object(self.sdk.client.send.Target, 'getTargets', AsyncMock(return_value={'targetInfos': []})), \
+             patch.object(self.sdk.client.send.Target, 'closeTarget', close_with_popup):
+            result = await self.release()
+        self.assertFalse(result['closed'])
+        lease = window._load(self.owner_a)
+        self.assertNotEqual(lease.status, 'ended')
+        self.assertIn('owned-popup', lease.ownedTargets)
+        self.assertIn('owned-popup', self.sdk.targets)
+
+    async def test_native_recovery_without_task_pages_rejects_personal_or_emergency_page(self):
+        await self.runner.start(self.config(self.owner_a))
+        browser, manager = self.sdk.browser, self.sdk.browser.session_manager
+        await self.release()
+        browser.agent_focus_target_id = None
+        with self.assertRaisesRegex(ValueError, 'attached_window_target_missing'):
+            await manager._recover_agent_focus('task-1')
+        self.assertEqual(self.sdk.created, ['task-1'])
+        self.assertIn('personal', self.sdk.targets)
 
     # WHY：SDK logical focus 不保证真实页面 visible；新/复用连接均须激活各自已登记的任务目标。
     async def test_new_and_reused_connection_activate_only_the_current_owned_task_target(self):

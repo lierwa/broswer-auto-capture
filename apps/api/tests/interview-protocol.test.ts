@@ -101,6 +101,7 @@ test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草�
     "## 已确认来源", "仅使用 example.org；具体页面由试做调查。",
     "## 试做入口", `1. ${entry}`,
     "## 运行输入", "- 无",
+    "## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。",
     "## 代表试做", "从已确认入口核实内容身份，再播放并定位。",
     "## 结果与完成", "- 交付：完成状态\n- 页面交付：保留现场\n目标内容正在播放且当前位置为 180 秒。",
     "# 可观察完成标准", "目标内容正在播放且当前位置为 180 秒。",
@@ -147,11 +148,11 @@ test("动作型与数据型草稿都明确结果形态且继续写 brief=null", 
   const state = sourcedState()
   const action = parseInterviewOutput({ assistantText: "已整理播放完成条件。", question: null, draft: {
     title: "播放任务", brief: null,
-    markdown: `# 任务目标\n播放目标内容。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n从入口调查并播放目标内容。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n以目标内容正在播放作为完成事实。`,
+    markdown: `# 任务目标\n播放目标内容。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口调查并播放目标内容。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n以目标内容正在播放作为完成事实。`,
   } }, state)
   const data = parseInterviewOutput({ assistantText: "已整理列表结果。", question: null, draft: {
     title: "列表任务", brief: null,
-    markdown: `# 任务目标\n读取列表。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n从入口读取列表。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：记录列表\n- 页面交付：无需保留\n- 字段：标题（文本）：每项的标题\n- 字段：链接（文本）：同一项的链接\n空列表时说明不足且不进入详情页。`,
+    markdown: `# 任务目标\n读取列表。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口读取列表。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：记录列表\n- 页面交付：无需保留\n- 字段：标题（文本）：每项的标题\n- 字段：链接（文本）：同一项的链接\n空列表时说明不足且不进入详情页。`,
   } }, state)
   assert.equal(action.draft?.brief, null)
   assert.equal(data.draft?.brief, null)
@@ -162,7 +163,7 @@ test("动作型与数据型草稿都明确结果形态且继续写 brief=null", 
 
 test("访谈数据草案缺少结果形状时拒绝本轮，保留上一有效草案", () => {
   const state = sourcedState()
-  const markdown = `# 任务目标\n读取页面数据。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n从入口读取数据。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：单条记录\n- 页面交付：无需保留\n- 字段：标题（文本）：页面标题\n读取不到时报告原因。`
+  const markdown = `# 任务目标\n读取页面数据。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口读取数据。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：单条记录\n- 页面交付：无需保留\n- 字段：标题（文本）：页面标题\n读取不到时报告原因。`
   const candidate = { assistantText: "已整理数据草案。", question: null,
     draft: { title: "数据任务", brief: null, markdown } }
   const first = beginRound(state, { type: "message", requestId: randomUUID(), expectedRevision: 0,
@@ -197,7 +198,7 @@ test("自由文本澄清旧题板后允许草案；失败轮次不篡改旧题�
   } })
   state.messages.push(message({ id: "access", role: "assistant", text: "请确认访问资格。", question }))
   state.unresolved.push({ id: "access", revision: 1, question, status: "open", answerMessageId: null })
-  const draft = { title: "播放任务", brief: null, markdown: `# 任务目标\n播放最新正片。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 代表试做\n从入口调查最新正片并尝试播放。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n播放成功才算完成；看不了则报告原因。` }
+  const draft = { title: "播放任务", brief: null, markdown: `# 任务目标\n播放最新正片。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口调查最新正片并尝试播放。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n播放成功才算完成；看不了则报告原因。` }
   const candidate = { assistantText: "已按你的要求整理。", question: null, draft }
   assert.throws(() => parseInterviewOutput(candidate, state), /interview_unresolved_items_open/)
 

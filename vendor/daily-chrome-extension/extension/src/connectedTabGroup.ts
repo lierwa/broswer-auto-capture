@@ -16,193 +16,48 @@
 
 import { RelayConnection, debugLog } from './relayConnection';
 
-const PLAYWRIGHT_GROUP_TITLE = 'Playwright';
-const PLAYWRIGHT_GROUP_TITLE_PREFIX = `${PLAYWRIGHT_GROUP_TITLE} · `;
-// Green first, so a lone connection keeps the familiar look.
-const PLAYWRIGHT_GROUP_COLORS: GroupColor[] = ['green', 'blue', 'purple', 'orange', 'pink', 'cyan', 'yellow', 'red'];
-const NON_DEBUGGABLE_SCHEMES = ['chrome:', 'edge:', 'devtools:'];
-const CONNECTED_BADGE = { text: '✓', color: '#4CAF50', title: 'Connected to Playwright client' };
-
-export function isNonDebuggableUrl(url: string | undefined): boolean {
-  return !!url && NON_DEBUGGABLE_SCHEMES.some(s => url.startsWith(s));
-}
-
-type GroupColor = `${chrome.tabGroups.Color}`;
-
-export type GroupStyle = {
-  title: string;
-  color: GroupColor;
-};
-
-export function uniqueGroupStyle(clientName: string | undefined, taken: readonly GroupStyle[]): GroupStyle {
-  const titles = new Set(taken.map(style => style.title));
-  const base = PLAYWRIGHT_GROUP_TITLE_PREFIX + (clientName || 'unknown');
-  let title = base;
-  for (let i = 2; titles.has(title); i++)
-    title = `${base} (${i})`;
-
-  const colors = new Set(taken.map(style => style.color));
-  const color = PLAYWRIGHT_GROUP_COLORS.find(candidate => !colors.has(candidate)) ?? PLAYWRIGHT_GROUP_COLORS[0];
-  return { title, color };
-}
-
-// The Playwright tab group for an active RelayConnection. The Chrome tab group
-// is the single source of truth for which tabs the client targets:
-//  - User drags a tab in/out → `_onTabGroupChanged` attaches/detaches.
-//  - Relay attaches on its own (initial tab, popup, Target.createTarget) →
-//    `_onTabAttached` pulls the new tab into the group, whose onUpdated event
-//    flows back through `_onTabGroupChanged` for consistency.
-// `_groupTabIds` caches group membership from Chrome events so hot-path checks
-// in `_onTabUpdated` stay synchronous.
-export class ConnectedTabGroup {
+// WHY：任务目标的事实源是 relay 已授权的 debugger attach，不是可由用户拖动的 Chrome 分组。
+// 不创建临时组：Chrome 可自动保存组，关闭任务窗口并不保证移除保存记录。
+export class ConnectedTabs {
   readonly clientName: string | undefined;
-  readonly groupStyle: GroupStyle;
-  private _connection: RelayConnection;
-  private _isTabReserved: (tabId: number) => boolean;
-  private _groupId: number | null = null;
-  private _groupTabIds: Set<number> = new Set();
-  private _onTabUpdatedListener: (tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => void;
-  private _onTabRemovedListener: (tabId: number) => void;
-
+  private readonly _connection: RelayConnection;
+  private readonly _onTabUpdatedListener: (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => void;
   onclose?: () => void;
 
-  constructor(connection: RelayConnection, selectedTab: chrome.tabs.Tab, clientName: string | undefined, groupStyle: GroupStyle, isTabReserved: (tabId: number) => boolean, authorizationToken?: string) {
+  constructor(connection: RelayConnection, selectedTab: chrome.tabs.Tab | undefined,
+    clientName: string | undefined, authorizationToken?: string) {
     this.clientName = clientName;
-    this.groupStyle = groupStyle;
-    this._isTabReserved = isTabReserved;
     this._connection = connection;
-    this._connection.onclose = () => this._onConnectionClose();
-    this._connection.ontabattached = (tabId: number) => this._onTabAttached(tabId);
-    this._connection.ontabdetached = (tabId: number) => this._onTabDetached(tabId);
-    this._onTabUpdatedListener = this._onTabUpdated.bind(this);
-    this._onTabRemovedListener = this._onTabRemoved.bind(this);
+    connection.onclose = () => this._onConnectionClose();
+    connection.ontabattached = tabId => { void this._updateBadge(tabId, true); };
+    connection.ontabdetached = tabId => { void this._updateBadge(tabId, false); };
+    this._onTabUpdatedListener = (tabId, changeInfo) => {
+      if (changeInfo.url !== undefined && connection.attachedTabs.has(tabId))
+        void this._updateBadge(tabId, true);
+    };
     chrome.tabs.onUpdated.addListener(this._onTabUpdatedListener);
-    chrome.tabs.onRemoved.addListener(this._onTabRemovedListener);
-    // Seed the relay with the user-selected tab, then close out the initial
-    // handshake. The relay holds Playwright-side CDP traffic until
-    // `didInitialize` arrives, so it sees a fully populated tab model by the
-    // time it handles `Target.setAutoAttach`.
-    this._connection.attachTab(selectedTab);
-    this._connection.didInitialize(authorizationToken);
+    if (selectedTab) connection.attachTab(selectedTab);
+    connection.didInitialize(authorizationToken);
   }
 
-  connectedTabIds(): number[] {
-    return [...this._groupTabIds];
-  }
-
-  close(reason: string): void {
-    this._connection.close(reason);
-  }
-
+  connectedTabIds(): number[] { return [...this._connection.attachedTabs]; }
+  close(reason: string): void { this._connection.close(reason); }
   releaseTab(tabId: number): void {
-    if (!this._groupTabIds.has(tabId))
-      return;
-    this._groupTabIds.delete(tabId);
-    this._connection.detachTab(tabId);
+    if (this._connection.attachedTabs.has(tabId)) this._connection.detachTab(tabId);
   }
-
-  private _onTabUpdated(tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab): void {
-    if (changeInfo.groupId !== undefined)
-      this._onTabGroupChanged(tabId, tab);
-    if (changeInfo.url === undefined)
-      return;
-    // Chrome resets per-tab badge state on navigation, so re-apply it.
-    if (this._connection.attachedTabs.has(tabId))
-      void this._updateBadge(tabId, CONNECTED_BADGE);
-  }
-
-  // Single entry point for group membership changes, whether the user dragged
-  // or we grouped the tab ourselves. Attaches on entry (if debuggable) and
-  // detaches on exit; a chrome:// tab stays in the group until it navigates
-  // (handled in _onTabUpdated).
-  private _onTabGroupChanged(tabId: number, tab: chrome.tabs.Tab): void {
-    const inOurGroup = this._groupId !== null && tab.groupId === this._groupId;
-    const wasInGroup = this._groupTabIds.has(tabId);
-    if (inOurGroup === wasInGroup)
-      return;
-    if (inOurGroup) {
-      // WHY：拖入分组不是任务授权；只有原 relay 已 attach 的任务目标可以留在分组。
-      if (!this._connection.attachedTabs.has(tabId)) {
-        void ungroupTabs([tabId]);
-        return;
-      }
-      // Chrome may drop the connect page of a client that is still connecting
-      // into our group; that tab is spoken for.
-      if (this._isTabReserved(tabId)) {
-        void ungroupTabs([tabId]);
-        return;
-      }
-      this._groupTabIds.add(tabId);
-      if (!isNonDebuggableUrl(tab.url))
-        this._connection.attachTab(tab);
-    } else {
-      this._groupTabIds.delete(tabId);
-      if (this._connection.attachedTabs.has(tabId))
-        this._connection.detachTab(tabId);
-    }
-  }
-
-  private _onTabRemoved(tabId: number): void {
-    this._groupTabIds.delete(tabId);
-  }
-
-  private _onTabAttached(tabId: number): void {
-    void this._updateBadge(tabId, CONNECTED_BADGE);
-    void this._addTabToGroup(tabId);
-  }
-
-  // Debugger detach releases this group's presentation; later navigation does not restore control.
-  private _onTabDetached(tabId: number): void {
-    // WHY：已断开的目标不能因分组未变/后续导航自动恢复控制，交给既有失败与恢复合同。
-    this._groupTabIds.delete(tabId);
-    void ungroupTabs([tabId]);
-    void this._updateBadge(tabId, { text: '' });
-  }
-
   private _onConnectionClose(): void {
     chrome.tabs.onUpdated.removeListener(this._onTabUpdatedListener);
-    chrome.tabs.onRemoved.removeListener(this._onTabRemovedListener);
-    const groupTabs = [...this._groupTabIds];
-    this._groupTabIds.clear();
-    if (groupTabs.length)
-      void ungroupTabs(groupTabs);
     this.onclose?.();
   }
-
-  private async _updateBadge(tabId: number, { text, color, title }: { text: string; color?: string, title?: string }): Promise<void> {
+  private async _updateBadge(tabId: number, connected: boolean): Promise<void> {
     try {
       await Promise.all([
-        chrome.action.setBadgeText({ tabId, text }),
-        chrome.action.setTitle({ tabId, title: title || '' }),
-        color ? chrome.action.setBadgeBackgroundColor({ tabId, color }) : Promise.resolve(),
+        chrome.action.setBadgeText({ tabId, text: connected ? '✓' : '' }),
+        chrome.action.setTitle({ tabId, title: connected ? 'B-A-T 已连接' : '' }),
+        ...(connected ? [chrome.action.setBadgeBackgroundColor({ tabId, color: '#4CAF50' })] : []),
       ]);
-    } catch (error: any) {
-      // Ignore errors as the tab may be closed already.
-    }
+    } catch { /* 已关闭的任务页无需恢复 badge。 */ }
   }
-
-  // Moves an already-attached tab into our Chrome tab group, creating it on
-  // first use. `_groupTabIds` is updated after the await so an onUpdated event
-  // that arrives concurrently (`_groupId` still null, wasInGroup still false)
-  // becomes a harmless no-op rather than taking the drag-out branch.
-  private async _addTabToGroup(tabId: number): Promise<void> {
-    if (this._groupTabIds.has(tabId))
-      return;
-    try {
-      await retryOnDrag(async () => {
-        if (this._groupId === null) {
-          this._groupId = await chrome.tabs.group({ tabIds: [tabId] });
-          await chrome.tabGroups.update(this._groupId, this.groupStyle);
-        } else {
-          await chrome.tabs.group({ groupId: this._groupId, tabIds: [tabId] });
-        }
-      });
-      this._groupTabIds.add(tabId);
-    } catch (error: any) {
-      debugLog('Error adding tab to group:', error);
-    }
-  }
-
 }
 
 export async function ungroupTabs(tabIds: number[]): Promise<void> {

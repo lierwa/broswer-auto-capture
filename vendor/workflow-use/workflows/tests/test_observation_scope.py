@@ -49,6 +49,20 @@ def setup_scope(url='https://example.test/current?private=value'):
 
 
 class ObservationScopeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_diagnostic_await_does_not_change_native_refresh_classification(self):
+        scope, browser, page, callbacks = setup_scope()
+        old = {'targetId': 'tab-1', 'url': 'https://example.test/old'}
+        new = {'targetId': 'tab-1', 'url': 'https://example.test/new'}
+        page.get_target_info.side_effect = [old, old, new, new]
+        async def inspect(_browser, _baseline):
+            browser.agent_focus_target_id = None
+            return {'focusPresent': False}
+        with patch('workflow_use.hybrid.observation_scope._failure_connection', inspect):
+            with self.assertRaises(ObservationRefreshRequired):
+                await scope.capture()
+        self.assertFalse(callbacks.failed)
+        callbacks.agent.stop.assert_not_called()
+
     async def test_invalid_model_index_keeps_native_retry_and_undispatched_audit(self):
         scope, browser, page, callbacks = setup_scope()
         browser.id = 'test-browser'

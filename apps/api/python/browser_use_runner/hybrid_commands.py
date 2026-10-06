@@ -21,15 +21,43 @@ class AllowedSite(Contract):
 class ManagedWindowConfig(Contract):
     ownerId: UUID
     resume: bool = False
+    releasedOwners: list[UUID] = Field(default_factory=list)
 
 
 class ExistingBrowserConfig(ManagedWindowConfig):
     cdpUrl: str = Field(min_length=1, repr=False)
 
 
+class StorageCookie(Contract):
+    name: str
+    value: str = Field(repr=False)
+    domain: str
+    path: str
+    expires: float
+    httpOnly: bool
+    secure: bool
+    sameSite: Literal['Strict', 'Lax', 'None']
+
+
+class StorageEntry(Contract):
+    name: str
+    value: str = Field(repr=False)
+
+
+class StorageOrigin(Contract):
+    origin: str
+    localStorage: list[StorageEntry]
+
+
+class ExecutionStorage(Contract):
+    cookies: list[StorageCookie]
+    origins: list[StorageOrigin]
+
+
 class StartConfig(Contract):
     headless: bool
     profilePath: str
+    storageState: ExecutionStorage | None = Field(default=None, repr=False)
     allowedOrigins: list[str] = Field(min_length=1, max_length=32)
     allowedSites: list[AllowedSite] = Field(min_length=1, max_length=32)
     managedWindow: ManagedWindowConfig | None = None
@@ -38,6 +66,8 @@ class StartConfig(Contract):
 
     @model_validator(mode='after')
     def exclusive_window_owner(self):
+        if self.storageState is not None and (self.existingBrowser is not None or self.managedWindow is None or self.managedWindow.resume):
+            raise ValueError('hybrid_storage_state_requires_new_owned_profile')
         if self.managedWindow is not None and self.existingBrowser is not None:
             raise ValueError('hybrid_window_owner_modes_exclusive')
         if self.connectionOwnerId is not None and (self.existingBrowser is None or self.existingBrowser.resume):
@@ -57,7 +87,8 @@ class StepCommand(Contract):
     actionName: str
     args: dict[str, JsonValue]
     target: dict[str, JsonValue] | None
-    postconditions: list[dict[str, JsonValue]] = Field(min_length=1)
+    # WHY：附加页面条件可为空；原生动作仍由 Tools.act 报告成功/失败。
+    postconditions: list[dict[str, JsonValue]]
 
 
 class ReadCommand(Contract):
@@ -66,6 +97,7 @@ class ReadCommand(Contract):
     specification: ReadSpec
     scope: 'ReadScope | None' = None
     requiredPaths: ReadPaths = Field(default_factory=list)
+    inherited: JsonValue = None
 
 
 class TargetReadinessCommand(Contract):
@@ -127,10 +159,29 @@ class HandoffRequest(Envelope):
 
 class ManagedWindowRequest(Envelope):
     type: Literal['hybrid_managed_window']
-    action: Literal['focus', 'inspect', 'end', 'verify_closed']
+    action: Literal['focus', 'inspect', 'page', 'end', 'verify_closed']
     profilePath: str
     ownerId: UUID
     leaseId: UUID
+    browserMode: Literal['daily', 'dedicated-visible', 'dedicated-headless'] | None = None
+    cdpUrl: str | None = Field(default=None, repr=False)
+    legacyEndpointVerified: bool = False
+    controllerReleased: bool = False
+
+
+class AccountSessionRequest(Envelope):
+    type: Literal['hybrid_account_session']
+    action: Literal['open_page', 'check', 'observe', 'auth_read', 'auth_prepare', 'auth_write', 'auth_restore', 'auth_abandon', 'pick_marker', 'clear_marker']
+    profilePath: str
+    ownerId: UUID
+    leaseId: UUID
+    kind: Literal['daily', 'dedicated']
+    cdpUrl: str | None = Field(default=None, repr=False)
+    legacyEndpointVerified: bool = False
+    platformId: str = Field(min_length=1, max_length=120)
+    catalogVersion: str
+    evidenceSha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+    payload: JsonValue = Field(default=None, repr=False)
 
 
 class CloseRequest(Envelope):
@@ -175,4 +226,4 @@ class AnnotateRequest(CompileRequest):
     model: AuthorModel
 
 
-REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | CloseRequest | ReleaseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest | AnnotateRequest, Field(discriminator='type')])
+REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | AccountSessionRequest | CloseRequest | ReleaseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest | AnnotateRequest, Field(discriminator='type')])

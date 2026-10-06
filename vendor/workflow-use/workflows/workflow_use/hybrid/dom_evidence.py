@@ -7,6 +7,7 @@ from pydantic import Field, JsonValue, model_serializer
 
 from .evidence import Contract, digest
 from .history_target import HistoryTargetIdentity, capture_history_target
+from .fixed_target import FixedTargetAuthority, fixed_target_authorized
 
 SCHEMA_VERSION = 'bat.dom-structure/v1'
 STRUCTURAL_ATTRIBUTES = frozenset({
@@ -112,6 +113,14 @@ class DomStructureEvidence(Contract):
     queryCandidate: DomQueryCandidate | None
     coverage: DomCoverage
     limitations: list[str]
+    fixedTargetAuthority: FixedTargetAuthority | None = None
+
+    @model_serializer(mode='wrap')
+    def preserve_old_structure(self, serialize):
+        value = serialize(self)
+        if self.fixedTargetAuthority is None:
+            value.pop('fixedTargetAuthority', None)
+        return value
 
 
 class DomQueryEvidence(Contract):
@@ -136,11 +145,13 @@ class CollectionReadRequired(RuntimeError):
         super().__init__('collection_selection_read_required: use find_elements to read the complete, scoped candidate collection, select by the confirmed task rule, then click its current Browser-Use index. Candidate ordinals are not click indexes. Do not narrow the selector to the observed item identity or replace the selection with its sampled href. A broad page-wide control query is insufficient')
 
 
-def unbound_collection_choice(structure):
+def unbound_collection_choice(structure, requirement_text=''):
     """Detect an unbound choice within a repeated item, including nested controls."""
     from .collection_structure import repeated_item_without_query
 
     value = structure if isinstance(structure, dict) else structure.model_dump(mode='json')
+    if fixed_target_authorized(value, requirement_text):
+        return False
     return repeated_item_without_query(value)
 
 

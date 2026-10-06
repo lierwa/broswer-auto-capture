@@ -1,6 +1,5 @@
 """Fresh DOM target resolution over browser-use public query and live DOM identity APIs."""
 import re
-from copy import deepcopy
 from dataclasses import dataclass
 
 from .dom_evidence import node_xpath
@@ -9,7 +8,7 @@ from .history_target import HistoryTargetIdentity, match_history_target
 from .target_document import target_frame_matches
 from .target_preparation import assert_action_target, inspect_action_target, prepare_mapped_target
 
-TARGET_ORDINAL_ARGUMENT = 'targetOrdinal'
+from .target_contract import (TARGET_ORDINAL_ARGUMENT, validate_target, materialize_target, _nonempty, _validate_scope)
 SCROLL_INTO_VIEW_SCRIPT = "() => this.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'})"
 _PREPARABLE_ERRORS = frozenset({'missing_stable_target', 'missing_item_target'})
 
@@ -23,98 +22,6 @@ class ResolvedTarget:
     frame_id: str | None
 
 
-def validate_target(raw, allow_binding=False):
-    if not isinstance(raw, dict):
-        raise ValueError('stable_target_required')
-    strategy = raw.get('strategy')
-    if strategy == 'css':
-        _exact_keys(raw, {'strategy', 'value'}, {'scope'})
-        _nonempty(raw.get('value'), 'target_query_required')
-    elif strategy == 'ordinal':
-        _exact_keys(raw, {'strategy', 'container', 'ordinal'}, {'scope'})
-        _nonempty(raw.get('container'), 'target_query_required')
-        _ordinal(raw.get('ordinal'))
-    elif strategy == 'xpath':
-        _exact_keys(raw, {'strategy', 'value'}, {'scope'})
-        _nonempty(raw.get('value'), 'target_query_required')
-    elif strategy == 'title':
-        _exact_keys(raw, {'strategy', 'role', 'name'})
-        _nonempty(raw.get('role'), 'target_role_required')
-        _nonempty(raw.get('name'), 'target_name_required')
-    elif strategy == 'structure':
-        _validate_structure(raw)
-    elif strategy == 'history':
-        _exact_keys(raw, {'strategy', 'identity', 'scope'})
-        HistoryTargetIdentity.model_validate(raw.get('identity'))
-    else:
-        raise ValueError('unsupported_stable_target')
-    if raw.get('ordinalBinding') is not None and not allow_binding:
-        raise ValueError('unresolved_target_binding')
-    _validate_scope(raw.get('scope'))
-    return raw
-
-
-def materialize_target(raw, arguments=None, allow_unresolved=False):
-    """Resolve the compiler-only ordinal binding through the capability's normal input map."""
-    target, values = deepcopy(raw), arguments if arguments is not None else {}
-    if not isinstance(target, dict):
-        return validate_target(target)
-    if target.get('ordinalBinding') is not None:
-        if TARGET_ORDINAL_ARGUMENT not in values:
-            if allow_unresolved:
-                validate_target(target, allow_binding=True)
-                return target
-            raise ValueError('unresolved_target_binding')
-        target['ordinal'] = values.pop(TARGET_ORDINAL_ARGUMENT)
-        target.pop('ordinalBinding')
-    elif TARGET_ORDINAL_ARGUMENT in values:
-        raise ValueError('unexpected_target_binding')
-    return validate_target(target)
-
-
-def _validate_structure(raw):
-    required = {'strategy', 'scope', 'container', 'items', 'ordinal', 'withinItem'}
-    _exact_keys(raw, required, {'ordinalBinding'})
-    _query(raw.get('container'))
-    _query(raw.get('items'))
-    if raw.get('withinItem') is not None:
-        _query(raw['withinItem'])
-    _ordinal(raw.get('ordinal'))
-
-
-def _query(value):
-    if not isinstance(value, dict) or set(value) != {'kind', 'value'} or value.get('kind') != 'css':
-        raise ValueError('unsupported_target_query')
-    _nonempty(value.get('value'), 'target_query_required')
-
-
-def _validate_scope(scope):
-    if scope is None:
-        return
-    if not isinstance(scope, dict) or set(scope) - {'url', 'urlDigest'}:
-        raise ValueError('unsupported_target_scope')
-    if 'url' in scope:
-        _nonempty(scope['url'], 'target_scope_url_required')
-    if 'urlDigest' in scope:
-        if 'url' not in scope or not isinstance(scope['urlDigest'], str) \
-                or re.fullmatch(r'[0-9a-f]{64}', scope['urlDigest']) is None:
-            raise ValueError('target_scope_url_digest_required')
-
-
-def _exact_keys(value, required, optional=frozenset()):
-    keys = set(value)
-    if not required <= keys or keys - required - set(optional):
-        raise ValueError('invalid_stable_target')
-
-
-def _nonempty(value, error):
-    if not isinstance(value, str) or not value:
-        raise ValueError(error)
-
-
-def _ordinal(value):
-    if type(value) is not int or value < 1:
-        raise ValueError('target_position_unavailable')
 
 
 class TargetResolver:
@@ -124,7 +31,7 @@ class TargetResolver:
     async def resolve_action_index(self, raw):
         return (await self.prepare_action_target(raw, 'click')).index
 
-    async def prepare_action_target(self, raw, action_name):
+    async def prepare_action_target(self, raw, action_name, *, native_dispatch=False):
         target = validate_target(raw)
         page, mapping, target_id = await self._snapshot(target.get('scope'))
         scrolled = False
@@ -137,7 +44,7 @@ class TargetResolver:
             state = await inspect_action_target(element)
             # WHY：原目标仍唯一存在但中心命中被截获时，保存确定性的 blocked 事实；
             # 不把 DOM 中存在但被遮挡的目标折叠成 selector missing，更不扫描所谓关闭按钮。
-            if state['inView'] and (state['pointerBlocked'] or state['hitRelation'] == 'outside'):
+            if not native_dispatch and state['inView'] and (state['pointerBlocked'] or state['hitRelation'] == 'outside'):
                 assert_action_target(state, action_name)
             backend = await _element_backend(element)
             if self._mapping_matches(backend, mapping, target_id):
@@ -150,7 +57,8 @@ class TargetResolver:
             index = await self._resolve_index(target, page, mapping, target_id)
         await self._assert_page_identity(page, target_id, target.get('scope'))
         return await prepare_mapped_target(
-            self, target, action_name, page, mapping, target_id, index, scrolled)
+            self, target, action_name, page, mapping, target_id, index, scrolled,
+            native_dispatch=native_dispatch)
 
     async def resolve_action_index_from_snapshot(self, raw, mapping, target_id):
         """Resolve against a callback-owned selector map without refreshing it."""
@@ -275,6 +183,9 @@ class TargetResolver:
 
     async def _resolve_backend(self, target, page, mapping, target_id):
         strategy = target['strategy']
+        if strategy == 'entry':
+            from .element_entry import resolve_entry_element
+            return await _element_backend(await resolve_entry_element(self.browser, target['entry'], target.get('withinEntry')))
         if strategy == 'css':
             elements = await page.get_elements_by_css_selector(target['value'])
             if not elements:
@@ -289,6 +200,9 @@ class TargetResolver:
 
     async def _preparable_element(self, target, page, target_id):
         strategy = target['strategy']
+        if strategy == 'entry':
+            from .element_entry import resolve_entry_element
+            return await resolve_entry_element(self.browser, target['entry'], target.get('withinEntry'))
         if strategy == 'xpath':
             nodes = await self._main_document_nodes(page, target_id)
             matches = [node for node in nodes if node_xpath(node) == target['value']]

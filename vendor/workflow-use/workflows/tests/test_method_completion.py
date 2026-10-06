@@ -11,7 +11,7 @@ from browser_use_runner.output_schema import output_model_for
 from workflow_use.hybrid.author import _business_result
 from workflow_use.hybrid.author_tools import AuthorTools
 from workflow_use.hybrid.evidence import EvidenceRef, ObservationFact, digest
-from workflow_use.hybrid.method_completion import complete_from_read_refs
+from workflow_use.hybrid.method_completion import complete_from_read_refs, content_read_refs
 from workflow_use.hybrid.method_read_evidence import verified_method_read
 from workflow_use.hybrid.natural_output import build_verified_output_assembly, compile_natural_output_assembly
 from workflow_use.hybrid.natural_reads import compile_verified_read
@@ -28,6 +28,20 @@ def fact(kind, value):
 
 
 class MethodCompletionTests(unittest.IsolatedAsyncioTestCase):
+    def test_content_scope_refinement_uses_last_owned_document_read(self):
+        case = fixture()
+        second = case['records'].records[0].model_copy(deep=True)
+        second.readRef, second.parameters.container = 'r2', '#combined-region'
+        case['records'].records.append(second)
+        self.assertEqual(content_read_refs(case['records']), ['r2'])
+        second.sample.documentRootId += 1
+        with self.assertRaisesRegex(ValueError, 'completion_content_scope_ambiguous'):
+            content_read_refs(case['records'])
+        second.sample.documentRootId -= 1
+        second.sample.pageIdentity['targetId'] = 'another-tab'
+        with self.assertRaisesRegex(ValueError, 'completion_content_scope_ambiguous'):
+            content_read_refs(case['records'])
+
     async def test_done_preserves_path_conflict_without_merging_page_samples(self):
         case = fixture()
         second = case['records'].records[0].model_copy(deep=True)

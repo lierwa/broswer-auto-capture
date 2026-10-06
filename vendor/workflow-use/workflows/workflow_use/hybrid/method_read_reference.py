@@ -5,7 +5,7 @@ from .method_read_tool import MethodReadToolParams, expand_method_read_params
 from .natural_reads import VerifiedNaturalRead, validate_compiled_read_identity
 
 
-def referenced_method_mapping(reference, action, trace, output_schema):
+def referenced_method_mapping(reference, action, trace, output_schema, input_schema=None):
     if trace is None:
         raise ValueError('verified_read_reference_owner_required')
     current, expected = action, None
@@ -19,7 +19,8 @@ def referenced_method_mapping(reference, action, trace, output_schema):
         expected = mapping
         params = MethodReadToolParams.model_validate(prior.args)
         if params.readRef is None:
-            if digest(expand_method_read_params(params, output_schema)) != digest(mapping):
+            if digest(expand_method_read_params(params, output_schema,
+                    inherit_fields=value.specification.inheritFields, input_schema=input_schema)) != digest(mapping):
                 raise ValueError('verified_read_mapping_mismatch')
         current, reference = prior, params.readRef
     return expected

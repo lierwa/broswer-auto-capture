@@ -77,6 +77,51 @@ def method_response():
 
 
 class RepeatAnnotationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_content_region_correction_is_not_array_pagination(self):
+        trace = fixture()
+        for ordinal, index in enumerate((1, 7)):
+            value = next(fact for fact in trace.observations[index].facts if fact.kind == 'verified_natural_read').value
+            value.update({'outputPath': [], 'output': {'content': f'raw-region-{ordinal}'},
+                          'specification': {**READ_SPEC, 'container': {'kind': 'css', 'value': f'.region-{ordinal}'},
+                                            'outputSchema': {'type': 'object'}}})
+        original = trace.model_dump(mode='json')
+        model = method_response()
+        updated, gaps, advances = await annotate_repeat_method(REQUEST, trace, model)
+        self.assertIs(updated, trace)
+        self.assertEqual((gaps, advances), ([], set()))
+        self.assertEqual(trace.model_dump(mode='json'), original)
+        model.ainvoke.assert_not_called()
+
+    async def test_proven_same_region_confirmation_uses_no_loop_annotation(self):
+        trace = fixture()
+        trace.actions[2].name, trace.actions[2].effect = 'find_elements', 'read'
+        values = [next(fact for fact in trace.observations[index].facts if fact.kind == 'verified_natural_read')
+                  for index in (1, 7)]
+        proof = {**values[0].value, 'targetId': 'tab-1', 'urlDigest': digest('same-url'),
+                 'documentRootId': 7, 'containerIdsDigest': digest([11, 12, 13])}
+        for fact_value, action in zip(values, ('a-0001', 'a-0004'), strict=True):
+            fact_value.value = {**proof, 'actionRef': action}
+        model = method_response()
+        updated, gaps, advances = await annotate_repeat_method(REQUEST, trace, model)
+        self.assertIs(updated, trace)
+        self.assertEqual((gaps, advances), ([], set()))
+        model.ainvoke.assert_not_called()
+
+        # 同一 URL 的 scroll、文档替换及不同样本仍可能是推进，不能作为重复确认跳过。
+        for change in ('advance', 'document', 'output', 'missing_identity'):
+            candidate = trace.model_copy(deep=True)
+            if change == 'advance':
+                candidate.actions[2].name = 'scroll'
+            elif change == 'missing_identity':
+                candidate.observations[7].facts[-1].value.pop('documentRootId')
+            else:
+                candidate.observations[7].facts[-1].value[
+                    'documentRootId' if change == 'document' else 'output'] = 8 if change == 'document' else []
+            model = response({'outcome': 'not_applicable', 'method': None, 'reason': 'insufficient proof'})
+            _, gaps, _ = await annotate_repeat_method(REQUEST, candidate, model)
+            self.assertEqual(gaps[0].reason, 'repeat_annotation_not_applicable')
+            model.ainvoke.assert_awaited_once()
+
     async def test_non_repeated_or_different_output_reads_make_no_model_call(self):
         for trace in [fixture(single_read=True), fixture(different_path=True)]:
             model = method_response()

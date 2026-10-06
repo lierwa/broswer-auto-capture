@@ -1,6 +1,8 @@
 import { resultSpecSchema, valueSchemaSchema, type ResultSpec, type ValueSchema } from "@browser-capture/contracts"
+import { contentDelivery, executionIntent } from "./content-delivery.js"
+import { businessResultSource, parseBusinessSteps } from "./business-steps.js"
 
-type DraftField = { name: string; description: string; schema: ValueSchema }
+type DraftField = { name: string; description: string; schema: ValueSchema; optional: boolean }
 
 function section(markdown: string, heading: string) {
   const matches = [...markdown.matchAll(/^##\s+(.+?)\s*$/gmu)]
@@ -21,14 +23,16 @@ function schemaFor(kind: string): ValueSchema {
 
 function fields(lines: string[]): DraftField[] {
   const values = lines.map((line) => {
-    const match = /^-\s+(.+?)（(文本|整数|数字|是或否|文本列表)）：(.+)$/u.exec(line)
+    const match = /^-\s+(.+?)（(文本|整数|数字|是或否|文本列表)(，可缺失)?）：(.+)$/u.exec(line)
     if (!match) throw new Error("preparation_draft_field_invalid")
-    const name = match[1]!.trim(), description = match[3]!.trim()
+    const name = match[1]!.trim(), description = match[4]!.trim()
     if (!name || name.length > 200 || !description || description.length > 10_000
       || ["__proto__", "prototype", "constructor"].includes(name)) {
       throw new Error("preparation_draft_field_invalid")
     }
-    return { name, description, schema: schemaFor(match[2]!) }
+    // WHY：兼容既有成稿的明确缺失后缀；这是字段声明的语法，不能按业务名猜可选性。
+    const optional = !!match[3] || /[；;](?:缺失时|无法确认时)标记缺失[。.]*$/u.test(description)
+    return { name, description, schema: schemaFor(match[2]!), optional }
   })
   if (new Set(values.map((field) => field.name)).size !== values.length || values.length > 100) {
     throw new Error("preparation_draft_field_duplicate_or_excessive")
@@ -38,7 +42,7 @@ function fields(lines: string[]): DraftField[] {
 
 function objectSchema(values: DraftField[]): ValueSchema {
   return valueSchemaSchema.parse({ type: "object", properties: Object.fromEntries(values.map((field) =>
-    [field.name, field.schema])), required: values.map((field) => field.name), additionalProperties: false })
+    [field.name, field.schema])), required: values.filter((field) => !field.optional).map((field) => field.name), additionalProperties: false })
 }
 
 /** WHY：类型标记和字段均为同一可审阅 Markdown 草案的文字；宿主只做语法投影，不猜业务含义。 */
@@ -52,12 +56,17 @@ export function parsePreparationDraft(markdown: string) {
 
   const resultBody = section(markdown, "结果与完成")
   const lines = resultBody.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
+  const steps = parseBusinessSteps(markdown)
+  const resultSource = steps ? businessResultSource(lines, steps) : undefined
   const delivery = lines.filter((line) => line.startsWith("- 交付："))
-  if (delivery.length !== 1 || !["- 交付：完成状态", "- 交付：数据结果"].includes(delivery[0]!)) {
+  if (delivery.length !== 1 || !["- 交付：完成状态", "- 交付：数据结果", "- 交付：页面内容"].includes(delivery[0]!)) {
     throw new Error("preparation_draft_delivery_required")
   }
   const outputLines = lines.filter((line) => line.startsWith("- 字段："))
-  if (delivery[0] === "- 交付：完成状态" && outputLines.length) {
+  const rawContent = delivery[0] === "- 交付：页面内容"
+  const historicalIntent = executionIntent(lines)
+  const intent = steps ? { ...historicalIntent, repeated: steps[resultSource!]!.execution === "逐项执行" } : historicalIntent
+  if (delivery[0] !== "- 交付：数据结果" && outputLines.length) {
     throw new Error("preparation_draft_delivery_field_mismatch")
   }
   if (delivery[0] === "- 交付：数据结果" && !outputLines.length) {
@@ -69,7 +78,7 @@ export function parsePreparationDraft(markdown: string) {
     throw new Error("preparation_draft_result_shape_required")
   }
   if (shapeLines.length > 1 || shapeLines.some((line) => !["- 结果形状：单条记录", "- 结果形状：记录列表"].includes(line))
-    || delivery[0] === "- 交付：完成状态" && shapeLines.length) {
+    || delivery[0] !== "- 交付：数据结果" && shapeLines.length) {
     throw new Error("preparation_draft_result_shape_invalid")
   }
   const browserDelivery = lines.filter((line) => line.startsWith("- 页面交付："))
@@ -81,20 +90,30 @@ export function parsePreparationDraft(markdown: string) {
   const outputFields = fields(outputLines.map((line) => line.replace("- 字段：", "- ")))
   // WHY：重复的成组记录必须共享同一个数组元素合同；平行字段数组会丢失同一项的字段关联。
   const recordList = shapeLines[0] === "- 结果形状：记录列表"
-  const outputSchema: ValueSchema = outputFields.length
-    ? recordList ? valueSchemaSchema.parse({ type: "array", items: objectSchema(outputFields) })
+  const quantityLines = lines.filter(line => line.startsWith("- 结果数量："))
+  const quantity = quantityLines[0] && /^- 结果数量：最多 ([1-9][0-9]*) 条$/u.exec(quantityLines[0])
+  const maximum = quantity ? Number(quantity[1]) : undefined
+  if (quantityLines.length > 1 || quantityLines.length && (!(recordList || intent.repeated) || !quantity || !Number.isSafeInteger(maximum))) {
+    throw new Error("preparation_draft_quantity_invalid")
+  }
+  const outputSchema: ValueSchema = rawContent ? contentDelivery(intent.repeated, maximum).outputSchema : outputFields.length
+    ? recordList ? valueSchemaSchema.parse({ type: "array", items: objectSchema(outputFields),
+      ...(maximum === undefined ? {} : { maxItems: maximum }) })
       : objectSchema(outputFields)
     : { type: "null" }
   const resultFields = recordList
     ? [{ path: [] as Array<string | number>, description: "逐项包含已声明字段的记录列表", producerRef: "records" }]
     : outputFields.map((field, index) => ({ path: [field.name], description: field.description,
       producerRef: `field${index + 1}` }))
-  const resultSpec: ResultSpec = outputFields.length
+  const resultSpec: ResultSpec = rawContent ? contentDelivery(intent.repeated, maximum).resultSpec : outputFields.length
     ? resultSpecSchema.parse({ contractVersion: "bat-result-spec/v1", mode: "data", schema: outputSchema,
-      fields: resultFields, derivations: [], edgeCases: [] })
+      fields: resultFields, derivations: [], edgeCases: outputFields.some((field) => field.optional)
+        ? [{ description: "已明确允许缺失的字段缺省；不得以零或伪造文本填充。", controlRef: "missing-fields" }] : [] })
     : { contractVersion: "bat-result-spec/v1", mode: "execution" }
   const completion = lines.filter((line) => line !== delivery[0] && line !== browserDelivery[0]
-    && !outputLines.includes(line) && !shapeLines.includes(line)).join("\n")
+    && !outputLines.includes(line) && !shapeLines.includes(line) && !quantityLines.includes(line)
+    && !intent.markers.includes(line) && !line.startsWith("- 结果来源：")).join("\n")
   if (!completion || completion.length > 10_000) throw new Error("preparation_draft_completion_required")
-  return { inputSchema, outputSchema, resultSpec, representativeGoal, completion, browserHandoff }
+  return { inputSchema, outputSchema, resultSpec, representativeGoal, completion, browserHandoff,
+    repeated: intent.repeated, selectionGoal: intent.selectionGoal, maximum, steps, resultSource }
 }

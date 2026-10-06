@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { randomUUID } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -15,7 +16,7 @@ const childScript = fileURLToPath(new URL("runner-process-child.py", import.meta
 function controlledRunner(mode: "normal" | "close_stage_failure" | "browser_close_failure" | "timeout" | "nonzero_exit",
   signal = new AbortController().signal) {
   return new RunnerProcess(projectRoot, signal, undefined, { runnerScript: childScript,
-    runnerEnvironment: { BAT_TEST_RUNNER_MODE: mode }, closeTimeoutMs: 150, childCloseTimeoutMs: 150 })
+    browserMode: "dedicated-headless", runnerEnvironment: { BAT_TEST_RUNNER_MODE: mode }, closeTimeoutMs: 150, childCloseTimeoutMs: 150 })
 }
 
 test("真实 Python/browser child 正常 close，重复 close 等待同一份 confirmed report", async () => {
@@ -74,13 +75,14 @@ test("close protocol 超时后终止精确 child tree，仍执行临时目录清
 
 test("业务失败与 cleanup 失败分别保留在 typed error 中", async () => {
   const primary = new Error("primary_business_failure")
-  await assert.rejects(withHybridCapabilities({ root: projectRoot, directory: tmpdir(), ownerId: "owned-execution",
+  const ownerId = randomUUID()
+  await assert.rejects(withHybridCapabilities({ root: projectRoot, directory: tmpdir(), ownerId,
     signal: new AbortController().signal, allowedOrigins: ["https://example.com"],
     createRunner: (_root, signal) => controlledRunner("close_stage_failure", signal) }, async () => {
       throw primary
     }), (error: unknown) => {
     assert.ok(error instanceof RuntimeCleanupRequiredError)
-    assert.equal(error.ownerId, "owned-execution")
+    assert.equal(error.ownerId, ownerId)
     assert.equal(error.report.code, "cleanup_capability_close_failed")
     assert.equal(error.primary.status, "failed")
     if (error.primary.status === "failed") assert.strictEqual(error.primary.error, primary)

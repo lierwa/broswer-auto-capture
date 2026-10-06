@@ -1,5 +1,431 @@
 # 技术调研与复用结论
 
+## 2026-10-06 大成果投影与重启后物理关闭
+
+原生Node CPU采样定位/api/tasks重复加载含原图的execution；直接复用已固定lru-cache缓存轻量TaskSummary，SQLite事实版本失效，1项定点通过，暖列表31/16ms，最终真实完成画布7秒可见。未重写持久化或扩大缓存为整份页面。
+
+退出进程不等于物理页面关闭：复用现有runner审计、AttachedWindow.end与固定Playwright relay（8b552173e8d767db29b8baef8f4a1f08cf7f26bf，Apache-2.0）；显式end沿原授权入口重连，原owner的持久targetId通过Chrome debugger.getTargets精确映射tabId，再调用tabs.remove并核验消失。原生关闭参考BrowserSkill固定3f10983c的tools/tabs.ts，未引入新的连接或资源调度框架。官方API依据和完整Product Alignment/Reuse Assessment在[系统底账](MAINLINE_SYSTEM_AUDIT_20261006.md)。
+
+最小真实样本：原正式6目标及两个旧试跑租约均ended，京东窗口消失；工作台保留。关闭恢复9项、传输1项、目标/隔离3项、扩展构建与API类型检查通过。对抗P1（合法session跳过target归属）已修并复审。BrowserSkill原生会话与现生产CDP仍是不同接口，全面替换不在本轮已通过结论内。
+
+## 2026-10-06 就绪验证、结果呈现与故障定位
+
+就绪摘要直接复用 lru-cache11.4.0（固定1702b18817826ef7e5505ab2aa1e31f540312cd6），SQLite data_version/total_changes约束失效；发布入口仍完整读取。页面图文仅适配已有React19.1.1、Radix3.3.0、Zod4.1.8和浏览器原生img/details/Blob，不执行保存的HTML。运行异常位置复用Python3.12原生traceback及项目既有脱敏通道，不新增调度、重试或浏览器实现。对应Product Alignment、Reuse Assessment、源码链接、验证限制及对抗审查见[系统底账](MAINLINE_SYSTEM_AUDIT_20261006.md)。
+
+## 2026-10-06 主子节点接线与原生可选目标
+
+源码链已确认：final真实控制IR进入原CanvasActionList，prefix只投影已闭合普通动作；TaskPlan.each是复用同一链的外层调用，不应为了显示再制造IR loop。撤销外框与返回卡片，直接复用原StageCanvasCard/动作列表/LoopBody。React Flow12.11.6固定源码0a1f9575的原生测量接既有Dagre，不新增布局/执行框架。B-U0.13.8固定源码eb41269的scroll明确支持可选index，现仅补齐既有目标解析器衔接；输入值等待复用既有Tenacity/StepVerifier，不重派动作、不放松目标和值。Product Alignment、Reuse Assessment、固定链接、对抗审查和最小验证见[系统底账](MAINLINE_SYSTEM_AUDIT_20261006.md)。局部验证不冻结原五项任务验收。
+
+## 2026-10-06 原任务编译实际断点
+
+真实 prepare 6dd44720 来源执行完成，却因联想词误选缺少动态绑定而无法编译。保留门槛，仅用 B-U 固定源码的原生输入/提交能力修正探索说明，并同步已有 regions 采集合同；不新增浏览器框架。Product Alignment、Reuse Assessment、原来源证据及验收门见 [原任务复跑验收](JD_REPLAY_ACCEPTANCE_20261006.md)。
+
+本次源码核对中，以下是“尚未证明有可直接接入的上游实现”，不是声称所有开源项目都没有该能力：
+
+| 边界 | 固定来源及已核验事实 | 仍未有依据的部分 |
+| --- | --- | --- |
+| BrowserSkill 到 B-U | BrowserSkill 3f10983c 的原生 session/tool RPC 已可用；B-U 0.13.8 当前使用 CDP | 未找到它直接提供 B-U 标准 CDP WebSocket 的公开接口，不得补造网关或宣布替换完成 |
+| 探索记录转 B-A-T 链 | workflow-use 5d2d19fe 的 recorder/builder/executor 是原实现；本仓 LOCAL-CHANGES 将 hybrid 下 119 个生产 Python 文件明确列为本地新增 | 原仓没有本项目完整 IR、证据、绑定编译实现；位于 vendor 不能充当直接复用证明，不得将新增通用算法冒称上游能力 |
+| 目标与选择器 | B-U 原生 Actor/DOM 和 workflow-use ElementFinder 可复用 | record_projection_dom 的选择器组合及项目自己的目标判定仍是本地逻辑；本轮没有将其扩大或冻结为成熟方案 |
+| 内容与暂停恢复 | B-U 原生 Page/Element、CDP 原资源读取；BrowserSkill 原生 request_help/session 生命周期 | B-A-T coverage 证明、跨层 waitpoint 及其恢复适配不是 BrowserSkill 原实现，既有局部测试不证明全部恢复链路 |
+| 图推进 | 现有 @langchain/langgraph 1.4.14 StateGraph 在 engine.ts 中实际被调用 | B-A-T IR/审计映射属于本项目职责；不得在该层另写通用调度或检查点框架 |
+
+后续实际复跑又确认：普通点击不应强制出现页面后态，也不应在 Tools.act 前由项目物理命中算法否决原生后备。继续直接复用固定 B-U eb41269 的 Tools.act / DefaultActionWatchdog，缩减该适配层；原生成果只经过重新编译，不重放模型探索。空条件已贯通 TS、Python 命令及 StepVerifier；离线恢复重新判定旧编译终态，保留真实来源缺口。上表未证实的基础能力不借本次业务验收宣布完成；BrowserSkill 全面接入按用户最新指令后置。
+
+## 2026-10-06 直接恢复成熟组件连接入口
+
+按用户“通用代码必须有源码参考、优先直接复用”要求，核验 Tencent/BrowserSkill 3f10983c 原 daemon/扩展/session；本机 0.3.2 持久宿主连接、独立空白 session start/stop 通过，不是 B-U CDP 兼容证明。当前生产 CDP 复用已有 Playwright 8b552173：删除已保存授权连接中的 requestPopup 拦截，恢复原服务 launcher/握手。真实独立宿主与正常服务均连接成功，工作台票据为空，没有 JD/模型请求；不新增转换网关。类型检查通过，已有首次授权测试保留 Windows mode 断言失败。对抗静态审查无新增确定 P1/P2。完整来源、实施、首败、未测范围见 [上游复用记录](BROWSER_RUNTIME_UPSTREAM_REUSE_20261006.md)。
+
+## 2026-10-06 用户明确要求直接复用 BrowserSkill
+
+此前仅参考 BrowserSkill 界面、以自定授权策略拒绝其连接机制的取舍已撤销。官方当前 HEAD 已核验为3f10983c09fcd443c7420830ab984c9d409954bf；已读原 ConnectionController、WSTransport、后台启动/唤醒/保活及断线清理源码。本机CLI为0.3.1，尚未确认其与main对应关系；原foreground启动后独立status仍不在线，保留首败。生产替换未冻结，不能宣称已接入。来源清单、直接复用边界及最小验证见[BROWSER_RUNTIME_UPSTREAM_REUSE_20261006.md](BROWSER_RUNTIME_UPSTREAM_REUSE_20261006.md)。
+
+## 2026-10-06 11:38 debugger状态不能作为物理关窗证明
+
+现场Chrome原生onDetach(target_closed)之后，本连接原窗口的Chrome.windows.update(id,{})仍成功，未发关闭命令；空Target.getTargets只反映扩展可控制的debugger会话。沿现有微软协议v2与Chrome tabs.remove/onRemoved复用，保留创建者的物理tab清理引用，禁止再次自动attach。Python通过现有Browser.getVersion区分桥接枚举与原生CDP，未知端点保守返回未确认，不复制浏览器控制或恢复框架。
+
+本地原Chrome真实Cancel后窗口仍存在，再经原finally关闭并收到onRemoved；modelCalls=0、未访问京东。对抗审查指出只读入口及新增popup竞态，修正后窄复核通过。服务/扩展重启丢失原映射不推测个人tab归属；这仍不证明京东任务完成或验证码触发原因。详见[修复计划](MODULE_DELIVERY_REPAIR_20261006.md)与[实际结果](MODULE_DELIVERY_RESULT_20261006.md)。
+
+## 2026-10-06 区域采集与单条字段记录分离
+
+原62a122c9的B-U找到7个详情模块却未采集，因为宿主工具强制模型定位唯一父CSS。复用B-U0.13.8原生Page.query/Element、DOM.contains/parentElement及受控CDP把已观察相关区域解析为公共祖先，再调用现有capture_region和原图保存；不另造采集引擎或字段清洗。选择器查询与祖先Element必须复用同一初始化Page，首个真实样本揭示该要求，修后两输入完整范围采集通过。CDP对象释放为best-effort，不覆盖身份错误，取消传播。详见[设计与复用记录](MODULE_DELIVERY_REPAIR_20261006.md)。真实原任务仍待验收，成熟组件复用不构成业务成功证明。
+
+## 2026-10-06 人工交接与受控焦点恢复
+
+详见[继续修复设计](MODULE_DELIVERY_REPAIR_20261006.md)。实际SDK0.13.8源码表明：原生SessionManager负责恢复锁/事件、目标与session池；B-A-T此前将恢复替换为无条件失败，导致已有任务列表页也不可恢复。现在只适配候选所有权和session有效性，复用公开get_all_sessions_for_target及原恢复，不复制调度；ContextVar仅禁止恢复中应急建页，正常任务新tab动作保留。原SDK测试验证失效详情不能遮挡有效列表，且个人页不进入候选。
+
+人工工具的resumeUrl是本项目额外必填字段，URL跳转不能靠模型猜测。新工具删除该字段，继续复用原on_step_end等待、显式宿主确认、受控身份和授权来源；编译以真实稳定post为v2证据，普通复跑沿既有人工检查点处理。v1来源和发布版本不改。真实旧500的原生代码没有取得，不能把静态缺陷或测试结果当它的完整因果证明。
+
+## 2026-10-06 同版业务步骤与浏览器分组
+
+复用结论在 [本轮实施文档](MODULE_DELIVERY_REPAIR_20261006.md)。保留B-U0.13.8原生Agent loop、既有workflow-use适配、LangGraph、TaskPlan/once/each和React Flow；宿主只投影同版业务步骤/值绑定及真实链路引用，不新增规划Agent或调度器。Chrome已保存关闭组独立于任务窗口；[官方tabGroups API](https://developer.chrome.com/docs/extensions/reference/api/tabGroups)没有关闭保存组删除接口。本轮用原生菜单清理17组，停止自动分组，授权成员复用RelayConnection.attachedTabs。真实模型自动生成非采集逐项步骤；既有方法3→2项完整发布复跑0模型通过。原京东曾完成来源、进入详情，读取失败复现为Python拒绝Chrome已加载的缺填充Base64；复用原DataHandler/标准库解码，仅补必要填充，同页整区域0模型读取通过。随后完整任务8d6e4d1b失败在导航后的SDK当前页焦点丢失，确切事件未查明；截图关/开各一次零模型单段通过不作为修复或五项完成证据。展示复用现有Artifact，逐步保存已收尾快照而不提前保存可执行链。详见 [实际结果](MODULE_DELIVERY_RESULT_20261006.md)。
+
+## 2026-10-06 复用原生几何/可见区域及现有 scope
+
+Reuse Assessment:
+- capability: 捕获已经内嵌于当前页面的原图，不误要求它出现在Chrome网络资源树中。
+- existing implementation in repository: capture_region、resource_index、Page.getResourceContent、原图字节预算与receipt。
+- mature candidates and pinned versions: Python3.12标准库urllib.request.DataHandler（RFC2397），现有ChromeCDP资源API。
+- selected implementation: data URI直接使用标准库DataHandler.data_open；网络图片仍只读取Chrome已加载资源。
+- reused public surface: DataHandler.data_open(Request)、response.read/headers.get_content_type、既有Page.getResourceContent。
+- B-A-T-owned adapter and remaining gap: 按URI协议接到同一个原图/字节预算出口；隐藏CSS背景不代表实际渲染资源，不纳入需取得的图片集合。可见宿主的伪元素另按其自身computed style检查display/visibility/opacity，保留原DOM ordinal与离屏可见内容。
+- license/runtime/platform fit: Python3.12标准库/PSF许可，当前Windows受管环境；不新增依赖。
+- browser/runtime/state ownership conflicts: data解码没有网络、Cookie、另一个浏览器或HTTP downloader；网络资源只读当前owner的CDP。
+- replay model calls: 0。
+- rejected candidates and evidence: 现实现只看Page.getResourceTree会把内嵌data图判missing；不以缺资源为理由建立带凭据的下载器，也不放弃原图完整性门。
+- focused validation: 已有真实Chrome原图/区域测试增加data原图及隐藏背景，保留离屏可见canvas拒绝；修后原任务再验收。
+
+标准库能力据 [Python3.12官方文档](https://docs.python.org/3.12/library/urllib.request.html#urllib.request.DataHandler) 与当前受管解释器的DataHandler源码核验。`b6384d1d` 的body采集实际报资源missing；现有持久错误未记录缺资源协议，因此内嵌图/隐藏背景是独立已确认的实现缺口，不能直接宣称就是该次唯一根因。
+
+本轮选型不新增依赖。复用 Chrome getClientRects/elementFromPoint、B-U Element.evaluate/Page.mouse、原生 innerText、已有区域 receipt、MethodReadRecords 完成引用与 runtimeScopeFrom 文档身份。现有 mature API 能确定的状态全部由代码处理，不新增语义 judge、字段抓取、模型补元数据或调度器。实际旧错误、新边界和对抗审查证据见实施文档新增章节。
+
+45de8f71 的持久化原生记录另证明输入边界缺失：所选集合叶控件与实际点击标题位于同一重复记录，却未拥有可复用记录范围。沿现有 record_projection_dom / ElementEntry 适配完整原生集合的一对一根与已观察的唯一相对控件，原生 Agent、LangGraph 与浏览器控制均保持原职责。核验 browser-use 0.13.8 官方 Actor 源码，Element没有区域查询接口；集合使用 Page 公开 CSS 查询，记录内解析直接复用 Chrome CDP 的 backend 根与 DOM.querySelectorAll，避免全页 CSS 随记录重排改变归属。Source 登记前也复用同一原生根内查询并核对实际动作 backend；冻结旧快照不足以证明当前归属，不添加第二套定位器。渲染可见性用Chrome checkVisibility，不按视口坐标丢弃离屏内容；隐藏opaque DOM标签保留在原HTML。真实两输入、同文档记录重排、多匹配拒绝，以及目标跨记录移动/同类替代控件的 Source 拒绝已通过。
+
+## 2026-10-05 原生入口身份与命名控件唯一性
+
+沿既有 browser-use 0.13.8/Actor 和 workflow-use 0.2.11 复用，不增删库：入口用实际 backendNodeId 与 CSS :root 文档身份，展示 text 允许空；稳定去重键不包含临时 backend/文档根。命名控件复用 DOMInteractedElement hash/XPath 和原生 parent_node，只合并单条祖先链中的同名映射；运行时仍唯一命中原点击位置，隐藏目标、独立分支、跨 frame 和输入失配拒绝。不增加 Agent、定位器、调度器或模型判断。完整 Reuse Assessment 与实际首败见 [实施记录](WORKFLOW_AND_DELIVERY_IMPLEMENTATION_20261005.md)；入口 15 项、命名目标 14 项所属验证通过，原任务完整验收仍进行中。
+
+实际客服入口错误另证明观察信息交接不足：AgentSettings 的固定默认不包含 href，已通过 Agent.include_attributes 原生公开配置追加而不覆盖默认；同观察代表预览仅返回名字和规范链接目的源，不按站点判定业务。反斜杠等非规范 href 放弃 origin，避免标准库/浏览器解析差异泄露路径。沿原 long_term_memory、观察所有权和读取证明适配，不增浏览器查询、强制探查、判断模型或重试循环。
+
+## 2026-10-05 同范围只读确认不等于收集循环
+
+Reuse Assessment:
+- capability: 按已观察事实区分来源读取确认与实际推进后的重复收集，避免多余模型注解阻塞。
+- existing implementation in repository: `repeat_annotation`/`natural_repeat_evidence`、VerifiedNaturalRead、原生 NormalizedTrace/effect 与宿主自然读取验证器。
+- mature candidates and pinned versions: 现有 browser-use 0.13.8 原生历史/动作，workflow-use 0.2.11 受管适配；不改变依赖或选型。
+- selected implementation: 沿既有 repeat 候选识别，在完备同方法/文档/区域身份/覆盖/样本及区间受限纯读取时排除确认候选；原推进注解和 validator 完整保留。
+- reused public surface: 原生历史和已有宿主读取证据；不新增循环器、解析器、模型提示判定或运行状态机。
+- B-A-T-owned adapter and remaining gap: 重复确认只是读取 producer 的编译准入，保留全部动作与最终输出来源；实际分页/加载循环继续原证据门。
+- license/runtime/platform fit: 现有许可、Python/Windows 和受管虚拟环境不变。
+- browser/runtime/state ownership conflicts: 不创建或操作浏览器，仅处理持久化来源；不改写旧运行。
+- replay model calls: 0；能够从宿主证据确定的确认不再多调用注解模型。
+- rejected candidates and evidence: 仅按同 outputPath 两次成功读取触发模型，在真实京东 job `9af8745b` 产生 `repeat_annotation_not_applicable` 阻塞；保存实际 rejected artifact。
+- focused validation: 所属 9 项回归通过，含 scroll/文档变化/样本变化/缺身份的保守门；同份真实 canonical request 离线 6 segments/0 gaps，TS 9 节点/8 边通过，未调用模型或篡改原记录。对抗定点复审无成立问题；完整实际业务另验收。
+
+## 2026-10-05 原生索引到入口范围的宿主适配
+
+Reuse Assessment:
+- capability: 把 B-U 已能选择的真实条目索引转换为可复跑的来源读取范围，避免模型必须猜 CSS。
+- existing implementation in repository: `record_projection_dom._relative_selector/_identity/_elements`、原生 DOM 快照、ReadSpec/ReadSample 与 method_read_evidence。
+- mature candidates and pinned versions: 现有 browser-use 0.13.8 原生 DOM 索引/BrowserSession/Page/Element、workflow-use 0.2.11；版本与依赖不变。
+- selected implementation: 通过这些原生公开查询与既有投影适配读取；CSS 解析/浏览器查询继续交给原生 Page。没有新增选择器解析器、Agent loop 或抓取驱动。
+- reused public surface: get_dom_element_by_index/get_browser_state_summary、Page.get_elements_by_css_selector，及已有 DOM→ReadSpec 投影帮助函数。
+- B-A-T-owned adapter and remaining gap: 单次 indices 选择的实际 backend 身份与完整集合前缀核验；持久化 native_entry_selection 证明，复跑只使用方法而非样本索引。
+- license/runtime/platform fit: 沿现有 Python/Windows 虚拟环境、现有依赖许可；没有替换关键库。
+- browser/runtime/state ownership conflicts: 使用当前同一 BrowserSession，不新建浏览器，不把 DOM 父子结构注入模型，不改变来源/资源所有者。
+- replay model calls: 0；不增加语义确认、字段询问或模型重试循环。
+- rejected candidates and evidence: 要求 LLM 自行声明 CSS 在真实京东任务中导致 done=false，虽然原生索引可见；固定每条样本位置不能构成复用集合方法。
+- focused validation: 入口/准备/输出派生及原 method-read 合同定点检查；之后同一完整生产路径与真实任务验收，不能拿局部检查替代结果。
+
+
+## 2026-10-04 既有 owner 恢复与通知交互
+
+沿用现有 TaskConnection/RunnerProcess、AttachedWindow/ManagedWindow、AccountTransfers、CDPClient、Radix 和本地存储；没有新增驱动、调度器、状态机、依赖或模型调用。新增适配只负责原 owner 的资源证据、稳定授权传输身份、共享账号投影、通知已读与定位。复用评估、拒绝边界及实测首败见 [复跑资源闭环](REPLAY_RECOVERY_CLOSURE_20261004.md)。
+
+## 2026-10-04 原迁移器的双向 admission 与当前Profile检查投影
+
+用户明确允许将专属登录复用到daily，旧“个人Profile只读”的产品限制据此替代。原迁移器、原生CDP/Playwright认证操作与DPAPI已经支持两种kind，不新增Cookie vault/驱动/状态机；只改通用admission和目录维护接线，保留UID/认证范围/owner/lease/目标状态及回滚核验。启动改目标先查、同UID零源操作；展示复用SQLite的每Profile最后检查，不用TTL制造登出，也不把缓存当本次运行证据。
+
+UI复用原Radix组件和主题Token，统一所有尺寸下的结构和80px设置行。首轮原生可见验收已结束；用户新增测试只用headless，随后真实popup/UI/正式只读加载均遵守。源码证据、Product Alignment、Reuse Assessment、14项不变量、真实双向样本、首败与未测范围见 [研究与验收](BROWSER_ACCOUNT_SHARING_UI_20261004.md)。
+
+## 2026-10-04 单窗口连接与共享账号目录的登录维护
+
+复用原 Microsoft 扩展 relay 的授权握手/BrowserModel、CDP owned target、Browser-Use/Playwright 与原账号 TaskChain；零目标连接不要求创建引导页。专属 Chrome 使用 Chromium 官方 `--no-startup-window`，由原 ManagedTargets 创建唯一操作页；固定已安装 Chrome 的 Windows 冷启动实证通过。账号目录维护冻结所选身份，自定义链源码及版本保持不变；源核验继续显式使用原来源。未新增驱动、调度器、网站公共类型或模型调用。
+
+首次额外窗口及零目标 readiness 失败、修订、单页/连续运行实证、Chromium 官方源码链接和 Reuse Assessment 均见 [本轮研究和验收](BROWSER_CONNECTION_ACCOUNT_REPAIR_20261004.md)。受控 Profile 和夹具 UI 不代替全部私人的线上 SSO；个人扩展仍须重新加载一次。
+
+## 2026-10-04 真实主链路暴露的最小兼容门
+
+72afa27e首败busy：已完成交付的relay endpoint随重载变化，不是Profile身份。复用原宿主releasedOwners、AttachedWindow/TargetScope，只归档确定completed/cleanupconfirmed/delivery owner，新ownedTargets空；旧owner恢复/关闭仍核验旧endpoint，不回收个人标签。cd7e2c56重试lease_changed：旧JSON缺新增默认字段，复用既有Pydantic合同比较当前/已有archive，保留真实冲突拒绝和最终原字节复核。新增旧base+旧archive完整发布后unlink前崩溃样本；8/8与窄对抗复审通过。
+
+Product Alignment：同一自然语言任务/不可变发布V1，运行输入沿原合同，输出动态保存；通用能力是确定owner归档、新目标隔离及跨版本收据兼容；两次实际modelCalls=0，公共runtime未加站点特判。Reuse Assessment：沿原browser-use0.13.8/cdp-use1.4.5、TargetScope、Pydantic、TaskChain/LangGraph/SQLite，不新增驱动/调度器/检查DSL。真实Windows日常扩展已授权连接与原JD链路9c6f6482、9dfa0c86均完成，输出各2且摘要一致，中间无end；证据actual-main-persistence.json。额外再服务重启自动审核拒绝，未绕过，不能当成修复后重载证据；首次成功已实际跨旧relay收据归档，修复由fresh Python child加载。
+
+2026-10-04 加载补证：用户明确授权后原 dev 重载完成，PID28908；实际持久 owner 准入判据只读执行与新服务账号 availability 均通过，原租约不变，私人任务未自动执行。证据为 service-loaded-admission.json；先前自动审批拒绝保留，不伪写为首次通过。
+
+## 2026-10-04 完成页误作控制锁：复用原 owner/TargetScope 修订
+
+只读既有 SQLite 证实 completed/cleanup confirmed/active delivery 被 activeBrowserWindowLease 排斥；既有账号 startup 还存在独立 retained blocker。现沿 ProductStore 同判据生成服务内部 whitelist，原 AttachedWindow/ManagedWindow 原子归档 owner 并取得新 target；Managed 保存当前进程收据至原子替换，旧 owner 转 target-only，历史 end 不关闭共享进程。复用 browser-use/CDP/TargetScope/TaskChain/LangGraph，不新增驱动、调度器或检查 DSL，MC/SAU 平台判据未改。
+
+对抗首轮 R1–R6 及 U1–U3 纠正归档崩溃切点、持久未知创建、未知请求覆盖、handoff 请求身份、历史反馈恢复、账号 startup 接线。自有 Windows 两模式各四次真实正式复跑与 49 项定点回归通过；UI 复用 Radix 和已有可调宽抽屉。源码与行为证据、首败/重试及服务加载受阻见 [开发基准](RUN_CONTROL_IMPLEMENTATION_20261004.md) / [交付](RUN_CONTROL_DELIVERY_20261004.md)。旧通过的 Windows 门沿原审计，不重复运行；私人平台正向不是此次工程证据。
+
+## 2026-10-03 现场首败修正：删除额外首页校验，继续复用原能力
+
+`work/account-user-regressions-20261003/live-first-failure.json` 与原源码诊断证明知乎在 MC/SAU 检查之前因 `ordinary_postcondition_failed_url_fact_mismatch` 失败；正常 signin 跳转被自写胶水误拒。删除 navigateAccount，不新增检查 DSL/驱动；直接借原 owner/lease/target 调用原 Playwright goto，保留原允许来源边界。单次8秒网络观察失败不是人工扫码总等待失败，原 TaskChain/LangGraph 继续，5分钟总等待结束/取消保留窗口。固定 MC/SAU 判据与 vendor 数据未改。
+
+Product Alignment/Reuse Assessment 沿 [统一开发文档](BROWSER_ACCOUNT_UNIFIED_20261003.md)；窗口/任务历史分类复用原冻结 browser 转换，未知所有权不关闭。13平台78样本、旧三平台策略/MC与SAU非侵入门保留，不重复旧通过验证；新增受影响知乎35秒/正常redirect/真实公开页面、native自定义/SQLite、UI单一入口/运行错误门已通过。克隆知乎门只一行，继承文字three不代表三行重验。代码对抗两项P1已修复，真实服务/旧事实摘要一致；私人账号与真实SSO未测。来源、许可证、扩展加载、首败和索引见 [当前交付](BROWSER_ACCOUNT_MANAGEMENT_DELIVERY_20261003.md)。
+
+## 2026-10-03 单平台账号方案：复用冻结、非侵入观察和原启动路径
+
+完整 Product Alignment / Reuse Assessment 在 [当前统一文档](BROWSER_ACCOUNT_UNIFIED_20261003.md)。固定 MC `380b426000aac3d612837ed72c99808347dc94c9` 与 SAU `0012d2c355f88f683cc38dde2a2db209e14091bc` 原函数、ZIP、许可不变；版本化目录 `20261003.2` 新增观察入口。宿主只借用原 owned 页面、投影三态和必要身份、适配原 TaskChain/生命周期，不搬两库的爬虫/上传产品，不重造驱动、调度器或检查 DSL。
+
+原 normal 检查与 observe 分开：observe 抑制 goto/等待导航并审计，不暴露 click/fill/focus/raw page；最终用独立 owned 检查页或原范围只读接口验证。真实 Windows MC/SAU 两条门证实 URL、输入及焦点不变。登录有界循环由 LangGraph 承担，宿主保存冻结 revision 与 UID、操作和实际独立 TaskRun；无隐式模型，点击返回或完成不盖登录章。
+
+自动复用仍调用原增量 CDP/HMAC/DPAPI prepare/write/check/restore，守卫扩展到逻辑账号 revision、源绑定和授权 epoch。只对任务冻结 allowedOrigins 交集工作；公开只读任务按真实不可变 invoke 闭包识别，伪 effect=read 的 click 不能免检。实际 Python authoring/withCapabilities 启动前回调验证原 persisted active job/execution 和原 controller，仅排除自己的控制器；resume 直接保留现有 runner。
+
+最小 Windows 样本揭示受管 `end` 原来直接终止进程，登录 Cookie 尚未落盘；仅给夹具 Max-Age 不能修复。已接线原 ManagedWindow.end_gracefully，等待原验证专属进程正常退出后才用原 fallback。AttachedWindow 的个人路径未进入 Browser.close。修正后三平台受控自有目标复用、同 UID 零写入及浏览器/SQLite 重开通过；首败与两次失败重试均保留。
+
+证据：`source-compatibility.json`（13 行/78 样本固定原函数，真实 PW DOM/受控 HTTP），`observe-windows.json`，`native-login-reuse/result.json`，`native-custom/result.json`，均位于 `work/account-unified-20261003/`。三平台自动复用只是工程范围门，不冒充私人线上 SSO；其它十平台保持原源且拒绝未核验复制。扩展仍跟浏览器主题，Radix Dialog/DropdownMenu/Select/Avatar/主题 token 沿用现成组件。旧评估和旧人工共享/AI 识别节仅作历史。
+
+## 2026-10-03 主流平台固定源码适配已验证
+
+完整Reuse Assessment见 [重建文档](BROWSER_ACCOUNT_REBUILD_20261003.md)。固定MediaCrawler `380b426000aac3d612837ed72c99808347dc94c9`、social-auto-upload `0012d2c355f88f683cc38dde2a2db209e14091bc`：7/11项、重合5、union13；原ZIP/逐文件hash/许可保留。已完成原函数AST执行+受限已有owner页面/HTTP适配，13行分别完成正/明确负/挑战/503/超时/结构变化兼容样本，0模型。engineeringState=ready只代表工程门；未宣传13个平台私人登录正例通过。
+
+关键源码限制：MC贴吧仅Cookie存在、抖音仅本地标记；SAU TikTok异常返回true、多个后台没有正向依据时也返回true；SAU B站check调用biliup renew有认证刷新副作用。必须保留源码并做结果适配/必要局部修正，不直接将boolean视为当前登录事实。SAU默认另开浏览器/读取storage_state文件，MC部分检查依赖现有HTTP/页面与签名实现；最小兼容样本要证明真实Profile、owner、单控制器及敏感数据范围成立。
+
+迁移实际复用Playwright/CDP公开Network.getCookies/setCookies/deleteCookies，按批准域/认证key增量操作，不使用全storage_state覆盖、不采集全部Profile。当前只有B站/微博/知乎策略允许准备；源无稳定UID或目标未知拒绝。两方向owned Windows实测+服务器身份匹配+新进程DPAPI恢复通过，新增native写后actual/intended guard与共享父域范围门单补通过，不重跑整组旧验收。IndexedDB/localStorage能力未获特定平台范围证明时拒绝该平台迁移，不凭公开API存在承诺通用成功。
+
+D0最终复查已放行，完整首轮/重试见document-review.md。实际Windows借用揭示原扩展桥未向新客户端重发已准入目标，Playwright公开new_cdp_session还需要browser-root借用及独立tab session别名。只适配原BrowserModel/relay，不新增驱动或Cookie权限、不暴露个人标签；原tab debugger所有权仍在扩展，借用detach不撤销它。真实最终日常门通过，专属门此前通过。
+
+依赖固定Playwright1.61.0、xhshow0.2.0（MC原sign_with_xhshow公共API）、pycryptodome3.23.0。uv首次跨磁盘缓存失败、同盘缓存重试AccessDenied；Python官方ensurepip/pip无缓存安装成功。未替换原B-U/W-U/cdp-use版本。DPAPI采用Windows原CryptProtectData，已有ProviderCredentialStore固定包源码证实仅JSON文件锁，无加密，不能存回滚凭据。
+
+Reuse Assessment（自定义页面方法的局部补齐）：Chrome原生DOM/Overlay inspect拥有选取；Playwright公开locator拥有唯一性/可见性/文本读取；宿主只组装原navigate/read-fields/QuickJS/terminal，TaskChainRuntime/LangGraph运行。公开接口依据：[Overlay.setInspectMode](https://chromedevtools.github.io/devtools-protocol/tot/Overlay/#method-setInspectMode)、[Playwright CDPSession](https://playwright.dev/python/docs/api/class-cdpsession)、[locators](https://playwright.dev/python/docs/locators)。Chrome154退出inspect也必须传highlightConfig={}，真实首败已保留；不自造选择器引擎/录制器，只有唯一id/testid可建立，缺定位回到已有只读链。确认即归档版本，取消/标识消失/0模型/SQLite与原日常Overlay借用事件门通过。
+
+来源补齐：贴吧复用原同步/签名函数而非Cookie盖章；XHS仅固定原pong selfinfo成功信号，无虚构UID/游客必填；SAU后台正向结构来自原发布流程只读控件，不上传。原异常true、网络失败、非2xx和结构变化独立投影未知。隐私清理包含TaskRun browser URL/outcome/invocation错误；恢复旧scope在当前目录加载前由原加密范围/owner校验。对抗R1–R7已修，最终approved；全部源码/门与首败见交付记录。
+
+## 2026-10-03 账号复验：元数据收录与真实占用/导航失败
+
+复用 AttachedWindow 的 Target.getTargets、ManagedWindow 的现有 /json/list，只返回原 owner 交付标签的 URL；不扫描私人标签或页面正文。新增 page 动作延续原 RunnerProcess/Zod/Pydantic 协议，未新增驱动。元数据先确定平台，再由原 native producer/TaskChain 读取身份；首次建链自动衔接检查，普通更新零模型。查询串/片段不进入自动来源记录。
+
+实证发现全局 active lease 判断及 Python 恢复/离线动作两处选型把另一个种类的已交付窗口误认成当前 owner；原 daily 与 dedicated 本有独立租约文件，改为精确 owner/明确 browserMode 路由，活跃控制器仍全局互斥。公开真实 B 站进一步暴露无末尾斜杠 URL 与浏览器规范化事实不一致，修复入口规范化且保持精确来源边界；原始条目不改。失败后先沿原 owner 只读核验，不能把已释放窗口伪装待清理，也不能把 endpoint 拒绝当成关闭证明。
+
+源码、固定版本复用、实际首败及实验边界见 [可用性修复记录](BROWSER_ACCOUNT_USABILITY_REPAIR_20261003.md)。这次真实用户记录打开经过实际 Windows 浏览器检查，不以受控样本代替。
+
+## 2026-10-03 通用账号管理：固定源码适配与已观察验收
+
+Reuse Assessment:
+- capability: Profile 身份、双浏览器账号维护、当前会话只读检查及方法生产。
+- existing implementation in repository: DailyChromeExtension 原 token/relay；BrowserProfileService/RunnerProcess handoff + managedWindow resume；B-U native Agent、W-U hybrid compiler/materializer；TaskChainRuntime/LangGraph；ProductStore/SQLite；Radix Themes。
+- mature candidates and pinned versions: browser-use 0.13.8、cdp-use 1.4.5、workflow-use 0.2.11（受管源码 5d2d19fe8835cc86f1bf3e04302a5000d590f249）；Microsoft Playwright extension 0.4.0（8b552173e8d767db29b8baef8f4a1f08cf7f26bf）；LangGraph 1.4.14、QuickJS 0.32.0；Drizzle 0.45.2 / better-sqlite3 12.10.0；Radix Themes 3.3.0。
+- selected implementation: 全部沿现有组件；没有新增/替换关键库。
+- reused public surface: 原扩展 chrome.debugger/CDP 桥、withCapabilities/withAuthoring/recompile、原生 before_action/compilation checkpoint、materializeHybridChain、TaskChainRuntime.execute、executeFunctionNode、ProductStore.db、Radix Dialog/Table/Button/Select/TextField/Callout。
+- B-A-T-owned adapter and remaining gap: 稳定 BrowserIdentity、账号目录和不可变检查快照；维护事实引用原 owner/lease；当前会话读取编译后接一个来源仅为函数源码的语义 Function。原数据编译器只绑定真实读取，不替模型合成 outcome/identityConfirmed；因此读取产物先是受限 evidence，宿主确定节点/边/绑定，一次生成纯分类函数，QuickJS 验证唯一真实样本，真实正反例齐备前保持候选。显式“重新建立方式”保留同 chainId 并递增版本；不后台修复、不退出用户账号取反例。
+- license/runtime/platform fit: Microsoft fork Apache-2.0；workflow-use 仓库 LICENSE 为 AGPL-3.0（沿原受管分发与本地补丁清单，不误写成 MIT）。沿现有 Node24/Python3.12/Windows Chrome154。B-U/cdp-use 版本由原 setup 脚本核验，未扫描 node_modules。
+- browser/runtime/state ownership conflicts: 手工完成只释放原维护 owner，不确认身份；原任务/保留窗口占用仍阻止账号操作。日常仅使用当前绑定 token 摘要，不复制 Profile/凭据；专属 visible/headless 共用原 Profile 的随机持久标识。每次操作单一控制器，handoff 后控制器退出，下一次在同 lease 恢复。窗口清理失败独立保留，不能覆盖已完成检查。
+- replay model calls: 全部普通检查 0；研究/显式修订单独保存模型次数及完整性，失败不能把未知次数伪称 0。在线 prefix/final 节点生成回执在 ACK 前落原 SQLite，只有节点数量/缺口码/来源摘要，不保存私人页面全文。最终持久的是普通 TaskChain 与精确 digest。
+- rejected candidates and evidence: 原 BrowserProfileService 的 startProfile→handoff 只有窗口事实，不能做身份验证；Cookie/URL/点击完成均不充分。没有选另一个驱动、调度器、检查 DSL 或 UI 控件。原 native producer 直接输出身份分类无动态 DOM 来源合同，改用既有读取编译 + Function，未绕过编译缺口。
+- focused validation: 专属真实会话正/反/挑战/身份切换、日常原扩展同 Profile 登录/检查、同一检查链三环境、关自有任务页失败与独立重试、185秒空闲、服务重启/SQLite、公开 GitHub 未登录；证据和首败详见交付文档。
+
+固定源码实测发现两个接入点：日常 resume 仍须沿原 endpoint resolver；Chrome tabs.group 未传 createProperties.windowId 会把任务标签移到当前活动窗口。后者由实际 Target.activateTarget 的所有权拒绝定位，修复为按原窗口分别建组，绝不放宽 ownedWindows/ownedTabs 校验。隔离 Windows 受控重试已证明原标签保留、任务标签仅在自建窗口。
+
+真实方法建立首次只观察正例后，对 signed-out 返回 inconclusive，属于合理候选边界，不能以测试要求猜反例。第二次显式修订读取真实未登录页并保留上一版正向规则，v2 再经真实正反例验证可用。`work/account-method-1790973111685/result.json` 含 v1/v2 的 prefix/final 回执、各5次研究模型调用和全部检查的0模型审计。公开 GitHub：`work/account-method-1790972763987/result.json`，实际 outcome=unauthenticated/reason=login_required；未登录私人账号。
+
+
+
+## 2026-10-03 通用账号管理的事实来源与开发边界
+
+已定点核验 BrowserProfileService/RunnerProcess、browser-profile contracts、TaskChainBrowserAdapter、TaskChainRuntime：专属窗口交付后 runner 退出，只有窗口生命周期，没有网站身份验证；现有 browser.perform 页面/目标读取、Function/Branch 与 LangGraph 可复用。受管日常扩展固定版本/许可沿 UPSTREAM.json，公共 UI 沿 Radix Themes 3.3.0 / Lucide 0.544.0。完整 Product Alignment、Reuse Assessment、身份判据、Profile 隔离、同 Dialog 布局与验收门见 [开发文档](BROWSER_ACCOUNT_MANAGEMENT_DEVELOPMENT_20261003.md)。
+
+文档区分当前接口与待开发适配，不把原型当事实源。首次平台方法须真实调查和正反例验证；普通复查固定链路、0 模型，未知不得降成未登录。实施 session 须补精确 B-U/W-U 版本与会话复用真实样本；未据文档冻结未测能力。
+
+交接机制：工具目录未提供 thread/automation 管理工具，CLI help 验证支持新持久 exec session；本机 models_cache 与 [官方 GPT-6 Astra 文档](https://developers.openai.com/api/docs/models/gpt-6-astra) 均列 gpt-6-astra/xhigh。官方 [App Server 文档](https://developers.openai.com/codex/app-server) 明确线程/模型及参数能力。本机 daemon version 探测因控制 socket os error 10050 失败，保留为首败；不重启现有 Codex，改用 CLI 独立 session。后台只读当前会话/turn/goal/queue 事实，不写 Codex 数据库，不把回退进程冒充 Codex 定时任务。
+
+## 2026-10-03 扩展公共控件与持久偏好首帧（实施前）
+
+开关已存入 chrome.storage.local，但 usePopupState 把未知状态投影为 false，并等待工作台网络读取后才发布本地快照。status.tsx 使用 input + popup.css 的 appearance/pseudo-element 手写 Switch，选中拇指硬编码 #30260c。修正为读取中展示 Radix Skeleton；拿到本地后台快照立即呈现保存值，不等待宿主，后续异步读取不得覆盖用户刚完成的操作。
+
+Reuse Assessment:
+- capability: 原生扩展内的开关、按钮、读取占位及明暗主题。
+- existing implementation in repository: Workbench 已使用 @radix-ui/themes 3.3.0，专属窗口开关为 Switch radius=full；lucide-react 0.544.0 已安装。
+- mature candidates and pinned versions: 同一 @radix-ui/themes 3.3.0 / Switch primitive 1.2.6 / lucide-react 0.544.0；不引入第二套控件库。
+- selected implementation: 直接使用 Themes Switch、Skeleton、Button、Theme 及 Lucide 图标，删除手工轨道/圆点/焦点样式。
+- reused public surface: checked/onCheckedChange、radius、variant、appearance；matchMedia 仅驱动浏览器主题；Vite resolve.dedupe 保证上游 React 19.2.7 与应用 React 19.1.1 不重复加载。
+- B-A-T-owned adapter and remaining gap: 业务状态组合、读取与操作竞争保护、340px 浮窗布局；不实现基础控件。
+- license/runtime/platform fit: Radix/Lucide 的公开 npm 入口与原 Vite 构建；依赖许可证随构建归档，Windows 原生 action popup 验证。
+- browser/runtime/state ownership conflicts: 同一 chrome.storage 偏好，首次未知不伪造 OFF；不新增授权或主题存储。
+- replay model calls: 0。
+- rejected candidates and evidence: 自绘 input 样式已造成拇指、主题、首帧交互不一致，删除；无需替换扩展框架。
+- focused validation: ON/OFF 重开首个开关值、宿主慢响应/离线、真实点击持久化、键盘焦点、Radix DOM/白色拇指、明暗与原生 popup 无 tab。
+
+官方实现依据：[Switch API](https://www.radix-ui.com/themes/docs/components/switch)、[Switch 源码](https://github.com/radix-ui/themes/blob/main/packages/radix-ui-themes/src/components/switch.tsx)、[Switch 样式](https://github.com/radix-ui/themes/blob/main/packages/radix-ui-themes/src/components/switch.css)、[Vite dedupe](https://vite.dev/config/shared-options.html#resolve-dedupe)。静态排查也发现工作台侧栏/画布/上下文区还有原生 button/select；本次不能宣称全项目公共控件已收敛，后续需按真实使用入口替换验证，原型及第三方内部实现分别处理。
+
+账号中心的现状：BrowserProfileState 只有 status/openedAt，Profile 服务负责同一个专属 Profile 和登录窗口所有权，没有平台清单或各站登录事实。本轮先提供复用 Radix 的独立交互原型：平台域名、账号备注、最近确认时间、待确认/最近确认/需重新登录；打开网站后由用户确认登录，明确区分历史确认与当前可用性，不通过 Cookie 存在伪造已登录，不读取密码或敏感 Profile 内容。未将演示记录当成产品已保存账号。
+
+## 2026-10-03 浏览器偏好、全局授权和运行连接分离（实施前）
+
+问题证据：BrowserEnvironmentService.select 进入 exclusive 时调用 assertBrowserIdle，随后 disconnectIdle 关闭上游与扩展连接，导致持有旧窗口的任务阻断“下一次准备和运行”的设置。准备活动由 preparation.ts 保存 store.executionBrowser()，正式运行在 runtime-host.ts 将执行快照的 mode 传给 runtime；当前任务不应读取之后更改的偏好。设置保存改为同步校验 revision 并持久化，不触碰运行连接。exclusive/disconnectIdle 仍供实际打开账号窗口使用，保留所有权核验。
+
+授权页当前按 connected 显示/隐藏“连接 Chrome”，却已存在 DailyChromeExtension.endpoint 的运行时自动复用。界面改为 Chrome 授权、已授权用户与撤销入口；未授权时“授权 Chrome”沿原扩展浮窗确认协议取得持久授权。首次授权仍通过已有握手确认双方身份，内部传输连接不再作为用户需手动维护的设置。扩展的“允许连接”开关及暂停语义不变，真实任务启动与恢复继续使用原占用保护。
+
+Product Alignment:
+- natural-language task: 搜索资料、填写表单等任务可独立选择下一次浏览器，一次 Chrome 授权供全部任务复用。
+- reusable chain boundary: 全局浏览器偏好与授权入口，不改变链路或单次运行快照。
+- runtime inputs: 启动时冻结的 browser mode 和既有持久授权。
+- dynamic task outputs: 不变。
+- generic platform capability used: 现有 ProductStore revision 校验、Radix 控件、扩展原授权握手与 endpoint 自动连接。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+复用既有组件与协议，无新增基础设施或依赖。最小验证覆盖：有活动任务/保留租约/账号窗口时偏好可保存且不清理连接；运行快照与 revision 保护不变；账号窗口的真实连接清理仍受原保护；授权 UI 在已连接/未连接下保持一致，未授权入口、取消及撤销可达。
+
+## 2026-10-03 扩展主题归浏览器所有
+
+用户明确浮窗明暗应跟随浏览器，不跟随工作台。使用 CSS 标准 prefers-color-scheme 和 color-scheme: light dark；沿用既有 Radix 色板，构建时生成浅色默认及深色 media 覆盖。移除工作台发送 theme、PopupBridge 存取 bat-theme、popup 状态中的 theme 和 React 设置 data-theme 的链路；旧工作台携带 theme 的消息由原 Zod object 忽略该字段，旧存储不再参与渲染。CSS 首帧即可选择颜色，浏览器偏好变化时即时更新，无新增监听器、主题偏好或依赖。
+
+复用依据：[CSSWG prefers-color-scheme](https://drafts.csswg.org/mediaqueries-5/#prefers-color-scheme)读取浏览器提供的颜色偏好；浏览器选择跟随操作系统时继承系统明暗。不采集浏览器主题图片/自定义品牌颜色，不更改个人 Chrome 设置。验证范围：旧消息不能再改变浮窗主题、扩展构建、Workbench 类型检查、隔离 Windows Chrome 原生 popup 的浏览器明暗及工作台主题独立性；不复跑任务或改变授权。
+
+## 2026-10-03 浏览器设置统一入口（实施前）
+
+用户截图暴露了两份不同作用域的选择：BrowserEnvironmentDialog 保存全局 mode；ChainRunDialog 将其复制到本地 browserMode 后允许单次 override，不回写全局。准备任务和普通草稿试跑从 ProductStore 读取当前选择，正式运行却可传另一份选择，界面没有解释差异。本次取消运行弹框中的本地选择副本：显示已保存的浏览器摘要，通过「更改」打开同一个 BrowserEnvironmentDialog，返回后重新读取已保存值，保留输入与节奏。统一设置只展示日常 Chrome / 专属浏览器；专属的可见性用显示窗口开关表达。底层三个枚举、执行快照与历史数据保持兼容。
+
+Product Alignment:
+- natural-language task: 查询资料或填写表单时，准备、试跑和正式运行使用一致的浏览器设置。
+- reusable chain boundary: 工作台浏览器配置和执行前确认；不改变链路动作。
+- runtime inputs: 已保存 mode、业务输入、复跑节奏；需要交付原页面时阻止后台运行。
+- dynamic task outputs: 不变。
+- generic platform capability used: 已有浏览器配置 API、Radix Dialog/RadioCards/Switch 和执行命令。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 单一配置入口、两层选择表达、运行前确认。
+- existing implementation in repository: BrowserEnvironmentDialog、useBrowserEnvironment、ProductStore 与 browserEnvironmentSchema。
+- mature candidates and pinned versions: 现有 Radix Themes 3.3.0、React 19.1.1；Chrome action 原生 popup。
+- selected implementation: 复用原 Dialog/RadioCards/Switch，只改变领域组合，不新增设置库/窗口控制器。
+- reused public surface: Radix 受控 open/value/checked API、原 GET/PUT browser-environment。
+- B-A-T-owned adapter and remaining gap: 单次运行不再维护另一份浏览器选择；配置返回后刷新与不兼容提示。
+- license/runtime/platform fit: 现有 MIT 依赖，Windows Chrome。
+- browser/runtime/state ownership conflicts: 不操作个人 Chrome、原授权和历史 lease；保留切换忙碌/版本核验以及执行快照。
+- replay model calls: 0。
+- rejected candidates and evidence: 不引入第二套全局状态或第三方设置面板；现有配置和成品控件已覆盖需求。
+- focused validation: Workbench 类型检查，隔离 Windows Chrome 的同入口更改/输入保留/持久化/失败不替换/需要原页面时禁止后台运行；不启动真实业务或模型。
+
+白框再次核验：Chromium ExtensionPopup 的外壳固定使用 BubbleBorder::STANDARD_SHADOW；BubbleBorder 在内容区外绘制 1px stroke，action 和 manifest 公共接口没有关闭该 stroke 的设置。保留用户要求的原生工具栏浮窗，不用标签页、独立窗口或个人 Chrome 主题变更伪装修复。网页内截图只能验证内容，不是外壳已经消失的证据；此项仍为浏览器原生边框限制。
+
+## 2026-10-03 工作台基础控件与浏览器模式说明
+
+用户截图的搜索框重复描边来自 styles.css 的全局 :focus-visible 与 Radix TextField 自带焦点轮廓叠加；button 的低优先级 cursor 被组件主题覆盖。沿用现有 Radix Themes，不新增控件：按[官方 cursor tokens](https://www.radix-ui.com/themes/docs/theme/cursors)集中配置 button/checkbox/radio/switch/menu-item 的 pointer；原生 disabled 保留 not-allowed；全局焦点兜底排除已有 Radix reset 控件，保留组件自身键盘焦点。不是移除可访问性焦点或对每个输入框重写样式。
+
+当前三项对应运行契约 daily / dedicated-visible / dedicated-headless。后两项共用专属 Profile 和 BrowserProfileDialog，因此下面都是同一「管理登录账号」，无两套不同菜单；差异仅为运行是否显示窗口。日常 Chrome 才有扩展、全局授权和连接管理。现有扁平呈现把浏览器来源与窗口可见性混在一起；本轮解释实际行为并修复基础样式，未擅自替换为新的两级选择，也未改模式切换的资源所有权保护。
+
+原生浮窗外框核验：[Chromium extension_popup.cc](https://github.com/chromium/chromium/blob/main/chrome/browser/ui/views/extensions/extension_popup.cc)使用 BubbleDialogDelegateView / STANDARD_SHADOW；[bubble_border.cc](https://github.com/chromium/chromium/blob/main/ui/views/bubble/bubble_border.cc)在内容边界外绘制 1px 边框并使用 Chrome ColorProvider。扩展 HTML 的背景跟随工作台，Chrome 外层边框由浏览器绘制；不能把网页内 CSS 修正宣传为移除了原生框。
+
+## 2026-10-03 方案 A 用户验收：旧授权下开关不可点击
+
+截图对应的实际宿主状态 paired=true、connected=false、busy=false。原 UI 把 canEnable 限制为 pending 或扩展新增 bat-authorized=true；旧版本全局凭据有效但尚无新本地标记时开关被禁用。修复沿原连接恢复路径：宿主确认有已保存授权时允许用户主动开启并请求恢复；是否真的批准仍由原私有票据 token 匹配决定，不能因公开 paired=true 就伪造本地已授权。首次无授权仍需要工作台选择 Profile 并发起原授权请求。
+
+这是原方案 A 的升级兼容缺口，沿用上一节 Product Alignment / Reuse Assessment，不新增控制器、授权协议或同源豁免。新增最小回归覆盖「只有宿主授权、无本地新标记」的主动开启和 token 失配不能获授权；Windows 直接从工具栏打开浮窗复现，检查真实输入可点击并恢复。主题当前由工作台主题控制，扩展保存最近值，初始默认 dark。本次同时核对用户所指外框是否属于 Chrome 原生容器，不能将网页内截图当作原生外框证据。
+
+## 2026-10-03 方案 A 连接卡片实施前决策
+
+用户已选 A。保留原型的连接卡片、允许连接开关、浏览器名称、范围折叠及工作台入口；首次与日常使用同一布局。后台持久化 enabled，与 relay 连通事实分开。OFF 关闭原扩展连接、保留宿主授权，并拦截普通任务的自动连接；ON 对待授权票据执行明确确认，已有授权经当前同源工作台恢复连接。无 token 的新授权票据始终要求本次明确开启，不能被旧的 ON 设置静默批准。首次授权不重新关联任务/历史 lease。
+
+Product Alignment:
+- natural-language task: 查询资料或填写表单时复用用户选择的 Chrome 登录状态。
+- reusable chain boundary: 全局授权和扩展连接偏好，独立于任务链路。
+- runtime inputs: 原私有票据、原 token、持久开关和真实 relay 状态。
+- dynamic task outputs: 不改变任务输出。
+- generic platform capability used: 原微软扩展、同源授权路由、Chrome storage/action。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 原生浮窗中的连接偏好、连接事实与现有全局授权适配。
+- existing implementation in repository: 原 Microsoft/playwright 8b552173 扩展/relay、PopupBridge、工作台外部消息轮询及 ProviderCredentialStore。
+- mature candidates and pinned versions: 已核验 BrowserSkill 47ac947f 的 connectionEnabled 与实际连接分离；现有 React/Vite 和 Chrome 原生 checkbox/details 控件。
+- selected implementation: 原控制器和原 token 保持唯一事实源；仅补偏好门禁、同源恢复请求和方案 A 视图。
+- reused public surface: Chrome storage.local/action.openPopup、原 group.close、现有 POST connect；Radix colors 公开导出提供工作台相同色值。
+- B-A-T-owned adapter and remaining gap: 暂停失败原因、一次性的恢复意图、工作台主题同步；没有另一套浏览器控制器或常驻重连调度器。
+- license/runtime/platform fit: 原 Apache-2.0/MIT 组件；Windows Chrome 原生浮窗。
+- browser/runtime/state ownership conflicts: OFF 只关闭原连接拥有的控制会话；不删除任务/lease/凭据，不操作用户已有标签页。恢复由现有同源工作台发起，保留原 Origin/Fetch Metadata 校验。
+- replay model calls: 0。
+- rejected candidates and evidence: 不迁移 BrowserSkill runtime；其借用页与任务调度不属于本次界面职责。
+- focused validation: 开关存储和两条 token 自动连接入口门禁、暂停后新票据、明确开启、恢复不重复授权、Windows 原生 popup 和零授权 tab；API/Workbench 类型检查及扩展构建。
+
+## 2026-10-03 三版扩展浮窗原型评审（未选型）
+
+用户要求先提供三版原型自行选择。本轮只制作独立 HTML/CSS/JS 演示：A 连接卡片、B 紧凑面板、C 浏览器名片。参考已调研的 BrowserSkill，将持久连接偏好与实际连通状态分开；首次手动开启、所有任务共用授权、关闭暂停但保留授权。原型使用原生 checkbox/switch 与 details，沿用工作台 Sand/Amber 色值和 Aptos/Microsoft YaHei UI 字体，不新增依赖、不接产品 API。真实持久开关仍未实现，设计仍待用户选择。
+
+产物 work/chrome-popup-prototypes-20261003/index.html；含首次、已连接、暂停、工作台离线、深浅色及单版查看。Windows Chrome 154 独立临时 Profile 核对交互和实际截图；不触发个人 Chrome、真实授权或任务。原型截图不能作为真实授权协议或任务执行验收证据。
+
+## 2026-10-02 首次确认文案与操作层级收敛
+
+用户实际截图仍包含重复标题/引导语、表格式对象信息、无语义箭头、批准前对勾，以及首次请求时多余的工作台出口。首次面板收敛为：浏览器名称、一个范围说明、全局授权有效性、暂不连接/授权并连接。删除装饰图标与常驻页脚，两按钮等宽，由颜色区分主次；已授权详情继续折叠。沿用原协议，用户主动拒绝在工作台显示普通取消反馈，真实技术失败仍保留错误态。验证仅扩展构建、Workbench 类型检查、隔离 Chrome 首次确认/取消反馈/已连接视觉；不重复无变更的持久化与协议测试。
+
+## 2026-10-02 扩展面板交互修正与实际运行入口（实施前）
+
+实际服务核验：4175 的 PID 2584 仍运行旧授权 tab 入口，GET 状态不含 popupRequest；这是用户仍看到新 tab 的确定原因。沿本项目 dev/shutdown 身份核验接口重启后，新服务含 popupRequest；7 条 execution 记录及浏览器 lease 摘要完全一致。隔离 Chrome 测试不能替代这项实际服务交付核验。
+
+已直接读取 BrowserSkill 47ac947f 的 popup/App.tsx、use-connection-state.ts、switch.tsx、style.css：主状态与 connectionEnabled 分离，开关修改后台持久偏好，瞬时 connecting 不让文字来回跳，未接通的设置不展示控件；popup 高度随内容变化。对照 uBlock Origin 的 popup-fenix.html/js（官方 master，2026-10-02 读取），主要操作靠近状态，次要工具和详细信息渐进展开；只参考交互，不引入其 GPL 源码。Chrome 官方 Add a popup 明确 action.default_popup 是工具栏浮层，失焦会关闭；再次打开应恢复后台事实。
+
+本次设计：首次请求呈现所选 Chrome、实际操作范围和“拒绝／允许连接”；连接后改为紧凑连接面板，权限说明收起，仅保留一个工作台入口。断开是单次连接操作，授权保留，不用持久启用开关伪装 socket 状态。使用可读字号、明确焦点和进行中反馈；首次状态未读完不误报未授权。工作台取消后清除过期请求，重试可以再次打开浮窗。
+
+Product Alignment:
+- natural-language task: 在使用登录账号进行查询或填写表单前，用户确认浏览器权限；后续任务复用。
+- reusable chain boundary: 原全局 Chrome 授权与单次控制会话，独立于任务链路。
+- runtime inputs: 原待授权请求、后台连接事实、服务端保存的授权。
+- dynamic task outputs: 无新增业务输出。
+- generic platform capability used: Chrome action popup、原连接消息、React 状态与原 Button。
+- replay model calls: 0。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 扩展连接面板与待授权请求生命周期。
+- existing implementation in repository: 固定 Playwright 0.4.0 的 status.html、React、Button、原 token 和 relay；已增加的 popupBridge。
+- mature candidates and pinned versions: 上述固定源码；BrowserSkill 47ac947f 的真实组件和连接控制器；uBlock 官方面板结构作为交互参考。
+- selected implementation: 继续复用原组件和 Chrome 原生 popup，只重组 B-A-T 状态、文案和样式。
+- reused public surface: chrome.action.openPopup、runtime 消息、storage；原 Button、token、disconnect。
+- B-A-T-owned adapter and remaining gap: 过期授权请求与全局服务事实同步；不新增浏览器调度、开关偏好或权限协议。
+- license/runtime/platform fit: 无新依赖；原 Apache-2.0/MIT 依赖；Windows Chrome 154 定点验证。
+- browser/runtime/state ownership conflicts: 不操作用户 Chrome，不改任务租约；测试使用专属隔离 Profile。
+- replay model calls: 0。
+- rejected candidates and evidence: 把断线画成持久关闭开关会与自动复用冲突；始终展示授权介绍混淆首次确认和已连接状态；两个工作台按钮没有两个真实目的地。
+- focused validation: 原生 POPUP 上下文、零授权 tab、首次拒绝/重试/批准、取消后的新请求、已保存授权复用、连接后简洁面板与实际服务入口。
+
+参考：https://github.com/gorhill/uBlock/blob/master/src/popup-fenix.html；https://github.com/gorhill/uBlock/blob/master/src/js/popup-fenix.js；https://developer.chrome.com/docs/extensions/develop/ui/add-popup。
+
+## 2026-10-02 日常 Chrome 工具栏浮窗（实施前）
+
+Product Alignment:
+- natural-language task: 用户点击工作台“授权并连接”，在 Chrome 工具栏浮窗查看范围并确认一次，后续任务复用。
+- reusable chain boundary: 全局连接设置，不改变链路、运行、历史任务或窗口租约。
+- runtime inputs: 当前工作台、所选 Chrome 用户、原扩展 token 与 relay。
+- dynamic task outputs: 不变；授权拒绝不产生任务或修改旧任务。
+- generic platform capability used: Chrome action popup、扩展消息、原 Playwright relay 握手。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: Chrome 原生工具栏 popup 与本机工作台的连接引导。
+- existing implementation in repository: 固定 Microsoft/playwright 8b552173e8d767db29b8baef8f4a1f08cf7f26bf，React/Vite、status.html、PendingConnections、ConnectedTabGroup 与原 token 握手。
+- mature candidates and pinned versions: Chrome action API（openPopup 自 127 普遍可用）；上述固定微软扩展 0.4.0；BrowserSkill 官方 popup 仅作交互参考。
+- selected implementation: manifest.default_popup 复用原 status.html/Vite 入口，Chrome runtime.sendMessage/onMessageExternal 传递随机本机请求地址，chrome.action.openPopup 打开原生面板。
+- reused public surface: https://developer.chrome.com/docs/extensions/reference/api/action；https://developer.chrome.com/docs/extensions/reference/manifest/externally-connectable；https://developer.chrome.com/docs/extensions/develop/concepts/messaging。
+- B-A-T-owned adapter and remaining gap: 把工作台连接请求交给浮窗、显示全局授权与连接状态；扩展专属随机 HTTP 地址保留原 token 私密交接，拒绝结束待授权请求。不创建授权 tab，不重写 CDP、浏览器控制或调度。
+- license/runtime/platform fit: 保留 Apache-2.0、原 React/Vite 固定依赖与扩展 key；Chrome 154 Windows 覆盖 API 最低版本，无新增库。
+- browser/runtime/state ownership conflicts: 面板只通过明确的用户授权创建原 owned bootstrap；不 attach 个人页、不改旧 owner。工作台应在加载扩展的 Chrome 中；其它浏览器不能调用该 Chrome 的原生 action API，显示手动点击扩展图标的指引，不退回授权 tab。
+- replay model calls: 0。
+- rejected candidates and evidence: BrowserSkill 自动连接/借用页授权不是本项目持久 token 配对政策；新授权 tab 或独立 Chrome window 都不符合用户截图中的工具栏浮窗。
+- focused validation: 私有交接拒绝/同源边界、保存 token 复用和原所有权回归；原 Vite 构建、所属类型检查、浮窗状态与视觉验证。实际用户 Chrome 的点击由用户操作。
+
+视觉方向：与工作台一致的深色/琥珀色，紧凑 360px 面板。连接卡显示工作台/Chrome 用户和状态；首次申请显示范围与“拒绝 / 授权并连接”；已授权显示“所有任务可复用”、连接管理和工作台入口。禁止把原始 token、个人页面内容或技术配置铺在主界面。
+
+## 2026-10-02 Browser-Skill 本地连接交互与当前授权页对照（只读调查）
+
+用户要求先查 Browser-Skill 如何连接和授权，确认当前跳转页面是否由 B-A-T 修改。本机 bsk --version 为 0.3.1；现有只读诊断源码为 Tencent/BrowserSkill 的 47ac947f188bc554b66c09f5873b8045d6be57b2（2026-09-04）。另核验官方当前 main=3f10983c09fcd443c7420830ab984c9d409954bf 的 README、popup/App.tsx、connection-controller.ts、instance-id.ts 和 background.ts；未把历史源码当作当前发行版本，也未操作用户 Browser-Skill 扩展或启动会话。
+
+Browser-Skill 本地连接：工具栏扩展 popup 显示连接开关和状态；getConnectionEnabled 未设置时为 true，设置写入 chrome.storage.local；后台根据该设置建立本机 WebSocket 并自动做 system.handshake，控制器/keepalive/heartbeat 负责连接恢复。首次本地连接没有 Playwright 的 connect.html 导航和每客户端 Allow 令牌交接。扩展启用设置属于浏览器实例，任务创建不重做这一设置。借用用户已有标签页的独立确认通过原页面 overlay 发起；缺少可用 content script 时，chrome.notifications 的 Allow/Deny 是兜底。不能把借用页确认解释为所有任务都要重做全局连接授权，也不能据本地流程推断远程设备配对的交互。
+
+当前 B-A-T 授权页来源：vendor/daily-chrome-extension/UPSTREAM.json 固定 Microsoft/playwright 的 8b552173e8d767db29b8baef8f4a1f08cf7f26bf / 扩展 0.4.0；上游已有 packages/extension/src/ui/connect.tsx 与连接页 Allow 流程。B-A-T 在该页面上修改了中文内容、任务窗口范围和 persistAuthorization 首次令牌交接，宿主只在握手就绪后保存凭据。它是改造后的扩展页面，不能称为 Chrome/Windows 原生权限弹窗，也不能把跳转网页宣称为浏览器必需步骤。当前本地 connect.tsx 只有“允许并保存授权”按钮，尚无直接的“拒绝”按钮；接口夹具中的拒绝分支不能代替真实 Chrome 页的拒绝交互验证。
+
+官方依据：https://github.com/Tencent/BrowserSkill；https://github.com/Tencent/BrowserSkill/blob/3f10983c09fcd443c7420830ab984c9d409954bf/apps/extension/src/lib/instance-id.ts；同 commit 的 entrypoints/popup/App.tsx、lib/connection-controller.ts、entrypoints/background.ts；https://github.com/microsoft/playwright/blob/8b552173e8d767db29b8baef8f4a1f08cf7f26bf/packages/extension/src/ui/connect.tsx。此轮只记录交互差异，不冻结替代方案。
+
+
+## 2026-10-02 Windows 授权入口与历史任务占用解耦（本轮最小修复）
+
+用户明确要求：选定 Chrome 用户只授权一次，所有任务和服务重启默认复用；授权弹窗由用户点击工作台按钮触发，用户自行选择拒绝或允许。Windows 当前首次授权在进入扩展握手前，被历史 execution 的保留窗口记录拦截。授权凭据本来就是全局保存；缺口在入口错误复用了任务资源占用检查。
+
+Product Alignment:
+- natural-language task: 用户从工作台授权日常 Chrome 一次，后续任意浏览器任务复用该授权。
+- reusable chain boundary: 不改变任务链路、任务窗口所有权或运行互斥；授权是浏览器全局配置。
+- runtime inputs: 选定的 Chrome 用户、固定扩展握手及已保存授权。
+- dynamic task outputs: 原任务结果、错误、清理和保留窗口记录保持原样。
+- generic platform capability used: 既有 DailyChromeExtension、同源 HTTP 入口和凭据持久化。
+- replay model calls: 0 added。
+- site/task-specific code added: no。
+
+继续复用固定 Microsoft 扩展 0.4.0 的 CDPRelayServer，以及已安装 ProviderCredentialStore；不新增依赖或授权协议。首次授权、已保存授权复用不检查历史任务租约；只有替换仍连接的 relay 时才核验原连接占用。浏览器环境切换与授权处理继续互斥，任务启动继续保护正在进行的授权。拒绝不得保存凭据，保存授权应跨任务和服务实例复用。最小验证限定在所属授权/环境 HTTP 与 relay 错误路径，不替用户操作实际 Chrome 的允许/拒绝。
+
+
 ## 2026-10-02 执行失败、再次运行与原因入口（本轮授权，macOS 原任务通过）
 
 用户本轮明确收窄为：失败后再次运行、查看同一次历史失败原因，并核实日常 Chrome 已保存授权。沿用已有侧栏和历史，不删除失败详情，不扩展采集/成果格式。
@@ -3428,3 +3854,191 @@ Reuse Assessment:
 
 
 2026-10-01 设计/验证闭环：独立 review 拒绝事件队列、关闭后迭代、分页遗漏、晚回执清空、历史录制值洗白及最后 started 回退旧 finished；均以具体反例修正。来源检查收窄只读节点/事件依赖并导出 safeRecordedOutput，运行与历史摘要共用当前政策，不加模型或持久标记。反馈持久化严格接受自身两字段或旧完整 context，完整回执从不可变父记录派生；已有反馈恢复不重查旧 run、不改原摘要。产品 LLM 调用及模型必填字段新增均为 0；safeCallSummary 自身没有模型调用，只给既有用户发起的需求回流提供已保存安全数据。相关临时真实 HTTP、异步合并、隐私/幂等反例与所属类型检查通过；边界和首败详见 PROGRESS 最新节。
+
+## 2026-10-04 循环/分支定稿 UI 的复用与接入
+
+Product Alignment、Reuse Assessment 和验证门详见 [CHAIN_CONTROL_UI_INTEGRATION_20261004.md](CHAIN_CONTROL_UI_INTEGRATION_20261004.md)。复用现有 React Flow 12.11.6、Dagre 3.1.1、lucide-react 0.544.0 和统一主题 token；没有新图框架、模型 judge、浏览器控制或 scheduler。声明 body 关系提取到 contracts 的只读图关系工具，准备/发布分组与当前轮事实隔离共用它。自然生成 repeat 真实 IR 的主节点归属缺口已经验证修正；通用业务 if/else 证据生成的未完成范围不与本轮 UI 接线混为同一结论。
+
+## 2026-10-04 账号 closed 与原生 handoff 分裂
+
+复用原 AttachedWindow、CDPClient、AccountWindows/AccountReuse、releasedOwners 与 per-owner 归档。源码和持久证据确认：inspect 返回无目标却不更新收据，宿主保存 closed 后再也不处理，任务许可只包含历史任务交付 owner。修正原适配，增加当前同身份 closed 维护许可，不复制调度/驱动/租约系统。Product Alignment、Reuse Assessment、首败与真实 headless 验收见 REPLAY_ACCOUNT_LEASE_REPAIR_20261004.md。
+
+## 2026-10-05 起止节点统一与单条两行省略
+
+检查 Dify 官方公共节点、start/end 实际源码：共享标题区，没有变量/输出则不渲染空主体。保留已验证 React Flow/Dagre/Radix 与主题 token；用现有节点组合和原生 CSS 两行省略。实际 96px 空白来自结果样式重复覆盖，且与 48px 图模型不一致；统一到 54px 标题卡片，原节点检查器保留完整信息。设计门、源码引用、首败和最小 headless 验收见 [NODE_UI_COMPACT_20261005.md](NODE_UI_COMPACT_20261005.md)。
+
+## 2026-10-05 单行与类型图标（后续要求）
+
+用户将两行改为一行，并要求类型直接可见。复用已有 actionPresentation、真实 kind/能力引用、lucide 图标与主题；固定左侧类型图标，右侧运行状态，取消循环文字 tag。跨主节点分支目标从原图补取类型，缺失来源不猜类型。复用门、首次遗漏与修正后的 headless 验证见 [NODE_TYPE_ICONS_20261005.md](NODE_TYPE_ICONS_20261005.md)。
+
+## 2026-10-05 并行浏览器最小复用门
+
+- [开发方案](PARALLEL_BROWSER_LIFECYCLE_20261005.md) 记录 Product Alignment/Reuse Assessment。沿用 browser-use 0.13.8、cdp-use 1.4.5、受管 Playwright extension v2、ws 和 LangGraph；不另建浏览器控制器、Agent loop、图调度或检查点库。
+- 实际阻塞来自 TaskChainService 的全局队列与历史门、TaskConnection 单父连接、relay 单客户端和 AttachedWindow 公共收据；只放开 UI 不构成并行。B-A-T 适配只处理 owner→独立 runner/Profile/目标及持久执行事实。
+- 查看固定 SDK 明确源码 storage_state_watchdog.py：原 LoadStorageStateEvent 支持内存状态、会话 Cookie 归一化与按 origin 的 localStorage init script。沿该原事件导入新的私有 Profile，保存目录已验证的范围，不复制个人 Profile、不实现第二 Cookie vault；真实合成状态样本通过。日常 Chrome 继续禁止全局存储导入/导出/同步。
+- 专属原生双会话与独立关闭通过，日常 relay 的实际 WS/BrowserModel 多客户端隔离通过；个人 Chrome 与真实网站任务完整验收另列未测。两项 Windows/POSIX 权限基线失败、首败与修正均保留，无全量测试或用户服务重启。
+
+## 2026-10-05 主流程合同交接复用门
+见 [修复文档](MAINLINE_CONTRACT_REPAIR_20261005.md) 的 Product Alignment、Reuse Assessment。复用 ReadSpec、TaskPlan each、QuickJS、现有 source/compiler/materializer 与 LangGraph；不新建浏览器控制或 Agent loop。
+
+
+## 2026-10-05 主流程合同修复最终记录
+
+2026-10-05 05:16 CST：修复代码及定点、真实受控生成/发布/正式复跑验证完成，对抗复审限定范围未发现成立阻断。原京东任务仍失败：排序与前五集合读取已通过；详情继承的生产者字段保证传播未闭合，并记录两次 ai_structured_output_invalid，未发布不完整来源。资源 cleanup=confirmed、lease=ended。完整通过、首败、未测与下一步合同修复见 [结果报告](MAINLINE_CONTRACT_REPAIR_RESULT_20261005.md)。按用户明确指令保存原因后关机；没有认定原业务全部解决。
+
+
+## 2026-10-05 任务主流程、范围采集与交付整改
+
+当前实施依据为 [WORKFLOW_AND_DELIVERY_REBUILD_20261005.md](WORKFLOW_AND_DELIVERY_REBUILD_20261005.md)：自然语言确认业务目标和交付，原生 B-U 探索动作、范围、分支和重复方法，按需整体采集页面/区域，通过成熟组件完成内容取得和转换，B-A-T 负责绑定、持久化与复跑。数据清洗及其处理节点不在本轮实施范围。旧逐字段继承整改只保留历史证据，不再作为新任务主路径。当前只修改文档，原京东未完成状态保留。
+
+## 2026-10-05 页面/区域采集直接复用
+
+确认后 P0 实测更新：B-U 0.13.8 Element.evaluate 的公开调用以 `this` 取得当前区域；convert_html_to_markdown 返回 Markdown/字符数/图片信息三元组；现有受控 CDP Page.getResourceTree/getResourceContent 可取得已加载 img 的原字节。Windows 最小展开样本和两个输入的普通读取回归已通过，未安装 Crawl4AI，未增加下载器或第二浏览器。选定当前 B-U/CDP/markdownify 适配面；缓存、范围/图片缺失保留失败，不降级为“完整”。真实生产入口的三条 sample、两条 verification、发布及两条正式复跑通过，普通节点 0 模型。首次失败和限制见 [实施记录](WORKFLOW_AND_DELIVERY_IMPLEMENTATION_20261005.md)。
+
+调研范围：已锁定依赖、相邻 domain-analysis 的实际内容保存源码、B-U 0.13.8 与 Crawl4AI v0.9.4 的官方源码。只读源码核查已完成，未安装 Crawl4AI，未控制用户浏览器，未执行真实原图采集或正式复跑。GitHub REST 版本查询受到限流后通过官方 release/tag 源码核验候选版本，不将查询失败当成产品阻塞。
+
+| 候选及事实 | 已核验的能力 | 接入决定及限制 |
+| --- | --- | --- |
+| 已锁定 browser-use 0.13.8 / markdownify 1.2.2 | HTMLSerializer.serialize 序列化传入 DOM；extract_clean_markdown 从现有会话/DOM 服务取得内容；convert_html_to_markdown 调用成熟 markdownify，内容转换不需要 LLM | 首选已有组件；browser_session 路径可能直接取缓存，须使用既有观察/DOM API 确认内容晚于最后一次加载变化。序列化不等同原始 HTML/原图归档；区域及附件接线仍需验证，不能另写转换器或缓存框架 |
+| B-U 原生 extract | 先取得 Markdown，再进行模型语义提取；output_schema 可选，图像选项保留 src URL；有长内容分块 | 完整工具仅用于首次探索并审计，不能直接物化为复跑 llm；正式语义步骤消费普通节点已取得输入，沿既有显式 llm 的固定 prompt/单次调用约束。恢复工具不等于范围/原图闭环完成 |
+| Crawl4AI v0.9.4 | LXMLWebScrapingStrategy.scrap(url, html) 接受已有 HTML；DefaultMarkdownGenerator.generate_markdown(input_html) 接受内容；css_selector/target_elements 提供范围选择及内容派生 | B-U 公开接口有具体局部缺口时直接复用这些 API；不创建第二个 AsyncWebCrawler 浏览器重访已登录页面。候选接入尚未冻结，需一个 Windows 最小样本及原图证明 |
+| 相邻 domain-analysis | publicWebResourceContent.captureEvent 按响应保存完整 HTML 或附件原字节；zolCatalogGalleryProvider.downloadImage 取得真实图片响应并沿同一快照/附件事实保存 | 参考原始内容及资源关联的边界；不搬网站 Provider、站点字段、内容词表、HTTP 调度或数据库进本平台。该代码及历史运行不证明 B-A-T 通用 AI 范围采集已实现 |
+
+源码核验发现：B-U HTMLSerializer 会过滤非内容标签及 data:image，Markdown 与链接不能替代原始区域/原图保存；extract_clean_markdown(browser_session=...) 缓存非空时不会主动刷新，不能据此保证展开/切页/SPA 变化后的当前内容。采集前用既有 B-U 观察/DOM API 取得最后一次变化之后的内容并核验 owner、target/document 和范围，新鲜度缺口阻止发布，身份/可靠来源失配按硬边界停止。Crawl4AI 的 target_elements 主要限定内容生成，媒体/链接仍可能来自整页，不能当成区域附件边界；css_selector 的无匹配分支可能回退全页，宿主须以既有定位证据确认命中。派生内容的长度过滤、图像评分和 cleaned/fit 策略不能丢掉原始任务内容。辅助网络请求、真实懒加载与图片字节取得在最小样本核验，不能仅根据签名承诺无副作用。
+
+Reuse Assessment:
+- capability: 从当前受控页面/区域取得原始内容与所需附件，形成普通节点可复跑的方法。
+- existing implementation in repository: browser-use 0.13.8、markdownify 1.2.2、workflow-use 适配、Artifact/来源引用、值绑定及 LangGraph。
+- mature candidates and pinned versions: 现有 browser-use 0.13.8/markdownify 1.2.2；补充候选 Crawl4AI v0.9.4（未安装或冻结接入）。
+- selected implementation: 优先直接复用 B-U 与已有内容转换接口；若有可证实局部缺口，采用 Crawl4AI 公开 HTML 输入 API 补足。
+- reused public surface: HTMLSerializer.serialize、extract_clean_markdown/convert_html_to_markdown、原生 Tools/回调；候选 LXMLWebScrapingStrategy.scrap 和 DefaultMarkdownGenerator.generate_markdown。
+- B-A-T-owned adapter and remaining gap: 任务范围到现有定位/采集 API 的绑定、文档身份、产物落库、附件来源与覆盖、编译和正式复跑；不是重写解析、下载或浏览器框架。
+- license/runtime/platform fit: B-U 0.13.8 为 MIT；Crawl4AI v0.9.4 要求 Python >=3.10，LICENSE 含 Apache-2.0 和额外署名要求，采用时保留其要求的 NOTICE/署名。现有 Python 桥在 Windows 运行，新增范围/附件调用仍未验收。
+- browser/runtime/state ownership conflicts: 只使用本次 execution 的浏览器、owner 和 target；Crawl4AI 如被采用只接收该会话已取得内容，不能另接个人 CDP、导出 Cookie/Profile 或建立竞争控制器。
+- replay model calls: 普通内容采集/格式转换 0；完整原生 extract 仅用于首次探索，不直接编成复跑 llm。已确认语义步骤由普通观察先取得一个输入，再调用现有显式 llm，prompt 随版本冻结、单次模型调用、类型化结果，不持有 Browser/Tools/文件系统；本轮不自动补语义或清洗节点。
+- rejected candidates and evidence: 尚未否决成熟候选；缺少局部能力优先扩展/适配现有组件。采用额外组件要记录已有 API 不能覆盖的具体不变量；不得以便利或可控性为理由手写同等能力。
+- focused validation: 在原执行会话取得一份含文本/表格/图片的真实区域，包含一次展开/内容变更后核验当前观察、范围、原文及原图落盘，再以另一输入证明同一方法可复跑。仅用所改边界的定点验证；真实原京东和纯操作闭环按主文档阶段分别记录。纯编译修复消费已保存原来源，不自动重开浏览器或重派动作。
+
+官方依据：[B-U 0.13.8 内容转换](https://github.com/browser-use/browser-use/blob/0.13.8/browser_use/dom/markdown_extractor.py)、[DOM 序列化](https://github.com/browser-use/browser-use/blob/0.13.8/browser_use/dom/serializer/html_serializer.py)、[extract](https://github.com/browser-use/browser-use/blob/0.13.8/browser_use/tools/service.py)、[MIT](https://github.com/browser-use/browser-use/blob/0.13.8/LICENSE)；[Crawl4AI v0.9.4 发布](https://github.com/unclecode/crawl4ai/releases/tag/v0.9.4)、[HTML 输入采集](https://github.com/unclecode/crawl4ai/blob/v0.9.4/crawl4ai/content_scraping_strategy.py)、[内容转换](https://github.com/unclecode/crawl4ai/blob/v0.9.4/crawl4ai/markdown_generation_strategy.py)、[运行依赖](https://github.com/unclecode/crawl4ai/blob/v0.9.4/pyproject.toml)、[许可证](https://github.com/unclecode/crawl4ai/blob/v0.9.4/LICENSE)、[范围选择说明](https://docs.crawl4ai.com/core/content-selection/)。版本源码与最小行为证据一起决定接法，不把 README 或 API 存在当成真实闭环通过。
+## 2026-10-05 对抗审查后的 CSS 资源适配
+
+Reuse Assessment:
+- capability: 保存已选 DOM 范围中的 CSS background-image 与伪元素背景原图，不能遗漏后标记完整。
+- existing implementation in repository: B-U Element.evaluate 取得当前 CSSOM；Chrome Page.getResourceTree/getResourceContent 已取得加载资源。缺少 CSS 值的规范解析。
+- mature candidates and pinned versions: tinycss2 1.4.0 / webencodings 0.5.1；已有 Crawl4AI 方案不能替代本次实际浏览器会话的 CSSOM 与资源事实。
+- selected implementation: tinycss2；固定版本加入现有受管 Python 安装与版本核验，不改 B-U frozen lock。
+- reused public surface: parse_component_value_list；URLToken / FunctionBlock 的公开 AST 属性。原字节继续由已有 CDP 连接取得，不重写 CSS parser 或下载器。
+- B-A-T-owned adapter and remaining gap: 将当前计算背景 URL 对应到本会话资源及 Archive。image-set、paint、element 等不能证明实际图像时返回 content_css_resource_unproven；iframe/canvas/open shadow 同样明确拒绝，未声称任意页面媒体完整。
+- license/runtime/platform fit: 官方 [1.4.0 源码与许可证](https://github.com/Kozea/tinycss2/tree/v1.4.0)，BSD；纯 Python。已在当前 Windows / Python 3.12 环境验证公开解析 API 与 Chrome 原图字节。
+- browser/runtime/state ownership conflicts: 无第二浏览器、下载会话或状态存储；只适配既有 owner 的原始内容 Archive 与 Artifact。
+- replay model calls: 0；普通读取节点调用原解析及 CDP API。
+- rejected candidates and evidence: 自写 regex 不能正确处理带括号/转义的 CSS URL，未采用；另接 crawler 无法证明当前已展开页面的相同文档与加载资源，不采用。
+- focused validation: 引号及括号 URL 解析、无法证明的变体拒绝；真实区域的 img 与 CSS 原始 PNG 字节一起归档，8MB 原图不进入模型回传；同 URL 重载真实拒绝。最初根参数验证暴露 TS/Python ReadSpec 仍只允许对象，边界一起修复并仅复测失败项。
+
+官方 [公开 API 文档](https://doc.courtbouillon.org/tinycss2/stable/api_reference.html) 用于核验 API；实际固定版本与运行行为以 1.4.0 及本次测试为准。
+## 2026-10-05 真实访谈的 Pi/Codex 文本事实适配
+
+Reuse Assessment:
+- capability: 将原生 Agent 结果与工作台可见正文一致交接，避免已完成草稿被桥接层错误拒绝。
+- existing implementation in repository: @agent-platform/pi-agent-session 0.1.0-2c522ec8 的公开 createPiAgentSessionAdapter / createPiAgentSessionAIEventBridge。
+- mature candidates and pinned versions: 当前固定 2c522ec8 与仓库另存 65f7aeff 包。直接读取两个 vendored tgz 的 dist/js/index.js，均在 partial commentary phase 尚缺失时可能流出该文本，message.ended 又过滤该 phase；bridge.settle 要求原始 delta 是 result.outputText 的前缀。
+- selected implementation: 保留当前成熟包，新增 B-A-T 展示适配 completedMessageEvents；不改相邻项目或包内原生 Agent loop。
+- reused public surface: assistant.message.ended 的正文事实与 bridge.onRuntimeEvent / settle；start、工具、推理与结果事件实时传递。结束正文通过原桥接校验，普通业务节点不调用模型。
+- B-A-T-owned adapter and remaining gap: partial token 不直接投影正文；消息结束才展示其确定正文。即时 busy 和工具进度仍保留；暂不提供逐 token 正文预览，避免未确定 phase 污染可确认文本。
+- license/runtime/platform fit: 沿用既有 package 与 Windows/Node 运行时，不引入/替换关键依赖。
+- browser/runtime/state ownership conflicts: 无浏览器控制、流程重跑或模型设置改选；原生运行与事件保留，失败轮次不改写。
+- replay model calls: 0；适配只用于现有需求访谈/探索模型用途，没有新增模型交互。
+- rejected candidates and evidence: 单纯升级到本仓已有 65f7aeff 不改变该路径；拼接 raw delta 并覆盖最终结果会把 commentary 当成接受事实，不采用。
+- focused validation: 现场 task 2aaa0674-ce91-462a-bce4-c21502ce755c 原始事件证明同一 message streamed=1383、ended=1321，差异为前置 commentary；保存的模型最终结果正常 stop。公开 bridge 定点测试覆盖 commentary 过滤、多轮工具消息正文和完成交接，通过。
+## 2026-10-05 点击后真实入口读取
+
+Reuse Assessment:
+- capability: 读取实际导航后的当前文档 URL，不依赖列表 href，也不生成业务链接。
+- existing implementation in repository: B-U 原生 click/navigation、Element.evaluate、ReadSpec、sample_read_fields 与文档身份核验；既有循环编译及 LangGraph。
+- mature candidates and pinned versions: 已固定 browser-use 0.13.8、workflow-use vendored baseline 5d2d19fe8835cc86f1bf3e04302a5000d590f249；标准 DOM Document.URL。
+- selected implementation: 沿已选 B-U 公开 Element.evaluate 读取 ownerDocument.URL。
+- reused public surface: Element.evaluate 的受宿主固定投影；原有 CSS 容器查询、采样、输入输出合同及原生导航。
+- B-A-T-owned adapter and remaining gap: 增加一项固定 valueSource 映射与 TS/Python 合同校验，不重写原生导航或循环；无稳定进入/返回循环时继续明确编译缺口。
+- license/runtime/platform fit: 沿当前已选 MIT/Apache 组件及 Windows 运行时；不增加依赖。
+- browser/runtime/state ownership conflicts: 只读本运行已拥有的文档；保留读取前后页面身份检查及不可变来源事实；不访问其它用户窗口。
+- replay model calls: 0，原生探索调用单独审计。
+- rejected candidates and evidence: 从商品编号拼 URL 不能证明真实入口；另建 Playwright/HTTP 浏览器会话会破坏现有所有权，均不采用。
+- focused validation: Windows 真实无 href 控件点击后获取真实页面URL，原生方法/readRef两页普通读取1项通过（第二页为page.goto）；TS新字段边界1项通过。对抗找到来源交接白名单缺口S2，canonical→代表输出→实际普通节点用例首次失败，补齐后1项通过，API check通过。完整来源循环及京东业务仍未通过。
+
+标准 DOM 事实核验：[Document.URL](https://developer.mozilla.org/en-US/docs/Web/API/Document/URL) 返回当前文档地址字符串；适配不解析、生成或猜测业务路由。
+
+## 2026-10-05 无 AX 控件与在线编译覆盖
+
+Reuse Assessment:
+- capability: 无 AX 名称控件的确定目标身份、缺口后的在线节点覆盖投影。
+- existing implementation in repository: HistoryTargetIdentity / fixedTargetAuthority、在线 prefix 和 coverage、既有 React Flow / Radix / Zod。
+- mature candidates and pinned versions: 现有 browser-use 0.13.8；不新增或替换库。
+- selected implementation: 原生 EnhancedDOMTreeNode.get_all_children_text 与 DOMInteractedElement 身份，既有校验后的编译覆盖/节点物化。
+- reused public surface: 现场通过 inspect.getsource 核验 get_all_children_text 遍历原生 TEXT_NODE，返回当前目标的完整子文本；load_from_enhanced_dom_tree 只读取 AX 名称，不含目标子文本。复用原生 helper，不复制 DOM 文本解析器或 Agent loop。
+- B-A-T-owned adapter and remaining gap: 只把需求已明确、当前唯一的短目标名字绑定为可复跑身份摘要；同源编译覆盖用于产品进度。动态业务项仍需要真实输入/读取和选择证明；旧来源没有名字摘要时不可补造。
+- license/runtime/platform fit: 沿既有 MIT 组件、Python 3.12 和 Windows 已固定运行环境。
+- browser/runtime/state ownership conflicts: 仅访问本次已拥有的原生快照；在线快照无运行/发布权限，保留来源及清理边界。
+- replay model calls: 0；不为固定控件或进度调用模型。
+- rejected candidates and evidence: 放宽所有重复条目为固定 XPath 会把样本条目写死；只删 prefix 缺口过滤而跳过依赖闭合会产生无来源绑定；均不采用。
+- focused validation: 无 AX 控件的真实原生 DOM 重定位、唯一性及错误目标拒绝；prefix 在缺口之后保留独立合法读取并展示具体缺口。实施前记录，结果随后回填。
+
+### 2026-10-05 普通动作上下文及原生返回交接
+
+Reuse Assessment:
+- capability: 新页进入后返回先前页、先前真实 URL 的运行时值绑定；避免导航页的 incidental autoplay 改写动作合同。
+- existing implementation in repository: BrowserSession/Tools native switch、runner browser receipt、ValueBinding、OrdinaryCapability、StepVerifier、prefix 物化。
+- mature candidates and pinned versions: 已安装 browser-use 0.13.8 / workflow-use 0.2.11，不引入新库。
+- selected implementation: 现有原生 BrowserSession 和 Tools.switch，B-A-T 只适配上下文输出和编译证据。
+- reused public surface: 已定点核验 Tools.switch 调 get_target_id_from_tab_id 与 SwitchTabEvent；原生 tab_id 为四位，错误分支可能只返回 attempted 文本。get_tabs 与 alias 核验先于派发，active_tab 读取原生 focus 而非信任文本。
+- B-A-T-owned adapter and remaining gap: 仅在后续消费时为已编译动作补 url/tabId 输出；来源值只证明 binding，本次输出由 runner 实时 receipt 提供。普通动态条目循环仍不能从未读取的集合捏造。
+- license/runtime/platform fit: 沿用受管上游、既有 Windows Python 3.12 运行环境；真实本地 Chrome headless 验证通过。
+- browser/runtime/state ownership conflicts: 不新增浏览器实例共享状态；本次完整 target ID 来自当前节点输出，别名唯一核验和 active_tab 后置条件，finally 关闭测试浏览器。
+- replay model calls: 0；不接管 Agent loop，不增加 judge 或模型重试。
+- rejected candidates and evidence: 冻结录制四位 tab ID 会跨运行失配；以 go_back 代替 switch 对无历史新页无效；复制状态机/控制器不必要。
+- focused validation: 原生 Tools + 正式 EvidenceCollector/SourceObservationScope 采集7动作；换新session 普通复跑两次新页整体区域读取并返回原来源，7段无编译缺口，0模型。保存本地临时证据，未放入Git。该证据通过 TS 生产前缀物化7节点6边与严格 runner 命令；首个 TS 白名单遗漏失败保留，统一准入定义后通过。不等于完整京东任务发布/正式运行通过。
+
+
+## 2026-10-05 原生固定控件、标签页上下文及在线编译复用
+
+Reuse Assessment:
+- capability: 固定无 AX 控件、普通动作上下文输出/切页复跑、真实覆盖进度。
+- existing implementation in repository: browser-use 0.13.8、workflow-use 0.2.11 受管 hybrid、Zod、现有 ValueBinding/runner receipt/StepVerifier/LangGraph。
+- mature candidates and pinned versions: 当前原生 browser-use/CDP/受管 workflow-use；无需新库或第二个浏览器控制/Agent loop。
+- selected implementation: 通过现有公开 API 和 B-A-T 证据适配层复用。
+- reused public surface: native DOM get_all_children_text、原生 Element/Tools.act/get_tabs/get_target_id_from_tab_id；既有回调/派发回执、后置条件、编译/物化及 Zod subset/strip。
+- B-A-T-owned adapter and remaining gap: 确认且唯一的固定名称权威、同源事件投影、即时状态证明与按需 ValueBinding；缺口只影响发布。动态来源及正式业务仍未整链验收。
+- license/runtime/platform fit: 既有 MIT 依赖，Windows 现有 Python venv/CDP 与 TS；未替换关键能力库。
+- browser/runtime/state ownership conflicts: 一个运行一个实际 session；本次原生完整 tab 转四位别名必须唯一、复跑用新 session 的真实节点输出，旧样本 ID 不作为常量。runner cleanup 与业务结果独立。
+- replay model calls: 受控真实浏览器普通动作/整块内容读取验证为 0；未运行本次京东 Agent 或结尾 judge。
+- rejected candidates and evidence: 无新增自研等价能力；上下文匹配仅是来源到 B-A-T IR 的适配，不扩为通用条件引擎。
+- focused validation: 原生 7 动作→编译→新 session 普通复跑；真实来源 TS 7 节点/6 边；合法 navigate/switch 三节点生产前缀；迟到/假事实/假变化、文档身份 extra 及旧包只读进度边界。最终服务 UI/API 17/3/11、中断状态与持久化来源一致。
+
+Reuse/验收结论仅覆盖上述能力，不是原京东选型冻结或动态来源业务通过。源码和首败见实施记录及对抗代码审查；最终受管摘要 091e010554ccd8eb29166c42102287322c11b007826ccb5536dee84bcb9199e3。
+# 2026-10-05：点击入口的最小来源适配
+
+Reuse Assessment:
+- capability: 目录/后台条目只提供点击入口时，读取入口并复用单项链。
+- existing implementation in repository: ReadSpec 双读采样、TargetResolver、OrdinaryCapability、TaskPlan each、LangGraph StateGraph。
+- mature candidates and pinned versions: 已冻结 browser-use 0.13.8 / workflow-use 0.2.11 / cdp-use 1.4.5；不新增或替换库。
+- selected implementation: 沿用现有版本与会话。
+- reused public surface: Page.get_elements_by_css_selector、Element.evaluate/get_basic_info、Tools.switch/click；既有能力的派发与命中检查。
+- B-A-T-owned adapter and remaining gap: ReadSpec 按需附入口输出、已证输入目标的编译绑定；each 编排保持已有实现。
+- license/runtime/platform fit: 沿用已冻结选型及 Windows Python 3.12 环境，无新增分发依赖。
+- browser/runtime/state ownership conflicts: 一个产品 execution 仍一个 owner/session；入口只引用本次来源标签，不接管其它窗口。
+- replay model calls: 普通节点 0；不增加 Agent loop 或语义 judge。
+- rejected candidates and evidence: 不另选控制器；原生查询及目标解析已覆盖需求，不自研浏览器控制、选择器解析或循环调度。
+- focused validation: 所属跨语言边界、原 prepare_task→样本/复验→发布→完整逐项执行，以及实际原任务；结果另记 PROGRESS。
+# 2026-10-05：原生入口索引的观察所有权
+
+Reuse Assessment:
+- capability: 把模型选择的原生索引绑定到它实际看见的元素，而不是后来刷新后的缓存。
+- existing implementation in repository: EvidenceCollector callback、MethodReadRecords、record_projection_dom 与原生 selector_map；复用现有组件，不新增浏览器控制器。
+- mature candidates and pinned versions: 已安装 B-U 0.13.8、cdp-use 1.4.5、workflow-use 0.2.11。
+- selected implementation: 原生观察/Actor + B-A-T 已有证据适配层。
+- reused public surface: BrowserSession.get_browser_state_summary、get_dom_element_by_index、Page.get_elements_by_css_selector、Element.get_basic_info；核验安装的明确函数源码，索引查询仅查当前缓存。
+- B-A-T-owned adapter and remaining gap: 在既有 callback 保存不可变 target/backend/url 身份，本次工具消费并验证实时来源；当前泛化错误需要固定阶段码。
+- license/runtime/platform fit: 沿既有受管依赖与 Windows Python 3.12，不引入或替换库。
+- browser/runtime/state ownership conflicts: 单动作、单 MethodReadRecords owner；不转移会话，不另建 Agent loop/DOM 解析器/调度器。
+- replay model calls: 0。
+- rejected candidates and evidence: 没有拒绝或重写原生能力；只补项目证据与编译边界。
+- focused validation: 观察后缓存重建/节点对象变异仍绑定原 backend；跨页/缺失/不匹配快照必须拒绝；原真实任务的最新失败保留，具体异常阶段尚未确认。

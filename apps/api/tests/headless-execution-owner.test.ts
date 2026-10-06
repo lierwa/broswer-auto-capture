@@ -31,7 +31,7 @@ test("无头正式运行清理未确认保留本次 owner 和原失败，沿用�
     throw new RuntimeCleanupRequiredError(input.browserRunId, report,
       { status: "failed", error: new UpstreamProtocolError("controlled_start_failure", null) })
   } }
-  const executor = new TaskPlanExecutor({ snapshot: () => ({ active: null, confirmedVersion: 1 }) } as never,
+  const executor = new TaskPlanExecutor({ snapshot: () => ({ active: null, confirmedVersion: 1 }), releasedBrowserWindowOwners: () => [] } as never,
     repository as never, host as never)
   const result = await executor.execute(record, new AbortController().signal)
   assert.equal(result.status, "cleanup_required")

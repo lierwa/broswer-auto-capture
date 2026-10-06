@@ -1,8 +1,9 @@
+import type { ReactNode } from "react"
 import { Button, Select } from "@radix-ui/themes"
 import type { ChainNode } from "@browser-capture/contracts"
 import { actionPresentation, bindingSourceLabel } from "./chainNodePresentation.js"
 import { latestExecutionEvents } from "./chainWorkbenchProjection.js"
-import { ResultValue, executionStatus } from "./ExecutionPresentation.js"
+import { ResultValue, executionStatus, executionOutcome } from "./ExecutionPresentation.js"
 import { SavedResultDialog, callOutputContracts } from "./SavedResultDialog.js"
 import { startFact, terminalFact } from "./chainTerminalFacts.js"
 import type { LiveChainModel } from "./useLiveChain.js"
@@ -44,7 +45,6 @@ export function ChainStartContext({ model, onRequirementView }: {
       <p>{executionStatus(detail?.execution.cleanupResume?.status ?? execution.status)}；所选步骤没有调用记录。</p>
       <p>{detail?.execution.cleanupResume?.result?.failure?.reason ?? execution.result?.failure?.reason
         ?? detail?.execution.cleanupResume?.reason ?? detail?.execution.reason ?? "本次结束原因尚未读取。"}</p></section>}
-    {!selectedCall && model.view.error && <p role="alert">{model.view.error}</p>}
     {requirement?.confirmationFacts?.sources.length ? <section><h4>已确认的来源</h4>
       {requirement.confirmationFacts.sources.map(source => <p key={source.resolutionId}>{source.label} · {source.domain}</p>)}</section> : null}
     {chain.reuseBoundary.assumptions.length > 0 && <details><summary>运行前提</summary>
@@ -56,7 +56,7 @@ export function ChainStartContext({ model, onRequirementView }: {
   </aside>
 }
 
-export function ChainTerminalContext({ model, node }: { model: LiveChainModel; node: Extract<ChainNode, {kind: "terminal"}> }) {
+export function ChainTerminalContext({ model, node, children }: { model: LiveChainModel; node: Extract<ChainNode, {kind: "terminal"}>; children?: ReactNode }) {
   const event = latestExecutionEvents(model.chainEvents).get(node.id)?.event
   const call = model.selectedCall
   const fact = terminalFact(node, event, call?.run)
@@ -68,9 +68,10 @@ export function ChainTerminalContext({ model, node }: { model: LiveChainModel; n
       : event ? "终点事实待确认。" : "本次尚未到达此终点。"}</p>
     {node.reason !== node.status && <p>{node.reason}</p>}
     <CallSelection model={model} />
+    {model.selectedExecution && <SavedResultDialog result={executionOutcome(model.selectedExecution).result ?? null} outputContract={model.plan?.outputContract ?? null} />}
     {reached && call && <SavedResultDialog scope="call" result={call.run.outputs} outputContract={callOutputContracts(model.chain)} />}
     {call && <p>所选步骤调用：{executionStatus(call.run.status)}</p>}
-    {model.selectedExecution && <Button size="1" variant="soft" onClick={() => model.openContext("execution")}>本次运行与重新说明需求</Button>}
+    {children}
     <details><summary>输出定义与高级信息</summary><pre>{JSON.stringify({ result, browserHandoff: model.plan?.browserHandoff,
       outputContract: node.outputContract, terminalId: node.id, event }, null, 2)}</pre></details>
   </aside>

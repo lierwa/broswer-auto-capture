@@ -5,6 +5,7 @@ from typing import Callable, Literal
 from uuid import uuid4
 
 from browser_use import Agent
+from browser_use.agent.views import AgentSettings
 from jsonschema import Draft202012Validator
 from pydantic import Field, JsonValue
 
@@ -24,6 +25,7 @@ from .selection_tool import PreparedSelections, register_selection_tool
 from .repeat_annotation import annotate_repeat_method
 from .source_response import author_source_response
 from .method_read_tool import register_method_read_tool
+from .page_content import content_result
 from .repeat_query_feedback import repeat_query_feedback
 from .method_read_schema import representative_schema
 from .natural_reads import value_at_path
@@ -31,6 +33,7 @@ from .author_action_helpers import find_elements_outcome, field_read_outcome, no
 from .human_wait import human_step_callback, register_human_wait_tool
 
 class AuthorInput(Contract):
+    readOnly: bool = False
     task: str = Field(min_length=1, max_length=100000)
     input: JsonValue
     inputSchema: dict[str, JsonValue]
@@ -64,6 +67,9 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
     tools = author_tools_for_result_spec(output_model, request.resultSpec)
     tools._bat_human_wait = human_wait
     field_read_records, summary_records = tools._bat_field_read_records, tools._bat_summary_records
+    if field_read_records is not None:
+        field_read_records.input_value = request.input
+        field_read_records.input_schema = request.inputSchema
     target_scroll_records, visible_wait_records = tools._bat_target_scroll_records, tools._bat_visible_wait_records
     event_capture = NativeEventCapture(browser)
     dialog_bridge = DialogEventBridge(browser)
@@ -90,6 +96,9 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
         action_outcomes={'find_elements': find_elements_outcome, 'bat_read_fields': field_read_outcome},
         reject_navigation_scope=_reject_navigation_scope_retry,
         before_dispatch=tools._bat_selections.before_dispatch, compilation=live)
+    if request.readOnly:
+        from .author_read_only import install_read_only
+        install_read_only(callbacks, request.entryUrls)
     observation_scope = SourceObservationScope(browser, collector, callbacks)
     on_step_end = human_step_callback(human_wait, collector, callbacks.after_step)
     with TemporaryDirectory(prefix='bat-hybrid-agent-') as directory:
@@ -99,7 +108,9 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
                                                settle_dispatch=dialog_bridge.settle)
             guidance = (NATURAL_EXECUTION_AGENT_GUIDANCE if request.resultSpec.mode == 'execution'
                         else NATURAL_AGENT_GUIDANCE)
+            # WHY：保留全部原生默认观察属性；已有 href 是识别无字链接的证据，不能只反馈点击成功。
             agent = Agent(task=request.task, browser=browser, tools=tools, llm=models['agent'],
+                          include_attributes=[*AgentSettings().include_attributes, 'href'],
                           page_extraction_llm=models['extract'], output_model_schema=output_model,
                           register_new_step_callback=callbacks.before_action, use_vision=True, use_judge=False,
                            max_actions_per_step=1, directly_open_url=False, enable_signal_handler=False,
@@ -197,58 +208,44 @@ def _validate_result_spec(request):
     if value['schema'] != request.outputSchema:
         raise ValueError('data_result_schema_mismatch')
 
+# WHY：通过原生 Agent 的指导接口保持已确认输入；动作仍直接使用 B-U Tools，不能固化误选联想项。
+# 来源：browser-use eb4126921bea3373f91afc49fb4b59d6eda7fed6，browser_use/tools/service.py input/click/send_keys。
 NATURAL_AGENT_GUIDANCE = (
-    'Prepare a reusable browser method for the confirmed task using this single browser session. '
-    'Navigate from the confirmed entry and preserve explicit runtime input URLs exactly. '
-    'For data outputs, call bat_read_fields with a DOM record container and relative field projections for a real '
-    'outputPath in the confirmed result schema. Use current DOM observations to choose the method. The host derives '
-    'field types and samples only a few records to verify it. maxItems is the per-read execution budget, not a sample '
-    'count and not the total across repeated pages. Do not extract or copy the entire business dataset. '
-    'Keep the returned readRef; done accepts only the readRefs supplying the result, never rewritten page values. '
-    'For repetition prepare one representative transition: read the current collection, query its continuation '
-    'links with find_elements (attributes=["href"], enough max_results for every match), then navigate to the '
-    'single distinct observed href. Equivalent links may share that href. On the destination, call bat_read_fields '
-    'with only readRef set to the first successful readRef; the host reuses its exact verified method. '
-    'For same-page loading query one eligible continuation button or condition sentinel, click that unique button '
-    'or use a fixed native scroll reaching the loading boundary, then reuse the readRef and observe newly loaded records. '
-    'Runtime checks ONLY match count, never returned attributes: encode nonterminal state in the CSS selector so '
-    'it is unique while continuing and empty at the end. Use the current browser click index for that unique button. '
-    'Click targets must be enabled and visible, including ancestors. A scroll sentinel is a condition, not a click target: '
-    'an observed end marker hidden until completion can be queried in its hidden nonterminal state; require it to exist '
-    'and verify its semantics. Choose record selectors that exclude content still being populated or hidden. '
-    'Repeat find_elements with exactly the same selector, attributes and max_results, including explicit nulls. '
-    'If both reads and '
-    'the transition succeed, finish preparation even when the second continuation query remains nonempty. '
-    'Runtime repeats the method and stops when that complete continuation query is empty, subject to its budget. '
-    'Do not seek the last page or traverse further pages just to prove an empty continuation query. '
-    'For href navigation use the observed URL; DOM indexes from find_elements are not clickable element indexes. '
-    'In done select only the first '
-    'representative readRef for each output path, never several page reads for the same path. '
-    'Do not traverse all pages merely to supply a final list. A sampled read proves only its current DOM scope; '
-    'it is not proof that the complete business collection has been obtained. '
-    'Before choosing an item from a dynamic collection, use find_elements to read the actual candidate set and '
-    'attributes needed by the confirmed rule. Inspect other relevant controls or views before treating one local '
-    'query as the full candidate set. Keep original ordinals for subsequent actions; never narrow the selector to '
-    'the item identity seen only in this preparation. Apply the confirmed rule to observed candidates. '
-    'Click the candidate selected by the confirmed rule; '
-    'do not replace that selection action with navigation to its observed sample href. '
-    'Use the browser click index, not the candidate ordinal, to perform that observed action. '
-    'find_elements does not promise a clickable browser index. If the selected link has no current click index, '
-    'use native wait, scroll or search_page to refresh or expose it, then use the index in the new browser state. '
-    'A missing index in query output alone is not evidence that the task is impossible; do not end unsuccessfully '
-    'solely for that reason. Never invent an index or bypass the confirmed navigation path. '
-    'After navigation or an asynchronous action, inspect the resulting state before consuming it. '
-    'Establish and observe any required final browser state; a default state or profile history is not an action proof. '
-    'For active media playback, wait after the final start action for the existing host playback observation. '
-    'For login, CAPTCHA, confirmation or access requiring a person, call bat_request_human and let the host '
-    'wait for the user in this same tab. Provide a safe prompt and the exact authorized resumeUrl to return to. '
-    'Never type credentials, solve CAPTCHA or bypass access restrictions. After resume, verify the required '
-    'page state and continue the confirmed task to its actual result. New business ambiguity requires stopping. '
-    'If browser security rejects navigation, do not retry through another host or scheme. '
-    'End with explicit success, observed reason and readRefs. Execution-only tasks have no data reads in done: use []. '
-    'Do not invent a second plan, graph, output schema or rules document.')
-
+    'Use browser-use native actions to complete the confirmed business step from the authorized entry. '
+    'Keep runtime input URLs exact. Prepare one reusable method, not a separate graph or a plan invented by you. '
+    'Keep confirmed text and search terms exact when submitting. Use the observed submit control or native '
+    'send_keys with Enter after input; do not replace the confirmed value with an autocomplete suggestion. '
+    'For page/region content output, use bat_read_fields with regions: supply CSS selecting the relevant '
+    'whole container or observed related regions so the host resolves their common ancestor; '
+    'you do not need to discover a single parent selector yourself. Capture the entire relevant region, '
+    'not individual final parameters. Expand and scroll relevant content before capturing so text and images '
+    'are actually loaded. The host stores original HTML, Markdown and original loaded image bytes without cleaning. '
+    'When the task requests a specific region, locate and inspect that region in the native page observation. '
+    'Do not substitute body/html, unrelated navigation, reviews or recommendations for the requested region. '
+    'A tab click or scroll alone does not prove the requested content loaded: inspect the actual region, '
+    'and continue native investigation if it is still an empty placeholder. '
+    'To locate visible text structurally, use native search_page with an observed text fragment: its matches '
+    'include the actual DOM ancestor path. Inspect that path with native find_elements, including id/class '
+    'attributes and children, then select the relevant whole region or related regions for capture. '
+    'Do not use extract to produce this raw content: native extract is a semantic exploration tool, not raw capture. '
+    'For explicitly confirmed structured control/navigation reads, use the available read tool schema; '
+    'the host owns technical IDs, budgets, types and evidence. Apply only confirmed ordering and take limits. '
+    'Repeat the same recorded method when the business step repeats. Preserve source identity and query '
+    'the real continuation condition; never treat a representative sample as the entire dataset. '
+    'Choose controls using current native browser observations. '
+    'For an input ElementEntry, backendNodeId identifies the whole selected record, not a native action index. '
+    'Choose the current native index of the intended link/control inside that record using its observed name; '
+    'do not click a decorative wrapper or switch to another record. After navigation, expansion, scrolling or '
+    'loading, inspect the new state before consuming it. Ordinary compilation gaps do not cancel exploration '
+    'and never authorize the host to replay your actions. Unsupported methods cannot be published as replay. '
+    'For login, CAPTCHA or access requiring a person use bat_request_human in the same owned tab. '
+    'Never bypass restrictions; new business ambiguity must return to requirement dialogue. '
+    'Finish with explicit success/failure and an observed reason. Content delivery is taken from the host '
+    'capture receipt, so you need not copy content or list final fields in done. Other structured results '
+    'use their successful readRefs; execution-only tasks have no data output. '
+    'Never invent DOM selectors to fill absent business parameters or require a global completion judge.')
 NATURAL_EXECUTION_AGENT_GUIDANCE = NATURAL_AGENT_GUIDANCE
+
 
 def _reject_navigation_scope_retry(agent):
     history = getattr(agent, 'history', None)
@@ -266,9 +263,9 @@ def author_tools(output_model, output_schema=None, *, summary_model=None, summar
     # done 只引用宿主记录，不让模型重抄业务值或另建一套执行图。
     excluded = ['evaluate', 'read_file', 'write_file', 'replace_file',
                 'upload_file', 'download_file', 'screenshot',
-                'search', 'find_text', 'switch', 'close', 'save_as_pdf']
-    # WHY：原生search绕过入口来源绑定，find_text含滚动副作用，switch/close缺稳定tab身份，
-    # PDF缺交付合同。导航/input+Enter、search_page/scroll仍保留，唯一新tab由共享适配器承接。
+                'search', 'find_text', 'close', 'save_as_pdf']
+    # WHY：原生search绕过入口来源绑定，find_text含滚动副作用，close/PDF缺资源或交付合同。
+    # switch 已由真实 tab 来源和运行时绑定核验，必须同时向原生探索与正式执行开放。
     # 缺合同的能力必须在模型选动作前明确不可用，不能执行之后才发现无法编译。
     if exclude_extract:
         # WHY：execution 没有业务数据输出，原生 extract 产生的是一次性模型判断，无法成为
@@ -278,7 +275,8 @@ def author_tools(output_model, output_schema=None, *, summary_model=None, summar
                         output_schema=output_schema, result_spec=result_spec)
     tools._bat_target_scroll_records = None
     tools._bat_visible_wait_records = None
-    tools._bat_field_read_records = (register_method_read_tool(tools, output_schema=output_schema)
+    tools._bat_field_read_records = (register_method_read_tool(tools, output_schema=output_schema,
+                                    capture_content=content_result(result_spec))
                                     if output_schema and output_schema != {'type': 'null'} else None)
     tools._bat_summary_records = None
     return tools
@@ -286,7 +284,7 @@ def author_tools(output_model, output_schema=None, *, summary_model=None, summar
 def author_tools_for_result_spec(output_model, result_spec, *, selection_methods=False, human_intervention=True):
     """Build the one registry shared by live authoring and offline recompilation."""
     schema = result_spec.schemaValue if result_spec.mode == 'data' else {'type': 'null'}
-    tools = author_tools(output_model, schema, exclude_extract=True, result_spec=result_spec)
+    tools = author_tools(output_model, schema, exclude_extract=False, result_spec=result_spec)
     if human_intervention:
         register_human_wait_tool(tools)
     # WHY：旧来源注册表仍可精确重建；实际探索不再向 B-U 暴露编译函数工具。

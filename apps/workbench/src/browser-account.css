@@ -1,0 +1,80 @@
+.account-dialog { position: fixed !important; top: 50%; left: 50%; transform: translate(-50%, -50%); animation: none !important; width: min(864px, calc(100vw - 64px)); max-width: none !important; max-height: none !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; border: 1px solid var(--sand-6); background: var(--sand-2); border-radius: 14px; box-shadow: 0 24px 100px var(--black-a7); }
+.account-dialog, .account-dialog * { box-sizing: border-box; }
+.account-dialog [hidden] { display: none !important; }
+.account-dialog .browser-environment-heading { display: flex; justify-content: space-between; align-items: center; padding: 22px 26px; border-bottom: 1px solid var(--sand-5); }
+.account-dialog .browser-environment-heading > div { display: flex; align-items: center; gap: 12px; }
+.account-dialog .browser-environment-heading h1 { margin: 0; font-size: 20px; }
+.account-dialog .account-layout { display: grid; grid-template-columns: 322px minmax(0, 1fr); min-height: 398px; }
+.account-dialog .platform-pane { padding: 20px; border-right: 1px solid var(--sand-5); }
+.account-dialog .platform-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; margin-top: 14px; }
+.account-dialog .platform-option { margin: 0 !important; display: flex; width: 100%; min-width: 0; justify-content: flex-start; padding: 9px 8px !important; height: 40px; border-radius: 7px; font-size: 12px; color: var(--sand-11); background: transparent; }
+.account-dialog .platform-option > span:nth-child(2) { min-width: 0; white-space: nowrap; }
+.account-dialog .platform-option:hover { background: var(--sand-4); color: var(--sand-12); }
+.account-dialog .platform-option.selected { background: var(--amber-a3); color: var(--sand-12); box-shadow: inset 0 0 0 1px var(--amber-a5); }
+.account-dialog .platform-mark { display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; width: 23px; height: 23px; border-radius: 6px; color: var(--sand-11); background: var(--sand-4); font-size: 12px; font-weight: 600; }
+.account-dialog .platform-option .state-dot { margin-left: auto; }
+.account-dialog .state-dot { display: inline-block; flex-shrink: 0; width: 5px; height: 5px; border-radius: 100%; background: var(--sand-7); }
+.account-dialog .state-dot.ready { background: var(--green-9); }
+.account-dialog .state-dot.expired { background: var(--amber-9); }
+.account-dialog .state-dot.unconfirmed, .account-dialog .state-dot.account_changed { background: var(--sand-9); }
+.account-dialog .platform-footer { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--sand-5); margin-top: 14px; padding-top: 14px; }
+.account-dialog .platform-footer > button { margin: 0 !important; }
+.account-dialog .platform-footer > button.selected { color: var(--amber-11); background: var(--amber-a3); }
+.account-dialog .account-custom-body { justify-content: center; flex: 1; width: 100%; max-width: 400px; padding-block: 24px; align-self: center; }
+.account-dialog .account-custom-body .custom-method { margin-top: 0; }
+.account-dialog .account-custom-body .waiting-status { margin-top: 0; }
+.account-dialog .pagination { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--sand-10); }
+.account-dialog .search-empty { grid-column: 1/-1; font-size: 12px; text-align: center; color: var(--sand-10); padding: 24px 0; }
+.account-dialog .account-pane { display: flex; flex-direction: column; min-width: 0; padding: 24px 30px; }
+.account-dialog .detail-heading { display: flex; justify-content: flex-start; align-items: center; gap: 9px; }
+.account-dialog .detail-heading h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.account-dialog .account-body { flex: 1; display: flex; justify-content: center; flex-direction: column; align-items: center; min-height: 275px; }
+.account-dialog .identity-block { display: flex; flex-direction: column; align-items: center; max-width: 100%; }
+.account-dialog .identity-block h3, .account-dialog .inline-flow h3 { margin: 20px 0 10px; font-size: 21px; font-weight: 600; letter-spacing: -.04em; }
+.account-dialog .identity-block h3 { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-dialog .account-avatar { font-family: var(--font-body); font-weight: 500; font-size: 24px; }
+.account-dialog .empty-avatar { display: flex; align-items: center; justify-content: center; width: 76px; height: 76px; border-radius: 100%; border: 1px solid var(--sand-6); background: var(--sand-3); color: var(--sand-9); }
+.account-dialog .account-status { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--sand-11); }
+.account-dialog .account-status.ready { color: var(--green-11); }
+.account-dialog .account-status.expired { color: var(--amber-11); }
+.account-dialog .account-checked-at { margin-top: 8px; font-size: 11px; color: var(--sand-10); }
+.account-dialog .action-row { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 30px; }
+.account-dialog .primary-action { min-width: 145px; }
+.account-dialog .feedback-slot { max-width: 100%; padding-top: 14px; }
+.account-dialog .feedback { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sand-10); }
+.account-dialog .feedback.error { color: var(--amber-11); }
+.account-dialog .feedback > span { max-width: 290px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.account-dialog .inline-flow { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.account-dialog .inline-flow p { margin: 0; color: var(--sand-11); font-size: 12px; line-height: 1.7; }
+.account-dialog .inline-flow > button { margin-top: 24px; }
+.account-dialog .inline-flow h3 { font-size: 19px; }
+.account-dialog .login-symbol { padding: 15px; border-radius: 14px; color: var(--amber-11); background: var(--amber-a3); }
+.account-dialog .custom-method { display: flex; align-items: center; gap: 8px; margin-top: 14px; max-width: 100%; }
+.account-dialog .waiting-status { display: flex; gap: 8px; align-items: center; color: var(--sand-10); font-size: 12px; margin-top: 25px; }
+.account-dialog .account-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.account-dialog .account-load { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; min-height: 380px; padding: 24px; }
+.account-dialog.short .account-layout { min-height: 0; }
+.account-dialog.short .account-body { min-height: 170px; }
+.account-dialog.short .browser-environment-heading { padding: 14px 20px; }
+.account-dialog.short .account-pane { padding: 16px 24px; }
+.account-dialog.short .identity-block h3 { margin-top: 10px; font-size: 18px; }
+.account-dialog.short .action-row { margin-top: 14px; }
+.account-dialog.short .account-avatar, .account-dialog.short .empty-avatar { width: 48px; height: 48px; }
+@media (max-width: 639px) {
+ .account-dialog { width: calc(100vw - 24px); border-radius: 12px; }
+ .account-dialog .browser-environment-heading { padding: 18px 20px; }
+ .account-dialog .browser-environment-heading h1 { font-size: 19px; }
+ .account-dialog .account-layout { display: block; min-height: 420px; }
+ .account-dialog .platform-pane { padding: 18px; border: 0; }
+ .account-dialog .platform-grid { gap: 6px 8px; }
+ .account-dialog .platform-option { height: 40px; padding: 8px !important; gap: 8px; }
+ .account-dialog .platform-option .state-dot { width: 4px; height: 4px; }
+ .account-dialog .account-pane { padding: 20px; min-height: 420px; }
+ .account-dialog .account-body { min-height: 280px; }
+ .account-dialog .feedback > span { max-width: 230px; }
+ .account-dialog.short .account-layout { min-height: 230px; }
+ .account-dialog.short .account-pane { min-height: 230px; }
+ .account-dialog.short .platform-option { height: 36px; }
+ .account-dialog.short .platform-pane { padding: 12px 18px; }
+ .account-dialog.short .platform-footer { margin-top: 8px; padding-top: 8px; }
+}

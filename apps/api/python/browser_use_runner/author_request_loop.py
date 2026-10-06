@@ -4,6 +4,7 @@ import json
 import sys
 
 from browser_use_runner.author_transport import write_author_result
+from browser_use_runner.runtime_diagnostics import command_failure
 
 
 class AuthorRequestLoop:
@@ -22,7 +23,21 @@ class AuthorRequestLoop:
             result = await self.runner.handle(request)
             response = {'id': request.get('id'), 'ok': True, 'result': result}
         except Exception as error:
+            try:
+                event = command_failure(request, error)
+                if event is not None:
+                    self.diagnostics.emit(event)
+            except Exception:
+                pass  # WHY：诊断失败不能替换原异常或阻断任务资源清理。
             code = self.safe_error(error)
+            diagnostic = getattr(error, 'diagnostic', None)
+            if code == 'target_hit_blocked' and isinstance(diagnostic, dict):
+                try:
+                    # WHY：复用本 owner 诊断通道；只取固定状态键，失败不能覆盖原浏览器错误。
+                    self.diagnostics.emit({'phase': 'target_blocked', 'status': 'failed',
+                        **{key: diagnostic.get(key) for key in ('pointerBlocked', 'hitRelation', 'center', 'viewport', 'scrollTop')}})
+                except Exception:
+                    pass
             response = {'id': request.get('id'), 'ok': False, 'code': 'hybrid_runner_failed',
                         'reason': type(error).__name__ + (':' + code if code else '')}
         self.write(request, response)

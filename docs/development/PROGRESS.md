@@ -1,5 +1,332 @@
 # 开发进度
 
+## 2026-10-06 用户纠正：独立验收未通过（最高优先当前状态）
+
+此前“完整验收”结论撤回：整轮经过开发修复和外部维护脚本，且用户发现结束节点点击无响应；历史记录入口可查看成果不能替代该入口验证。BrowserSkill生产连接替换未完成。先提交未经功能修复的现状快照，后续按冻结版本、正常产品入口、无开发救场的口径验收。详见[未通过快照记录](CHECKPOINT_20261006_NOT_ACCEPTED.md)。以下技术记录保留其证据范围，不表示用户验收通过。
+
+## 2026-10-06 正式验收、原成果UI与物理窗口关闭（当前）
+
+- rev4 完整样本 d4cd0cc0、独立复验 7c0c4bfb 与正式 d8067258 均完成五项：48 transitions / 69 browser commands / 6 invocations / 0 LLM；同一单项链逐项复用，原图30/51/26/40/37张，字节解码、参数文字、包装清单、输入输出顺序均核对。正常发布 v1：f2e899dd-5ae5-4b86-8e4d-58c6d45133e6。
+- 首次正式运行 8f6a0cf0 搜索输入 s-a-0002 TimeoutError，未进入单项；具体根因尚未证明，重跑成功不能抹去首败。安全诊断 Python11项、TS9项通过，不改原生动作。正式d8067258业务完成后，真实UI首验45秒超时，CPU采样证明列表投影反复解析大结果；复用LRU缓存轻摘要后1项失效边界测试通过，列表暖请求31/16ms，最终重启后画布7秒加载完成。
+- 复用 lru-cache 11.4.0 保存就绪验证摘要；交易中不缓存，本地/外部 SQLite 写入均使缓存失效，发布仍完整验证。3项定点、API类型检查、对抗审查通过。全库写入会使缓存失效，不能宣称消除全部事件循环阻塞。
+- 原始图文采用共享pageContentSchema及既有React/Radix展示：原文转义、已保存图片、完整JSON下载；2项定点及前后端类型检查通过。实际工作台打开5条成果，第一条30张保存图片可加载（首图990px），无pageerror；原主节点＋列表＋循环与单一结束节点均实际显示。截图与证明在work/jd-formal-*.png/json。
+- 历史cleanup confirmed并非物理关闭证明：原close协议与child退出超时后process_tree终止已确认，旧恢复误用activeResources=false。已分开退出证明和物理页面核验；显式end复用原授权连接刷新端口，丢失映射时由Chrome原生targetId查tabId并关闭。正式租约ended、execution sequence189/handoff ended；两个旧试跑租约通过一次维护沿原runtime关闭，历史DB不改写。物理京东窗口已全部消失，Chrome仅保留工作台；UI测试与扩展管理窗口均用后关闭。
+- 关闭恢复9类边界、传输选择1项、原生目标恢复及relay隔离3项、扩展构建、API类型检查通过。对抗审查发现并修正退出条件两处遗漏和合法session绕过target归属的P1；最终窄复审无确定P1/P2。旧cleanup测试文件两项既有fixture失败保留，未宣称全套通过。无全量测试。
+- 用户手动关闭浏览器时间未核实，不用于推定连接首败根因。当前master/0fc8ff22，服务PID20760，4173/4175同一进程；每次替换先停旧服务并核验端口释放，无重复服务。无worktree、提交或推送，保留无关脏改动。BrowserSkill全面生产连接替换依用户指令后置，当前仍是固定Playwright连接与B-U动作。
+- 以下条目是历史阶段；最终验收状态见[原任务验收](JD_REPLAY_ACCEPTANCE_20261006.md)，上游依据见[系统底账](MAINLINE_SYSTEM_AUDIT_20261006.md)。
+
+## 2026-10-06 主节点与原分支循环接线核验（历史阶段）
+
+- 最终生成 `materializeHybridChain → createStepChainPresentation → CanvasActionList` 已接入真实分支/循环；生成中 prefix 只显示闭合普通动作。京东逐项调用属于 TaskPlan.each，旧画布遗漏该层语义；撤销外框和返回卡片，复用原主节点、动作列表及循环体“下一项”。原节点身份、跨阶段路径、同 execution/call 的结果保留。
+- 只读画布2项、已有真实两轮不同分支运行进入计划画布1项及Workbench类型检查通过。修正旧分组断言后单项通过，保留首败。对抗审查发现并处理跨阶段边遗漏、资源清理覆盖业务结论、尺寸变化及按钮冒泡；实际工作台原列表/循环显示、原结果详情点击通过。
+- 8f06d1dc 已取得正确详情区域、原参数文字和30图；编译首败为原生可选目标scroll没有接入既有目标解析。最小适配复用B-U原生scroll，两项定点通过；同测试文件另有既有read_fields断言不一致，未伪报全过。2b2949db离线恢复形成rev3，样本8cc9015a在搜索输入值检查失败，0LLM、cleanup confirmed。
+- target_value条件现复用已有Tenacity/StepVerifier有界等待，保持同目标、精确值和只派发一次。延迟达值/持续错值定点测试通过，静态对抗审查无确定P1/P2；时序根因仍待真实复验。eeaa040b离线恢复形成rev4，d4cd0cc0完整5项样本完成、0LLM，cleanup attempt2确认。产物5份均为正确相关区域，原图30/51/26/40/37，字节解码通过。独立复验028ac357在SDK初始目标会话缺失处失败、无业务动作，cleanup attempt2确认；用户随后告知手动关闭浏览器，时间尚未核对，不能归因为缓存问题。7c0c4bfb新独立复验已真实连接并执行中；尚未发布及正式运行。
+- 当前master / 0fc8ff2，服务PID20244、4173/4175；无重复服务、无worktree，保留无关脏改动。受管源码摘要9936d34a94821402db8b03e5c804f62dd69afeb7119f25a8cf76aafa13582ac7。详见[系统底账](MAINLINE_SYSTEM_AUDIT_20261006.md)与[原任务验收](JD_REPLAY_ACCEPTANCE_20261006.md)。以下均为历史进度。
+
+## 2026-10-06 原任务离线恢复与原生动作准入整改（进行中）
+
+- 按用户最新指令先完成主流程，BrowserSkill 全面接入后置；当前仍复用已有 Playwright 连接与 B-U 原生动作，不能宣称已替换。
+- 原 d70a0003 的来源与单项代表记录均完成；此前错误地要求原生点击必须产生页面变化，导致合法动作无法编译。已允许显式空附加条件，复跑改回 Tools.act，并保留身份、事件命中和原生错误校验。对抗审查发现并修正 StepVerifier 空检查状态及 Python 命令 min_length 两处遗漏。
+- 775e278a 使用原记录离线生成草稿 revision1，bbee1607 生成 revision2，均未重新探索。保留 0de5d4b2 的旧编译错误标记阻断、0df9a7d6 的协议首败、1ab5fd4c 的物理命中前置阻断、a404bbb1 的代表URL固化、e93379e7 的ready全内容相等要求。当前 6140d8cb 正在试跑 revision2。尚未独立复验、发布或正式运行。
+- Python 原生动作定点 4 项、协议 1 项、离线生命周期 1 项通过；TS 定点 6 项与 API 类型检查通过。新测试最初 intervalMs=1 不符既有合同，改为10后通过；源码登记脚本首次破坏 JSON 被校验拒绝，已恢复完整对象并重新通过。当前 managed-source digest b0c1a3e7a2d424377ed5408ceb672e18bc43f4f9408afe6288bd2bf5a2cfc34d。
+- 新增作用域/恢复生命周期18项及恢复互斥1项通过；API类型检查修正测试联合类型收窄后通过。消费者读取26项中23通过，3个既有诊断夹具在读取前因 object() 缺页面身份失败；内存中恢复旧稳定性逻辑后同3项仍失败，未动生产文件、未伪报全过。ready不再要求动态HTML逐字不变；transition及文档/资源边界保留。最新managed-source digest c6319c4405c6e66463d7a87b6862abd9b50327055fa7176fecb370b1364a97e9。
+- 当前正常服务 PID372，4173/4175；试跑已实际接通 Chrome，未重复启动服务。代表读取范围偏宽，业务内容范围仍需核验。详情及源码依据见 [原任务复跑验收](JD_REPLAY_ACCEPTANCE_20261006.md)。
+
+## 2026-10-06 原生复用连接入口，原业务仍未通过
+
+- BrowserSkill 0.3.2 原 daemon/扩展连通，无工作台中转；独立空白 session 创建/停止通过，本次 daemon 已正常停止。尚未全面接入 B-A-T。
+- 已保存授权不再传 requestPopup，复用固定 Playwright 原 launcher/握手；独立宿主及正常服务真实连接通过，原工作台没有连接票据。当前正常服务 PID14924，4173/4175 在线。
+- API 类型检查通过；已有首次授权测试卡于 Windows mode 断言438≠384，未伪报通过。对抗静态审查无新增确定 P1/P2。改动及证据见 [上游复用记录](BROWSER_RUNTIME_UPSTREAM_REUSE_20261006.md)。
+- 未新增 JD/模型请求，原任务完整详情/独立复验/发布/正式结果仍未取得；系统重启与 BrowserSkill/CDP 兼容也未验收。本次仅解决已有授权连接被工作台中转拦截的问题。
+
+## 2026-10-06 11:38 纠正假清理，原业务未通过
+
+- b62b89f4首个navigate失败；Chrome debugger返回target_closed，但已证明原任务窗口仍存在。没有宿主关闭命令，具体detach/京东验证触发原因仍未确定。
+- 扩展保留断开后的原tab清理权，实际onRemoved才结束物理归属；Python桥接端逐个关闭租约目标并核验回执，原生CDP兼容保留。空桥接枚举不能确认只读inspect/verify_closed；关闭过程出现新popup也不能沿用旧ACK。
+- TS2项、5类Python边界、API类型检查、扩展构建通过；Python原生CDP夹具首次遗漏SDK detach，修正后通过。对抗发现两处P1均已修正，窄静态复核无新增确定P1/P2。
+- 原Chrome本地真实Cancel→物理tab仍在→tabs.remove→onRemoved验证通过，模型0、京东请求0。证据work/native-local-cleanup-proof.json。此结果只验证清理，不是主任务完成。
+- 用户截图后现场验证窗口已不在，不能冒称程序已清理旧窗口。正常服务PID9904、4173/4175恢复，connected=true；停止继续请求京东，待用户完成站点验证。原任务完整结果仍未取得，未再次关机。
+
+## 2026-10-06 11:15 整体区域采集纠正，业务待验收
+
+- 62a122c9来源完成，单项进入详情后仅查询7个模块，未调用内容采集；done(false)明确因为确认不了唯一父容器。source artifact 9a4c61b2-ec39-4462-87c9-f7b04cc4937b；记录work/content-capture-proof/live-jd-1791255523235/。
+- 依[修复文档](MODULE_DELIVERY_REPAIR_20261006.md)让新内容工具接收已观察相关区域，原生DOM在同一Actor Page定位公共祖先，原采集/来源/图片/预算与身份核验不变；保留旧container和历史摘要。
+- 原生两输入范围采集首次因Actor Page初始化失败，修正后通过；TS准入一项及API类型检查通过。对抗发现CDP对象清理P2，已修正，一项故障路径测试通过，窄复审通过，无新增确定P1/P2（静态）。受管源734e24b8981a76e90a4f43c2a6d54c73792f15baa52355aeeb8d9f50c0da5603已核验，服务重启/原Chrome重连，新b62b89f4开始完整准备。尚未完成原五项任务。
+
+## 2026-10-06 10:59 继续原任务，尚未交付
+
+- 原05f83c54在真实登录等待，用户完成登录；同owner的只读CDP证实原任务tab已回搜索列表，恢复接口返回500，仍等待。API隐藏原生原因，该500具体原生异常未取得；旧job已明确中断并保留，不冒充恢复成功。
+- 修正新人工工具的模型必填字段：只要reason/prompt，不要求模型猜登录后URL。v2来源以宿主确认、原session/tab、授权范围及真实稳定post为依据；v1历史条件不改。恢复异常持久化已有安全代码，返回409且保留等待。
+- TargetScope不再无条件禁用SDK焦点恢复：复用原恢复锁/事件，仅接受仍有原生session的任务页，恢复上下文禁止应急建页。上轮8d6e4d1b具体失效事件仍未证实，本轮修复的是已确认的通用适配缺陷。
+- 最小验证：8个不同Python边界、2个TS人工恢复/证据准入检查通过，API类型检查通过。首轮类型检查因新增测试nullable类型失败，修正后通过；SDK测试首次用了错误类名，纠正后通过。没有根级或全量测试。
+- 对抗复审指出ACK后URL比对和失效详情遮挡有效列表两个P2，修正后静态复审无新确定P1/P2；不代表业务验收。源码摘要b5e9c8f8d7c1a61330a1e16ecaed7ee7834445faff0bc8f4379f9d2774fb679b。
+- 服务PID15860，重新连接原Chrome成功。原任务新job62a122c9正在完整准备，登录状态沿原Chrome复用；当前来源步骤已有真实节点。完整五项、独立复验、发布和正式0模型结果待取得。没有再次关机。
+
+## 2026-10-06 通用步骤整改与标签组清理（本轮）
+
+见 [实施文档](MODULE_DELIVERY_REPAIR_20261006.md) 与 [实际结果](MODULE_DELIVERY_RESULT_20261006.md)。新增同版访谈步骤投影、真实计划同图展示，修入口类型/数量/空输出恢复及原生textPreview交接。真实访谈非采集样本通过；受控目录3→2项的sample、verification、publish、formal通过且普通复跑0模型、清理confirmed。17个关闭后的B-A-T保存组已用Chrome原生菜单删除，自动分组代码已移除、扩展已重载。京东39197127详情读取失败已证实为内嵌图片Base64缺填充被Python DataHandler拒绝，修后同页整区域读取completed、清理confirmed。已补先前步骤展示引用，定点与对抗复审通过。8d6e4d1b完整验收失败在首页导航后SDK当前页焦点为空，导致sample_after/current_page观察失败；具体丢失事件尚未查明。截图关/开两次零模型单段验证均通过，但不能替代原五项业务。所有本轮任务已结算、正常及诊断服务已停止，按授权保存记录后关机。以下条目是历史过程，其中的“正在运行”不是当前状态。
+
+## 2026-10-06 实际断点整改与完整验收进行中
+
+- 原任务 `2aaa0674` 上轮仅采详情图片区，未取得配置文字，且第一条普通点击失败；不能交付。
+- 已真实复现并修复：多行 inline 联合框命中空隙；同 session/tab/document 的 URL 更新被普通动作 scope 拒绝；对象区域纠正被误判数组分页；同文档区域纠正的默认完成引用。预览复用原生 innerText，保持原始 HTML/图片与既有 Markdown，无字段清洗。
+- 最小验证：真实内容/两输入/原图/overlay/UTF-16 截断1项；scope 原拒绝边界3项；纠正与数组保守门2项；旧内容完成夹具1项；API类型检查修正测试 union 访问后通过。对抗生产审查无新增阻塞，旧测试夹具已同步。首次失败与 loader/类型检查失败分开保留于实施文档。
+- `f72b8f38` 在 Chrome 连接阶段未启动浏览器动作，失败码 `daily_chrome_extension_not_connected`。已通过刷新原有本地工作台复用保存授权，服务确认 connected=true。当前重新准备，完整来源→正确详情范围→独立验证→发布→正式执行仍未通过。当前受管 source `9bcb7b51059937526ea4ac72b82f76624c254affc7fda470b44ae2ef23aed9ed`。
+- `45de8f71` 的两段原生探索结束，但来源绑定轮播叶元素，实际点同记录标题后开详情的归属不能证明；配置区也未取得。因此禁止发布，不能靠离线编译伪造修复。已补完整集合的一对一记录根、实际记录内相对点击与严格输入身份解析。隐藏不支持标签不再阻塞渲染正文，可见离屏内容仍拒绝。定点19项18通过1旧fixture错误，修正该fixture后1项通过；真实Chrome两输入/原图/隐藏和离屏canvas/记录内唯一目标1项通过，API类型检查通过。原失败与测试夹具失败分别保留。当前 source `ee6faed876c071de63cce8e0f2d5862140fa962dab37784e0ffc462680b302ef`，服务 PID22984；正在恢复连接并重做原任务完整验收。
+- 对抗复核继续指出全页CSS根随记录重排错位、Source冻结归属过期的P1。两处均改为同一输入backend根内原生CDP查询；登记前另比对实际动作backend。真实记录重排、多匹配边界1项通过，跨记录移动和同类替代控件真实Chrome测试及原编译fixture共2项通过（4.814秒）。`667a20f4` 因已知P1被开发中断，持久化interrupted、runner已退出；未将中断算成功。最新受管source `33e340adda038eb08cf1c948b6fac26fb24a64dc04161a411e9ce744b5b2b031`，Chrome连接由开发自主恢复；等待窄复核闭环后继续原任务，完整验收仍未通过。
+- 上述source异常漏口（查询/身份读取失败）已同样记录mismatch，查询超时/身份异常所属1项通过（0.011秒），取消继续传播；对抗最终窄复核确认P1闭合。最新source `03d940e2614f5a2ab74fe3feac8584744685d42f73be14d5bdff0d46196ead34`，完整准备 `031fd3a2-eeb0-4cef-841f-8e0b8414e133` 正在实际运行；验收记录 `work/content-capture-proof/live-jd-1791219160658/events.json`。正式业务尚未通过。
+- `031fd3a2` 来源第6动作原生索引读取失败（record_scope_unavailable），所有文档/页面guard仍consistent，未进入详情；保留首次错误。定点新增“前2可见选择+完整集合隐藏第3成员”先在旧实现第140行复现失败，再改用既有完整原生DOM结构索引后通过；可见原生索引、完整顺序/身份证明保持严格。该回归及原安全诊断2项通过，范围错误现在带固定函数/行号诊断。真实断点是否已关闭继续用原任务验证，不能当业务成功。
+- 完整/可见集合delta经对抗窄审无新阻塞；受管source `bf017015b25677c9d8a179a9d498f5e12b038f987f1ef0cd57bd73afc0a768d7`。原任务新准备 `b6384d1d-1ec4-45fa-824c-686819e69969` 已启动；验收记录 `work/content-capture-proof/live-jd-1791219601718/events.json`，原任务正式完成仍待证据。
+- `b6384d1d` 来源成功、item进入详情但原生done=false；根23750下的原selected20830仍mismatch，body两次资源missing，标题53字节/图库19图均无配置。记录归属也改用完整原生DOM，False容器/可见子控件定点通过；采集补标准库data原图、隐藏CSS背景边界，原真实Chrome两输入/原图测试与绑定fixture共2项通过（12.463秒），最后ordinal保留静态JS语法通过。未把原生失败、图库读取或测试通过冒充完整任务成功。详细首败与采集复用依据已同步实施文档及RESEARCH。
+
+## 2026-10-05 原任务的已证实断点与当前验收
+
+- `16cf6303` 首次错误明确为入口 `text/string_too_short`：合法图片入口被宿主展示文字必填合同拒绝。改为原生 backend/文档根身份，text 允许空；15 项 Python、8 项 TS 与 API 类型检查通过，对抗身份审查未发现新增阻塞。
+- `2c1f9257` 修后实际入口读取成功、原生 done=true；宿主仍因排序控件的多项同名映射拒绝编译。已统一 source/runtime 的线性命名祖先链和可见性门；独立分支仍拒绝，多节点必须凭原 hash/XPath 找回实际点击位置。14 项定点检查通过，旧失败保留。
+- `cf0c70a0` 已进入单项，但源入口为客服链接，native done=false。`786a0903` 补齐冻结预览后正确识别客服、未误进入单项，仍未完成来源选择。固定环境证明 B-U 默认 DOM 属性没有 href；现在通过原 Agent.include_attributes 保留全部默认属性并追加 href，不改 Agent loop。观察 10 项与反斜杠 URL 新错误路径单项通过；对抗 P2 已修正，等待关闭复核。
+- 当前受管源 `8285e68b6d13bff95426b10ae11ec47ae3ca377e971eaaf6e0ad91ca2d43823a`，正式服务 PID14628。原任务 `2aaa0674-ce91-462a-bce4-c21502ce755c` 实际 job `7eef6f7f-f710-4d2f-8ed4-4c1fc63f0096` 正在执行；**完整来源→详情→独立验证→发布→正式运行仍未通过，不能交付**。详见 [实施记录](WORKFLOW_AND_DELIVERY_IMPLEMENTATION_20261005.md)。
+
+## 2026-10-05 通用入口交接与完整任务验收（进行中）
+
+- 原任务失败定位为宿主来源/单项交接：只支持 URL 却遇到无 href 的真实条目；原生 switch 注册遗漏；入口证据摘要与既有格式不一致；要求模型提供它不能证明的 CSS 范围。历史首次失败分别保留。
+- 来源支持原生索引，由宿主复用现有 DOM projection 和真实查询生成、核验入口方法；单项使用输入绑定入口与原生 switch/click，既有 each 重复同一条链。普通运行不调用模型，不加入字段清洗、网站分支或另一套 Agent/调度器。
+- 完整生产受控 `fixture-hMVqFz` 已完成原生准备、独立验证、发布及正式运行；来源实际 indices，发布后 3→2 项准确返回本次数量，区域图文/表格/原图字节成立、复跑 0 模型。局部 7 动作证据不再作为主流程验收。
+- TS 8 项、原 Python method-read 20 项、入口 6 项分别有通过证据，API 类型检查通过；对抗复审的 2 个 P1/1 个 P2 已关闭。最后子控件错误路径首次 ImportError 和定点修复后通过分别保留。
+- 真实 job `9af8745b` 成功读取入口后，被宿主把相同只读确认误当分页循环而失败；已用完整同范围/文档/覆盖/样本及纯读取证据排除误判。所属 9 项、同份真实来源离线 6 segments/0 gaps、TS 9 节点/8 边及窄对抗复审通过；原失败保留。
+- 实际 `636252fd` 来源 7 普通动作均编译、0 缺口，B-U 仍把首/尾样本误作缺少中间条目而 done=false。已澄清阶段职责与原生记忆反馈，不改采样/Agent loop/证据格式；完整任务与分页证明仍独立。保留该失败与一次 `ai_structured_output_invalid`，未换产品模型掩盖。
+- 原任务 `2aaa0674-ce91-462a-bce4-c21502ce755c` 的新 job `cccee080-5973-4a41-88cc-aefc88950f37` 正在实际工作台/API 验收；**真实京东完整交付仍待本次结果，不以受控用例替代**。当前服务 PID15516，受管源码 `bf0b4ad1b6455ac43881a32a3815eda9c2ac1857bf4acaef124926c21372ce33`。详细首败与边界见 [实施记录](WORKFLOW_AND_DELIVERY_IMPLEMENTATION_20261005.md)。
+
+## 2026-10-04 复跑资源闭环、共享账号状态与通知修复
+
+- 修复旧 cleanup-owner 空报告卡死、账号前置失败虚构占用；再次运行自动沿原 owner 核验资源，保留首次业务失败/结果并创建新 execution。已交付页、人工等待、未知 owner/子进程保持原有权限边界。
+- 共享账号显示来源的持久确认事实，不随执行环境切换降级；连接失败不覆盖已登录。兼容旧“返回原任务”失败文案，仅修展示，检查历史保留。
+- 观察间隔本地保存；通知有已读回执、新事件未读、详情定位/重试、全部已读与暗色文字适配。重命名/归档/删除恢复至全部任务列表行，顶部重复入口移除。
+- 21 项定点 TS 回归、8 项原生租约、真实 headless CDP、隔离构建 UI+SQLite/API 及重载后的实际界面只读验收通过；API/Workbench 类型与 Workbench 构建通过。兼容测试另有 2 项 Windows POSIX mode 基线断言失败（13/15），未冒充通过。
+- 开发服务经身份核验、无运行任务时通过自身关闭接口重载；新 health PID 4860/root 为当前 checkout。所有新浏览器测试 headless，个人 Chrome 未控制、个人业务未复跑。完整首败/重试和未测边界见 [闭环记录](REPLAY_RECOVERY_CLOSURE_20261004.md)。
+
+## 2026-10-04 双向登录复用、持久检查与统一设置布局
+
+用户明确授权两种浏览器复用同一登录，替代旧单向 admission。复用原 AccountTransfers/DPAPI，同UID来源→明确未登录目标可自动复用；手动检查/登录与任务启动共用该路径。目标已登录其它账号/未知不覆盖，未写入拒绝取消确认，daily 回滚恢复接线保留。新任务先检查目标，同UID不额外打开来源；服务启动只读各Profile最近检查，不再按15分钟强制待检查，并显示检查时间。
+
+扩展去权限折叠和大黄焦点框；设置桌面/窄屏统一图标标题/说明/右侧操作，两个模式及账号行位置稳定。14项不同定点回归、真实隔离Chrome双向三次复用/重启/零模型、深浅窄屏/逐帧几何/缓存UI及 API check/两构建/source check通过。原生首轮使用可见专属窗口后，用户明确要求测试全部headless；已退出测试窗口、后续全部headless并修改夹具，不将此前样本伪写为headless。
+
+正式服务已加载 PID26988；当前选择和授权保留，业务表一致，原账号与检查不变。原recover仅将一个原维护窗口标待核验，首轮全表字节比较失败单列保留。正式UI只读显示保存登录与时间，新检查0。个人B站在线迁移/其它网站SSO未冒充通过；个人扩展需重新加载一次。完整首败、重试与范围见 [当前记录](BROWSER_ACCOUNT_SHARING_UI_20261004.md)。
+
+## 2026-10-04 重复窗口、所选浏览器与账号登录入口修订
+
+按用户本轮要求去掉日常扩展引导空白窗和专属进程启动空白页；连接允许零目标，任务只创建本次 owned 页。账号目录继续共用，目录/自定义检查和登录入口使用所选浏览器，不吞日常连接失败切到专属，不把另一 Profile 历史检查当成当前登录。设置改双列浏览器、授权横排、网站登录横排；账号主操作改检查/登录。
+
+受控真实 Chrome 两模式单页门、同一日常连接连续两次执行、11 项不同定点不变量、UI 深浅/窄/矮及自定义登录入口、API check/Workbench 与扩展构建/原 source check 通过。首次失败和重试分别保留。正式服务 PID22328 已加载；原任务/13 execution/发布/模型与浏览器设置表摘要一致、daily 授权保留，个人 Chrome 未接管。个人扩展还需用户点击一次重新加载；私人业务和全部平台线上账号未重复验收。完整证据与边界见 [本轮记录](BROWSER_CONNECTION_ACCOUNT_REPAIR_20261004.md)。
+
+## 2026-10-04 最后现场回归：原京东V1真实连续复跑通过
+
+用户授权原链路运行后实际复现72afa27e的旧relay误作占用，首次修复后cd7e2c56暴露旧收据默认字段归档误报；两次首败保留。最小修复AttachedWindow归档许可与window_lease_archive合同兼容，已有旧归档崩溃切点经对抗指出后补齐，8/8定点测试、窄复审approved。
+
+实际WorkBench/已授权日常Chrome/原不可变V1顺序执行9c6f6482、9dfa0c86均completed/sequence36/cleanupconfirmed；9节点各planned→started→finished，27事件，0模型调用，各2输出且摘要相同，中间没有结束窗口。重新打开工作台仍读取最新完成与可用的再次运行；真实深浅/窄屏截图已查看。扩展已实际自动连接，本人无需额外加载/授权。其它平台私人正向/SSO仍单列未测。证据`work/run-control-20261004/actual-main-persistence.json`、`actual-main-consecutive.json`、`actual-persisted-ui.json`，详见当前运行交付。下方未执行原业务结论仅为历史。
+
+## 2026-10-04 用户明确授权后：正式服务加载完成
+
+沿原 dev 生命周期重启 Workbench/API，新 PID28908，4173/4175 正常。只读实际持久事实核验：原 completed/delivery owner 已释放控制锁，dailyControlLease=null，新服务账号 availability.daily/dedicated=null。原任务/合同/发布/执行/模型与浏览器设置/租约哈希不变；账号60条事实仅有既有重启恢复元数据更新。没有自动运行私人业务或关闭个人 Chrome/原标签。加载证据见 `work/run-control-20261004/service-loaded-admission.json` 和当前交付索引。下方“正式 API 待加载”保留首次拒绝记录，已由本段解决。
+
+## 2026-10-04 本轮最小运行控制修订：工程通过，正式 API 待加载
+
+删除红色全局启动错误、ExecutionStrip 和运行状态抽屉；原地收束 Radix 运行弹窗，状态与操作只保留画布 toolbar，结果从结束节点复用可调宽 ResizableDrawer。明确拒绝可取消/修改，未知回执冻结原命令；窗口操作与反馈重试保留请求身份、原话和旧版本引用。清理仅作用本轮被替代代码与无引用样式，保留此前 dirty work。
+
+完成交付页不再占控制锁；原 owner 原子归档，同 Profile 新 target、共享已核验进程。账号 startup 使用同一服务端释放判据。Windows 自有隔离 daily/dedicated 各 4 次零模型正式运行，包含已保存账号 startup、HttpOnly、服务/SQLite 重建、结束旧 owner 不影响新页、ended owner 再复跑。API 7、Workbench 35、Python 7 共 49 项最小回归通过；真实 UI 深浅/390px/短窗口与原抽屉调宽已查看。文档对抗 review、代码首轮 6 P1 及复审 3 P1 修订后批准。
+
+自动审批拒绝正式服务后台重载，仅返回 `blocked by policy`；API 仍为 PID29632，不能称已加载。前端 Vite HMR 已真实渲染当前源码；重载尝试前后持久事实摘要一致。私人账号/原业务复跑未自动执行，旧 W01–W09 不重跑。交付、证据、加载步骤：[RUN_CONTROL_DELIVERY_20261004.md](RUN_CONTROL_DELIVERY_20261004.md)。下方旧结论作为历史，不能覆盖本段。
+
+## 2026-10-03 用户现场回归已修复并加载（当前结论）
+
+用户复验推翻下方早先完成结论中的登录窗口/运行资源/重复按钮行为。本轮删除自写首页精确 URL 后置条件，人工打开复用原 Playwright/owner 页面；5 分钟原 LangGraph 观察，单次超时继续，取消/失败保留登录窗口。run/trial/resume 依据冻结 Profile，不被无关旧 Chrome handoff 误挡；实际 controller 与同 Profile 仍互斥。错误仅运行弹窗一处，其他网站不再误选 B站；账号未知只一个重新检查、失效只重新登录，提示/菜单不重复加检查，空反馈区删除。
+
+当前 15/15 定点回归、API tsc、Workbench 构建、固定 source check、真实 UI 深浅/窄/矮门通过，截图已查看。克隆知乎 signin→35 秒等待→自动保存/DPAPI/原正式启动/SQLite重开，以及真实公开知乎 35 秒/取消保留、当前 native 自定义三态/Overlay/重开均通过；私人正向身份与线上 SSO未测。独立对抗首轮 2 P1（resume kind/旧headless分类）修复后 approved，全部首败/重试保留在 `work/account-user-regressions-20261003/`。
+
+真实 4173/4175 服务 PID27904→29632，新目录13项，无活动账号；7 executions/4 jobs/3 turns/1 task/1 release、模型和原租约摘要不变。没有生成或复跑旧私人业务、关闭个人标签或暗改当前 daily 选择。原同Profile handoff及本人业务再运行仍列人工门。W01–W09六份旧证据摘要审计通过，旧 popup/设置不重跑。清理索引、27份摘要及完整边界在 [当前交付](BROWSER_ACCOUNT_MANAGEMENT_DELIVERY_20261003.md) 和 `work/account-unified-20261003/{cleanup-manifest,windows-audit,delivery-evidence}.json`。实际模型gpt-6.1-sol/xhigh不是Astra，不改产品模型配置。
+
+## 2026-10-03 确认原型已实施：单平台账号、后台复用、真实服务已加载
+
+按用户确认原型和 [当前统一文档](BROWSER_ACCOUNT_UNIFIED_20261003.md) 完成 U0–U5 / 原 P0–P4 工程闭环。13 平台仍直接展示；每个平台只有一个逻辑账号与主操作。旧双浏览器卡片、手动同步、任务/维护窗口生命周期、检查历史和说明墙不再出现在账号 Dialog。自定义网站从本次 owned 页面选真实登录标识或使用已有只读链，不填网址/平台名/备注，不使用默认 AI 识别。完整清理及保留原因见 `work/account-unified-20261003/cleanup-manifest.json`。
+
+登录通过原 TaskChain/LangGraph 有界、非侵入观察及独立确认自动保存。逻辑账号 revision/原 Profile/UID 固定；取消、超时、重启、目标不同 UID/未知、方法或授权变化、待恢复均不写假成功。当前真实 authoring/sample/trial/formal 启动入口已接线；resume 不改已有 runner。后台只在三平台已核验范围自动复用日常→自有专属 Profile，同 UID 零写入，个人 Chrome 不自动写入。其它十平台保持源绑定，不能承诺跨 Profile 通用 SSO。
+
+Windows 自有真实 Chrome/原扩展/原 owner/原 CDP/DPAPI/SQLite 闭环通过：登录等待自动收录；B站、微博、知乎三条受控策略各写一次、同 UID 零写入、关闭重开持久；自定义 native Overlay/已有只读链正负未知、tombstone/版本/独立 0 模型 TaskRun 重开通过。此门的来源传输使用受控测试站点，不是商业平台私人正向成功。13 行固定原函数 78 样本兼容门、MC/SAU 两条不动 URL/输入/焦点观察门及新 UI 深浅/窄/矮屏无内部滚动均通过。保留全部首败和重试，不重复旧已过 popup/settings。
+
+实际 4173/4175 服务已重载；新目录 200/13 项、真实只读 UI 无 Not Found。SQLite 原 7 executions、4 authoring jobs、3 turns、1 task/1 release、模型设置及原 attached lease 摘要重载前后不变。新版服务精确 PID/root 见 `live-reload.json`，之前服务切换受阻的历史节不代表现在。实际开发 session 为 gpt-6.1-sol/xhigh，不能称 Astra；产品模型配置未变。无提交/推送/worktree/私人授权或标签操作。
+
+交付、逐项验收、清理后最小回归和最终审查见 [当前交付](BROWSER_ACCOUNT_MANAGEMENT_DELIVERY_20261003.md) 与 `work/account-unified-20261003/delivery-evidence.json`。13 平台私人正例/线上 SSO、个人扩展重载/首次授权及旧 W05/W07/W08/W09 本人门明确未测。下方旧双卡片、AI producer、手动共享以及旧完成结论仅保留历史，由本节和当前交付覆盖。
+
+## 2026-10-03 账号重建：工程与最小验证完成，原服务切换受自动审批阻止
+
+按 [重建文档](BROWSER_ACCOUNT_REBUILD_20261003.md) 实施D0–D5/P0–P4：固定13平台目录、当前两Profile卡片、零模型原函数检查、双向限定范围迁移/DPAPI恢复、原生页面标识或已有只读链绑定、SQLite历史/不可变版本、真实深浅/390UI。默认账号AI producer/classifier已退役，旧modelCalls=2失败和软删维护仍保留。全量旧阶段节为历史，不作本轮成功证明。
+
+文档对抗首轮6P0/4P1后放行；代码首轮2P0/5P1后逐项修复，最终approved。逐平台原函数正/负/挑战/503/超时/结构变化矩阵通过；真Windows日常与专属双向Cookie、服务器身份、部分失败、新进程回滚、最新native写后guard及共享父域精确key门通过。无原生现有链的网站实际UI选取/确认→三态复跑→SQLite重开通过，日常Overlay事件和无run时v1/v2持久门通过。细节/首败/重试见 [交付](BROWSER_ACCOUNT_MANAGEMENT_DELIVERY_20261003.md) 与 `work/account-rebuild-20261003/delivery-evidence.json`。
+
+Scoped API/Contracts/Workbench检查、Workbench/扩展构建、runtime固定源码依赖检查通过。最终UI截图已实际查看，内部切换scrollTop已修正；W01–W09旧证据完成审计，旧popup/设置不重跑。13平台私人正例/迁移、个人扩展重载与授权以及原本人业务门仍明确人工待验，不伪报在线成功。
+
+实际最新session为gpt-6.1-sol/xhigh，证据session.json；不改产品模型配置。自动审批拒绝了核对后停止旧dev PID2168并隐藏启动新版，整命令未执行。4175仍为旧服务，4195/4196是隔离最新验证服务；live-before/live-after确认原任务数、模型/租约未变（after是拒绝后核验，不是成功加载）。当前整体status=blocked，仅阻塞真实服务切换；工程、最小验证、Windows审计已完成。未修改协调器、关机、私人Chrome或相邻项目。
+
+## 2026-10-03 用户复验修复：免填账号入口与真实 B 站打开
+
+用户否定旧手工登记表。现改为打开浏览器正常登录、点击识别，由原受管页面提供来源，系统自动建档并建立/运行检查。无需填网址、平台名、备注，无需“建立检查方式”。实际任务控制器继续互斥；已交还的 daily 窗口不再阻挡独立 dedicated，并修复两处 Python owner 选择。真实 B 站打开进一步发现根 URL 末尾斜杠校验首败，规范化及按确定浏览器模式核验后，`work/account-usability-repair-20261003/live-open.json` passed，原条目/任务/旧 daily lease 未改，B 站窗口留给用户登录。
+
+原生专属方法与重复零模型读取通过，整轮因测试刷新等待错误 failed，保留原记录；同一数据重启/UI 单补 `work/account-visual-1791000701509/result.json` passed。日常新入口实际原扩展/UI/服务端会话通过 `work/account-capture-1791000584024/result.json`，此轮 producer 夹具边界明确。深浅/390px截图已查看；协议、生命周期、Python owner、URL 定向检查及 API/Workbench 类型构建通过。最新服务 PID2168 已加载。完整首败、重试、命令和未测项见 [修复记录](BROWSER_ACCOUNT_USABILITY_REPAIR_20261003.md)。
+
+原个人 daily 历史 endpoint 仍无法核验，未关闭私人标签/清租约；私人 B 站登录与身份尚待用户，不把真实打开成功算登录成功。旧“工程完成”不等于旧产品交互已验收。
+
+## 2026-10-03 通用浏览器账号管理 P0–P4 工程交付
+
+已在原 master/HEAD 0fc8ff22a4e4a3f0a8303a4991a180009df3d180 完成双 Profile 身份隔离、持久账号目录、同一 Dialog 内切换、受管维护窗口、真实身份检查链与方法建立/显式修订。未提交/推送，原 dirty work 保留；开发 session 实际 Astra/xhigh，产品模型配置不变。完整实现入口、首败/重试、验证与人工边界见 [交付记录](BROWSER_ACCOUNT_MANAGEMENT_DELIVERY_20261003.md)。
+
+真实链路：专属浏览器通过服务端随机会话的正例/反例/挑战/身份切换和 SQLite 重启；日常 Chrome 通过原扩展、自建窗口、原生 B-U 研究与在线编译、持久 v2 在同 Profile 的未登录→登录检查。最后一次日常补验直接使用之前保存的同链，不再次生成方法；`work/account-saved-method-1790974326329/result.json` passed，截图已查看。专属原生生成/修订 `work/account-method-1790973111685/result.json` passed，v1/v2 各5次研究调用，所有普通检查0模型。公开 GitHub 实际未登录路径 `work/account-method-1790972763987/result.json` passed，未测试私人登录。
+
+Windows受控补验：相同链 digest 在 daily/visible/headless 运行；专属不会带入日常 Cookie；只关自建页后的失败记录保留且独立重试成功。185秒空闲通过；首次重启夹具漏 listen 原端口失败，单补后 `work/account-ui-1790973254847/result.json` passed，原授权复用、SQLite保留、仅隔离Profile撤销。完整旧 W01–W09 已审计结算：W05 原用户发布链画布动作、W07 原业务链完整三环境、W08/W09 个人门仍明确未测，没有重跑用户业务或关闭私人标签来制造证据。
+
+界面：原 Radix/主题复用；最终深浅和390px截图 `work/account-visual-1790972542733` 已逐张查看。修复窄屏侧栏遮挡与 Radix Table 固定高度，保留首败截图。`work/account-visual-1790974403519/result.json` 另验证真实同Dialog两目录分离、专属visible/headless共用身份。失败/取消/清理、迟到方法和删除、身份掩码碰撞、绑定拒绝不留假租约均有所属协议/运行测试。
+
+最小验证通过：API tsc、Workbench tsc/build、原扩展构建；受影响 TS/Python 与实际Windows样本分开记录。无根级/全量测试，旧 popup 与设置已通过套件未重跑。服务最终重载 PID22216，`work/browser-account-management-20261003/service-final-after.json` 证明7次执行、4个authoring job、3个turn、1个任务、原发布链/模型设置、原lease和授权摘要不变。原active用户交付窗口仍保留，用户从原任务入口核验完成后才能取得账号维护窗口。
+
+工程完成不等于私人平台验收：用户需重载个人扩展、亲自授权/登录/验证码，检查方式缺真实反例仍是候选；具体剩余人工门见交付记录。未操作协调器、OpenCode或系统关机。
+
+
+
+## 2026-10-03 通用账号管理文档与睡前交接
+
+[开发文档](BROWSER_ACCOUNT_MANAGEMENT_DEVELOPMENT_20261003.md) 已完成，统一日常 Chrome 与专属浏览器，定义账号目录、稳定 Profile 身份、真实身份检查链、同 Dialog 入口、会话所有权、P0–P4 和最小 Windows 验收。当前阶段仅文档，不宣称账号功能实现。保留原 master/HEAD 0fc8ff22a4e4a3f0a8303a4991a180009df3d180 与全部 dirty work。
+
+已读取 Windows popup-public-controls-1790965842917/result.json 和 browser-settings-ui-1790964138437/result.json，两项 passed=true；不重跑。旧交接 W01–W09 的全面验收仍需按当前证据结算，不能把 UI 成功冒充业务复跑成功。个人 Profile 重新加载/首次批准与冷启动、撤销不由无人值守测试代做。
+
+用户已确认：账号管理开发完成后，若 OpenCode 仍有任务，等待其完成再关机。只读会话事实显示本轮 OpenCode 01a0fc9a-b5d9-75a1-ab30-9d91dda67a8a 最新 turn 已 completed，无活动目标、无待发送消息，最后交付报告已保存；其中专家试香/另一业务/macOS 后续门不等于仍在开发。关机前必须重新核验。历史关机 session 残留 inProgress 且早于本次系统启动，不能作为本轮仍在执行的证据，也不能修改其历史记录。
+
+03:26 已创建并实际启动独立持久 CLI session `01a0fe15-2a1d-76b3-87c5-64aba3f3662d`，通过官方 thread/name/set 命名为“通用浏览器账号管理 · Astra 极高”。只读实际会话元数据核验 model=gpt-6-astra、reasoning_effort=xhigh、cwd=当前 checkout，非仅 prompt 声明；开发 session 已开始读取架构与实施文档。用户可在 Codex 继续该 session。创建/模型/日志证据位于 `work/overnight-account-20261003/` 的 session-name.json、verified-session.json、implementation.jsonl。
+
+隐藏后台协调器 PID19452、初始开发进程 PID16020；每180秒只读检查相关线程/目标/排队消息。OpenCode 在上一条完成后又启动 turn `01a0fe0a-a763-7a02-ab73-72d9a2729c2b`，03:25 核验仍 inProgress，因此现在需要等待它。开发完成后同一新 session 另做交付证据与 OpenCode 最终语义核验；满足全部门后连续90秒复查再请求 `shutdown.exe /s /t 0`，不强制关闭应用。失败、阻塞、缺证据、待处理消息或新任务均保持开机。状态在 status.json，日志 events.jsonl；创建同目录 STOP 文件可停止关机监控而不终止开发。
+
+监督验证：脚本语法通过；隔离完成门测试覆盖缺阶段、验证失败、阻塞、无证据、排队消息、未完成目标、缺最终答复和旧 turn 审查不能放行；未执行真实关机命令。官方 App Server 改名调用通过。此处仅表示开发与监控已启动，不表示账号功能已经完成或电脑已关机。
+
+## 2026-10-03 扩展开关使用公共组件，首个已知状态直接来自持久偏好
+
+扩展浮窗删除 input 自绘轨道/拇指和页脚按钮样式，直接使用现有 @radix-ui/themes 3.3.0 的 Switch、Button、Skeleton、Theme，图标使用 lucide-react 0.544.0。Switch 使用与工作台相同的 size=2/radius=full，颜色、白色拇指、禁用与键盘行为由组件负责。Theme 首帧和实时变化读取浏览器 prefers-color-scheme，仍独立于工作台。
+
+usePopupState 不再将未读状态降为 false；未读时显示 Skeleton，本地后台快照取得后立即显示保存值，不等待宿主 GET。对操作增加版本保护，旧轮询不能覆盖刚完成的开启/暂停结果。原 token、存储字段和授权机制未变。原 Vite 配置通过 mergeConfig/resolve.dedupe 复用，防止上游 React 19.2.7 与工作台 React 19.1.1 重复实例；不安装新的控件库。扩展归档增加所用公共 UI 依赖与传递依赖许可证。
+
+构建及最小验证：原扩展两环境 Vite 构建成功；2/2 暂停持久化/连接中暂停协议回归通过；diff 和接受脚本语法检查通过。Windows Chrome 154 隔离 native popup 中，持久 ON 重开、OFF 重开、再次 ON 和离线 OFF 均正确。每次原生 popup 原位重载前注入 DOM 状态观察，初始已知值前只有 loading，未出现相反开关值，39–115ms 即显示保存值，且宿主延迟 1100ms 的响应尚未返回。实际鼠标及 Space 键改变并保存值，迟到轮询后保持不变。深浅 Theme 都为真实 rt-SwitchRoot/rt-SwitchThumb，拇指 rgb(255,255,255)，轨道 cursor=pointer；原生 POPUP=1、扩展 tab=0、无未捕获错误，340×351，scrollHeight=352 为分数尺寸舍入。
+
+验证失败如实保留：首次构建在许可证归档阶段失败，部分公开包未附 LICENSE；核验其 MIT 声明并加入对应上游许可证全文后重建通过。前两次 UI 夹具的自动 debugger 附着阻断启动，第三次新文档观察未就绪，第四次 worker 的 Chrome API 尚未初始化，均未算产品通过。改为等待 worker 就绪、原生 popup 原位重载的 MutationObserver 后，交互一次完整通过：work/popup-public-controls-1790965842917/result.json。四次首败分别在同前缀 1790965355572、1790965596790、1790965726262、1790965785859 中。首次浅色截图捕获了尚未完整合成的画面，独立截图范围等待 250ms 后修正；最终浅/深图在 1790966232806/popup-{light,dark}.png，已实际查看。没有再重跑完整交互。
+
+账号中心：核验当前 BrowserProfileState 只有窗口 status/openedAt，没有平台账号列表及登录证据。已制作独立 Radix 交互原型 work/browser-account-center-20261003，入口 http://127.0.0.1:4182/work/browser-account-center-20261003/index.html 。平台、账号备注、最近确认结果/时间及打开平台入口集中展示，提供搜索、添加、编辑、手动确认、标记需重登与移除记录；移除记录说明不会退出网站账号。所有数据为演示，不写产品数据库、不开真实账号窗口。初轮搜索/添加/确认成功后，菜单脚本只派发 click 导致超时；改为 Radix 支持的键盘触发后，仅补验菜单和剩余主题/布局。深浅图与窄屏已查看，窄屏表格改为保留列宽并内部横向滚动；结果在 verification.json（首败）、verification-remaining.json、verification-visual.json。真实账号记录、自动发现平台或自动检测登录状态尚未实施。
+
+窄屏样式修正后的单独截图验证首次因复用测试 Profile 的 Chrome 调试端口启动超时未执行任何界面断言；保存 verification-visual-first-failure.json，改用本次独立 Profile 后仅重试剩余截图范围并通过，未重复已通过的交互。
+
+公共组件范围：本次完成扩展控件替换；工作台静态排查仍在 ChainBoundaryContext、ChainInspector、ChainCanvasNodes、interviewTimelineProjection、LiveChain、ExecutionContext、TaskSidebar、WorkbenchContext 发现原生交互元素。需区分业务画布/导航组合和基础控件逐入口统一，未宣称全项目已全部收敛。个人 Chrome 授权未操作；工作台/API 不需重启，扩展原加载目录已构建，用户重新加载扩展后验证。
+
+## 2026-10-03 下次浏览器偏好不再受当前任务占用限制，设置页只管理授权
+
+BrowserEnvironmentService.select 改为只校验 revision 并同步保存偏好，不再进入账号窗口的 exclusive/disconnectIdle，不检查任务/保留窗口占用，不关闭上游或扩展连接。准备与运行仍使用各自已冻结的 browser 快照，实际打开账号窗口和新任务启动的所有权保护保留。界面说明用于下一次准备和运行，当前任务沿用原浏览器；授权状态读取/操作也不再锁住上方偏好选择。
+
+日常区域改为“Chrome 授权”：未授权显示“授权 Chrome”及安装入口；已授权显示 Chrome 用户、全任务复用说明和稳定的“撤销授权”入口。删除连接状态、手动连接按钮及重新授权菜单，不再随 connected 出现/隐藏操作。首次确认沿原扩展浮窗和持久授权握手，任务通过原 endpoint 自动复用连接；扩展的允许连接/暂停开关保持原语义，浮窗和错误提示同步入口文案。
+
+验证通过：所属 browser-environment 与 daily-chrome-global-authorization 共 11/11；API 和 Workbench 类型检查；扩展原 Vite 构建；diff 检查。用例覆盖占用时保存但不清理连接、旧 revision 不覆盖、已有执行/准备快照与重启持久化、实际账号操作仍受互斥/清理保护、跨任务复用授权和保留忙碌 relay。
+
+Windows Chrome 154 隔离 UI 验证通过：用真实配置 API 在任务/账号窗口占用夹具下切换日常/专属/后台；授权区域在 connected=true/false 下文本和操作完全相同、未发送 connect；授权入口、取消、撤销均可达；真实过期 revision 返回拒绝且选择不漂移；从试跑进入同一设置后输入保留。授权状态/批准结果由隔离服务夹具控制，只作为 UI 验证，不算个人 Chrome 真实批准。深浅主题截图已查看，结果为 work/browser-settings-ui-1790964138437/result.json。首次 Workbench 类型检查发现遗留 onBusy 回调，首次 UI 因此未能完成渲染（1790964078863/result.json）；删除遗留回调后类型检查和受影响 UI 全部通过，已通过的 11 项 API 检查未重复。
+
+实际服务身份核验后已更新 PID 22768 → 25500（4173/4175）。更新前确认无进行中的运行/准备/访谈、账号窗口关闭及授权无待处理请求；更新前后 7 条 execution、4 条 authoring job、3 条 turn、1 个 task、浏览器偏好及原租约/授权文件摘要完全一致。现存 1 份保留窗口时，原值保存返回 200 且未改变 revision 或记录；实际 4173 返回新版授权区域。证据 work/windows-daily-chrome-popup-proof-20261002/settings-authorization-service-{before,after}.json。用户刷新工作台即可验证设置，扩展原目录已重建，重载只用于同步新入口文案。没有代点用户授权、撤销原凭据、改用户选择、执行业务任务、全量测试或提交。
+
+## 2026-10-03 浮窗明暗跟随浏览器
+
+按用户明确的归属修正：扩展通过 prefers-color-scheme 使用浏览器明暗偏好，color-scheme 声明同时支持浅色/深色；复用既有 Radix 色板和布局。移除 Workbench theme 消息、扩展 bat-theme 的读写和 popup data-theme effect，旧工作台的 theme 字段仍可接收但忽略，历史存储不影响显示。无需等待宿主状态或重新打开浮窗才能切换。下方历史记录中的“跟随工作台主题”已由本节替代。
+
+最小验证：原扩展 Vite 构建、Workbench 类型检查、resume intent/旧主题消息兼容回归 1/1、diff 检查通过。Windows Chrome 154 隔离 Profile 的真实 action popup 首次按原生浅色偏好渲染；CDP 分别设置浏览器明暗 media preference，在同一个 popup document 内实时切换成功。工作台深色/浮窗浅色、工作台浅色/浮窗深色均成立，旧 bat-theme 写为相反值后不改变浮窗。浅/深截图已查看。
+
+首次验证最后的证据采集误把 bat.getPopupStatus 响应当成带 popup 包装，出现 TypeError；此前主题行为断言均已通过。修正验证脚本响应读取后，仅补跑未完成的上下文/尺寸/授权检查：原生 POPUP=1、status tab=0、授权 tab=0、340×353 无溢出、响应不含 theme、隔离宿主未创建授权。保留首次失败和补验成功两个结果：work/windows-daily-chrome-popup-proof-20261002/browser-theme-verification-1790963380448.json、browser-theme-verification-1790963437220.json；脚本 verify-browser-theme.mjs，截图 browser-theme-{light,dark}.png。
+
+原目录 work/daily-chrome-extension/extension 已覆盖，需要用户在扩展管理页重新加载一次。未操作个人 Chrome、改变真实授权或执行任务；明暗切换使用实际原生 popup 的 CDP media 偏好模拟，未手动切换个人 Chrome 外观设置。Chrome 原生窗口边框不属于本次 CSS 控制范围；没有宣称已移除白边。未运行全量测试或提交。
+
+## 2026-10-03 浏览器设置统一，原生白边仍受 Chrome 限制
+
+取消 ChainRunDialog 的本地 browserMode 副本与第二个三项下拉框；准备/试跑/正式运行共用已保存设置。运行弹框展示当前浏览器摘要，「更改」进入同一 BrowserEnvironmentDialog，返回重新读取服务端选择，保留业务输入与节奏。统一设置仅保留日常 Chrome / 专属浏览器；专属模式另用圆角 Switch 控制显示窗口。术语统一为浏览器设置，底层三个枚举、旧执行快照与所有权保护不变。额外去掉 Radix Dialog 获得焦点时被全局兜底画出的黄色外轮廓，控件键盘焦点保留。
+
+Workbench 类型检查通过。新增所属 tests/browser-environment.acceptance.ts + fixtures/browser-environment-screen.tsx，使用真实 React/Radix 组件与隔离的持久化 API，捕获并校验运行命令而不启动业务/模型。Windows Chrome 154 验证通过：两层选择正确持久化；需要保留页面时禁止无头启动；运行入口更改后摘要/命令一致、业务输入/1600ms 节奏保留；实际 API 拒绝保存时不替换当前选择；普通草稿试跑共用设置；刷新保持选择；深浅主题和 390px 无横向溢出。实际 4173 已返回新版组件，不需要重启 API 或重新加载扩展。
+
+首轮夹具未先聚焦 Slider 就派发键盘事件，节奏断言失败，证据 work/browser-settings-ui-1790962277654；修正聚焦后整组行为通过，证据 work/browser-settings-ui-1790962339846。截图复核发现 Dialog 额外焦点框，定点修复并设置 Switch radius=full；视觉检查首次误读外层 button 的圆角，实际轨道由 Radix ::before 绘制（官方源码已核对），证据 work/browser-settings-ui-1790962506154。只重跑视觉范围后通过，最终截图/计算样式在 work/browser-settings-ui-1790962577212，Dialog outline-style=none，Switch 轨道为圆角。全部失败记录独立保留，未重跑已通过的业务配置流。
+
+1790962577212 的深色设置截图捕获了 Radix 进入动画的空帧，计算样式与功能验证结果不变；补充等待不透明与合成完成后仅重取视觉证据，最终可查看截图在 work/browser-settings-ui-1790962755618，settings-dedicated-dark.png / run-unified-dark.png 为浏览器直接按弹框区域截图，另保留浅色与窄屏。已实际查看，没有用空白截图交付。
+
+扩展外侧 1px 白边仍未消除。再次核对 Chromium ExtensionPopup/BubbleBorder 和 Chrome action/manifest 公共接口，边框由浏览器外壳绘制，扩展没有关闭开关；本轮未修改个人 Chrome 主题，也未替换为新标签页或独立窗口。此限制明确单列，不能将内容区截图当作白边已消失的证据。未测试真实业务复跑、模型或个人 Profile，也未运行全量测试、提交或推送。
+
+## 2026-10-03 用户验收修正：旧授权开关与基础控件
+
+修复两类实际问题：宿主已有全局授权但扩展缺少新版 bat-authorized 标记时，允许用户主动开启恢复，仍由原 token 握手确认授权；工作台集中配置 Radix cursor tokens，并让 Radix 控件只使用自己的焦点样式，移除叠在输入框内部的第二层轮廓。浅/深主题保留可见键盘焦点，禁用原生按钮使用 not-allowed。三种浏览器模式的运行契约与现有菜单未更改。
+
+验证：旧授权新增回归先运行 2 项，1 通过/1 失败（主动开启被拒绝）；修复后所属 PopupBridge 文件 10/10 通过，扩展原 Vite 构建成功。Windows Chrome 154 隔离 Profile 通过真实工作台创建夹具授权后，仅移除新版本地标记，保留原 token/宿主凭据；从工具栏重开原生 popup，OFF 状态开关可用且本地仍未标记已授权。实际鼠标点击开关后连接成功，POPUP=1、授权 tab=0、status tab=0、340×353 无溢出。主题随真实工作台切到浅色。
+
+工作台 Windows 检查：深浅色搜索输入内部 outline-style=none、box-shadow=none，外壳仅一层焦点轮廓；侧栏新建/收起/归档按钮 cursor=pointer，键盘聚焦按钮仍有 2px 轮廓。实际切换两个专属模式，都显示相同管理登录账号面板，进入后均提供打开专用浏览器；未启动账号窗口。4173 实际服务返回的样式已含修正。浮窗 html/body/#root/main 四层 border 均为 0、outline-style=none；截图白色外边由 Chrome 原生 BubbleBorder 绘制，没有宣称 CSS 已移除它。
+
+验证脚本前四次未全部通过，分别为 outline:none 的计算宽度仍是 3px 导致断言错误、关闭后仍读取旧 popup CDP 目标超时、新 popup 的 body 尚未就绪，以及外层 outline 宽度的同类断言错误。改为检查绘制样式、等待旧目标消失和新 DOM 就绪后，剩余旧授权点击/浅色路径通过；已通过的深色和模式菜单不重复执行。五次结果均保留于 work/windows-daily-chrome-popup-proof-20261002/legacy-switch-verification-*.json，最终 1790960827210.json 为通过，脚本 verify-legacy-switch.mjs，截图 controls-{dark,light}.png、legacy-switch-{before-enable,connected,light}.png 已查看。
+
+产物仍在原 work/daily-chrome-extension/extension，需要用户手动重新加载扩展；工作台可刷新使用。未触发个人 Chrome、改真实授权/lease、执行业务任务、运行全量测试或提交。个人 Profile 的手工验收留给用户。
+
+## 2026-10-03 方案 A 连接卡片已实施与交付
+
+原生 popup 已按选定原型落地：340px 连接卡片、持久「允许连接」开关、独立连接状态、浏览器名称、折叠连接权限与工作台入口。OFF 断开原会话并阻止普通任务自动连接，原全局授权保留；ON 经现有同源工作台 POST 恢复。撤销后的无 token 新票据强制本次明确开启，旧 ON 不代批准；旧版本已匹配 token 的授权可迁移。工作台文案与开关一致，浮窗跟随工作台主题，字体/间距复用共享文件，颜色来自现有 Radix public export。
+
+验证：所属 13 项检查全部通过（全局授权 3、PopupBridge 8、原握手/私有票据 2，含暂停原因且不删凭据）；API 和 Workbench 类型检查通过；原 Vite 扩展构建成功。Windows Chrome 154 真实工作台 → 原生 POPUP=1、授权 tab=0、status tab=0；首次 OFF 不保存授权，ON 保存并就绪；OFF 后凭据保留、重开浮窗仍 OFF、普通 endpoint 明确报告暂停；ON 经真实工作台恢复，无再次授权；工作台主题同步，离线保留开关/授权，服务重启后下一次普通连接不弹 popup。首次/连接态均 340×353；展开权限 463px 高，Chrome 分数行高取整后 scrollHeight=464，最末操作完整可见。截图已实际查看。
+
+首次 Windows 验证在恢复阶段使用失效 popup CDP 句柄超时；再次定位当前 popup 后恢复成功。下一次在展开权限严格整数高度断言失败（463/464 的 1px 舍入），截图未裁切；改为允许 1px 舍入并独立核验最末按钮可见后，剩余主题/离线/服务重启路径通过。三次结果分别保留为 connection-card-verification-*.json，没有将首败覆盖为成功。测试故意暂停 relay 的 stderr 及服务离线的 Vite ECONNREFUSED 属于该错误路径。
+
+实际 4173/4175 开发服务已沿 PID/root 身份校验重启：18088 → 22768。7 条 execution body 摘要、原 lease、授权文件摘要前后一致；新版 status 含固定 extensionId，既有授权仍有效。产物覆盖原 work/daily-chrome-extension/extension，ID 未变。用户需手动重新加载扩展并刷新工作台；本轮未操作个人 Chrome 或代点授权。
+
+证据目录 work/windows-daily-chrome-popup-proof-20261002：verify-connection-card.mjs、connection-card-verification-*.json、connection-card-{first,connected,paused,light}.png、connection-card-service-{before,after}.json。未运行根级/全量测试、真实业务任务或用户个人 Profile 验收；缺少 @types/chrome，未另行宣称扩展独立 tsc 通过（有原 Vite 构建及真实 Chrome 行为证据）。最后只修正旧版本已授权但尚未迁移时的引导为「连接 Chrome」，重建产物，未重复无关协议检查。
+
+## 2026-10-03 三版可交互原型（待用户选择）
+
+独立原型 A 连接卡片、B 紧凑面板、C 浏览器名片已提供，浏览地址 http://127.0.0.1:4181/。可切换首次连接、已连接、已暂停、工作台离线和深浅主题；各版开关有即时连接反馈，OFF 保留授权，离线时开关仍可保持 ON。当前只是演示，不改扩展运行代码或实际授权状态。
+
+Windows Chrome 154 隔离 Profile 的 9 项原型交互检查通过，含选择与单版查看、展开内容无裁切、390px 无横向溢出及无 JS 错误。首次截图发现浅色开关捕获了颜色过渡中间帧，截图模式尊重 reduced-motion 后重新拍摄；没有修改开关行为或重复运行交互检查。随后调整说明字号并删除 C 首次/已连接的重复说明，单独核对展开布局和截图。证据 work/chrome-popup-prototypes-20261003/preview-checks.json、visual-checks.json、three-prototypes-{dark,light,connected}.png。真实扩展持久开关和产品集成未实施、未测试。
+
+## 2026-10-02 首次授权面板再次收敛（已构建，用户未接受设计）
+
+用户对上一版真实截图提出文案和按钮层级问题。删除“连接请求”与长问句/引导语的重复、批准前的装饰对勾、两段说明卡及首次请求的页脚出口。首次面板只呈现连接对象、控制范围、全局授权说明；等宽“暂不连接／授权并连接”，明确保存授权的主操作。日常面板“断开连接”保留单次连接语义，权限范围继续收起。暂不连接沿原拒绝协议结束请求，Workbench 根据明确错误码显示普通取消反馈；其它失败仍报错。
+
+所属最小检查：原 Vite 扩展构建、Workbench tsc、diff 定点检查通过。Windows Chrome 154 隔离真实工作台按钮验证：原生 POPUP=1、授权 tab=0；暂不连接不保存授权且工作台无技术错误提示；重新点击并授权后宿主就绪、面板已授权。首次面板 368×323（上版 457 高），连接面板 368×339，无裁切。明暗主题实际截图已查看。此次没有重跑未改变的 token 持久化、服务重启或全局协议测试。
+
+证据：work/windows-daily-chrome-popup-proof-20261002/compact-verification.json、verify-compact-ui.mjs、compact-authorize.png、compact-connected.png、compact-connected-dark.png。原目录产物已覆盖，扩展 ID 不变；用户手动重新加载扩展并刷新工作台使用。实际服务仍含新版 popupRequest，已有授权保留，不代操作用户的待确认请求。
+
+## 2026-10-02 Windows 原生扩展浮窗与交互重做（首版流程验证）
+
+用户反馈“仍开新 tab”时核验发现实际 4175 服务 PID 2584 仍运行旧入口，GET 不含 popupRequest。已沿身份核验的 dev/shutdown 重启为 PID 18088，4173/4175 正常，新字段存在；重启前后 7 条 execution 的 body SHA256 与原窗口 lease SHA256 完全一致。已有全局授权保留。没有触发用户 Chrome 的授权、代点允许、删除旧任务或回收用户窗口。
+
+直接读取 BrowserSkill 的 App/use-connection-state/switch/style 源码，并对照 uBlock 官方面板与 Chrome popup 文档后重排界面。首次只展示连接请求、Chrome 用户、操作范围和拒绝/允许连接；已连接时展示实际状态、断开操作与保存的授权，范围收起；工作台入口仅保留一个。字号、按钮和明暗主题已视觉核对。断开不撤销授权；已授权连接不重复展示首次说明。取消后过期请求不会阻塞新请求。
+
+验证结果：
+- 所属协议/错误路径 4/4：取消后新请求、拒绝不批准、首次明确确认、已存 token 无浮窗复用、私有票据隔离、原握手与持久化。取消回归在修复前 2 项中 1 项失败，报“正在处理另一个连接请求”；修复后通过。
+- API 与 Workbench 类型检查通过，原 Vite 扩展构建通过。新增 Node 测试最初静态引入 Chrome 入口，触发服务端类型环境缺失；改为浏览器夹具动态加载后 API 重查通过。扩展未做独立完整 tsc，不把打包等同于类型检查。
+- Windows Chrome 154.0.8037.93 隔离实机：从真实工作台按钮进入 native POPUP，首次及已连接状态均 POPUP=1、connect.html 标签=0、status.html 标签=0；拒绝不保存、工作台取消清空浮窗、重新点击后允许、系统保存授权和原 relay 就绪均通过。
+- 断开后已保存授权自动连接、API 服务重启后自动连接均通过，未打开浮窗或授权页。无模型调用；用户个人 Chrome 的点击仍由用户完成。
+- 首次面板 368×457、已连接面板 368×339，无横向溢出或纵向裁切，明暗主题截图已查看。
+
+测试过程中的首次失败单独保留：只重启隔离 Chrome 未重载扩展时仍保留旧后台行为，重新加载后取消通过；CDP triggerAction 的 page/tab target 差异与关闭后无回执使临时交互核验超时，最终独立脚本给 CDP 请求加超时并使用实际工作台入口；脚本首次读取尚未建立的 document.body，改为等待 DOM 后整条流程一次通过。这些夹具失败不记作产品验证成功。最终脚本沿 finally 关闭自己创建的 Chrome/Vite/API。
+
+证据：work/windows-daily-chrome-popup-proof-20261002/redesign-verification.json、verify-redesign.mjs、redesign-harness-first-failure.json，以及 redesign-authorize.png、redesign-connected.png、redesign-connected-dark.png。构建仍覆盖原 work/daily-chrome-extension/extension，ID 不变；用户在 chrome://extensions 重新加载一次 B-A-T，刷新同一 Chrome 的工作台即可使用新版。未运行根级/全量测试，未提交或推送。
+
+## 2026-10-02 Browser-Skill 授权交互核对（只读完成）
+
+已核验本机 bsk 0.3.1、既有只读源码和官方当前 main。Browser-Skill 的本地连接采用扩展 popup 连接开关/持久化和后台握手，无当前 B-A-T 的跳转授权页；借用个人标签页的 overlay/系统通知确认另算。当前 B-A-T 页面基于微软原连接页改造，中文内容和首次持久授权交接属于项目修改，实际不是 Chrome 原生 Allow 弹窗，且当前页面缺直接拒绝按钮。来源与具体符号见 RESEARCH 最新节。
+
+用户报告在扩展页点击允许后系统显示已授权；实际 GET 已核验 paired=true，授权保存成功。该时点 connected=false/busy=false，实时断线原因未调查，不把已保存授权当作实时连接成功。真实页的拒绝交互仍未通过；前一节接口夹具通过不覆盖此缺口。没有自动连接、触发弹窗、启动 Browser-Skill 会话或读取个人浏览器页面；此轮仅补充调研记录。
+
+
+## 2026-10-02 Windows 全局授权入口最小修复（已加载，真实批准由用户验证）
+
+用户要求选定 Chrome 用户只授权一次，所有任务默认复用，用户亲自点击授权按钮并先拒绝再允许。当前 Windows 首次授权在扩展握手前，被一条已完成任务的保留窗口记录拦截。沿用原 checkout/master，生产改动仅在 app.ts 和 daily-extension.ts：首次 pair 和 connectSaved 不再核验历史任务租约；只有替换仍在线的 relay 时才执行原占用保护。环境切换/授权保持串行，实际任务启动仍沿原入口保护正在进行的授权，未新增依赖或协议。
+
+最小验证：新增所属全局授权 HTTP/持久化回归在修复前 3 项中 2 项失败，第一项返回 browser_busy 而未到达扩展拒绝分支；修复后与既有浏览器环境测试合计 11 项通过。另运行受影响的原 relay 就绪、无有效授权、首次 token 握手、取消/迟到授权、同源 HTTP 5 项，全部通过。API 类型检查通过。验证涵盖拒绝后不保存授权且可重试、首次授权不读取历史占用、普通已授权连接复用、两任务共用一次授权、断线/服务重启复用保存 token、已占用实时连接不被重新授权替换，以及状态/响应不暴露凭据。扩展进程边界使用夹具，不替用户操作实际 Chrome。
+
+通过原开发服务入口重启并加载源码：工作台和 API 均可用，仍使用原 data 目录；实际六条 execution body 的 SHA256 与原窗口租约 SHA256 均保持不变。服务当前 paired=false/connected=false/busy=false，未自动触发真实授权。用户刷新工作台后点击“授权并连接”，真实 Windows 拒绝/允许弹窗仍待用户验证，不能据接口夹具宣称该项已通过。
+
+证据位于忽略的 work/windows-daily-chrome-proof-20261002：global-authorization-before-fix.log、global-authorization-after-fix.log、global-authorization-relay-regression.log、global-authorization-api-typecheck.log、global-authorization-before-restart.json、global-authorization-restart-proof.json。此前完整 relay 测试中两项 POSIX 0600 文件模式断言在 Windows 失败是独立基线，本轮未修改或重复执行，未计入本轮通过。
+
+
 ## 2026-10-02 Windows 测试交接与源码发布批次
 
 用户明确授权将当前 checkout/现有 master 的全部代码提交并推送远程，随后在家里的 Windows 实测。发布前本地 HEAD、origin/master 与实际远程 master 均为 `0a904506255986f30b13d0658aa29bbcc6c2d89f`，ahead/behind 为0/0；本批包含40个已有修改文件及新增 [Windows 测试交接](WINDOWS_DAILY_CHROME_TEST_HANDOFF_20261002.md)，不包含 ignored data/work、任务库、授权或 Chrome Profile。
@@ -2648,3 +2975,102 @@ Product Alignment:
 - 工具注册现在从真实根数组合同生成 outputPath 的 description/examples=[[]]，工具说明同步明确 outputPath=[]；错误反馈追加固定安全解释，说明 value 属于响应包装。保持显式参数、严格校验与原业务 schema；没有默认改写错误路径、页面猜测、自动重试或新循环。
 - 新增所属 `test_method_root_array_path` 首次 2/2 通过（0.190s）。真实 output_model_for 包装仍存在；真实 Browser-Use Tools 执行两个包装路径都在采样前拒绝（sampler=0、records=0），随后显式 [] 与 readRef 通过 ActionRegistry/model_dump、Tools 和 EvidenceCollector，canonical args 保持原样、方法/预算完全相同。仅 mock 采样，不是浏览器或产品验收。
 - 只更新本轮 2 个 vendor 条目的 LF 规范摘要；未跑旧测试组、根级、API check、浏览器或模型。后续同任务显式重新试做与首次失败分开记录。
+
+## 2026-10-04 定稿的循环/分支列表接入真实节点
+
+- 按用户确认的图标状态原型接入实际 TaskChain 和指定 execution/step/run 的持久事件；右列图标、当前 loading、分支文字高亮、声明循环范围/回路与真实节点检查器共用正式组件。去掉重复行状态、解释尾注和臆造上限；长名称尺寸及状态槽位保持稳定。
+- 修复实际生成入口的展示分组缺口：服务端此前只组合动作值依赖，未把 loop 与声明 body 组合成主节点。现在准备/最终 presentation 共用声明关系；直接唯一入口的分支动作归入所属范围，共享汇合点不吞并。冻结图、执行 digest 和旧发布版本保持原样。
+- 35 项定点投影/分组测试及 1 项自然 repeat 来源物化→runtime→UI 接线验证通过；contracts/API/workbench check 和 workbench build 通过。实际执行器各轮不同分支、当前轮隔离、失败、末页退出/输出、完成节点均验证，新增模型调用 0。最后尺寸调整仅复验相关 10 项。
+- Headless 真实生产组件通过单 loading、图标列对齐、深浅主题、稳定尺寸、真实 nodeId 检查器；现有 4173 Workbench 只读检查无产品写入。截图和 JSON 在 work/chain-control-integration-20261004。首败、修复和未测项见 CHAIN_CONTROL_UI_INTEGRATION_20261004.md。
+- 当前用户服务任务有 cleanup_required，保留 PID 4860 与既有资源；前端已热更新，API 新分组需下一次服务重启生效。本轮不是新 B-U 自然业务闭环验收；通用业务条件生成缺口仍独立保留，不能由 UI 补图掩盖。
+
+## 2026-10-04 旧任务复跑的账号租约占用修复
+
+- 已定位正式 execution 92aa09d8 的首次失败为 reserve/hybrid_attached_window_busy，0 TaskRun；不是链路节点或业务失败。账号维护宿主已 closed，原生收据仍 handoff；UI 又将已存在的固定错误说成未记录。
+- AttachedWindow 的缺失目标/空启动核验同步 ended，并拒绝并发变化；同一当前 Profile 的 closed 确定维护 owner 可通过已有 releasedOwners 归档历史收据。复跑/首次探索共用该接线，不改发布版本、不强删锁、不新增模型调用。
+- 27 项定点验证通过。真实 TS/Python/CDP/SQLite 的隔离 headless 复现旧错误后连续两次 completed，重启后第三次 completed，均 cleanup confirmed / 0 模型；旧错误和 owner 收据保留，保护标签未关闭。
+- API/Workbench 类型检查、Workbench 构建、setup --check 通过。无活跃运行/维护时 graceful 重载正式开发服务，PID/root 验证新 PID 10968。实际页面 headless 只读验证真实原因、再次运行/开始运行按钮可用、产品写请求 0。
+- 未执行京东真实联网业务或个人 Chrome 扩展/登录验证；没有弹可见窗口、修改历史业务结论、提交或推送。首败/夹具修正/证据见 REPLAY_ACCOUNT_LEASE_REPAIR_20261004.md。
+
+## 2026-10-05 起止节点与单条文字
+
+- 删除结果面板对起止节点的重复尺寸覆盖，实际高度 96→54px；字体、背景、圆角、状态边框与业务标题统一，CSS/model/端口 +27px 一致。旧布局后备也对齐标题，相关节点水平间距 32px。
+- 每个子节点文字最多两行，超出省略；完整列表与原 nodeId 保留，悬停和原检查器能看全文。循环和分支共用相同限制，尺寸估算不为不可见行留空白。
+- 原有 3 项投影/runtime 测试通过；新增几何项修正真实多主节点锚点断言后 1/1。Workbench check/build 与最终 CSS 的 headless 视觉验收通过：深浅主题、长文字、全文详情、稳定状态几何、当前 loading、完整实际旧任务的 8 个子节点；产品写请求 0、页面错误 0。
+- 所有浏览器测试 headless/隔离 profile，未控制个人浏览器、触发正式运行或重启现有用户服务。无全量/根级测试；首败、修正和未测业务范围详见 NODE_UI_COMPACT_20261005.md，截图 work/node-ui-20261005。
+
+## 2026-10-05 子节点单行与真实类型图标（最新要求）
+
+- 用户将两行改为单行省略。保留序号，在左侧固定 14px 图标表示真实节点类型；右侧运行图标/loading 保留。类型来自既有 kind/能力引用与 actionPresentation，悬停可读名称；循环文字 tag 移除。
+- 普通动作、循环、分支内动作与跨主节点去向共用；首次视觉核验发现跨主节点目标类型缺失后，直接从同一版本图补取，不复制运行状态或更改动作归属。
+- 最小 4 项测试首次通过；跨主节点补齐后受影响两项 2/2；Workbench check/build 通过。最终 headless 验证单行真实溢出、完整详情、真实类型、状态列对齐与稳定尺寸、深浅主题及旧任务完整 8 项，页面错误和写请求均 0。
+- 没有可见浏览器、个人 Chrome 控制、正式运行、用户服务重启、全量/根级测试、模型调用或发布版本改写。首败与证据见 NODE_TYPE_ICONS_20261005.md，截图 work/node-type-icons-20261005。
+
+后续按用户“子分支过挤”纠正：只将控制流卡片加宽到 520px，分支改为固定条件列和目标列，去掉重复箭头/“接”字，编号独立对齐，行高与上下留白增加。保留一行省略、类型/运行图标、原路由与源节点。最小两项和 headless 首次通过，目标文字宽度 216/235px、状态列稳定、深浅主题正常；Workbench 构建通过。最终截图和只读证据 work/node-branch-spacing-20261005；样本分支与实际旧任务分别标明，未触发正式运行。
+
+## 2026-10-05 并行浏览器与任务选择
+
+- 按用户最新授权实现 [开发方案](PARALLEL_BROWSER_LIFECYCLE_20261005.md)：新任务动态跟随全局，可保存任务覆盖或恢复跟随；准备前确认，试跑/正式运行冻结本次模式。保留当前 checkout 的已有改动，无 worktree、提交或推送。
+- 去除不同任务的全局执行/历史清理门；复用原执行器、每次一个 runner/SDK。日常 Chrome relay 按 owner 隔离客户端/响应/目标/session；专属 Chrome 使用独立 Profile。冷连接由各任务复用一次，只有短暂的账号目录准备串行。
+- 原 finally 退出；启动和每 15 秒按旧 owner 核验现场，跳过活跃控制器，不唤起已关闭的个人 Chrome。目标消失、OS 无 Chrome 进程或前次 OS 启动收据确认失效；未知资源保留原审计，不阻塞其它任务。旧业务结论不改写。
+- 最小验证：任务设置/并行/取消/历史交付后新任务 3/3，实际 WS 隔离与冷启动复用，Python 收据/关闭/断连 4/4；真实专属 Chrome 双会话同时连接、分别执行与自动退出，0 模型调用；新私有 Profile 的合成 Cookie/localStorage 沿 SDK 原事件导入，通过。Contracts/API/Workbench 类型检查通过。
+- 首次验证命令 cwd 错误、夹具合同 ID/交付回执缺口、原无头新窗口启动失败、SDK 存储导入禁用与 void 事件等待修正，均记录到开发方案。现有 Chrome relay 测试 13/15，两项 POSIX 权限断言在 Windows 为基线失败；同 UID 账号验证新增受限读取的断言已定点修正。
+- 未跑全量/根级测试，未重启用户服务；原京东任务完整首次探索/编译/发布、真实个人 Chrome 多任务整链路、真实网站账号、UI 点击和物理关机未验收。运行中的旧 API 需正常重启加载变更。
+
+## 2026-10-05 主流程合同修复开始
+用户授权先文档、开发、验证、对抗 subagent 审查与最终关机。文档 [MAINLINE_CONTRACT_REPAIR_20261005.md](MAINLINE_CONTRACT_REPAIR_20261005.md) 已先于生产修改建立；当前 master checkout 的既有改动全部保留。上一任务读取失败和合同交接缺口保留，尚未宣称修复完成。
+
+
+## 2026-10-05 主流程合同修复最终记录
+
+2026-10-05 05:16 CST：修复代码及定点、真实受控生成/发布/正式复跑验证完成，对抗复审限定范围未发现成立阻断。原京东任务仍失败：排序与前五集合读取已通过；详情继承的生产者字段保证传播未闭合，并记录两次 ai_structured_output_invalid，未发布不完整来源。资源 cleanup=confirmed、lease=ended。完整通过、首败、未测与下一步合同修复见 [结果报告](MAINLINE_CONTRACT_REPAIR_RESULT_20261005.md)。按用户明确指令保存原因后关机；没有认定原业务全部解决。
+
+
+## 2026-10-05 任务主流程、范围采集与交付整改
+
+当前依据为 [WORKFLOW_AND_DELIVERY_REBUILD_20261005.md](WORKFLOW_AND_DELIVERY_REBUILD_20261005.md)：原生 B-U 找到任务页面/区域并串联动作、分支、循环；成熟 API 整体取得内容，B-A-T 只适配绑定、来源、产物持久化和普通执行器复跑。已移出清洗功能、清洗节点和加工验收；导航/控制流必要读取及合法历史能力保留。
+
+- 已同步：最终交付与采集范围，逐字段门禁和固定数组拆分退出，首次生成前直显实际浏览器模式（不设第四个跟随选项），并行 owner/lease 与关窗/重启核验，主流程完成及清理分别建模，旧生成路径退出及最小真实验收。
+- 源码核查：现有 B-U 0.13.8/markdownify 1.2.2、Crawl4AI v0.9.4 HTML 输入和转换接口、相邻 domain-analysis 原始 HTML/图片字节保存；具体能力、许可证、局部缺口及官方链接已写入 RESEARCH。未安装新组件，未做真实区域/附件接入或正式复跑。
+- 本轮仅文档修改；保留原京东失败和历史验证，不宣称主流程已修复。不运行产品测试、浏览器、用户服务或关机。文档同步后按用户要求启动一个对抗 subagent，审查结论及修订另行记录。
+
+- 对抗文档初审未通过：P1 完整原生 extract 不能直接作为正式 llm 节点；P2 非空 DOM 缓存不证明最后一次展开/加载后的当前内容。已同步修正主文档、RESEARCH 与 P0 样本要求，补充纯编译修复不得自动重开浏览器或重派动作；同一审查 agent 限定复审确认两项闭合，未发现修订引入的新矛盾。完整记录见 [文档审查报告](WORKFLOW_AND_DELIVERY_DOCUMENT_REVIEW_20261005.md)。这是文档审查通过，不是代码或原京东业务通过。
+
+### 2026-10-05 确认后实施
+
+已实现原始范围交付、显式业务逐项计划、原生探索缺口处理、当前区域/已加载原图采集及 Artifact 持久化。最小公开 API 样本与三入口真实 sample 已通过，独立复验/发布/正式运行进行中；首轮旧交接合同、读取额度和 ready 作用域失败逐项保留。详见 [实施记录](WORKFLOW_AND_DELIVERY_IMPLEMENTATION_20261005.md)。未以局部通过宣称原京东或所有工作流通过。
+2026-10-05 后续证据：控制样本完成 3→2 的独立验证、发布及正式运行，纯操作任务也完成发布；真实读取的 CSS 背景/原 PNG、8MB 图片、同 URL 重载拒绝，以及根参数逐行继承定点验证通过。首次代码审查未通过，原报告保留；修复与限定复查继续。真实工作台连接恢复后，新可见 task 2aaa0674-ce91-462a-bce4-c21502ce755c 的访谈首次 ai_generation_failed 发生在 B-U 前，原生生成已经 stop；根因是上游 partial commentary 泄入正文流、ended 排除它。已复用公开 API 做展示适配，一次修复后 retry 提交草稿并进入 sources 原生调查。当前 API 类型检查通过，服务 PID 18600、daily Chrome connected:true；未运行全量/根级测试，未提交/推送/关机。详情及首次失败见实施记录。
+## 2026-10-05 工作台恢复及入口读取限定结果
+
+Workbench http://127.0.0.1:4173/ 与 API 4175 已恢复并加载最终 S2 修复，PID1072、健康检查通过；现有 daily Chrome 扩展通过公开 connect 恢复 connected:true，不要求用户猜地址或重新复制凭据。未关机，供当前用户访问。
+
+此前真实 B-U 来源调查已点开商品详情，但来源合同要求列表 URL 属性，done(false)；最小补齐当前文档真实地址读取 valueSource:page-url，复用原生 Element.evaluate/DOM URL。真实无 href 点击后的两页读取1项、TS协议1项、canonical来源→代表输出→普通节点1项及API check通过。S1/S2 对抗首次失败和修复保留，限定最终代码复审通过。
+
+京东整条业务仍未通过：最新 job ce420787-53c0-469a-873a-ff97df4c2a75 在第1次导航/观察中断，尚未用到新地址读取；观察发生文档变化，随后当前target读取ValueError，具体失效事件未证明。不得归因为商品配置字段或宣称全部修复。完整首败、样本通过、未测和剩余门见 WORKFLOW_AND_DELIVERY_IMPLEMENTATION_20261005.md；未运行全量/根级测试，未反复重跑同组已通过验证。
+## 2026-10-05 京东验证页及节奏遗漏核验
+
+用户提供真实网站验证截图后停止新增京东试跑；当前验收任务failed、没有活跃执行，未点击或绕过验证。现场验收没有显式设置访问间隔。当前UI观察间隔只接复跑，首次B-U探索未接入；样本/独立复验使用nodeDelayMs:0，脚本正式run也未传pacing。B-U默认0.1秒只用于同批后续动作，当前每步1动作不能当作步间限速。
+
+实际源观察相邻动作最短12.39/10.95秒，包含模型/页面等待；不等于有受控访问节奏，也不能证明验证码唯一由间隔触发。修正此前仅记录“导航观察失败”的说明，补齐已出现网站验证事实。只读核验及文档补充，没有代码修改、模型调用、网站访问或重复测试。节奏与人工等待闭环尚未修复，详见 WORKFLOW_AND_DELIVERY_IMPLEMENTATION_20261005.md。
+
+按用户随后纠正，诊断重点回到未闭合的主流程：间隔遗漏不能当根因。既有访谈桥接、来源入口合同、读取回执消费者缺陷已有证据并已定点修复，但来源循环、实际详情采集、独立复验、发布和正式执行未整链通过；网站验证人工等待未验收，最新观察中断具体事件未证明。文档已纠正优先级，本次没有生产代码修改或网站试跑。
+
+
+## 2026-10-05 在线节点与浏览器上下文整改结果
+
+真实旧任务已记录17动作，但第一编译缺口截断画布且只有3节点。修复确认固定文本、原生目标审计、后续闭合片段显示、按需本次 URL/tab 输出与原生 switch 跨边界支持；修复新页 autoplay 误加职责、历史进度和中断状态投影。
+
+受控真实 Chrome 7 动作/7 segments/0 gaps，新 session 普通复跑和整体内容读取无模型调用；TS 实际来源物化7节点6边。合法 navigate→switch→navigate 生产编译3节点无缺口。对抗首次及复查未通过的 P1/P2、兼容性、旧包及状态问题已定点关闭，限定最终复核通过。API/Workbench check、所改最小边界及真实本地 UI 通过；没有全量/根级测试或京东新试跑。
+
+最终服务 PID12980、Workbench4173/API4175。原任务 UI 实际显示17记录/3旧节点/11未编译与本轮未完成；job保持 interrupted/sequence173、原 payload 摘要前后一致，当前仅只读投影。证明在 work/service-proof/final-progress.json/png。受管摘要 091e010554ccd8eb29166c42102287322c11b007826ccb5536dee84bcb9199e3 已登记。
+
+**原京东整链仍未通过**：动态来源/循环、真实范围交付、独立复验/发布/正式业务尚未验收；不能用本地固定入口和能力复跑改判旧任务成功。详见 WORKFLOW_AND_DELIVERY_IMPLEMENTATION_20261005.md 与代码审查追加。保留服务，未提交/推送/worktree/关机。
+## 2026-10-05 当前：原任务尚未完成，入口观察/采样交接已审查
+
+- 原任务 `2aaa0674` 最新首败 `99acbc3e` 定位到 method_read_sample_failed，另有销量点击的 collection_selection_read_required；不把普通动作通过称为任务完成。
+- callback 在任何 await 前冻结模型所见索引的 target/backend/原观察根/HTML 根；工具一次性消费，实时范围与最终 sample 绑定文档根和完整集合摘要，Python/TS 均独立校验。
+- 8 项所属定点检查、API 类型检查、文件/函数行数通过；对抗复审 P1 已关闭。未知宿主错误诊断只含固定阶段、受限类型/源码位置/验证字段，不含原始内容。
+- 受管源 `35fe5b0e5c1ab7a95337dff5a933ae1b0d126ff10341518bb21ac97b47534bb6`；真实新 job `16cf6303` 运行中。完整真实详情、发布及正式 0 隐式模型复跑仍待通过。
+## 当前状态：2026-10-06 原任务完整验收继续
+
+受管源码 `668c149585cdf914600c35e359d6b4b1e2f1b6891f6b1c3b2f16d2ba8613b150`，服务 PID22984；Chrome 连接由开发恢复，connected/paired=true。原 `b6384d1d` 失败及旧草稿保留，**完整任务尚未通过**。本次新增伪元素隐藏背景资源边界已由真实 Chrome 所属单项验证（12.793秒）和对抗静态复核关闭；`display:contents` 根内 Source 身份测试另通过（4.234秒）。新完整准备 `bf603496-6edc-4576-8519-60b155439791` 已启动，验收记录 `work/content-capture-proof/live-jd-1791220950300/events.json`；首页、搜索、进入列表和排序的前4动作已观察及编译。随后各日期条目为历史过程，旧“正在运行”不代表当前状态。

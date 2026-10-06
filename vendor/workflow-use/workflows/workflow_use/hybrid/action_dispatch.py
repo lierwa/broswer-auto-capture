@@ -48,11 +48,18 @@ class ActionDispatchAudit:
                                      'events': [], 'limitations': []}
             return
         try:
-            entry['eventCapture'] = await self.event_capture.arm(entry['actionName'], entry['target'])
+            entry['eventCapture'] = await self.event_capture.arm(entry['actionName'], entry['target'],
+                                                                entry.pop('targetElement', None))
         except Exception:
             entry['eventCapture'] = {'status': 'listener_unavailable',
                                      'eventExpectation': entry['eventCapture']['eventExpectation'], 'events': [],
                                      'limitations': ['listener_registration_failed']}
+
+    def bind_target_element(self, element):
+        if self.active is None:
+            raise ValueError('native_action_dispatch_position_missing')
+        # WHY：来源与复跑复用同一命中核验；Element 只在派发前使用，不写进来源或日志。
+        self.entries[self.active]['targetElement'] = element
 
     async def complete(self, result=None):
         if self.active is None:

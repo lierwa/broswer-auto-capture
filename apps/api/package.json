@@ -12,8 +12,8 @@
     "accept:requirement-dialogue": "tsx tests/requirement-dialogue-workbench-acceptance.ts"
   },
   "dependencies": {
-    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.2-f0ef768f.tgz",
-    "@agent-platform/pi-agent-session": "file:../../vendor/agent-platform/agent-platform-pi-agent-session-0.1.0-7b0cd258.tgz",
+    "@agent-platform/ai-connect": "file:../../vendor/agent-platform/agent-platform-ai-connect-0.3.4-1464cd24.tgz",
+    "@agent-platform/pi-agent-session": "file:../../vendor/agent-platform/agent-platform-pi-agent-session-0.1.0-2c522ec8.tgz",
     "@browser-capture/browser": "0.0.0",
     "@browser-capture/contracts": "0.0.0",
     "@browser-capture/runtime": "0.0.0",
@@ -21,8 +21,9 @@
     "better-sqlite3": "12.10.0",
     "drizzle-orm": "0.45.2",
     "fastify": "5.12.3",
-    "proper-lockfile": "4.1.2",
+    "lru-cache": "11.4.0",
     "pi-web-access": "0.30.0",
+    "proper-lockfile": "4.1.2",
     "tldts": "^7.0.16",
     "ws": "8.21.3",
     "zod": "4.1.8"

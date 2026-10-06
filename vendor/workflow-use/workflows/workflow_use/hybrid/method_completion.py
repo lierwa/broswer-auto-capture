@@ -6,12 +6,24 @@ from .natural_output import _assemble_verified_output
 from .method_read_schema import compatible_read_schema, representative_schema
 
 
+def content_read_refs(records):
+    successful = getattr(records, 'records', ())
+    if not successful:
+        return []
+    scopes = {(record.sample.pageIdentity['targetId'], record.sample.documentRootId) for record in successful}
+    # WHY：一个原始区域输出由最后成功选择的方法提供；同文档纠正范围不等于合并多页。
+    # TRADE-OFF：保留历史采集审计，跨 tab/document 仍须显式成功 readRef，不能自动丢弃。
+    if len(scopes) != 1:
+        raise ValueError('completion_content_scope_ambiguous')
+    return [successful[-1].readRef]
+
+
 def complete_from_read_refs(records, read_refs, output_schema, result_spec):
     if output_schema == {'type': 'null'}:
         if read_refs:
             raise ValueError('completion_read_reference_invalid')
         return None
-    if not read_refs or len(set(read_refs)) != len(read_refs) or records is None:
+    if len(set(read_refs)) != len(read_refs) or records is None:
         raise ValueError('completion_read_reference_invalid')
     by_ref = {record.readRef: record for record in records.records}
     if any(reference not in by_ref for reference in read_refs):
@@ -29,12 +41,27 @@ def complete_from_read_refs(records, read_refs, output_schema, result_spec):
             raise ValueError('completion_read_schema_mismatch')
         actual = value_at_path(record.sample.output, mapping.readPath)
         compiled.append(({'path': mapping.outputPath}, actual))
+    _append_input_fields(compiled, records, output_schema)
+    if not compiled:
+        raise ValueError('completion_read_reference_invalid')
     _append_derivations(compiled, result_spec)
     output = _assemble_verified_output(output_schema, compiled)
     Draft202012Validator(representative_schema(
         output_schema, paths, result_spec=result_spec, output=output)).validate(output)
     records.selected_refs = tuple(read_refs)
     return output
+
+
+def _append_input_fields(compiled, records, output_schema):
+    value, schema = getattr(records, 'input_value', None), getattr(records, 'input_schema', None)
+    if output_schema.get('type') != 'object' or not isinstance(value, dict) or not isinstance(schema, dict):
+        return
+    # WHY：仅继承同路径、同类型的真实单项输入；不按相同值猜身份，不覆盖现场读取，不带入内部键。
+    paths = [field['path'] for field, _ in compiled]
+    for name, target in output_schema.get('properties', {}).items():
+        if name in value and name in schema.get('required', []) and schema.get('properties', {}).get(name) == target \
+                and not any(paths_conflict([name], path) for path in paths):
+            compiled.append(({'path': [name]}, value[name]))
 
 
 def _append_derivations(compiled, result_spec):

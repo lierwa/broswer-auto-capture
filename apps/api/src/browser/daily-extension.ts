@@ -19,6 +19,8 @@ export class DailyChromeExtension {
   private credentials: ProviderCredentialStore
   private relay: CDPRelayServer | undefined
   private changing: Promise<unknown> | undefined
+  private connecting: Promise<string | undefined> | undefined
+  private popupRequest: { url: string; extensionId: string; profileName: string; profileDirectory: string; openPopup: boolean } | null = null
   constructor(private root: string, private directory: string, private assertIdle: () => void,
     private platform = process.platform, private home = homedir(),
     private environment: NodeJS.ProcessEnv = process.env) {
@@ -48,7 +50,17 @@ export class DailyChromeExtension {
     return { paired: record?.type === "api" && Boolean(record.key),
       profileDirectory: record?.type === "api" ? record.env?.PROFILE_DIRECTORY ?? null : null,
       connected: this.relay?.isConnected() ?? false, busy: Boolean(this.changing),
+      popupRequest: this.popupRequest, extensionId: await this.extensionIdentity(),
       extensionDirectory: path.join(this.root, "work/daily-chrome-extension/extension"), profiles: await this.profiles() }
+  }
+
+  async accountBinding() {
+    this.assertStable()
+    const record = await this.credentials.get(credentialRef)
+    if (record?.type !== "api" || !record.key || !record.env?.PROFILE_DIRECTORY) return null
+    // WHY：扩展原 token 属于实际扩展实例；只投影不可逆标识，不以可改名/可复用路径当身份。
+    return { binding: createHash("sha256").update(`bat-account:${record.key}`).digest("hex"),
+      name: (await this.profiles()).find(profile => profile.id === record.env!.PROFILE_DIRECTORY)?.name ?? "日常 Chrome" }
   }
 
   private async extensionIdentity() {
@@ -66,27 +78,41 @@ export class DailyChromeExtension {
     throw new DomainError("daily_chrome_not_installed", "未找到 Chrome，请先安装 Chrome。", 409)
   }
 
-  private async createRelay(profileDirectory: string, token?: string) {
-    if (!(await this.profiles()).some(profile => profile.id === profileDirectory)) {
+  private async createRelay(profileDirectory: string, token?: string, openPopup = false) {
+    const profile = (await this.profiles()).find(profile => profile.id === profileDirectory)
+    if (!profile) {
       throw new DomainError("daily_chrome_profile_missing", "所绑定的 Chrome Profile 已不存在，请重新连接授权。", 409)
     }
+    const extensionId = await this.extensionIdentity()
     return new CDPRelayServer("chrome", await this.executable(), this.dataRoot(), profileDirectory,
-      { extensionId: await this.extensionIdentity(), ...(token ? { token } : { requestAuthorization: true }) })
+      { extensionId, ...(token ? { token } : { requestAuthorization: true }),
+        // WHY：已有授权沿 Playwright 原 launcher/握手，不再被工作台中转拦截；首次授权保留明确确认入口。
+        ...(!token ? { requestPopup: (url: string) => {
+          this.popupRequest = { url, extensionId, profileName: profile.name, profileDirectory, openPopup }
+        } } : {}) })
   }
 
-  private async connect(profileDirectory: string, token: string | undefined, current: () => boolean) {
+  private async connect(profileDirectory: string, token: string | undefined, current: () => boolean, openPopup = false) {
+    // WHY：授权属于全局配置；仅替换仍在线的原连接时核验占用，不能让历史任务阻断首次授权/普通复用。
+    if (this.relay?.isConnected()) this.assertIdle()
     this.relay?.stop()
-    const relay = await this.createRelay(profileDirectory, token)
+    const relay = await this.createRelay(profileDirectory, token, openPopup)
     if (!current()) { await relay.close(); throw this.cancelled() }
     this.relay = relay
     try {
       await relay.start()
       await relay.establishExtensionConnection("B-A-T")
       return relay.cdpEndpoint()
-    } catch {
+    } catch (error) {
       relay.stop()
-      throw new DomainError("daily_chrome_extension_not_connected", "扩展未能连接。请确认已在指定 Chrome 加载 B-A-T 扩展；授权已失效时点击重新授权。", 409)
-    }
+      if (error instanceof Error && error.message === "daily_chrome_connection_paused") {
+        throw new DomainError("daily_chrome_connection_paused", "浏览器连接已暂停，请在 B-A-T 扩展中开启「允许连接」。", 409)
+      }
+      if (error instanceof Error && error.message === "daily_chrome_authorization_rejected") {
+        throw new DomainError("daily_chrome_authorization_rejected", "已拒绝本次授权。需要时可再次点击「授权 Chrome」。", 409)
+      }
+      throw new DomainError("daily_chrome_extension_not_connected", "扩展未能连接。请确认所选 Chrome 的 B-A-T 扩展已加载并开启「允许连接」，然后重试。", 409)
+    } finally { this.popupRequest = null }
   }
 
   private exclusive<T>(work: (current: () => boolean) => Promise<T>): Promise<T> {
@@ -98,14 +124,13 @@ export class DailyChromeExtension {
   }
 
   pair(input: unknown) {
-    this.assertIdle()
     const binding = bindingSchema.parse(input)
     return this.exclusive(async current => {
       const record = await this.credentials.get(credentialRef)
       if (record?.type === "api" && record.env?.PROFILE_DIRECTORY !== binding.profileDirectory) {
         throw new DomainError("daily_chrome_profile_already_bound", "更换日常 Chrome 前，请先撤销原 Profile 的授权。", 409)
       }
-      await this.connect(binding.profileDirectory, binding.token, current)
+      await this.connect(binding.profileDirectory, binding.token, current, true)
       if (!current()) { this.close(); throw this.cancelled() }
       const received = tokenSchema.safeParse(binding.token ?? this.relay?.authorizationToken())
       if (!received.success) {
@@ -124,17 +149,32 @@ export class DailyChromeExtension {
     })
   }
 
-  async endpoint(): Promise<string | undefined> {
+  async endpoint(openPopup = false, ownerId?: string, connect = true): Promise<string | undefined> {
+    if (this.connecting) await this.connecting
     this.assertStable()
     const record = await this.credentials.get(credentialRef)
     if (record?.type !== "api" || !record.key || !record.env?.PROFILE_DIRECTORY) return undefined
-    if (this.relay?.isConnected()) return this.relay.cdpEndpoint()
-    return this.exclusive(current => this.connect(record.env!.PROFILE_DIRECTORY!, record.key!, current))
+    if (!this.relay?.isConnected() && !connect) return undefined
+    if (!this.relay?.isConnected()) {
+      const work = this.connecting ?? this.exclusive(current => this.connect(record.env!.PROFILE_DIRECTORY!, record.key!, current, openPopup))
+      this.connecting = work
+      try { await work } finally { if (this.connecting === work) this.connecting = undefined }
+    }
+    if (!ownerId) return this.relay?.cdpEndpoint()
+    z.uuid().parse(ownerId)
+    const root = path.join(this.directory, "browser-profile"), targets: string[] = []
+    for (const file of [path.join(root, "attached-window-lease.json"), path.join(root, "window-leases", "attached-window-lease", `${ownerId}.json`)]) {
+      try {
+        const lease = z.object({ ownerId: z.uuid(), status: z.string(), ownedTargets: z.array(z.string()) }).passthrough()
+          .parse(JSON.parse(await readFile(file, "utf8")))
+        if (lease.ownerId === ownerId && lease.status !== "ended") targets.push(...lease.ownedTargets)
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error }
+    }
+    return this.relay?.cdpEndpoint(ownerId, targets)
   }
 
-  connectSaved() {
-    this.assertIdle()
-    return this.endpoint()
+  connectSaved(openPopup = true) {
+    return this.endpoint(openPopup)
   }
 
   revoke() {
@@ -152,11 +192,11 @@ export class DailyChromeExtension {
     return operation
   }
 
-  close() { this.relay?.stop(); this.relay = undefined }
+  close() { this.relay?.stop(); this.relay = undefined; this.popupRequest = null }
   private cancelled() { return new DomainError("daily_chrome_authorization_cancelled", "授权操作已撤销。", 409) }
 
-  assertStable() {
-    if (this.changing) throw new DomainError("daily_chrome_authorization_busy", "日常浏览器授权正在处理中。", 409)
+  assertStable(allowConnecting = false) {
+    if (this.changing && !(allowConnecting && this.connecting)) throw new DomainError("daily_chrome_authorization_busy", "日常浏览器授权正在处理中。", 409)
   }
   async disconnect() {
     const relay = this.relay

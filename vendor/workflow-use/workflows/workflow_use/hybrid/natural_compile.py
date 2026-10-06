@@ -2,7 +2,7 @@
 import json
 
 from .action_dispatch import not_dispatched_coverage
-from .capability import TARGET_ACTIONS
+from .capability import TARGET_ACTIONS, ORDINARY_ACTIONS
 from .causal import delayed_post_for_conditions, supporting_wait, waits_owned_by_next_target
 from .coverage import (
     dom_inspection_coverage,
@@ -23,7 +23,7 @@ from .natural_reads import compile_verified_read
 from .natural_repeat import repeat_context, repeat_sample_coverage
 from .natural_selection import bind_selection_function
 from .natural_target_compile import natural_target
-from .navigation import NAVIGATION_ACTIONS, cross_tab_navigation_allowed
+from .navigation import NAVIGATION_ACTIONS, cross_tab_navigation_allowed, navigation_destination_matches
 from .navigation_compile import navigation_postconditions
 from .postconditions import declared_checks
 from .registry import action_effect
@@ -31,7 +31,7 @@ from .summary_compile import compile_verified_summary
 from .target_scroll import TargetScrollParams, VerifiedTargetScroll
 from .visible_wait_compile import compile_visible_wait, failed_visible_wait_coverage
 
-ADMITTED = frozenset({'navigate', 'go_back', 'wait', 'scroll', 'send_keys', *TARGET_ACTIONS})
+ADMITTED = ORDINARY_ACTIONS
 NATURAL_EFFECT_KINDS = {
     'click': ('media_playback', 'target_state', 'visible_overlays', 'focused_element'),
     'input': ('target_state',),
@@ -111,7 +111,11 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
         return compile_human_wait(action, pre, post)
     if action.name == 'bat_summarize':
         return compile_verified_summary(request, action, pre, post, output_schema, prior_segments, prior_paths)
-    if action.name in ('extract', 'bat_read_fields', 'find_elements'):
+    if action.name == 'extract':
+        # WHY：原生 extract 拥有浏览器、模型及文件副作用，不能冒充正式显式 llm 节点。
+        return None, None, [gap('unsupported_capability', [action.id],
+            'native_extract_requires_observation_and_explicit_semantic_node', 'add_capability')]
+    if action.name in ('bat_read_fields', 'find_elements'):
         return compile_verified_read(request, action, pre, post, output_schema, prior_paths)
     if action.name == 'bat_scroll_to':
         return compile_target_scroll(request, action, pre, post)
@@ -121,7 +125,8 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
     if action.name not in ADMITTED:
         return None, None, [gap('unsupported_capability', [action.id],
                                 'natural_action_not_admitted', 'add_capability')]
-    target, target_refs, target_issues = natural_target(action, pre)
+    target, target_refs, target_issues = natural_target(action, pre, getattr(getattr(request, 'requirement', None), 'text', ''),
+                                                      request.runtimeInputSchema, post)
     if target_issues:
         return None, None, target_issues
     bindings, binding_issues = natural_bindings(
@@ -219,16 +224,31 @@ def natural_dom_lookup_coverage(registry, action, pre, post):
 
 
 def natural_postconditions(action, pre, post, target, bindings, consumer=None, *, dependencies=None):
+    from .context_bindings import context_facts
+    if action.name == 'switch':
+        context = context_facts(post)
+        if (context is not None and action.args.get('tab_id') == post.tabId[-4:]
+                and any(item.get('derivation') == 'prior_browser_context'
+                        or item.get('argumentPath') == 'tab_id' and item.get('binding', {}).get('source') == 'input'
+                        for item in bindings)):
+            return ([{'kind': 'active_tab', 'bindingArgument': 'tab_id',
+                      'clauseRef': context[0].id, 'settle': NATURAL_SETTLE}],
+                    unique_refs([*post.sourceRefs, *context[0].sourceRefs]), [])
+        return [], [], [gap('missing_effect_proof', [action.id], 'switch_tab_binding_not_observed')]
     if action.name == 'navigate':
+        if not navigation_destination_matches(action.args.get('url'), post.url):
+            return [], [], [gap('missing_effect_proof', [action.id], 'navigate_url_binding_not_observed', 'collect_evidence')]
         facts = natural_facts(post, 'natural_postcondition', action.id)
         matched = [fact for fact in facts if fact.value == {'actionRef': action.id, 'kind': 'url',
                                                             'bindingArgument': 'url', 'matched': True}]
         if len(matched) != 1:
             return [], [], [gap('missing_effect_proof', [action.id],
                                 'navigate_url_binding_not_observed', 'collect_evidence')]
+        context = context_facts(post)
+        clause = context[1] if context is not None else matched[0]
         conditions, refs = with_consumer_readiness(
-            [{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': matched[0].id,
-              'settle': NATURAL_SETTLE}], matched[0].sourceRefs, consumer, NATURAL_SETTLE)
+            [{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': clause.id,
+              'settle': NATURAL_SETTLE}], unique_refs([*matched[0].sourceRefs, *clause.sourceRefs]), consumer, NATURAL_SETTLE)
         return conditions, refs, []
     if action.name in NAVIGATION_ACTIONS:
         navigation = navigation_postconditions(action, pre, post, consumer)
@@ -263,6 +283,11 @@ def natural_postconditions(action, pre, post, target, bindings, consumer=None, *
             conditions, refs = with_consumer_readiness(conditions, refs, consumer, NATURAL_SETTLE)
             return conditions, refs, issues
         return effect_condition
+    from .native_action_receipt import native_action_receipt
+    receipt = native_action_receipt(action, pre)
+    if receipt is not None:
+        conditions, refs = with_consumer_readiness([], receipt, consumer, NATURAL_SETTLE)
+        return conditions, refs, []
     if action.name == 'scroll':
         return [], [], [gap('missing_effect_proof', [action.id],
                             effect_limitation or 'natural_concrete_effect_missing', 'collect_evidence')]
@@ -397,7 +422,9 @@ def target_value_condition(action, post, target, bindings):
                         or (redacted_expected is not None and fact.value.get('value') == redacted_expected))]
         if len(matched) == 1:
             fact = matched[0]
-            return ([{'kind': 'target_value', 'bindingArgument': binding['argumentPath'], 'clauseRef': fact.id}],
+            # WHY：原生控件值也可能异步更新；复用同一有界事实等待，不重派输入或放宽值相等。
+            return ([{'kind': 'target_value', 'bindingArgument': binding['argumentPath'], 'clauseRef': fact.id,
+                      'settle': NATURAL_SETTLE}],
                     fact.sourceRefs, [])
     return None
 

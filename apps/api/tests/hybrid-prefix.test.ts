@@ -14,7 +14,7 @@ import { projectRoot } from "./helpers.js"
 const schema: ValueSchema = { type: "array", items: { type: "object", properties: {
   title: { type: "string" }, url: { type: "string" } }, required: ["title", "url"], additionalProperties: false } }
 
-function fixture() {
+function fixture(withGap = false) {
   const plan = structuredClone(extractionFixture.plan), step = plan.steps[0]!
   plan.inputContract.schema = { type: "null" }; step.inputContract = plan.inputContract
   step.input = { source: "input", path: [] }
@@ -23,9 +23,9 @@ function fixture() {
     fields: [{ path: [], description: "Read records", producerRef: "records" }], derivations: [], edgeCases: [] }
   const python = path.join(projectRoot, "work/upstream-browser-hybrid/.venv",
     process.platform === "win32" ? "Scripts/python.exe" : "bin/python")
-  const script = `import json, sys
+  const script = `import copy, json, sys
 from test_natural_repeat import method_case, PAGE1
-from test_method_source_compile import method_source
+from test_method_source_compile import method_source, fact
 from workflow_use.hybrid.evidence import digest
 from workflow_use.hybrid.__main__ import compilation_response, compilation_envelope
 from workflow_use.hybrid.natural_prefix import compile_natural_prefix
@@ -42,11 +42,29 @@ request = type(request).model_validate(raw)
 final = {'request': request.model_dump(mode='json', by_alias=True), 'response': compilation_response(request, registry, output_schema=schema)}
 body = request.trace.model_dump(mode='json', exclude={'digest'})
 body.update(completed=False, finalResultRef=None, actions=body['actions'][:1], observations=body['observations'][:2])
+if value.get('withGap'):
+    first_action, first_observations = copy.deepcopy(body['actions'][0]), copy.deepcopy(body['observations'])
+    for index in (1, 2):
+        action = copy.deepcopy(first_action)
+        action.update(id=f'a-{index+1:04d}', stepIndex=index,
+                      preObservationRef=f'o-{index*2+1:04d}', postObservationRef=f'o-{index*2+2:04d}')
+        if index == 1:
+            action.update(name='click', args={'index': 42}, effect='external_write')
+        body['actions'].append(action)
+        for offset, original in enumerate(first_observations):
+            observation = copy.deepcopy(original)
+            observation.update(id=f'o-{index*2+offset+1:04d}', sequence=index*2+offset)
+            observation['facts'] = [item for item in observation['facts'] if item['kind'] != 'verified_natural_read']
+            if index == 2 and offset == 1:
+                read = copy.deepcopy(next(item['value'] for item in original['facts'] if item['kind'] == 'verified_natural_read'))
+                read.update(actionRef=action['id'], readRef='r3')
+                observation['facts'].append(fact('verified_natural_read', read).model_dump(mode='json'))
+            body['observations'].append(observation)
 request.trace = type(request.trace).model_validate({**body, 'digest': digest(body)})
 prefix = compile_natural_prefix(request, registry, output_schema=schema)
 print(json.dumps({'request': request.model_dump(mode='json', by_alias=True), 'response': compilation_envelope(request, prefix), 'final': final}))`
   const result = JSON.parse(execFileSync(python, ["-c", script], { cwd: projectRoot,
-    input: JSON.stringify({ plan, planDigest: digestJson(plan) }), encoding: "utf8", maxBuffer: 8_000_000,
+    input: JSON.stringify({ plan, planDigest: digestJson(plan), withGap }), encoding: "utf8", maxBuffer: 8_000_000,
     env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: "1", ANONYMIZED_TELEMETRY: "false",
       BROWSER_USE_CLOUD_SYNC: "false", BROWSER_USE_SETUP_LOGGING: "false",
       PYTHONPATH: ["apps/api/python", "vendor/workflow-use/workflows", "vendor/workflow-use/workflows/tests"]
@@ -56,6 +74,14 @@ print(json.dumps({'request': request.model_dump(mode='json', by_alias=True), 're
   }
   return { ...result, plan, step, model: "unused", version: 1 }
 }
+
+test("缺口后的合法读取仍展示，缺口不产生跨越连线或发布权限", async () => {
+  const value = fixture(true)
+  const fragment = await materializeHybridPrefix(value, new AbortController().signal)
+  assert.deepEqual(fragment.nodes.map(node => node.id), ["s-a-0001", "s-a-0003"])
+  assert.deepEqual(fragment.edges, [])
+  assert.throws(() => materializeHybridChain(value))
+})
 
 test("生产 Python 前缀在未完成时生成严格节点，最终入口拒绝前缀", async () => {
   const value = fixture(), before = structuredClone(value)

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import test from "node:test"
-import { taskRequirementSchema, type TaskAuthoringJob } from "@browser-capture/contracts"
+import { taskChainCommandSchema, taskRequirementSchema, type TaskAuthoringJob } from "@browser-capture/contracts"
 import { digestJson } from "@browser-capture/runtime"
 import { TaskChainAuthoring } from "../src/task-chain/authoring.js"
 import { projectPreparationPlan } from "../src/task-chain/preparation-plan-projection.js"
@@ -10,6 +10,9 @@ import { digestCanonicalJson } from "../src/upstream-browser/hybrid-materializer
 import { parseCapturedSource } from "../src/upstream-browser/hybrid-captured-source.js"
 import type { HybridAuthorSession } from "../src/upstream-browser/hybrid-exploration.js"
 import { jsonValueSchema } from "@browser-capture/contracts"
+import { validatePreparationResearch } from "../src/task-chain/preparation-research.js"
+import { hybridSourceMediaType } from "../src/upstream-browser/hybrid-artifact.js"
+import { TaskPreparationCoordinator } from "../src/task-chain/preparation.js"
 
 const entry = "https://example.org/"
 const markdown = `# 目标
@@ -42,6 +45,85 @@ function requirement(body = markdown) {
       entries: [{ url: entry, resolutionId }], resultExpectation: "页面到达用户要求的状态", unresolvedItemCount: 0 },
   })
 }
+
+test("准备修订只接受同版已关闭来源，备注随新计划传递且不改原需求", () => {
+  // WHY：允许有依据地修订技术方法，但其它任务、版本、步骤、owner和未关闭来源不能污染新探索。
+  const confirmed = requirement(), original = projectPreparationPlan(confirmed, 1), stepId = original.steps[0]!.id
+  const sourceJobId = randomUUID(), body = { requirementDigest: digestJson(confirmed), planDigest: digestJson(original), stepId }
+  const artifact = { artifactId: randomUUID(), digest: digestJson(body), mediaType: hybridSourceMediaType }
+  const command = taskChainCommandSchema.parse({ type: "prepare_task", requestId: randomUUID(), requirementVersion: 1,
+    research: { sourceJobId, sourceSequence: 4, stepId, artifact, notes: "旧来源误选导航标签；请在当前页面复核真正内容区。" } })
+  if (command.type !== "prepare_task" || !command.research) throw Error("research_required")
+  const job = { id: sourceJobId, taskId: confirmed.taskId, status: "failed", sequence: 4,
+    preparation: { candidatePlan: original }, authoring: { exploration: { mode: "workflow-use-authoring/v3",
+      sources: [{ stepId, closed: true, artifact }] } } }
+  const row = { runId: sourceJobId, digest: artifact.digest, mediaType: artifact.mediaType, body }
+  const repository = (j = job, r = row) => ({ job: () => j, artifact: () => r }) as never
+  const research = validatePreparationResearch(repository(), confirmed.taskId, confirmed, command.research)!
+  const revised = projectPreparationPlan(confirmed, 2, research)
+  assert.equal(original.steps[0]!.preparationResearch, undefined)
+  assert.equal(revised.requirement.digest, original.requirement.digest)
+  assert.equal(revised.steps[0]!.preparationResearch?.artifact.digest, artifact.digest)
+  assert.ok(browserUseTask({ requirement: confirmed, plan: revised, step: revised.steps[0]!, resolvedInput: null }).includes(research.notes))
+  assert.ok(!browserUseTask({ requirement: confirmed, plan: original, step: original.steps[0]!, resolvedInput: null }).includes(research.notes))
+  const recovery = { id: randomUUID(), taskId: confirmed.taskId, type: "prepare", status: "failed",
+    createdAt: new Date().toISOString(), authoring: { stage: "compiled" }, preparation: {
+      phase: "validating_sample", candidatePlan: revised, plan: { id: revised.id, version: revised.version, digest: digestJson(revised) },
+      representativeInput: null, draft: null } } as unknown as TaskAuthoringJob
+  let recoveredDigest = ""
+  const coordinator = new TaskPreparationCoordinator({ snapshot: () => ({ active: null, revision: 1, confirmedVersion: 1,
+    drafts: [{ version: 1, revision: 1 }], decisions: [{ kind: "draft_confirmation", draftVersion: 1 }] }) } as never,
+    { job: () => job, artifact: () => row, draft: () => null, findRequirement: () => confirmed } as never,
+    { assertReusableSources: (_job: unknown, _requirement: unknown, plan: unknown) => { recoveredDigest = digestJson(plan) } } as never,
+    () => { throw Error("unexpected_execution") }, () => {})
+  assert.equal(coordinator.compilationRecovery(confirmed.taskId, recovery)?.available, true)
+  assert.equal(recoveredDigest, digestJson(revised))
+  recovery.preparation!.candidatePlan!.steps[0]!.preparationResearch!.notes = "tampered"
+  assert.equal(coordinator.compilationRecovery(confirmed.taskId, recovery)?.available, false)
+  for (const invalid of [{ ...research, sourceSequence: 3 }, { ...research, stepId: "other-step" },
+    { ...research, artifact: { ...artifact, digest: "0".repeat(64) } }])
+    assert.throws(() => validatePreparationResearch(repository(), confirmed.taskId, confirmed, invalid), /准备资料/)
+  assert.throws(() => validatePreparationResearch(repository({ ...job, taskId: randomUUID() }), confirmed.taskId, confirmed, research), /准备资料/)
+  assert.throws(() => validatePreparationResearch(repository(job, { ...row, runId: randomUUID() }), confirmed.taskId, confirmed, research), /准备资料/)
+  assert.throws(() => validatePreparationResearch(repository(job, { ...row, body: { ...body, planDigest: "0".repeat(64) } }),
+    confirmed.taskId, confirmed, research), /准备资料/)
+  assert.throws(() => validatePreparationResearch(repository(), confirmed.taskId, { ...confirmed, revision: 2 }, research), /准备资料/)
+  job.authoring.exploration.sources[0]!.closed = false
+  assert.throws(() => validatePreparationResearch(repository(), confirmed.taskId, confirmed, research), /准备资料/)
+})
+
+test("结果数组不推断集合/单项步骤，明确允许缺失的字段保持可选", () => {
+  const body = markdown.replace("- 交付：完成状态", `- 交付：数据结果
+- 结果形状：记录列表
+- 结果数量：最多 5 条
+- 字段：名称（文本）：真实名称。
+- 字段：价格（数字）：真实价格；无法确认时标记缺失。`)
+  const draft = requirement(body), plan = projectPreparationPlan(draft, 1)
+  assert.equal(plan.steps.length, 1)
+  assert.equal(plan.steps[0]!.invocation.mode, "once")
+  const schema = plan.outputContract.schema
+  assert.equal(schema.type, "array")
+  if (schema.type !== "array" || schema.items.type !== "object") throw new Error("array_contract_required")
+  assert.deepEqual(schema.items.required, ["名称"])
+  assert.equal(schema.maxItems, 5)
+  const instruction = browserUseTask({ requirement: draft, plan, step: plan.steps[0]!, resolvedInput: null })
+  assert.match(instruction, /本步骤/)
+})
+
+test("确认逐项范围采集只读取来源身份，不将未知最终参数反灌集合", () => {
+  const body = markdown.replace("- 交付：完成状态", `- 交付：页面内容
+- 执行方式：逐项执行
+- 来源选择：按已确认目录顺序选择前 5 个真实入口，不足时报告实际数量。
+- 结果数量：最多 5 条`)
+  const plan = projectPreparationPlan(requirement(body), 1)
+  assert.equal(plan.steps.length, 2)
+  assert.equal(plan.steps[1]!.invocation.mode, "each")
+  const sources = plan.steps[0]!.outputContract.schema
+  assert.ok(sources.type === "array" && sources.items.type === "object")
+  assert.deepEqual(Object.keys(sources.items.properties).sort(), ["__batRecordEntry", "__batRecordKey"])
+  assert.equal(plan.steps[1]!.resultSpec?.mode, "data")
+  assert.ok(plan.outputContract.schema.type === "array" && plan.outputContract.schema.maxItems === 5)
+})
 
 test("确认草案唯一投影计划与 B-U 指令，入口和版本摘要保持一致", () => {
   const draft = requirement(), plan = projectPreparationPlan(draft, 1)
@@ -90,9 +172,9 @@ test("同版草案把多项配对字段投影为记录列表及一个整体结�
   assert.deepEqual(plan.outputContract.schema, { type: "array", items: { type: "object",
     properties: { 标题: { type: "string" }, 链接: { type: "string" } },
     required: ["标题", "链接"], additionalProperties: false } })
-  assert.deepEqual(plan.steps[0]!.resultSpec, { contractVersion: "bat-result-spec/v1", mode: "data",
-    schema: plan.outputContract.schema, fields: [{ path: [], description: "逐项包含已声明字段的记录列表",
-      producerRef: "records" }], derivations: [], edgeCases: [] })
+  assert.equal(plan.steps.length, 1)
+  assert.equal(plan.steps[0]!.resultSpec?.mode, "data")
+  assert.deepEqual(plan.steps[0]!.outputContract.schema, plan.outputContract.schema)
   const instruction = browserUseTask({ requirement: draft, plan, step: plan.steps[0]!, resolvedInput: null })
   assert.ok(instruction.includes(body))
   assert.match(instruction, /结果（整体）/)

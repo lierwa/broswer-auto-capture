@@ -17,6 +17,20 @@ REPEAT_RETRY_REASONS = frozenset({'repeat_method_evidence_invalid', 'repeat_anno
                                 'repeat_annotation_unavailable', 'repeat_annotation_invalid_response'})
 
 
+def offline_source_gaps(request):
+    # WHY：AuthorCompilation.finish 把终态编译/保存失败附在来源上；新编译必须重新判定这些结果，
+    # 不能把旧编译失败当成永久来源缺失。原 artifact 不变，所有实际来源缺口继续参与新校验。
+    # 依据：B-A-T 自有 AuthorCompilation.finish/save 及独立离线恢复生命周期。
+    previous_compilation = {'hybrid_compilation_host_rejected', 'hybrid_compilation_final_gaps',
+        'hybrid_compilation_final_failed', 'hybrid_compilation_ack_timeout',
+        'hybrid_compilation_payload_limit', 'hybrid_compilation_ack_conflict', 'hybrid_compilation_save_failed'}
+    if getattr(request.request.trace, 'completed', False) is not True:
+        return list(request.sourceGaps)
+    return [item for item in request.sourceGaps if not (item.code == 'invalid_source'
+            and not item.actionRefs and not item.clauseRefs and item.resolution == 'reject_trace'
+            and item.reason in previous_compilation)]
+
+
 async def annotate_offline(source, trace, model, gaps):
     repeat_advances = set()
     retry = [item for item in gaps if item.code == 'missing_control_intent'
@@ -40,7 +54,7 @@ async def compile_offline(request):
         raise ValueError('hybrid_output_schema_mismatch')
     output_model, _ = output_model_for(request.outputSchema, 'HybridAgentOutput')
     registry = matching_registry(output_model, request.request)
-    compilation, gaps = request.request, list(request.sourceGaps)
+    compilation, gaps = request.request, offline_source_gaps(request)
     if isinstance(request, AnnotateRequest):
         endpoint = urlsplit(request.model.endpoint)
         if endpoint.scheme != 'http' or endpoint.hostname != '127.0.0.1' or endpoint.username or endpoint.password:

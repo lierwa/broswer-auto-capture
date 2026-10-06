@@ -1,11 +1,12 @@
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
+import { z } from "zod"
 import type { hybridStartRequestSchema } from "./hybrid-protocol.js"
 
 type HybridConfig = ReturnType<typeof hybridStartRequestSchema.parse>["config"]
 type PortSource = { platform?: NodeJS.Platform; homeDirectory?: string; environment?: NodeJS.ProcessEnv;
-  readPortFile?: (filename: string) => Promise<string> }
+  readPortFile?: (filename: string) => Promise<string>; probeEndpoint?: (endpoint: string) => Promise<boolean> }
 
 /** WHY：只读取 Chrome 公开的连接文件，不读取 Profile 内容，也不通过启动另一实例填补配置缺失。 */
 export async function resolveDailyChromeEndpoint(source: PortSource = {}): Promise<string | undefined> {
@@ -26,7 +27,23 @@ export async function resolveDailyChromeEndpoint(source: PortSource = {}): Promi
     || !/^\/devtools\/browser\/[a-zA-Z0-9-]+$/.test(lines[1] ?? "")) {
     throw new Error("hybrid_existing_browser_endpoint_invalid")
   }
-  return `ws://127.0.0.1:${port}${lines[1]}`
+  const endpoint = `ws://127.0.0.1:${port}${lines[1]}`
+  // WHY：手动关窗/关机后连接文件可能仍在；它不是活动浏览器或占有的证据。
+  return await (source.probeEndpoint ?? liveNativeEndpoint)(endpoint) ? endpoint : undefined
+}
+
+async function liveNativeEndpoint(endpoint: string): Promise<boolean> {
+  const expected = new URL(endpoint)
+  try {
+    const response = await fetch(`http://127.0.0.1:${expected.port}/json/version`,
+      { signal: AbortSignal.timeout(2000), redirect: "error" })
+    if (!response.ok) return false
+    const version = z.object({ webSocketDebuggerUrl: z.url() }).passthrough().safeParse(await response.json())
+    if (!version.success) return false
+    const actual = new URL(version.data.webSocketDebuggerUrl)
+    return actual.protocol === "ws:" && ["127.0.0.1", "localhost", "[::1]"].includes(actual.hostname)
+      && actual.port === expected.port && actual.pathname === expected.pathname
+  } catch { return false }
 }
 
 export async function dailyChromeConnection(config: Omit<HybridConfig, "allowedSites">,
@@ -39,5 +56,5 @@ export async function dailyChromeConnection(config: Omit<HybridConfig, "allowedS
   if (!owner) throw new Error("hybrid_existing_browser_owner_required")
   // WHY：显式连接及恢复身份优先；环境变量不能换掉已有租约或把本次任务归给随机 owner。
   return { ...config, managedWindow: undefined,
-    existingBrowser: { cdpUrl: endpoint, ownerId: owner.ownerId, resume: owner.resume } }
+    existingBrowser: { ...owner, cdpUrl: endpoint } }
 }

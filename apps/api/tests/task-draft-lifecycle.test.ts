@@ -13,6 +13,7 @@ import { createTaskDraft, draftReference, recordDraftTrial } from "../src/task-c
 import { DomainError } from "../src/errors.js"
 import { createChainPresentation } from "../src/task-chain/presentation.js"
 import { TaskProductService } from "../src/task-chain/product.js"
+import { TaskContractRepository } from "../src/task-chain/repository.js"
 import { TaskChainService } from "../src/task-chain/service.js"
 
 test("仅在当前草稿完成样本试跑和不同输入的独立复验后发布 Release", () => {
@@ -30,7 +31,7 @@ test("仅在当前草稿完成样本试跑和不同输入的独立复验后发�
   const store = { snapshot: () => ({ active: false, revision: 1, confirmedVersion: 1,
     drafts: [{ version: 1, revision: 1 }],
     decisions: [{ kind: "draft_confirmation", draftVersion: 1, createdAt: "2026-09-22T00:00:00.000Z" }] }),
-    db: { transaction: (run: () => unknown) => run() } }
+    db: { transaction: (run: () => unknown) => run() }, readRevision: () => null }
   const repository = {
     draft: () => draft, findRequirement: () => requirement, nextReleaseVersion: () => 1,
     execution: (_taskId: string, id: string) => {
@@ -145,6 +146,48 @@ test("正式发布入口在回执写入失败时回滚 Release 和草稿删除�
   } finally {
     connection.close()
     await store.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("就绪摘要复用只读事实，同连接、外部写入及事务回滚均不能复用旧证据", async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-readiness-cache-"))
+  const store = await ProductStore.open(directory), external = new Database(path.join(directory, "workbench.sqlite"))
+  try {
+    const taskId = store.taskAction({ type: "create", requestId: randomUUID() })
+    const repository = new TaskContractRepository(store), product = new TaskProductService(store, repository)
+    const requirement = { ...structuredClone(extractionFixture.requirement), taskId }
+    const plan = { ...structuredClone(extractionFixture.plan), taskId }
+    plan.requirement.digest = digestJson(requirement)
+    const chain = { ...structuredClone(extractionFixture.chain), taskId }
+    chain.plan.digest = digestJson(plan)
+    const draft = createTaskDraft({ taskId, requirement, baseRelease: null, plan, chains: [chain],
+      presentations: [createChainPresentation(chain)] })
+    const execution = completedDraftExecution(draft, "sample", "https://example.com")
+    repository.saveExecution(execution)
+    repository.saveCandidate({ executionId: execution.id, taskId, draft: draftReference(draft),
+      content: draft.content, createdAt: execution.createdAt })
+    draft.validation.records.push({ executionId: execution.id, revision: draft.revision, checksum: draft.checksum,
+      inputDigest: execution.inputDigest, completedAt: execution.updatedAt })
+    const reads = t.mock.method(repository, "execution")
+    assert.equal(product.draftReadiness(draft).phase, "verification_needed")
+    assert.equal(product.draftReadiness(draft).phase, "verification_needed")
+    assert.equal(reads.mock.callCount(), 1, "重复查询不读取原图所在执行body")
+    assert.throws(() => store.db.transaction(() => {
+      repository.saveExecution({ ...execution, status: "failed" })
+      assert.equal(product.draftReadiness(draft).phase, "sample_needed")
+      throw Error("rollback")
+    }), /rollback/)
+    assert.equal(product.draftReadiness(draft).phase, "verification_needed")
+    external.prepare("UPDATE taskExecutions SET body=json_set(body,'$.status','failed') WHERE id=?").run(execution.id)
+    assert.equal(product.draftReadiness(draft).phase, "sample_needed", "外部连接写入必须使摘要失效")
+    repository.saveExecution(execution)
+    assert.equal(product.draftReadiness(draft).phase, "verification_needed", "本连接写入必须使摘要失效")
+    execution.steps[0]!.runIds = [randomUUID()]
+    repository.saveExecution(execution)
+    assert.equal(product.draftReadiness(draft).phase, "sample_needed", "仍核验引用的TaskRun存在")
+  } finally {
+    external.close(); await store.close()
     await rm(directory, { recursive: true, force: true })
   }
 })

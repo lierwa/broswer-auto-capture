@@ -32,9 +32,9 @@ def _kind(error):
     return 'other_error'
 
 
-def _locations(error):
+def _locations(error, source_modules=SOURCE_MODULES, limit=3):
     # WHY：只把可信模块文件映射到固定名称；用户路径、动态函数名和 SDK 消息均不进入诊断。
-    sources = {Path(module.__file__).resolve(): source for name, source in SOURCE_MODULES.items()
+    sources = {Path(module.__file__).resolve(): source for name, source in source_modules.items()
                if (module := sys.modules.get(name)) is not None and getattr(module, '__file__', None)}
     locations, frame = [], error.__traceback__
     while frame is not None:
@@ -42,16 +42,17 @@ def _locations(error):
         if source is not None and 1 <= frame.tb_lineno <= 1000000:
             locations.append({'source': source, 'line': frame.tb_lineno})
         frame = frame.tb_next
-    return locations[-3:]
+    return locations[-limit:]
 
 
-def startup_causes(error):
+def startup_causes(error, *, source_modules=SOURCE_MODULES, location_limit=3):
     causes, seen, current = [], set(), error
     while current is not None and id(current) not in seen and len(causes) < 4:
         seen.add(id(current))
         args = current.args
         code = args[0] if len(args) == 1 and isinstance(args[0], str) and args[0] in STARTUP_CODES else 'external_error'
-        causes.append({'errorKind': _kind(current), 'code': code, 'locations': _locations(current)})
+        causes.append({'errorKind': _kind(current), 'code': code,
+                       'locations': _locations(current, source_modules, location_limit)})
         current = current.__cause__ or current.__context__
     return causes
 
@@ -67,12 +68,12 @@ def valid_startup_event(event):
     return all(_valid_cause(cause) for cause in causes)
 
 
-def _valid_cause(cause):
+def _valid_cause(cause, sources=STARTUP_SOURCES, location_limit=3):
     if (not isinstance(cause, dict) or set(cause) != {'errorKind', 'code', 'locations'}
             or cause.get('errorKind') not in STARTUP_ERROR_KINDS or cause.get('code') not in STARTUP_CODES):
         return False
     locations = cause.get('locations')
-    return (isinstance(locations, list) and len(locations) <= 3
+    return (isinstance(locations, list) and len(locations) <= location_limit
             and all(isinstance(location, dict) and set(location) == {'source', 'line'}
-                    and location.get('source') in STARTUP_SOURCES and type(location.get('line')) is int
+                    and location.get('source') in sources and type(location.get('line')) is int
                     and 1 <= location['line'] <= 1000000 for location in locations))
