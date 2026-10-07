@@ -36,6 +36,9 @@ export class AuthoringBuild {
     if (previous?.sequence === event.sequence && previous.digest === event.digest && previous.payload === event.payload) return
     try {
       const payload = parseCompilationCheckpoint(event), source = naturalSourceContext(payload.canonicalRequest)
+      if (source.ordinary.compilerVersion !== (job.authoring?.sourceProtocol ?? "bat-hybrid/2")) {
+        throw new Error("hybrid_source_protocol_mismatch")
+      }
       if (payload.stepId !== step.id) {
         throw new Error("hybrid_compilation_step_input_mismatch")
       }
@@ -170,7 +173,7 @@ function assertImmutablePrefix(previous: string, next: string) {
   const current = naturalSourceContext(next).ordinary
   if (!isDeepStrictEqual(old.requirement, current.requirement) || !isDeepStrictEqual(old.plan, current.plan)
     || !isDeepStrictEqual(old.runtimeInputSchema, current.runtimeInputSchema)
-    || old.actionRegistryVersion !== current.actionRegistryVersion
+    || old.actionRegistryVersion !== current.actionRegistryVersion || old.compilerVersion !== current.compilerVersion
     || !isDeepStrictEqual(old.trace.source, current.trace.source)
     || !isDeepStrictEqual(old.trace.actions, current.trace.actions.slice(0, old.trace.actions.length))) {
     throw new Error("hybrid_compilation_source_changed")

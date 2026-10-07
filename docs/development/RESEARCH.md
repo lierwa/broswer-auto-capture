@@ -1,5 +1,11 @@
 # 技术调研与复用结论
 
+## 2026-10-07 已满足初态下的方法留存适配
+
+复用 browser-use 0.13.8 的 Tools 注册、原生 Agent/step/done、现有 find_elements 与只读字段采样，复用现有 source-only 选择注解及 QuickJS 0.32.0 验证，保持 LangGraph 1.4.14 的运行职责。没有增删依赖、重写调度器或增加普通复跑模型调用。具体 Product Alignment/Reuse Assessment 及证据见 [实施方案](TASK_METHOD_COMPLETION_PLAN_20261007.md#10-实施与证据2026-10-07)。
+
+新增仅限 B-A-T 来源适配：只读 inspected_method、宿主 preparation_method_receipt、`/3` 版本分派以及到已有 function/navigate IR 的映射。未执行导航的效果明确等待原 sample 真实验证，不生成虚构 matched=true。URL 授权核验复用固定 B-U SecurityWatchdog 的 `_is_url_allowed`；这是一个受版本约束的私有适配点，已核验本机 0.13.8 方法签名/行为并覆盖拒绝路径，升级需复查；不另造域名白名单框架。
+
 ## 2026-10-07 开发工具策略根因与项目现状只读核验
 
 对照本机 Codex 0.160.0 与固定官方源码，三次 `Remove-Item … -Force` 的 BBP 来自 Windows 危险命令分类、Never→Forbidden 及 Other 通用错误文案；默认配置/空规则匹配均不能替代有效会话和内置判定。没有引入库、改安全配置、绕过策略或新增产品 LLM 调用。根因、执行门和未完成的永久清理见 [复盘](TOOL_POLICY_INCIDENT_20261007.md)。
@@ -4174,3 +4180,498 @@ Reuse Assessment:
 - focused validation: 修复前真实 headless 复现 connect_over_cdp 的 Target.getTargetInfo 被 daily_chrome_target_required 拒绝；证据 work/account-scoped-borrow-20261006/before/retry-daily.json。
 
 第二处实际断点是重连缺少原 owned target 的 attached 通知，修正调用时机并只清本 owner 的通知标记。对抗审查指出历史首 target 已关闭的情况，改用原生活目标与权限集合交集后复审关闭。最终真实 headless Chrome/原扩展/owner URL 的借用、限定来源 Cookie 读取、断开后保留任务页通过；没有操作个人 Profile。账号检查中断使用既有 DomainError 与审计事实归入账号准备检查，保留账号，不交给模型修复。验证详情、首败及两项已复现的基线测试失败见 [账号连接修复记录](ACCOUNT_SCOPED_BORROW_FIX_20261006.md)。
+
+## 2026-10-07 本地浏览器反检测与账号风险调研（未冻结选型）
+
+### 请求、事实与证据范围
+
+用户要求先读本机 BAT_ANTIBOT_HANDOFF_20261007_195314.md，调查主流反爬机制及反检测技术，服务于本地浏览器自动化。核心是环境、控制方式、操作路径与行为的一致性；降频和暂停重试不能代替反检测研究。
+
+核验 checkout：master@3b8049e93c843ef72b27191e89368ad173cf912e；开始时分支领先 origin/master 10 个提交，已有大量未提交工作。本节仅追加研究记录，不改产品代码、依赖、运行配置和既有研究内容，不创建 worktree、不提交、不推送。
+
+账号限制已由用户截图及 ACCOUNT_RESTRICTION_AND_ACCEPTANCE_20261007.md 确认。截图未披露命中的请求、执行或规则；不能推断由某个 flag、指纹、HTTP 客户端或请求频率单独导致，也不能排除自动化相关性。本轮没有访问京东、检查账号、迁移登录态、启动浏览器或重试任务。
+
+证据等级：
+
+- 本仓库源码及固定版本上游源码：证明实现中存在的路径，不证明事故执行命中了该路径。
+- 官方文档、论文和公开 release：证明公开机制、接口、版本及作者报告；供应商通过率和不可检测宣传不是 B-A-T 验收证据。
+- 本轮没有运行候选工具，没有站点通过率、账号安全性或日常浏览器对照结论。下面的优先级是架构适配判断，不是防封效果排名。
+
+### 主要反爬检测层
+
+| 检测层 | 可观察内容 | 对本地工具的意义 |
+| --- | --- | --- |
+| 网络与协议 | IP/ASN/信誉、TLS JA3/JA4、HTTP/2 参数、请求头一致性 | 本地运行仍会发出可观察请求；修改 UA 不会把 HTTPX 变成 Chrome 网络栈。 |
+| 浏览器环境 | webdriver、UA/Client Hints、字体、WebGL/Canvas/Audio、语言时区、屏幕与硬件组合 | 应核验真实一致性；叠加随机伪造可能产生矛盾。单个 Canvas 值不是自动化的充分证据。 |
+| 控制与注入 | 注入脚本痕迹、执行上下文、API 行为改变、特定版本的调试器副作用 | CDP、扩展、headless 的名字本身不能决定是否可检测。必须对应实际版本与调用。 |
+| 输入及行为 | 指针/键盘/滚动事件、焦点、页面可见性、导航顺序、时间间隔、重复路径 | CDP 原生输入、页面 JS click、直接赋值、OS 输入是不同路径；随机 sleep 只影响其中一部分。 |
+| 会话与账号关联 | Cookie 连续性、设备变化、登录/检查次数、跨请求行为、已有风险标签 | 一次页面放行不证明账号长期安全，换身份不等于修复原账号风险。 |
+| 挑战与动态验证 | JS 挑战、动态令牌、设备验证、工作量证明、验证码 | 能执行 JS 不等于通过全部挑战；本项目保持登录、验证码和访问限制人工处理。 |
+| 业务策略 | 数据读取范围、重复访问模式、接口上下文与站点自有规则 | 通用检测页通过不能覆盖业务风控，更不能推断京东采用某个供应商。 |
+
+公开依据：
+
+- [Cloudflare 检测引擎](https://developers.cloudflare.com/bots/concepts/bot-detection-engines/)：启发式、JavaScript 检测、机器学习与会话特征；[JA3/JA4](https://developers.cloudflare.com/bots/additional-configurations/ja3-ja4-fingerprint/)。
+- [Akamai detection methods](https://techdocs.akamai.com/cloud-security/docs/detection-methods)：请求头/版本异常、主动验证和交互行为。
+- [DataDome threat detection](https://docs.datadome.co/docs/threat-detection)：签名、行为、信誉等检测；[设备特征一致性研究](https://datadome.co/threat-research/the-art-of-bot-detection-picasso-for-device-class-fingerprinting/)。
+- [HUMAN Bot Defender](https://docs.humansecurity.com/applications/bot-characteristics)：流量、已知/自定义签名及交互能力；[F5 2026-09-15 公告](https://www.f5.com/company/news/press-releases/bot-defense-device-intelligence-agentic-ai-detection)：跨交互关联设备、行为与客户端完整性。公告是产品描述，不是独立效果验证。
+- [Imperva](https://www.imperva.com/products/advanced-bot-protection-management/)：客户端检查、行为、连接特征与威胁情报；[Kasada 官方资料](https://www.kasada.io/wp-content/uploads/2023/05/23-05-09_-Datasheet-The-Hidden-Risks-Behind-APIs-1.pdf)：客户端属性关联与工作量证明，资料年份为 2023，不能当作 2026 的内部规则清单。
+- [阿里云 WAF Bot 管理](https://help.aliyun.com/zh/waf/web-application-firewall-3-0/bot-management/)：Client ID、JA3/JA4、JS 验证和动态令牌；[腾讯云 Bot 智能分析](https://intl.cloud.tencent.com/zh/document/product/1145/56970)：静态/动态规则与高级 Bot 分析。
+- [顶象设备指纹](https://www.dingxiang-inc.com/business/fingerprint)、[数美设备指纹](https://help.ishumei.com/docs/tw/sdk/overview/)：设备与业务风险关联。厂商对唯一性、稳定性等绝对表述未经本轮独立验证。
+- [瑞数 Botgate 官方旧版资料](https://www.riversecurity.com/productpage/%E3%80%902021%E3%80%91%E7%91%9E%E6%95%B0%E6%9C%BA%E5%99%A8%E4%BA%BA%E9%98%B2%E7%81%AB%E5%A2%99Botgate%EF%BC%88%E8%BD%AF%E4%BB%B6%E7%89%88%EF%BC%89.pdf)：动态封装、动态验证与代码变换；用于说明技术路线，不能用旧资料宣称当前产品细节已核验。
+
+这里覆盖主要公开技术路线和代表产品，不声称穷尽所有商业产品、未公开规则或存在统一的最强排名。
+
+### 候选技术与 B-A-T 适配判断
+
+| 路线与代表 | 核心能力 | 本地/现有会话适配 | 本轮判断 |
+| --- | --- | --- | --- |
+| 已有日常 Chrome + 扩展/CDP | 保留真实浏览器、Profile、站点存储与网络栈 | 项目已有入口；无需迁移到另一浏览器，但控制产生的特征仍须测量 | 作为首要审计基线。已有连接并不证明反检测合格。 |
+| Patchright | 修改 Playwright 驱动、执行上下文和启动参数等 | Node/Python 路线可本地运行；不是 cdp-use 的替换包 | 优先作为 Chromium 对照候选，不能声称安装即可修复 B-U。 |
+| Rebrowser patches | 对 Puppeteer/Playwright 做运行时上下文等补丁 | 绑定特定驱动版本，具有调试/API 兼容影响 | 作为源码参考；本轮看到的已验证版本较旧，不直接冻结。 |
+| SeleniumBase UC/CDP | UC 基于驱动修补，CDP 模式减少 WebDriver 依赖，并提供 GUI 操作 | 可本地；可能自有浏览器启动、Profile 和控制生命周期 | 作为独立 Chromium 对照候选，必须解决 owner/lease 衔接。 |
+| nodriver / Zendriver | Python 直接 CDP 控制，避开 Selenium/ChromeDriver 路径 | 可本地；默认临时 Profile、退出清理等行为必须核查 | B-U 已经直接 CDP，换同类控制器不自动带来同等收益。 |
+| Camoufox + BrowserForge | Firefox 定制、指纹配置与一致性生成 | 有 Windows 构建；不是日常 Chrome 的原 Profile，也不是现有 CDP 适配器的直接替换 | 可作为另选专属浏览器的后续实验，当前不替换 daily 路线。 |
+| Puppeteer-extra stealth / Playwright stealth 类 | 注入或修补 navigator、WebGL 等 JS 暴露面 | 作用于相应驱动和页面上下文 | 有用的局部补丁路线；不默认全量叠加，也不是 TLS/账号风控解决方案。 |
+| Apify fingerprint-suite / BrowserForge | 生成相互关联的指纹参数，部分工具提供注入 | 适合需要合成会话的专属环境 | 真实日常身份优先保留原值；随机化并非本项目默认需求。 |
+| curl_cffi / curl-impersonate / TLS client 类 | 模拟部分浏览器 TLS/HTTP 协议特征 | 本地 HTTP 客户端；不提供真实 DOM、输入行为和完整浏览器会话 | 仅限明确需要独立 HTTP 请求的分支候选；不能拿来代替浏览器一致性。 |
+| Crawlee | 采集队列、会话池、指纹集成、代理与重试 | 自有采集生命周期 | 复用评估时需避免与 LangGraph、B-A-T run/checkpoint/owner 重叠。自动换身份重试不适合作为个人登录账号的默认处理。 |
+| DrissionPage / Botasaurus | 浏览器操作、HTTP 路径或采集工作流封装 | 可以本地，仍须逐条核查请求与操作路径 | API 易用性与网页成功示例不等于反检测最强；不因名称或宣传替换现有控制栈。 |
+| OS 输入 / RPA | 从系统输入流发送键盘和鼠标，绕开部分页面 JS 合成事件 | Windows 可通过成熟工具使用 SendInput 等；通常涉及桌面焦点、分辨率与用户操作冲突 | 仅在测得具体输入差异且现有组件不能解决时评估；不作为透明后台操作的默认方案。 |
+| Multilogin / AdsPower 等指纹浏览器 | 多 Profile、独立身份配置、自动化接口，部分支持本地资料 | 本地存储不等于原 Chrome 身份或所有元数据完全离线 | 多身份管理价值与本项目单一真实账号需求不同，不默认导入真实账号。 |
+| 商业远程浏览器/Unlocker | 托管浏览器、指纹、代理、挑战及会话管理 | 浏览器/网络/部分状态交由供应商托管 | 纳入市场覆盖，但不作为本地日常浏览器修复的默认方案。 |
+| 网站认可的 Agent 身份/正式接口 | 通过合作或签名向参与网站证明访问者身份 | 取决于网站支持 | 属于新路线；签名不等于登录授权，也不能假定京东支持。 |
+
+候选依据：
+
+- [Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright)：公开说明其 Console、InitScript/路由等兼容限制，且并非通过全部 Playwright 测试。v1.63.0 的 [crPagePatch.ts](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright/blob/v1.63.0/driver_patches/crPagePatch.ts) 已定点读取，确认在 Playwright 层变更 Runtime.enable 等调用。不能把作者的 undetectable 表述转成产品保证。
+- [Rebrowser](https://github.com/rebrowser/rebrowser-patches/blob/main/README.md)：本轮 README 标明完整验证到 Puppeteer 24.8.1、Playwright 1.52.0，不能据此宣称覆盖本项目 Playwright 1.61.0。公开 repo API 显示最后推送时间为 2025-05-09；这是本轮快照，不是对未来维护状态的断言。
+- [SeleniumBase](https://github.com/seleniumbase/SeleniumBase)；已定点读取 v4.55.1 的 seleniumbase/undetected/cdp_driver/tab.py，看到 CDP 与 GUI 路径并存；[nodriver](https://github.com/ultrafunkamsterdam/nodriver)、[Zendriver](https://github.com/cdpdriver/zendriver)，已读取 Zendriver v0.17.1 的 connection.py，事件订阅会影响协议域启用，不能只凭 CDP-only 名称保证没有可观察副作用。
+- [Camoufox](https://github.com/daijro/camoufox)、[官方说明](https://camoufox.com/)；[Apify fingerprint-suite](https://github.com/apify/fingerprint-suite)；[Puppeteer stealth](https://github.com/berstend/puppeteer-extra/tree/master/packages/puppeteer-extra-plugin-stealth)。
+- [curl_cffi 协议模拟文档](https://curl-cffi.readthedocs.io/en/v0.12.0/impersonate/_index.html)及[会话 PSK 说明](https://curl-cffi.readthedocs.io/en/stable/impersonate/psk.html)；[Crawlee 避免阻断](https://crawlee.dev/js/docs/guides/avoid-blocking)；[DrissionPage](https://www.drissionpage.cn/dp40docs/get_start/concept/)；[Botasaurus](https://github.com/omkarcloud/botasaurus)。
+- [Windows SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)：存在权限等级、按键现态等约束；OS 合成输入也不能证明长期行为等同真人。
+- [Multilogin 本地/云 Profile](https://multilogin.com/help/en_US/functionality/cloud-and-local-storage)。AdsPower 本轮只纳入同类市场扫描，未完成固定版本源码/二进制行为核验，不据此选型。
+
+商业服务进一步区分：
+
+- [Bright Data Browser API](https://docs.brightdata.com/products/scraping-browser/introduction)：明确为托管云浏览器，包含代理、指纹和会话处理。
+- [Browserless](https://docs.browserless.io/baas/bot-detection/overview)：公开区分 stealth、Unblock 与挑战处理；不能假设云端能力均包含在可自托管版本中。
+- [Browserbase Identity](https://docs.browserbase.com/platform/identity/overview)：本轮旧 stealth 文档跳转到 Identity，当前说明 Verified 浏览器及 Web Bot Auth；参与网站仍自行决定是否允许访问，身份签名不授予账号登录权限。
+- [Zyte API](https://docs.zyte.com/zyte-api/usage/features.html)及[CDP](https://docs.zyte.com/zyte-api/usage/cdp.html)：不同请求/连接间的 IP 与 Cookie jar 复用存在明确边界。
+- [ZenRows Browser Sessions](https://docs.zenrows.com/browser-sessions/introduction)：原 Scraping Browser，提供远程 CDP 与代理能力。
+- [Scrapfly ASP](https://scrapfly.io/bypass)：官方宣称组合协议指纹、浏览器指纹和代理能力，其成功率未经本轮复验。
+- Oxylabs Web Unblocker 已纳入扫描，但所请求文档页面工具读取失败；不填造接口细节或当前通过率。
+
+### 已核验版本与来源快照
+
+本表是对照候选快照，不是已安装版本、已完成兼容验收或冻结选型。许可证列是仓库主许可证；实际引入仍需核查捆绑组件。
+
+| 组件 | 本轮公开快照 | 维护/平台证据 | 主许可证 |
+| --- | --- | --- | --- |
+| browser-use | 0.13.8；tag commit eb4126921bea3373f91afc49fb4b59d6eda7fed6 | 与仓库脚本固定版本对应；定点读取 session.py、profile.py、default_action_watchdog.py | 沿现有依赖评估，不新增 |
+| Patchright | [v1.63.0](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright/releases/tag/v1.63.0)；f34b86146dd4e6b54eeacb023af0dbfe19ee09db | release 2026-09-08，仓库最近推送 2026-10-01；本轮没有 Windows 行为测试 | Apache-2.0 |
+| Camoufox | [v156.0.1-beta.36](https://github.com/daijro/camoufox/releases/tag/v156.0.1-beta.36)；7a4ac0d4dca2dfdeb277f521824a26efb0b6a7b6 | release 2026-10-06；API 确认 win.x86_64、win.i686 构建；没有下载或运行 | MPL-2.0 |
+| SeleniumBase | [v4.55.1](https://github.com/seleniumbase/SeleniumBase/releases/tag/v4.55.1) | release 2026-10-06；源码定点检查，未在本机验证 | MIT |
+| Zendriver | [v0.17.1](https://github.com/cdpdriver/zendriver/releases/tag/v0.17.1) | release 2026-10-02；源码定点检查，未在本机验证 | AGPL-3.0 |
+| nodriver | 主分支元数据快照；未冻结版本 | repo 最近推送 2026-10-05；releases/latest 未取得 release，不等于没有可用包 | AGPL-3.0 |
+| Rebrowser patches | [1.0.19](https://github.com/rebrowser/rebrowser-patches/releases/tag/1.0.19) | release 2025-05-09；公开兼容验证较旧 | API 未识别，尚未完成核验 |
+| curl_cffi | [v0.16.4b1](https://github.com/lexiforest/curl_cffi/releases/tag/v0.16.4b1) | releases/latest 返回此 tag，名称含 b1；不当作稳定性承诺 | MIT |
+
+### 纠正容易过时的技术判断
+
+1. CDP 不是浏览器自动向网站暴露的一根固定开关。经典 Error.stack/console 序列化副作用检测已受 2025 年 V8 修改影响。[Castle 2025-08-28 研究](https://blog.castle.io/why-a-classic-cdp-bot-detection-signal-suddenly-stopped-working-and-nobody-noticed/)和[DataDome 2026-06-01 复核](https://datadome.co/threat-research/how-browser-vendors-are-quietly-making-automation-harder-to-detect/)均说明该旧方法变化。不能用旧检测页阴性证明所有 CDP 特征已消失，也不能见到 Runtime.enable 就认定当前版本必被识别。
+2. [Chrome Headless](https://developer.chrome.com/docs/automation-and-testing/headless)已与有界面模式共享实现；运行模式、启动参数、显示环境和页面可见性仍可能不同。headless 不等于必被封，有界面也不等于不可识别。
+3. [MDN isTrusted](https://developer.mozilla.org/en-US/docs/Web/API/Event/isTrusted)区分浏览器生成事件和脚本派发；HTML element.click() 的 click 事件有其特定语义。isTrusted=true 本身不证明物理真人操作，不能用改一个值代替真实事件路径。
+4. [Chrome 136 的远程调试变更](https://developer.chrome.com/blog/remote-debugging-port)限制默认数据目录上的调试参数。因此保留原日常 Profile 与通过专属目录启动浏览器是不同方案，不能把迁移 Profile 当作透明替换。
+5. [FP-Inconsistent 论文](https://arxiv.org/abs/2406.07647)研究了伪装指纹之间的矛盾；[2026 Web Agent 多层指纹论文](https://arxiv.org/abs/2606.30119)报告部分反检测措施反而增加其样本可识别性。这些是特定实验结果，不能外推所有工具必然失效。
+
+### 对当前 B-A-T 的具体发现
+
+#### 1. 专属浏览器存在应优先测量的启动参数
+
+apps/api/python/browser_use_runner/managed_window.py:375 使用 --remote-debugging-port=0；headless 分支还加入 --headless=new。
+
+[MDN navigator.webdriver](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/webdriver)把 Chrome 的 --remote-debugging-port=0、--headless 和 --enable-automation 列为 webdriver=true 的条件。因此该分支存在明确的环境暴露核验项。尚未启动浏览器测量实际值，不能说事故当时值已确认，更不能把这项结论套到扩展连接的日常浏览器。
+
+后续改动位置候选：ManagedWindow._launch 及其现有浏览器配置适配；先复现实际值和必要连接能力，再评估成熟组件配置，不能直接堆叠来源不明的 stealth 脚本。
+
+#### 2. 账号检查有独立 HTTP 网络路径
+
+apps/api/python/browser_use_runner/account_http.py:18-30 从借用浏览器读取 UA/Cookie，再用 httpx.AsyncClient 请求；RecordingClient 也使用 HTTPX。该代码路径不是浏览器原生网络栈。由此可提出协议和会话不一致风险，但本轮没有逐一确认所有平台路由，也没有证据证明京东走过此分支。
+
+后续位置候选：该适配器及 account_borrow/account_session 的既有公共能力；区分“读取浏览器已有状态”与“额外向远端发请求”，核对目标平台实际支持的官方接口/页面路径。不能仅替换 UA 或装 curl_cffi 就宣布整个会话一致。
+
+#### 3. 直接 CDP 不代表动作全部等同手动输入
+
+固定 browser-use 0.13.8 [default_action_watchdog.py](https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/browser/watchdogs/default_action_watchdog.py)：通常点击走 Input.dispatchMouseEvent；几何信息不足、遮挡等部分分支调用 this.click()，部分特殊输入通过原生 setter 赋值并派发 JS 事件。源码证明存在这些分支，不证明此前任务触发过。
+
+后续位置候选：B-A-T 现有动作能力适配/捕获层与固定上游能力配置；记录实际选择了哪条路径，在受控页面对照事件与页面效果。若需修正，优先通过上游公开能力或限定扩展复用，不自研新的输入框架。
+
+#### 4. daily 已保留部分重要身份属性
+
+apps/api/src/browser/daily-extension.ts 使用真实 Profile 元数据并建立扩展 relay；apps/api/python/browser_use_runner/attached_window.py:329-335 设置 headless=false、no_viewport=true、storage_state=None，借用现有浏览器存储。这是值得保留的已有能力，不应在未证明需要时用新指纹浏览器或云会话替换。
+
+该结构不能证明所有后续检查/动作都没有额外信号，尤其要联合审查账号维护、准备、sample/verification、正式复跑和失败重试的累计请求。
+
+#### 5. Patchright 不覆盖整个当前控制栈
+
+scripts/setup-upstream-browser-runner.mjs 固定 browser-use 0.13.8、cdp-use 1.4.5、workflow-use 0.2.11，账号相关 Playwright 为 1.61.0。browser-use 固定源码 session.py 直接使用 cdp_use.CDPClient。
+
+因此不能按“项目安装了 Playwright”推导“替换成 Patchright 即修复 B-U 的全部动作”。需要分别确认 Playwright 借用路径、B-U/cdp-use 路径和扩展 relay 的调用责任。若改为另一控制器，必须重新覆盖观察、动作、编译证据、普通复跑、恢复和资源清理。
+
+### 推荐顺序与尚未执行的验证门
+
+当前首选是保留真实日常 Chrome 身份，在既有控制边界内先消除实测差异；这是适配成本和会话连续性判断，不是已经证明防封更强。
+
+1. 固定 Chrome/组件版本，建立受控页面上的环境、输入和请求对照。分别记录手动基线、现有系统、单一候选改变；禁止把多个 stealth 补丁一起加入后只观察成功率。
+2. 先验证专属启动参数、HTTPX 分支、JS 点击/赋值路径以及维护/准备/复跑累计动作。按“本项目引入、上游默认、配置可调整、固有差异、未知”记录归属。
+3. 若现有适配不能解决已证实的问题，以 Patchright、SeleniumBase CDP 作为 Chromium 候选对照；Camoufox 留作独立专属浏览器选项。不能让候选创建第二个实际控制会话或接管清理责任。
+4. 浏览器侧测环境属性、事件序列/信任标记、焦点与可见性；网络侧另用自有或获授权 HTTPS 端点测 TLS/HTTP、Cookie 连续性及请求来源。仅本地 DOM 页不能验证外网 IP 信誉或生产风控。
+5. 开发验证沿既有独立 headless 约束，不打扰用户电脑；其结论只覆盖该环境。日常浏览器是否一致需要独立安排的证据，不能由 headless 结果代签。
+6. 运行、账号与清理分别结算：动作成功、获取到正确数据、检测信号变化、账号状态、零隐式模型调用、owner 资源关闭是不同事实。无需为了检查账号状态额外访问受限制平台。
+
+所有候选仍需验证：Windows 当前 Chrome 配合、Profile/owner 生命周期、恢复与回放语义、是否增加网络请求、日志是否泄漏敏感数据。普通节点零隐式 LLM 的产品边界保持不变。
+
+Reuse Assessment（调研态）:
+- capability: 减少本地浏览器自动化引入的可测环境、输入和会话差异。
+- existing implementation in repository: 日常 Chrome 扩展/CDP relay、AttachedWindow/ManagedWindow、browser-use/cdp-use、账号检查 HTTPX/Playwright 路径、LangGraph 运行和既有 owner/lease。
+- mature candidates and pinned versions: 见上方公开版本快照；候选成熟度不替代本机兼容证据。
+- selected implementation: 尚未冻结；优先审计已有 Chrome 路线，未安装任何候选。
+- reused public surface: 优先已有浏览器配置、原生输入/页面能力、既有会话借用；候选公开 API 的可替换性待对照。
+- B-A-T-owned adapter and remaining gap: 路径证据、会话归属、编译/复跑审计；不新增 Agent loop、输入框架、代理池或通用采集调度器。
+- license/runtime/platform fit: 见快照；若实际引入仍需核查完整依赖与捆绑许可证，Windows 行为未测。
+- browser/runtime/state ownership conflicts: 云服务、临时 Profile、驱动自有清理/恢复和爬虫会话池均可能冲突，尚未证明能无损替换。
+- replay model calls: 本轮没有产品模型调用；候选不得使普通复跑增加隐式模型调用。
+- rejected candidates and evidence: 本轮未判定工具无效；暂不优先云浏览器、身份轮换、Firefox 替换、全量 stealth 注入，原因是现有本地真实身份和控制契约不匹配或兼容证据不足。
+- focused validation: 完成交接/事故/源码/官方资料/release 对照；未执行浏览器、工具或目标站点实测，不能冻结选型或宣称已修复。
+
+## 2026-10-07 补充：Ego、原生桌面输入与内核反检测方案
+
+### 用户真正要求与本轮结论
+
+用户要求明确回答：有没有一套能替代真人使用浏览器的方案、能否完全像人、Ego browser 是否已深入调查。上一轮工具列表和三个实现风险没有充分回答选型问题。本节补充操作机制、源码边界、Windows 可用性和推荐决策，不把宣传成功率变成账号安全保证。
+
+- 替代人完成一部分搜索、阅读、填写、下载任务：已有可用路线；跨任意网站、任意页面的可靠全自动仍不能保证。
+- 尽量沿用真人操作的浏览器和桌面输入路径：可以作为明确的工程目标；本机 Windows 首选评估“既有普通 Chrome + 成熟桌面输入组件 + B-A-T 任务链”。
+- 让网站在所有情况下都无法区分、保证账号不受限制：没有本轮证据支持任何工具作此保证。
+- 上述首选是按用户“本地、真实身份、接近手动操作”的目标作出的工程判断，未经过真实对照，不是已验证的最低封号率排名。
+
+### Ego(lite)：已经核验到公开 SDK 源码
+
+确认用户所说 ego browser 对应的公开候选为 [Ego(lite)](https://www.egolite.app/) / [citrolabs/ego-lite](https://github.com/citrolabs/ego-lite)。本轮由 git ls-remote 固定公开仓库 HEAD 为 `dca7003349c5f7132189ba00547cbbd7ff8e597e`。
+
+官方资料：[产品原理](https://www.egolite.app/document/en/docs/product-introduce)、[固定 README](https://github.com/citrolabs/ego-lite/blob/dca7003349c5f7132189ba00547cbbd7ff8e597e/README.md)。
+
+1. 它是 Chromium 浏览器；用户和 agent 可以使用同一浏览器内的登录态。Space 是任务工作空间，不是新的 Chrome Profile。按官方说明，agent 可以在自己的标签页工作，不切走用户标签页或抢键盘焦点。
+2. 官方说明把语义 Snapshot 建在修改后的 Chromium 内部，覆盖跨源 iframe、shadow DOM 等结构；页面引用用于动作定位，批量 Node.js 调用减少模型往返。这些是浏览器任务执行能力，不等于不可识别证明。
+3. 已定点读取 SDK 的 browser-runtime.ts、driver/pointer.ts、driver/keyboard.ts、http.ts 和 API 文档。pointer.ts:605-606 的鼠标动作调用 Input.dispatchMouseEvent；keyboard.ts 包含 Input.dispatchKeyEvent/Input.insertText；runtime 通过宿主 sendCDPMessage 桥接。其公开输入层仍包含 CDP，并非把所有动作转成 Windows/macOS 物理键鼠输入。
+4. 固定源码：[pointer.ts](https://github.com/citrolabs/ego-lite/blob/dca7003349c5f7132189ba00547cbbd7ff8e597e/package/ego-browser/src/driver/pointer.ts#L605)、[keyboard.ts](https://github.com/citrolabs/ego-lite/blob/dca7003349c5f7132189ba00547cbbd7ff8e597e/package/ego-browser/src/driver/keyboard.ts)、[runtime](https://github.com/citrolabs/ego-lite/blob/dca7003349c5f7132189ba00547cbbd7ff8e597e/package/ego-browser/src/browser-runtime.ts)。使用 CDP 也不能反向推导“必然被识别”；需观察实际实现和当前版本行为。
+5. 本轮以只读内存归档检查该固定提交，没有发现 Chromium C++ 源码或补丁文件，不能声称已审计其浏览器内核。仓库 MIT 许可不能自动外推至未公开的全部内核修改。
+6. 官方产品说明明确：网站仍可要求 CAPTCHA 或其他安全检查，Ego 不绕过这些检查。公开说明目前提供 macOS，Windows 尚处即将推出的内测计划，不能作为当前 Windows 已可直接替换的结论。
+7. 官方宣称在相同模型的 31 个真实任务中，30 个得到满分。这是作者报告的任务完成结果，不能代替长期账号安全、京东兼容或独立反检测评测。已读 [benchmark 仓库说明](https://github.com/citrolabs/ego-browser-benchmark-framework)，它明确为 public beta、受控比较而非通用排行榜；本轮未完成其 31 项原始结果逐项复核，也未执行评测。
+8. 官方“经验积累为可复用 tool/workflow”仍标 coming soon，不能据此认定已实现 B-A-T 不可变任务链、参数绑定和普通复跑零模型调用。
+
+### Windows 原生桌面路线：Midscene 与 Cua 的真实边界
+
+[Midscene Desktop 官方文档](https://midscenejs.com/platforms/desktop)支持 Windows/macOS/Linux 的原生键鼠、屏幕截图和多显示器。固定 HEAD：`1c2d8f7d0ab1d45d8d60e3ec476d90c6777f8a2b`；该提交 packages/computer/package.json 版本 `1.14.0`，MIT，依赖 @computer-use/libnut ^4.2.0。版本来自仓库源码，不等于本机已安装或 npm 发布已验证。
+
+- [公开导出](https://github.com/web-infra-dev/midscene/blob/1c2d8f7d0ab1d45d8d60e3ec476d90c6777f8a2b/packages/computer/src/index.ts)包含 ComputerDevice；[device.ts:738](https://github.com/web-infra-dev/midscene/blob/1c2d8f7d0ab1d45d8d60e3ec476d90c6777f8a2b/packages/computer/src/device.ts#L738)公开 inputPrimitives，提供 pointer、keyboard、scroll。它们走设备驱动，不需要通过 aiAct 才能调用；这些动作本身没有模型决策。
+- [input-driver.ts](https://github.com/web-infra-dev/midscene/blob/1c2d8f7d0ab1d45d8d60e3ec476d90c6777f8a2b/packages/computer/src/input-driver.ts)复用 libnut mouseToggle/mouseClick/keyTap 等；Windows 指针路径另处理物理像素与 DPI。无需在 B-A-T 自研一套 Windows 输入框架。
+- 默认文本输入可以走剪贴板粘贴；顺序键入是可选配置。源码有固定平滑移动参数。不能把“native input”描述成默认具备真人完整行为分布，也不能把每次粘贴说成逐键输入。
+- 键鼠原语零模型调用，不等于动态目标定位和数据读取也自动零模型。aiAct/aiLocate/aiQuery 等有模型用途；B-A-T 普通复跑只能使用已编译且可重定位的目标和已有读取规则。纯图像任务若必须每次让模型定位，需要显式 LLM 节点或重新准备，不能暗中改变复跑契约。
+- 原生桌面输入会使用实际交互桌面和焦点；锁屏、前台窗口、DPI、多屏、中文输入及权限等级必须验证。不能承诺用户继续使用同一鼠标的同时，所有网页动作都可靠完成。
+- 上游调试日志的 typeViaClipboard 分支包含文本预览字段；接入前需核对并限制日志，不能让账号输入或敏感页面内容进入 B-A-T 日志。
+
+[Cua 官方 Windows 实现说明](https://github.com/trycua/cua/blob/main/blog/inside-windows-computer-use.md)进一步证明“后台桌面自动化”不是单一路径：UIA/MSAA、PostMessage、SendInput 会按控件路由。Chromium 坐标点击可能不接受后台消息，默认后台模式会报 background_unavailable，需要明确选择前台输入。演示中的独立光标是轨迹覆盖层，不代表每次动作均为独立的系统物理光标。Cua 因此保留为桌面能力候选，不能凭“不抢鼠标”演示断言所有 Chrome 动作都等同手动操作。
+
+### 内核反检测路线：CloakBrowser 比简单 JS stealth 更值得作为对照
+
+固定公开 HEAD：`5fa65172f0612b3ea3efbee719be0cb618594285`。本轮 [README](https://github.com/CloakHQ/cloakbrowser/blob/5fa65172f0612b3ea3efbee719be0cb618594285/README.md)报告 wrapper `0.5.12`、Chromium `154.0.8037.57.1`，并提供 Windows x64 构建。未下载浏览器二进制或在本机启动。
+
+- 作者宣称 87 处 C++ 层补丁，覆盖浏览器指纹、部分 CDP 输入行为等，并提供 humanize 鼠标、键盘和滚动动作。它处理的问题层次与仅替换 Playwright 驱动不同，应纳入专属浏览器候选。
+- 已读 [browser.py](https://github.com/CloakHQ/cloakbrowser/blob/5fa65172f0612b3ea3efbee719be0cb618594285/cloakbrowser/browser.py)：包装层启动其 Chromium 二进制并复用 stock Playwright；源码明确移除了 Patchright backend。不能无依据推荐“CloakBrowser + Patchright + 多套 stealth”叠加。
+- [BINARY-LICENSE.md](https://github.com/CloakHQ/cloakbrowser/blob/5fa65172f0612b3ea3efbee719be0cb618594285/BINARY-LICENSE.md)区分 MIT wrapper 与专有浏览器构建/补丁；本轮只能核验公开包装层和文档，不能独立审计所宣称的全部补丁。
+- 作者检测站通过率和 reCAPTCHA 分数不是本轮结果；其 README 自身承认部分网站仍区分 headless，并列出站点问题排查。当前 README 与二进制许可对最新版本试用/付费的表述不完全一致，采用前需确认实际分发条款，不能将完整组件描述为完全开源免费。
+- 如评估该路线，应作为独立、固定配置的专属浏览器对照，不能直接迁移受限账号、随机轮换身份或声称导入 Cookie 就保留了原日常环境的全部属性。
+
+### Ego 类 Windows 候选：BrowserOS
+
+[BrowserOS 官方仓库](https://github.com/browseros-ai/BrowserOS)固定 HEAD：`7d12ab39332baad966f96bde64376a4882ee300f`。官方区分日常浏览器 BrowserOS 与外部 agent 使用的 BrowserOS neo；两者不能混称完全同一产品。官方 README 将 Windows 列为可用平台，仓库公布 Chromium patch 目录，主项目 AGPL-3.0。
+
+本轮已读 [浏览器子包说明](https://github.com/browseros-ai/BrowserOS/blob/7d12ab39332baad966f96bde64376a4882ee300f/packages/browseros/README.md)，未完成动作底层源码审计。只读源码归档读取触发自设 45 MB 大小上限后终止，未解压、未安装；不能因此写成“已验证比 Ego 更强的反检测浏览器”。它是后台浏览器体验的候选，不是已证明防封效果的优胜者。
+
+### 具体建议及冻结前的最小证据
+
+针对用户当前首要目标，建议优先验证下列组合：
+
+`B-A-T 已有任务链 -> 已验证的目标定位/数据读取 -> Midscene ComputerDevice 原生输入 -> 用户选定的普通 Chrome`
+
+1. 保留用户选定浏览器的身份连续性和浏览器原生网络请求；观察层与动作层分别审计。若观察层仍保留扩展/CDP，也必须如实记录，不能给整套方案冠以“完全无 CDP”。
+2. 普通节点直接复用输入原语；B-A-T 只承担目标绑定、链路审计及生命周期。不能把每一步重新交给 Midscene agent 决策，也不能用固定屏幕坐标冒充动态定位。
+3. 发生访问限制、登录挑战或身份不确定时停止相应任务，保留进度并等待人工处理；自动重试不能成为默认恢复路径。平台规则仍保持通用，不增加京东源码特判。
+4. 先在自有/获授权页面比较手动、既有控制器、桌面驱动：目标正确性、事件实际序列、焦点/DPI/输入法、读取结果、模型调用数和资源归属。桌面路线的真实输入验证需要交互桌面，headless 结果不能代签；当前没有启动此验证。
+5. 若“后台不抢桌面”优先级高于接近原生桌面输入，则改变主选型：macOS 评估 Ego，Windows 评估 BrowserOS；CloakBrowser 留作专属反检测浏览器对照。没有证据证明把这些产品堆在一起就是最优。
+
+为什么输入更像人仍不足以保证账号安全：[Cloudflare 官方评分说明](https://developers.cloudflare.com/bots/concepts/bot-score/)明确结合请求特征、会话、浏览器信号和用户请求模式。这只说明行业存在跨层判断，不能推导京东具体使用 Cloudflare，也不能据此认定本次限制的触发原因。
+
+Reuse Assessment（补充，未冻结）:
+- capability: 本地浏览器任务的原生桌面输入、浏览器内建 agent 能力及专属内核反检测候选比较。
+- existing implementation in repository: 既有 B-U/CDP/扩展观察动作、参数化链路、LangGraph 编排、owner/lease 与模型审计。
+- mature candidates and pinned versions: 本节固定 Ego/Midscene/CloakBrowser/BrowserOS 源码提交；Cua 为官方机制说明，未固定源码。
+- selected implementation: 首选评估 Chrome + Midscene ComputerDevice 输入原语；无本机行为验收，尚未冻结引入。
+- reused public surface: ComputerDevice.inputPrimitives/actionSpace；Ego 宿主 API、CloakBrowser 官方 launcher 作为不同路线，不混用不支持的 backend。
+- B-A-T-owned adapter and remaining gap: 页面/屏幕坐标映射、动态目标、读取与编译证据、前台占用、取消和归属；不自研 Agent loop 或原生输入库。
+- license/runtime/platform fit: Midscene TypeScript/Node/MIT/Windows 文档已核验；二进制依赖和实际兼容未验收。Ego 当前非 Windows 公开可用；CloakBrowser 核心专有；BrowserOS AGPL 与引入方式待核查。
+- browser/runtime/state ownership conflicts: 桌面动作可影响真实焦点；浏览器分叉/迁移改变会话环境；外部 agent 或工作流不能替代 B-A-T 唯一运行事实源。
+- replay model calls: 输入原语本身不调用模型；动态定位、视觉读取或语义判断需要独立证明，模型用途须显式。
+- rejected candidates and evidence: 未判定任何候选全局无效；当前不优先将真实账号迁入未验证的新内核，亦不把后台 CDP 浏览器称为 OS 原生键鼠。
+- focused validation: 已读官方资料和上述固定源码；未安装、未运行候选，未访问京东或检查账号，未执行反检测站评测。仅更新本调研文档。
+
+
+## 2026-10-07 用户澄清后纠正：保留 browser-use，目标是网站侧识别结果
+
+本节覆盖上一节将“普通 Chrome + Midscene 原生桌面键鼠”列为主路线的建议。该建议把用户的“像真人”错误解释为操作系统输入方式，应撤回，不作为后续实施依据。
+
+用户目标：京东、淘宝等网站看到的浏览器环境、设备属性、网络请求、会话与访问行为应呈现正常用户的一致性，减少自动化判定及账号限制。评价对象是网站可观察的客户端与整段会话，桌面鼠标动作只是其中一个输入维度。
+
+明确保留：browser-use 的首次探索与既有浏览器能力；B-A-T 的任务编译、参数绑定、版本化 TaskChain、LangGraph 复跑、显式模型调用审计及资源所有权。此轮没有得到替换这些核心组件的指令，也没有修改产品代码。
+
+当前源码依据：
+- apps/api/src/upstream-browser/service.ts:107 的 startHybrid 已区分 daily 与 dedicated，并经既有 endpoint/owner 接口把浏览器连接传给 runner。这是宿主适配边界，不要求重写任务架构。
+- 固定 browser-use 0.13.8 的 BrowserSession 已提供 cdp_url、executable_path、browser_profile、user_data_dir 等接口。来源：https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/browser/session.py 。浏览器宿主与 Agent 决策循环可以分别处理。
+
+新的工作边界：
+1. 宿主与会话：浏览器启动/连接、设备属性及其相互一致性、已有身份连续性。
+2. 控制行为：现有 browser-use/CDP 的实际观察和动作路径；不能把一切自动化信号归咎于框架名称，也不能仅改变鼠标轨迹就结算完成。
+3. 网络与累计行为：准备、验证、账号维护、正式复跑和失败恢复的请求来源及累计访问；消除不必要的额外探测和重复访问。
+4. 兼容宿主对照：CloakBrowser 等 Chromium 内核候选应接在现有浏览器宿主接口，browser-use 保留。其内核能力和 Playwright 包装层 humanize 能力必须分开核验；B-U 直接 CDP 动作不会自动获得另一个包装层的动作处理。Ego 的 SDK/Space 接口也不能未经适配核验就写成 B-U 的直接替换项。
+
+当前决策：撤回桌面驱动优先的选型；围绕保留 browser-use 的宿主、会话、控制和访问行为展开后续评估。没有安装新组件、创建浏览器、访问京东/淘宝或检查账号；既有京东事故处置边界继续有效。
+
+
+## 2026-10-07 Windows Computer Use 与网站侧反爬检测实验室
+
+### 决策与本轮完成范围
+
+用户确认“无法退出”指“尚未推出或支持 Windows computer use”。本轮同时调查两个问题：Codex Windows 的真实产品支持，以及用于评价 B-A-T 访问环境的反爬检测机制。
+
+结论：
+1. OpenAI 当前官方文档已明确支持 Windows Computer Use；Windows 的产品限制是占用当前交互桌面与前台输入，不能在用户继续使用同一 Windows 会话时后台操作。
+2. 建立独立的反爬检测实验室，保留 browser-use 与现有 B-A-T 编译/复跑架构。评测站作为被访问的网站，观察自动化实际产生的信号。
+3. 机制按五层、30 项检测族登记；使用开源探针、网络指纹实现和可配置会话规则组合，避免从零复制商用反爬引擎。
+4. 检测器需要先完成误报、漏报和版本适用性校准，再用于比较自动化方案。既有 TaskRun 完成状态与实验室检测结果分别记录。
+5. 本轮完成研究与评测设计；没有实现或运行检测站，没有安装组件、修改产品代码、操作浏览器、访问京东/淘宝或检查账号。
+
+### A. Codex Windows：已经支持，当前会话缺少控制工具
+
+已搜索并实际读取 [OpenAI Computer Use 文档](https://learn.chatgpt.com/docs/computer-use)和 [Windows 功能说明](https://learn.chatgpt.com/docs/whats-new#use-windows-apps-and-control-codex-remotely)。当前文档说明：
+- 在支持地区，Computer Use 可用于 macOS 与 Windows 的 ChatGPT Work/Codex，需要安装或启用 Computer Use 插件，打开 server 和 skill 开关。
+- Windows 使用 active desktop，目标应用应可见，运行期间会移动系统指针、键入并占用前台；同一会话后台操作不受支持。锁屏使用是 macOS 特性。
+- Windows 需保持会话解锁。官方列出的隔离方法是独立 Windows VM；这是桌面资源隔离方法，不是网站反检测建议。
+- 工作区管理员可以通过 requirements.toml 禁用 Computer Use；应用许可和文件/命令权限是不同层次。
+
+本机只读检查：本次工具目录没有 Computer Use 控制工具；常规 config.toml 未发现 computer_use、相关 feature 或插件项；已检查的 curated/primary 插件缓存根目录没有对应目录。Plugin Management 搜索没有返回匹配的官方 Computer Use 条目。这些结果只定位当前会话的工具缺席与常规安装痕迹缺失，不证明整个产品未发布，也没有定位账户地区、管理策略或插件分发中的具体哪一项。
+
+推荐的排查顺序是：桌面插件入口可见性 -> 安装/启用状态及 server/skill 开关 -> 新会话工具是否加载 -> 应用许可 -> 目标是否处于解锁的交互桌面。不是先换模型、重装 browser-use 或修改 B-A-T。
+
+底层技术边界：[Microsoft SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)说明合成输入受 UIPI 完整性等级约束；[Window Stations and Desktops](https://learn.microsoft.com/en-us/windows/win32/winstation/window-stations-and-desktops)说明界面资源被桌面/窗口站隔离。这些解释 Windows GUI 自动化的工程约束，不能冒充 OpenAI 未公开的内部实现或历史发布时间原因。
+
+### B. 先定义被测对象和判定结果
+
+网站通常观察网络对端、浏览器暴露的数据、请求及交互历史；普通页面不能任意读取用户机器的进程列表、完整 Profile 或直接得知“正在运行 browser-use”。设备或浏览器扩展主动上报的信息须另列来源。
+
+实验室分别输出三项事实：
+- 自动化信号：观察到哪些可复现特征，适用于哪个浏览器/探针版本。
+- 行为及业务风险：访问量、路径、会话和业务规则是否异常。
+- 处置：当前测试策略选择放行、观察、挑战、暂停或阻断。
+
+三者不能混为一个“真人百分比”。获授权的自动化可以允许，真人也可能违反频率或业务规则。指纹用于归类或关联，本身不是“机器人”的充分条件；挑战成功也不是完整的人类身份认证。
+
+市场依据：[Cloudflare Bot scores](https://developers.cloudflare.com/bots/concepts/bot-score/)、[Akamai detection methods](https://techdocs.akamai.com/cloud-security/docs/detection-methods)、[HUMAN characteristics](https://docs.humansecurity.com/applications/bot-characteristics)。这些是公开行业机制，不表示京东或淘宝采用了其中某家产品或全部规则。
+
+### C. 五层检测清单：30 个检测族
+
+每一行是一个需要拥有来源、探针、对照和适用版本的检测族，不是已实现的检测器。“本地”表示未来可在受控环境采集；“外部/历史”表示还需要受控外网端点、时间积累或供应商情报。
+
+#### C1. 网络与协议
+
+| ID | 网站可观察机制 | 实验室采集/测试设计 | 容易误判的情况 |
+| --- | --- | --- | --- |
+| N01 | 出口 IP、ASN、代理/机房及历史信誉 | 自有外网端点记录来源，情报另接独立服务；localhost 标未覆盖 | 公司 NAT、校园网、正常 VPN 共用出口 |
+| N02 | TLS ClientHello、JA3/JA4、ALPN | 在第一处 TLS 终止点或限定流量抓包，复用 JA4 实现 | 浏览器升级、GREASE、扩展顺序变化 |
+| N03 | HTTP/2 SETTINGS、伪头顺序、HTTP/3 等协议特征 | 保存实际协议及原始接入层特征，不能从归一化框架 headers 反推原始序列 | CDN/代理转换协议或头顺序 |
+| N04 | HTTP UA、Client Hints、语言与 JS 环境的一致性 | 同一次会话关联服务端请求和页面报告，比较矛盾而非只比较字符串 | UA reduction、隐私设置、CH 请求协商 |
+| N05 | 连接复用、TLS 恢复、浏览器与额外 HTTP 客户端混用 | 对同一任务阶段关联连接/请求族；将真实浏览器与独立 HTTP 栈对照 | 浏览器进程/连接池自然变化 |
+| N06 | 网络地理、时区、时延等跨层一致性 | 受控外网观察与页面时区关联，弱信号单独呈现 | 出差、远程办公、代理、手动时区 |
+
+来源：[Cloudflare JA3/JA4](https://developers.cloudflare.com/bots/additional-configurations/ja3-ja4-fingerprint/)、[FoxIO JA4](https://github.com/FoxIO-LLC/ja4)、[阿里云流量分析](https://help.aliyun.com/zh/waf/web-application-firewall-3-0/flow-analysis)。JA4 相同只代表一类握手特征相同，不证明访问者是同一个人或操作由人完成。
+
+#### C2. 浏览器环境与完整性
+
+| ID | 网站可观察机制 | 实验室采集/测试设计 | 容易误判的情况 |
+| --- | --- | --- | --- |
+| E01 | webdriver、已知框架暴露属性或全局对象 | 复用 BotD 的原始 components 与 detections，保留具体命中项 | 开发、无障碍工具、普通自动测试 |
+| E02 | 窗口、屏幕、DPR、语言、平台与功能集合 | 按浏览器版本及窗口模式记录，一次只改一个环境因素 | 多屏、缩放、RDP、非标准窗口 |
+| E03 | Canvas、WebGL、GPU 渲染特征及组合矛盾 | 使用 CreepJS 等独立探针，关注跨次变化与不一致 | 隐私浏览器、显卡驱动、软件渲染 |
+| E04 | 原型、属性描述符、内建函数及跨 realm 一致性 | 主页面、worker、iframe 的可比属性对照，保存探针版本 | 扩展、隐私保护、浏览器实现差异 |
+| E05 | 字体、音频、媒体能力、设备能力与声明环境是否相符 | 对高熵特征做最小化采集和本地摘要，不做唯一指纹即判机器人 | 字体精简、音频禁用、企业策略 |
+| E06 | inspector/CDP 的版本相关可观察副作用 | 每条规则标适用版本，在手动 DevTools 开/关对照后判读 | 真人使用 DevTools；旧探针已失效 |
+
+来源：[BotD 固定源码](https://github.com/fingerprintjs/BotD/tree/66da86e9d9e7206e817a0f7fdbdfa8fe37f3cd47/src)、[CreepJS 固定源码](https://github.com/abrahamjuliot/creepjs/tree/10aa6724cd33a1015db1574211890518cd04f0cc)、[DataDome 2026-06-01 研究](https://datadome.co/threat-research/how-browser-vendors-are-quietly-making-automation-harder-to-detect/)。经典 Error.stack getter/CDP 检测受 V8 修改影响，不能把该旧规则无命中登记成“CDP 不可检测”。
+
+#### C3. 交互和浏览路径
+
+| ID | 网站可观察机制 | 实验室采集/测试设计 | 容易误判的情况 |
+| --- | --- | --- | --- |
+| B01 | pointer/mouse/focus/input/change 顺序及 isTrusted | 受控页面记录事件种类与时序，不记录键入正文 | isTrusted=true 可来自浏览器自动化；合法应用也会派发脚本事件 |
+| B02 | 鼠标轨迹、点击分布、滚动动力学 | 比较分布与完整操作上下文，不把贝塞尔曲线等同真人 | 键盘用户、触屏、运动障碍与辅助设备 |
+| B03 | 键入间隔、粘贴、编辑和输入法组合事件 | 使用合成测试文本，分开测逐键输入、粘贴、中文 IME | 真人粘贴整段文本、密码管理器填充 |
+| B04 | 页面可见性、焦点、交互目标与可交互状态 | 记录动作当时的遮挡、可见性和焦点；后台模式独立分组 | 多标签、阅读模式、后台页面正常活动 |
+| B05 | 请求频率、并发、间隔、连续运行和重复失败 | 汇总准备、验证、维护、正式复跑与重试的全部请求，按窗口计算 | 页面预取、自动刷新、用户快速操作 |
+| B06 | 访问路径、资源加载、前后动作及 API 调用关系 | 两类受控业务流程建立序列对照；缓存/Service Worker 单独标记 | 书签直达、SPA、缓存命中、辅助技术 |
+
+来源：[DataDome 信号分类](https://datadome.co/bot-management-protection/why-client-side-signals-are-a-must-have-for-detecting-sophisticated-attacks/)、[HUMAN bot characteristics](https://docs.humansecurity.com/applications/bot-characteristics)、[MDN isTrusted](https://developer.mozilla.org/en-US/docs/Web/API/Event/isTrusted)、[Cloudflare sequence rules](https://developers.cloudflare.com/bots/additional-configurations/sequence-rules/)。
+
+#### C4. 会话、账号及业务历史
+
+| ID | 网站可观察机制 | 实验室采集/测试设计 | 容易误判的情况 |
+| --- | --- | --- | --- |
+| S01 | Cookie/会话持续性、过期与重建频率 | 仅用实验室自有会话，记录生命周期及摘要 | 清理数据、无痕、Cookie 限制 |
+| S02 | 浏览器存储、挑战状态与服务端会话绑定 | 受控站维护自己的 session 与状态，验证跨页/重启连续性 | 存储分区、浏览器清理和安全产品 |
+| S03 | 登录时的设备/地域/会话突变 | 合成账号和场景，测变化检测；不迁移真实受限账号 | 更换电脑、旅行、正常安全恢复 |
+| S04 | 单账号长期访问强度与历史基线 | 独立长周期数据集，短测只给本轮分布 | 用户真实需求改变、集中办事 |
+| S05 | 多账号、设备、IP 之间的关联与协调活动 | 用虚拟身份测试关联规则；全网信誉属于外部覆盖项 | 家庭/公司共享网络与设备 |
+| S06 | 搜索/读取/交易等业务路径与平台政策 | 测试任务数据定义合法顺序和预算；自动化与业务风险分列 | 真人高频操作、被允许的批处理 |
+
+来源：[AWS Bot Control 关联活动](https://docs.aws.amazon.com/waf/latest/APIReference/API_AWSManagedRulesBotControlRuleSet.html)、[HUMAN detection overview](https://docs.humansecurity.com/applications/bd-detection-overview)、[阿里云高级规则](https://help.aliyun.com/zh/waf/web-application-firewall-3-0/custom-advanced-rules)。外部站点的历史账号信誉及私有阈值不在本地实验室数据中；这一项必须显示为未覆盖，而非“检测通过”。
+
+#### C5. 主动挑战、可信声明和反篡改
+
+| ID | 网站可观察机制 | 实验室采集/测试设计 | 容易误判的情况 |
+| --- | --- | --- | --- |
+| V01 | JavaScript 执行、浏览器能力探测及主动环境检查 | 加入受控探测页面，区分不支持、脚本错误、拒绝执行与异常结果 | JS 禁用、CSP、网络失败、隐私工具 |
+| V02 | 时效 token、nonce、会话绑定、重放与请求顺序 | 只实现实验室自己的挑战合同和失效案例，不复制目标站私有协议 | 标签页恢复、时间误差、旧缓存 |
+| V03 | CAPTCHA、无感挑战、PoW 与后续风险评估 | 通过模拟挑战测 B-A-T 的暂停/人工接管/恢复；真实服务另作独立对照 | 挑战通过不能推导全部行为可信 |
+| V04 | PAT/设备证明、已验证 bot 或 Web Bot Auth | 核验各类声明实际证明什么；不支持与验证失败分开 | PAT 不支持不等于机器人；签名 agent 仍是自动化 |
+| V05 | 蜜罐字段、诱饵链接、不可见或遮挡目标 | 仅在受控页面设计可访问性友好的诱饵，检测错误定位与无差别读取 | 屏幕阅读器、预取、搜索索引 |
+| V06 | 探针缺失、上报时序异常、内容篡改与信号重放 | 服务端关联一次性采集凭据和请求事实；不能完全信任客户端布尔结果 | 广告拦截、离线恢复、采集器自身故障 |
+
+来源：[DataDome Device Check](https://docs.datadome.co/docs/device-check)、[Kasada 官方机制资料](https://get.kasada.io/hubfs/Kasada-Data-Sheet.pdf)、[Cloudflare PAT](https://developers.cloudflare.com/cloudflare-challenges/reference/private-access-tokens/)、[AWS Web Bot Auth](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-web-bot-auth.html)、[阿里云 Bot 管理](https://help.aliyun.com/zh/waf/web-application-firewall-3-0/bot-management/)。PoW 证明完成计算；签名证明声明的主体；二者均不能直接等同人类操作。
+
+### D. 市场覆盖与变化记录
+
+| 厂商/项目 | 本轮已核验的机制面 | 对本实验室的作用 |
+| --- | --- | --- |
+| Cloudflare | TLS 指纹、规则/ML、JS、序列、挑战及可信声明 | 网络/请求/挑战分层与独立商用对照候选 |
+| Akamai | 请求异常、主动检测、行为与已知 bot 分类 | 提醒保留头顺序、版本矛盾与事务行为 |
+| DataDome | 客户端、服务端、信誉、主动设备检查与版本变化 | 规则适用版本、行为/信誉与即时信号分离 |
+| HUMAN | 环境伪装、篡改、交互、业务路径、网络信誉 | 检测原因与自动化能力分列 |
+| Kasada | 客户端完整性及计算挑战 | 覆盖主动挑战，不把它缩成验证码 |
+| AWS WAF | 常见/定向检测、关联活动 ML 与 token | 关联数据和自有外部 WAF 对照 |
+| 阿里云 WAF | Client ID/UMID、JA3/JA4/H2、行为与评分 | 国内产品公开机制覆盖，不外推淘宝具体部署 |
+| BotD / CreepJS / JA4 | 可读源码的基础探针及指纹计算 | 本地实现复用，不能替代上列完整商用体系 |
+
+特别更新：[阿里云 2026-09-23 公告](https://help.aliyun.com/zh/waf/web-application-firewall-3-0/product-overview/waf-bot-management-module-upgrade-notice)发布 Agentic Bot，将行为、频率、路径、设备和网络信号用于评分/分类。旧模块文档不能自动代表最新售卖/部署能力。上述矩阵覆盖已公开的主流机制族；各厂商未公开参数、模型和私有数据放入外部覆盖登记，不宣称穷尽所有私有规则。
+
+### E. 明确复用方案和源码核验
+
+| 组件 | 固定快照 | 已读实际实现 | 采用方式和边界 |
+| --- | --- | --- | --- |
+| BotD | 2.0.0；66da86e9d9e7206e817a0f7fdbdfa8fe37f3cd47 | src/sources/index.ts、detectors/index.ts、webdriver.ts、webgl.ts、package.json | MIT；打包到本地测试页面，保留源数据和命中项。上游目前 stability-only；仅基础检测 |
+| CreepJS | 10aa6724cd33a1015db1574211890518cd04f0cc | README、package.json、src/creep.ts、server.js | MIT；作为独立研究探针。上游明确不是通用指纹库；接入前核查完整外联、日志与服务绑定 |
+| JA4 | c6469a7b0dbf8fe963810162429fbfd9d1acc4d5 | README、python/README.md、LICENSE | TLS JA4 为 BSD-3；JA4H 等 JA4+ 有独立 FoxIO 许可。复用 Python/tshark 工具，不重写解析器 |
+| 受控页面与实验记录 | B-A-T 当前本地工具链 | 本轮未修改运行实现 | TypeScript/Zod；只实现项目独有实验配置、样本关联、报告和会话测试规则 |
+
+实际核验发现：BotD webdriver 检测把真值映射成 HeadlessChrome，WebGL 规则中仍有特定历史渲染器字串判断。因此其标签要视为探针结果，不能未经校准就声称“识别了所有现代自动化”。CreepJS 部分源码会把指纹 JSON 打印到控制台，服务默认监听也应收紧；完整外联审计尚未完成，不能直接将官方演示页用于个人浏览器采样。
+
+JA4 Python 文档提供 Windows 用法，依赖 Python 3 和 tshark，推荐 tshark 4.0.6+。只读检查未在 C:/Program Files/Wireshark/tshark.exe 找到文件；不代表其他位置没有安装。没有安装抓包驱动或修改证书信任。
+
+### F. 实验室结构：网站侧证据与 B-A-T 事实分开
+
+建议结构：
+
+```text
+手动浏览 / 现有 browser-use / 单一候选改动
+                  |
+          同一受控测试站与任务
+                  |
+     网络入口 + 页面探针 + 会话/序列规则
+                  |
+          逐项证据与实验报告
+
+B-A-T 现有运行事件 --只读关联--> 实验报告
+实验标签与版本清单 --评测时合并--> 实验报告
+```
+
+评测站属于开发工具，不属于生产公共 runtime，不修改 TaskRun 的合法完成定义，不增加全局 LLM judge。浏览器和 runner 的 owner/lease 继续由现有能力管理，一个产品运行仍只占一个实际浏览器控制会话。
+
+两种观测环境必须分开：
+- 本地受控站：页面/事件/会话/规则测试；没有真实外网 IP 信誉，HTTP 页面也没有 TLS 指纹。
+- 自有或获授权 HTTPS 端点：网络协议和外部 WAF 对照；由收到原始连接的一侧采集。中间代理重新建立 TLS 后，源站看到的是代理指纹，不能当作客户端原始指纹。
+
+抓包只限实验地址与端口，使用合成登录和数据；真实 Cookie、Profile、验证码正文及敏感页面内容不进仓库、日志或快照。优先在受控接入端取所需元数据，避免为检查 TLS 改写实际客户端网络路径。未取到的协议字段标 missing，不推测补齐。
+
+### G. 对照、校准与验收方法
+
+对照组与候选必须在相同浏览器版本、任务、页面数据和网络条件下运行，改变一个因素时记录其余条件。人工组须真实手动完成，不能用自动化录制回放冒充人工样本。
+
+首轮样本分五组：
+1. 手动基线：鼠标、键盘导航、粘贴/IME、多标签、DevTools 开/关、隐私设置。用于发现误报。
+2. 现有 browser-use：分别记录初次探索、sample/verification、正式普通复跑和失败恢复，避免只测一段。
+3. 候选单变量：保持 browser-use，只调整一个宿主/配置/会话实现，比较差异。
+4. 已知异常对照：在自有测试站用合成错误验证规则能检测环境矛盾、会话失效、过量请求、挑战重放和采集缺失。
+5. 留出集：未参与调参的任务、页面状态或独立探针；用于防止只对着自写规则优化。
+
+业务样本至少包括“搜索/列表筛选/详情读取”与“表单填写/修改/提交/恢复”两类；使用通用测试数据，不在公共 contracts/runtime 固定京东或淘宝字段。
+
+报告必须给出：
+- 样本数、浏览器/宿主/框架/探针版本、环境、任务和运行阶段。
+- 每项测量、规则命中、证据强度、采集失败和未覆盖项。
+- 误报率 FP/(FP+TN)、漏报率 FN/(TP+FN)，分环境/人群展示，不能只报总体准确率。
+- 业务结果、请求总数/重复数、耗时分布、隐式模型调用和资源清理结果。
+- 候选相对现有方案消除/新增的信号，以及独立留出集结果。
+
+校准样本不足时报告分子/分母与区间，不产生没有校准依据的“99% 真人”概率。工程不变量（如会话不串用、挑战后停止、无未授权重试）使用确定性检查；行为分布阈值由真人对照和业务场景校准，不能凭空写死“每页几秒就是安全”。
+
+验收依次进行：探针本身可检测已知异常 -> 手动基线误报被解释/修正 -> 当前 B-A-T 的完整访问成本被测出 -> 单变量候选比较 -> 独立探针或自有域名商用 WAF 复核。自有域名 WAF 放行与目标平台账号安全分别记录，不能把前者命名为“京东通过”。
+
+### H. 实施次序与本轮未执行项
+
+实施次序：先搭本地检测站及证据格式，再接现有 browser-use 跑受控任务，再加受控 TLS 观测，最后校准行为/会话与独立商用对照。优先复用探针，不先迁移真实账号，也不先替换 browser-use。
+
+截至本轮，30 项检测族、来源和采集边界已定义；实现、人工基线、浏览器对照及外网/WAF 均未运行。缺少具体部署地址不阻止本地设计；后续真实外网验证必须有自有/获授权端点。京东事故处置中的停止自动访问规则继续有效。
+
+Reuse Assessment（检测实验室研究态）:
+- capability: 从网站侧观察浏览器自动化特征，并比较人工基线、现有 B-A-T 和候选改动。
+- existing implementation in repository: browser-use 探索、参数化链路、正式复跑、运行/模型/资源审计；本轮不改动。
+- mature candidates and pinned versions: BotD 2.0.0、CreepJS 与 JA4 的上述固定提交；商用引擎作为独立对照。
+- selected implementation: 组合本地 BotD 探针、独立 CreepJS 对照、JA4 网络观测与薄实验记录层；具体引入版本在最小样本通过后冻结。
+- reused public surface: BotD load/detect/collect 类公开能力以固定版本接口核验为准；CreepJS 独立页面；JA4 Python/tshark CLI。
+- B-A-T-owned adapter and remaining gap: 实验身份、版本清单、证据关联、网站任务夹具和对照报告；外部信誉/账号历史单列未覆盖。
+- license/runtime/platform fit: BotD/CreepJS MIT；JA4 TLS BSD-3、其他 JA4+ 独立许可；Windows 抓包依赖尚未完成本机验证。
+- browser/runtime/state ownership conflicts: 检测站不取得个人浏览器所有权；报告不覆盖生产运行事实；端口/进程/临时目录沿用已有资源处置边界。
+- replay model calls: 检测和比较本身使用代码；正式复跑仍为零隐式模型调用，探索调用单独记录。
+- rejected candidates and evidence: 不采用单一检测站总分、固定真人概率、旧 CDP 规则一票结算或从零仿制完整商用风控。
+- focused validation: 官方文档和固定源码只读核验完成；仅文档更新，未安装/运行/发布任何检测组件。
+
+
+## 2026-10-07 开源检测主体与 B-A-T 深度整合设计（文档交付）
+
+用户明确要求先选择开源方案，仅补其缺口，并把选型和现有系统改造写成详细文档。本次只完成研究与开发设计，没有实施检测系统或产品改造。
+
+- [开源选型、30 类机制覆盖与扩展边界](ANTIBOT_OPEN_SOURCE_ASSESSMENT_20261007.md)：主选先验证 CrowdSec 1.8.1 + 独立锁定的 Hub / 官方 bouncer，直接复用内置 fpscanner、挑战协议、规则和行为场景；BotD/CreepJS 独立复核，JA4 补充 TLS。新 Bot Detection 仍为 Alpha，不写成已成熟验收。
+- [系统集成与实施方案](ANTIBOT_SYSTEM_INTEGRATION_PLAN_20261007.md)：保留 browser-use、workflow-use、TaskChain、LangGraph；列明现有源码入口、W1–W5 改造包、P0–P4 阶段、协议/状态所有权、12 项验收不变量和回滚。
+- 本次决定补充并覆盖此前“仅 BotD + CreepJS + JA4 组合”的检测底座建议：服务器侧复用 CrowdSec，不把规则引擎、挑战协议和行为窗口重新交给 B-A-T 自研。此前已撤回的“桌面原生输入优先”建议继续无效。
+- 源码核验补充：BotD npm load 默认有抽样 monitoring，接入应关闭；独立 fpscanner 的 XOR 不是安全完整性协议；CrowdSec Engine / Hub / Lua 依赖须分别固定，不能把 Next 文档当稳定版本合同。
+- 运行状态：组件未安装、未启动；人工基线、Windows 浏览器对照、TLS 抓包、产品改造均未执行。未访问京东/淘宝，京东事故处置边界继续有效。后续按两份文档取得最小实测证据后才冻结采用版本。
+
+
+## 2026-10-07 反爬开发计划设计复审：首批缩减与效果验收纠正
+
+用户追问是否经过 review、是否最小、能否满足网站侧识别目标。本轮进行主 agent 设计复审，不是独立 reviewer 审核。六项发现及处理已写入 [集成方案第 0 节](ANTIBOT_SYSTEM_INTEGRATION_PLAN_20261007.md#0-设计复审结论与纠正)，并同步修订 [开源选型](ANTIBOT_OPEN_SOURCE_ASSESSMENT_20261007.md)。
+
+本条覆盖前条的首批实施顺序：M0 只使用固定 fpscanner、既有本地夹具和现有运行记录；无需先部署 CrowdSec/容器或增加产品 schema、数据库、UI。CrowdSec 仍为需要挑战与跨请求判定时的开源扩展，JA4 在声明网络改善前接入；W1–W5 全部改为按实测缺口触发。
+
+固定 fpscanner 源码进一步核验：采集错误与检测规则异常不能直接按 false 结算；CDP 探针修改 Error.prepareStackTrace，独立新文档隔离探针扰动。效果验收新增 G1–G5：有效观测、同条件对照、预登记目标变化、成对重复与独立复核、业务和声明范围。撤回“检测库必须开源因此所有客户端宿主也必须完整开源”的额外假设。
+
+本轮只修订设计文档；组件、浏览器、产品测试与目标平台访问均未运行。

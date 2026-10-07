@@ -77,7 +77,7 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
   const envelope = validateHybridResponse(input.response)
   const request = z.record(z.string(), jsonValueSchema).parse(input.request)
   validateHybridRequestSources(envelope, request)
-  if (envelope.compilation.compilerVersion === "bat-hybrid/2") {
+  if ((envelope.compilation.compilerVersion === "bat-hybrid/2" || envelope.compilation.compilerVersion === "bat-hybrid/3")) {
     const payload = naturalPayloadContext(envelope, request)
     const natural = assertNaturalSourceIdentity(
       request, input.requirement, input.plan, input.step, input.stepInput, input.source.history,
@@ -165,7 +165,7 @@ export function readHybridArtifact(raw: unknown) {
   const envelope = validateHybridResponse(artifact.compilerResponse)
   const request = z.record(z.string(), jsonValueSchema).parse(artifact.compilationRequest)
   validateHybridRequestSources(envelope, request)
-  if (envelope.compilation.compilerVersion === "bat-hybrid/2") {
+  if ((envelope.compilation.compilerVersion === "bat-hybrid/2" || envelope.compilation.compilerVersion === "bat-hybrid/3")) {
     naturalPayloadContext(envelope, request).assertTraceEvidence()
   }
   return artifact

@@ -164,6 +164,7 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
         facts.extend(await self.natural_effect_facts(name, target_element))
         before = await self.observe(summary, facts)
         self.pending = {'action': raw, 'actionId': action_id, 'pre': before.id, 'queryEvidence': query_evidence,
+                        'intent': str(getattr(model_output, 'next_goal', '') or '')[:4000],
                         'navigationTabs': await navigation_tab_ids(self.browser) if name in NAVIGATION_ACTIONS else None,
                         'targetRef': structure.targetRef if structure else None,
                         'targetIdentity': target_identity, 'targetElement': target_element,

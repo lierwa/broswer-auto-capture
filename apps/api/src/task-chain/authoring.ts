@@ -195,6 +195,9 @@ export class TaskChainAuthoring {
   private async explorePlan(job: TaskAuthoringJob, requirement: TaskRequirement, plan: TaskPlan, input: JsonValue,
     signal: AbortSignal, model: PreparedAIModel) {
     if (!job.authoring || !job.browserRunId) throw new Error("hybrid_authoring_context_missing")
+    // WHY：在来源生成前固定协议，缺失新回执不能被当成旧来源放行。
+    job.authoring.sourceProtocol = "bat-hybrid/3"
+    this.touch(job)
     const progression = plannedProgression(plan, input), sources: Array<{ step: TaskPlan["steps"][number];
       stepInput: JsonValue; result: HybridSourceResult; compiled: ReturnType<AuthoringBuild["finish"]> }> = []
     const sourceArtifacts: Array<{ stepId: string; closed: boolean;
@@ -220,7 +223,7 @@ export class TaskChainAuthoring {
         const build = new AuthoringBuild({ repository: this.repository, job, requirement, plan, step,
           input: stepInput, model: model.selection.modelId, signal })
         const task = browserUseTask({ requirement, plan, step, resolvedInput: stepInput })
-        const result = await session.author({ task, input: stepInput,
+        const result = await session.author({ task, input: stepInput, sourceProtocol: job.authoring!.sourceProtocol,
           inputSchema: step.inputContract.schema, outputSchema: step.outputContract.schema,
           resultSpec: step.resultSpec,
           requirementId: requirement.id, requirementVersion: requirement.version, planId: plan.id, planVersion: plan.version,

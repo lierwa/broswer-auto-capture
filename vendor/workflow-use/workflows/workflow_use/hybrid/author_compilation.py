@@ -55,7 +55,7 @@ class AuthorCompilation:
         updated, issues = await annotate_selections(self.request, trace, self.selection_model,
                                                     skip_action_refs=self.annotated_actions)
         self.annotated_actions.update(action.id for action in trace.actions
-                                      if action.name in ('click', 'navigate') and action.status == 'succeeded')
+                                      if action.name in ('click', 'navigate', 'bat_inspect_action') and action.status == 'succeeded')
         # WHY：同一来源键连失败也只尝试一次；结果进入原 collector，不另建队列或重复终态注解。
         originals = {item.id: item for item in self.collector.observations}
         for observation in updated.observations:

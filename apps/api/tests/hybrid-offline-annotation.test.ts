@@ -127,6 +127,20 @@ test("纯编译或未授权缺口不调用模型，也不启动浏览器", async
   }
 })
 
+test("新协议已尝试生成的缺口恢复只重编译，不打开第二个模型桥", async () => {
+  const source = fixture()
+  source.request.compilerVersion = "bat-hybrid/3"
+  source.canonicalRequest = source.canonicalRequest.replace('"compilerVersion":"bat-hybrid/2"', '"compilerVersion":"bat-hybrid/3"')
+  const body = JSON.parse(source.response.canonicalPayload)
+  body.compilerVersion = "bat-hybrid/3"
+  const canonicalPayload = JSON.stringify(body)
+  source.response = validateHybridResponse({ ...source.response, canonicalPayload,
+    compilation: { ...body, canonicalDigest: hash(canonicalPayload) } })
+  const result = await harness(source, true)
+  assert.equal(result.counts.bridges, 0)
+  assert.deepEqual(result.commands, ["hybrid_compile"])
+})
+
 test("显式离线注解只请求一次，保留数字词法与原来源并单独返回新增审计", async () => {
   const result = await harness(fixture(), true)
   assert.equal(result.counts.bridges, 1)

@@ -276,7 +276,7 @@ class NaturalPlan(Contract):
 
 
 class NaturalCompilationRequest(Contract):
-    compilerVersion: Literal['bat-hybrid/2']
+    compilerVersion: Literal['bat-hybrid/2', 'bat-hybrid/3']
     actionRegistryVersion: str = Field(min_length=1)
     requirement: NaturalRequirement
     plan: NaturalPlan

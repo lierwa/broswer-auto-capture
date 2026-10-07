@@ -25,7 +25,7 @@ class SelectionProgram(Contract):
 
 async def annotate_selections(request, trace, model, *, skip_action_refs=frozenset()):
     observations = {item.id: item for item in trace.observations}
-    existing = {fact.value.get('actionRef') for observation in trace.observations
+    existing = {fact.value.get('actionRef', fact.value.get('methodRef')) for observation in trace.observations
                 for fact in observation.facts if fact.kind == 'selection_function'
                 and isinstance(fact.value, dict)}
     updated, issues = trace.model_copy(deep=True), []
@@ -33,14 +33,24 @@ async def annotate_selections(request, trace, model, *, skip_action_refs=frozens
     for action in trace.actions:
         pre = observations.get(action.preObservationRef)
         if (action.id in existing or action.id in skip_action_refs
-                or action.name not in ('click', 'navigate') or action.status != 'succeeded' or pre is None):
+                or action.name not in ('click', 'navigate', 'bat_inspect_action') or action.status != 'succeeded' or pre is None):
             continue
         target, _, target_issues = natural_target(action, pre) if action.name == 'click' else (None, None, [])
-        match = None if target_issues else selection_read(trace, action, target)
+        try:
+            match = None if target_issues else selection_read(trace, action, target)
+        except ValueError:
+            issues.append(gap('missing_binding', [action.id], 'inspected_navigation_evidence_required'))
+            continue
         if match is None:
             continue
         fact, read = match
-        source, reason = await selection_source(request, trace, action, target, read, model)
+        from .inspected_compile import reused_method_program, inspected_navigation_source
+        reused = reused_method_program(updated, action, fact)
+        if inspected_navigation_source(updated, action) is not None and reused is None:
+            issues.append(gap('missing_binding', [action.id], 'selection_function_evidence_required'))
+            continue  # 同一已检查动作生成失败也只保留原缺口，不借随后真实导航另开生成机会。
+        source, reason = (reused['source'], None) if reused else \
+            await selection_source(request, trace, action, target, read, model)
         if reason is not None:
             issues.append(gap('missing_binding', [action.id], reason))
             continue
@@ -49,7 +59,8 @@ async def annotate_selections(request, trace, model, *, skip_action_refs=frozens
                  'inputs': {'candidates': read.specification.outputSchema},
                  'outputSchema': selection_schema(action, read),
                  'examples': [{'input': {'candidates': read.output}, 'output': selection_value(action, target)}]}
-        value = {'actionRef': action.id, 'readFactRef': fact.id,
+        reference_key = 'methodRef' if action.name == 'bat_inspect_action' else 'actionRef'
+        value = {reference_key: action.id, 'readFactRef': fact.id,
                  'requirementDigest': request.requirementDigest, 'draft': draft}
         fingerprint = digest(value)
         updated_observations[pre.id].facts.append(ObservationFact(
@@ -113,7 +124,7 @@ def selection_action_context(trace, action, target, read):
     observations = {item.id: item for item in trace.observations}
     before = observations.get(action.preObservationRef)
     after = observations.get(action.postObservationRef)
-    field = 'attribute_href' if action.name == 'navigate' else 'ordinal'
+    field = 'attribute_href' if action.name in ('navigate', 'bat_inspect_action') else 'ordinal'
     selected = next((row for row in read.output if row.get(field) == selection_value(action, target)), None)
     context = {'selectedCandidate': selected,
                'pageBefore': {'url': before.url, 'title': observation_title(before)} if before else None,

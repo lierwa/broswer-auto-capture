@@ -6,6 +6,7 @@ import { functionDraftSchema, functionSegmentSchema, hybridNaturalRequestSchema,
   type HybridCompilation } from "./hybrid-schema.js"
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
 import { validateSelectionDraft } from "./selection-validation.js"
+import { assertInspectedMethod, selectionNavigationUrl } from "./hybrid-method-source.js"
 
 type Request = z.infer<typeof hybridNaturalRequestSchema>
 type Segment = z.infer<typeof functionSegmentSchema>
@@ -13,6 +14,9 @@ type Context = { request: Request; compilation: HybridCompilation;
   assertFact: ReturnType<typeof naturalPayloadContext>["assertFact"] }
 const evidence = z.object({ actionRef: z.string(), readFactRef: z.string(), requirementDigest: z.string(),
   draft: functionDraftSchema }).strict()
+const methodEvidence = evidence.omit({ actionRef: true }).extend({ methodRef: z.string() }).strict()
+const selectionEvidence = z.union([evidence, methodEvidence])
+const reference = (value: z.infer<typeof selectionEvidence>) => "methodRef" in value ? value.methodRef : value.actionRef
 const failureContext = z.object({ actionRefs: z.array(z.string()).max(1) }).strict()
 
 export async function withSelectionValidation(envelope: Parameters<typeof naturalPayloadContext>[0],
@@ -46,7 +50,7 @@ export function materializeSelectionFunction(segment: Segment, context: Context)
 
 export async function validateSelectionFunctions(envelope: Parameters<typeof naturalPayloadContext>[0],
   request: Record<string, JsonValue>, signal: AbortSignal) {
-  if (envelope.compilation.compilerVersion !== "bat-hybrid/2") return
+  if ((envelope.compilation.compilerVersion !== "bat-hybrid/2" && envelope.compilation.compilerVersion !== "bat-hybrid/3")) return
   const segments = envelope.compilation.segments.filter((segment) => segment.kind === "function")
   if (segments.length === 0) return
   const payload = naturalPayloadContext(envelope, request)
@@ -74,13 +78,18 @@ function assertSelectionSource(segment: Segment, context: Context) {
     .filter((fact) => fact.kind === "selection_function"
       && fact.id === segment.id).map((fact) => ({ fact, observation })))
   if (matches.length !== 1) throw new Error("selection_function_evidence_required")
-  const { fact, observation } = matches[0]!, value = evidence.parse(fact.value)
+  const { fact, observation } = matches[0]!, value = selectionEvidence.parse(fact.value)
   assertFact(fact, observation.id)
-  const action = request.trace.actions.find((item) => item.id === value.actionRef)
+  const action = request.trace.actions.find((item) => item.id === reference(value))
+  if ("methodRef" in value) {
+    if (!action || assertInspectedMethod(request, action, assertFact).value.readFactRef !== value.readFactRef) {
+      throw new Error("selection_function_source_mismatch")
+    }
+  } else if (action?.name === "bat_inspect_action") throw new Error("selection_function_source_mismatch")
   const source = request.trace.observations.flatMap((owner) => owner.facts
     .filter((item) => item.id === value.readFactRef && item.kind === "verified_natural_read")
     .map((item) => ({ item, owner })))
-  if (!action || (action.name !== "click" && action.name !== "navigate") || action.status !== "succeeded"
+  if (!action || !["click", "navigate", "bat_inspect_action"].includes(String(action.name)) || action.status !== "succeeded"
     || action.preObservationRef !== observation.id || source.length !== 1
     || segment.id !== `selection-${action.id}` || value.requirementDigest !== request.requirement.sourceDigest
     || !isDeepStrictEqual(value.draft, segment.draft) || !isDeepStrictEqual(fact.sourceRefs, segment.proofRefs)) {
@@ -90,7 +99,7 @@ function assertSelectionSource(segment: Segment, context: Context) {
   assertFact(readFact, owner.id)
   const read = z.object({ actionRef: z.string(), output: jsonValueSchema,
     specification: readSpecificationSchema, stable: z.literal(true) }).passthrough().parse(readFact.value)
-  if (action.name === "navigate") {
+  if (action.name === "navigate" || action.name === "bat_inspect_action") {
     assertNavigationSelection(segment, context, action, read, owner, observation)
     return
   }
@@ -124,7 +133,7 @@ function assertSelectionSource(segment: Segment, context: Context) {
 function assertNavigationSelection(segment: Segment, context: Context, action: Request["trace"]["actions"][number],
   read: { actionRef: string; output: JsonValue; specification: z.infer<typeof readSpecificationSchema> },
   owner: Request["trace"]["observations"][number], before: Request["trace"]["observations"][number]) {
-  const trace = context.request.trace, args = z.object({ url: z.string() }).passthrough().parse(action.args)
+  const trace = context.request.trace, args = { url: selectionNavigationUrl(action) }
   const readIndex = trace.actions.findIndex(item => item.id === read.actionRef)
   const actionIndex = trace.actions.indexOf(action)
   const consumer = context.compilation.segments.find(item => item.id === `s-${action.id}`)
@@ -146,23 +155,28 @@ function assertNavigationSelection(segment: Segment, context: Context, action: R
 }
 
 /** WHY：新增的是现有 Function 输出到原导航参数的接线，不是另一种执行节点。 */
-export function assertSelectionValueBinding(raw: unknown, trace: Request["trace"],
+export function assertSelectionValueBinding(raw: unknown, request: Request,
   assertFact: Context["assertFact"]) {
+  const trace = request.trace
   const decision = z.object({ actionRef: z.string(), argumentPath: z.literal("url"), sourceRef: z.string(),
     binding: valueBindingSchema, proofRefs: z.array(z.object({ ref: z.string(), digest: z.string() }).strict()) })
     .passthrough().parse(raw)
   const action = trace.actions.find(item => item.id === decision.actionRef)
   const before = trace.observations.find(item => item.id === action?.preObservationRef)
   const matches = before?.facts.filter(fact => fact.id === decision.sourceRef && fact.kind === "selection_function") ?? []
-  if (!action || action.name !== "navigate" || action.status !== "succeeded" || matches.length !== 1
+  if (!action || !["navigate", "bat_inspect_action"].includes(String(action.name)) || action.status !== "succeeded" || matches.length !== 1
     || !before || decision.sourceRef !== `selection-${action.id}`
     || !isDeepStrictEqual(decision.binding, { source: "node", nodeId: decision.sourceRef, path: [] })) {
     throw new Error("selection_function_binding_mismatch")
   }
-  const fact = matches[0]!, value = evidence.parse(fact.value)
+  const fact = matches[0]!, value = selectionEvidence.parse(fact.value)
+  if (action.name === "bat_inspect_action") {
+    if (!("methodRef" in value)) throw new Error("selection_function_binding_mismatch")
+    assertInspectedMethod(request, action, assertFact)
+  } else if ("methodRef" in value) throw new Error("selection_function_binding_mismatch")
   assertFact(fact, before.id)
-  const args = z.object({ url: z.string() }).passthrough().parse(action.args)
-  if (value.actionRef !== action.id || !isDeepStrictEqual(value.draft.outputSchema, { type: "string" })
+  const args = { url: selectionNavigationUrl(action) }
+  if (reference(value) !== action.id || !isDeepStrictEqual(value.draft.outputSchema, { type: "string" })
     || value.draft.examples[0]?.output !== args.url || !isDeepStrictEqual(decision.proofRefs, fact.sourceRefs)) {
     throw new Error("selection_function_binding_mismatch")
   }

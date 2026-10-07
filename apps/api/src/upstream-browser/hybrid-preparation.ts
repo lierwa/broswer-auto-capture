@@ -5,7 +5,7 @@ import { hybridNaturalRequestSchema, hybridTargetSchema, type HybridCompilation 
 
 type NaturalRequest = z.infer<typeof hybridNaturalRequestSchema>
 type NaturalFact = NaturalRequest["trace"]["observations"][number]["facts"][number]
-type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>
+type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" | "bat-hybrid/3" }>
 type AssertFact = (fact: NaturalFact, observationId: string) => void
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/)

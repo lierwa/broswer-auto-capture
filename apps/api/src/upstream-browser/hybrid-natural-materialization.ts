@@ -19,7 +19,7 @@ export function assertNaturalBinding(raw: unknown, trace: z.infer<typeof hybridN
       digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
     derivation: z.enum(["anchor_navigation", "prior_verified_read", "selection_function", "prior_browser_context"]).optional() }).passthrough().parse(raw)
   if (decision.derivation === "prior_browser_context") return assertPriorBrowserContext(decision, trace, payload)
-  if (decision.derivation === "selection_function") return assertSelectionValueBinding(decision, trace, payload.assertFact)
+  if (decision.derivation === "selection_function") return assertSelectionValueBinding(decision, payload.ordinary, payload.assertFact)
   if (decision.derivation === "anchor_navigation") {
     return assertAnchorNavigationBinding(decision, trace, payload)
   }
@@ -165,7 +165,7 @@ export function assertResultDataSegment(segment: Extract<HybridSegment, { kind: 
     ? spec.fields.filter((field) => field.producerRef === derivation.producerRef) : []
   const sourceOwner = derivation && spec.mode === "data" ? spec.fields.filter((field) =>
     field.producerRef === derivation.sourceProducerRef && isDeepStrictEqual(field.path, derivation.sourcePath)) : []
-  const assembly = compilation.compilerVersion === "bat-hybrid/2" ? compilation.outputAssembly : undefined
+  const assembly = (compilation.compilerVersion === "bat-hybrid/2" || compilation.compilerVersion === "bat-hybrid/3") ? compilation.outputAssembly : undefined
   const sources = derivation && assembly ? assembly.fields.filter((field) =>
     isDeepStrictEqual(field.path, derivation.sourcePath)) : []
   const decision = segment.bindings[0], parsed = valueBindingSchema.safeParse(

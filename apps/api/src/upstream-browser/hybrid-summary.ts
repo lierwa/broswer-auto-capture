@@ -23,7 +23,7 @@ const verifiedRead = z.object({ actionRef: z.string(), specification: readSpecif
 const action = z.object({ id: z.string(), name: z.string(), status: z.literal("succeeded"),
   resultRef: reference, preObservationRef: z.string().nullable(), postObservationRef: z.string().nullable() }).passthrough()
 
-type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>
+type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" | "bat-hybrid/3" }>
 type NaturalRequest = z.infer<typeof hybridNaturalRequestSchema>
 type SummarySegment = z.infer<typeof naturalSummarySegmentSchema>
 type NaturalFact = NaturalRequest["trace"]["observations"][number]["facts"][number]

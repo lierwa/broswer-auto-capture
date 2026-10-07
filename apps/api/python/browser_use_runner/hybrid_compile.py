@@ -77,7 +77,8 @@ def matching_registry(output_model, request):
     from itertools import product
     for legacy_fields, human, selection in product((False, True), (True, False), (False, True)):
         registry = ActionRegistry.from_tools(author_tools_for_result_spec(output_model, request.plan.resultSpec,
-            selection_methods=selection, human_intervention=human, legacy_model_fields=legacy_fields))
+            selection_methods=selection, human_intervention=human, legacy_model_fields=legacy_fields,
+            source_protocol=request.compilerVersion))
         if registry.schemaDigest == request.actionRegistryVersion:
             return registry
     raise ValueError('hybrid_action_registry_mismatch')

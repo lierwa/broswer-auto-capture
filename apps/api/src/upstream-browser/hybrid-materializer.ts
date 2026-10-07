@@ -1,4 +1,5 @@
 import { validateHybridResponse } from "./hybrid-response.js"
+import { assertPreparationMethod } from "./hybrid-method-source.js"
 import { sourceContext, digestCanonicalJson, type SourceContext } from "./hybrid-materializer-source.js"
 import { materializeHybridNodes, rewriteBinding, connectSummaryNodes } from "./hybrid-materializer-nodes.js"
 export { validateHybridResponse } from "./hybrid-response.js"
@@ -45,20 +46,21 @@ export function materializeHybridChain(input: MaterializeHybridInput): TaskChain
     throw new Error("hybrid_compilation_gaps")
   }
   const request = z.record(z.string(), jsonValueSchema).parse(input.request)
-  const payload = compilation.compilerVersion === "bat-hybrid/2"
+  const payload = (compilation.compilerVersion === "bat-hybrid/2" || compilation.compilerVersion === "bat-hybrid/3")
     ? naturalPayloadContext(envelope, request) : (validateHybridRequestSources(envelope, request), null)
   const { authority, context } = sourceContext(compilation, request, input.plan, input.step, payload)
+  if (context.version === 2) assertPreparationMethod(context.request, compilation, context.payload.assertFact)
   const discoveries = context.version === 2 ? assertNaturalDiscoveryExclusions({ compilation, request: context.request, payload: context.payload }) : new Set<string>()
-  const repeats = context.version === 2 && compilation.compilerVersion === "bat-hybrid/2"
+  const repeats = context.version === 2 && (compilation.compilerVersion === "bat-hybrid/2" || compilation.compilerVersion === "bat-hybrid/3")
     ? validateNaturalRepeats({ compilation, request: context.request, assertFact: context.payload.assertFact,
       outputSchema: input.step.outputContract.schema }) : []
-  const preparations = context.version === 2 && compilation.compilerVersion === "bat-hybrid/2"
+  const preparations = context.version === 2 && (compilation.compilerVersion === "bat-hybrid/2" || compilation.compilerVersion === "bat-hybrid/3")
     ? detectNaturalPreparations({ compilation, request: context.request, assertFact: context.payload.assertFact }) : []
   const runtimeScopes = new Map(context.version === 2 ? classifyRuntimeScopeDecisions({
     compilation, trace: context.request.trace, assertFact: context.payload.assertFact, discoveries,
   }).flatMap((decision) => decision.runtimeScopeFrom ? [[decision.segmentId, decision] as const] : []) : [])
   if (context.version === 2) assertActionResultReadiness(context, compilation, runtimeScopes)
-  const missingTargetProducers = new Set(compilation.compilerVersion === "bat-hybrid/2"
+  const missingTargetProducers = new Set((compilation.compilerVersion === "bat-hybrid/2" || compilation.compilerVersion === "bat-hybrid/3")
     ? (compilation.resultBranches ?? []).flatMap((raw) => {
       const branch = hybridResultBranchSchema.parse(raw)
       return branch.missingProducerSegmentId ? [branch.missingProducerSegmentId] : []
@@ -75,7 +77,7 @@ export function materializeHybridChain(input: MaterializeHybridInput): TaskChain
   const naturalLoops = materializeNaturalRepeats(repeats, { plan, step: input.step, nodes, variables, compilation, edges })
   loops.push(...naturalLoops.loops); nodes.push(...naturalLoops.branches)
   nodes.push(...materializeBranches(control))
-  if (context.version === 2 && compilation.compilerVersion === "bat-hybrid/2") {
+  if (context.version === 2 && (compilation.compilerVersion === "bat-hybrid/2" || compilation.compilerVersion === "bat-hybrid/3")) {
     const resultBranches = (compilation.resultBranches ?? []).map((raw) => {
       const branch = hybridResultBranchSchema.parse(raw)
       return { id: branch.id, label: branch.controlRef, kind: "branch" as const, predicate: branch.predicate,
@@ -230,7 +232,7 @@ function materializeSelectedOutput(authority: Authority | null, context: SourceC
   compilation: HybridCompilation, outputSchema: ValueSchema, repeats: ValidatedNaturalRepeat[], sourceSchema: BindingSchema) {
   if (authority) return materializeHybridOutput(authority.requirement.clauses, compilation,
     (binding) => rewriteBinding(binding, compilation), sourceSchema)
-  if (context.version !== 2 || compilation.compilerVersion !== "bat-hybrid/2") {
+  if (context.version !== 2 || (compilation.compilerVersion !== "bat-hybrid/2" && compilation.compilerVersion !== "bat-hybrid/3")) {
     throw new Error("hybrid_natural_source_mismatch")
   }
   return materializeNaturalResult({ compilation, request: context.request, payload: context.payload, outputSchema, repeats, sourceSchema,

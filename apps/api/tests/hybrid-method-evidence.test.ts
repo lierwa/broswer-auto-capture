@@ -126,6 +126,16 @@ test("合法宿主方法样本可少于最终minItems，但原正式合同保持
   assert.throws(() => parseTaskValue(value.outputContract, value.output))
 })
 
+test("新协议方法结束声明不污染数据产物，旧协议保持原严格字段", () => {
+  const f = fixture()
+  Object.assign(f.done.args, { methodOutcome: "recorded" })
+  const source = f.source()
+  assert.throws(() => representativeSourceOutput(f.outputContract, source), /methodOutcome/)
+  source.request.compilerVersion = "bat-hybrid/3"
+  source.canonicalRequest = JSON.stringify(source.request)
+  assert.deepEqual(representativeSourceOutput(f.outputContract, source).output, f.output)
+})
+
 test("页面样本合并只能继承本输入同路径字段，拒绝模型填值和其他记录", () => {
   const schema: ValueSchema = { type: "object", properties: { records: collection, label: { type: "string" } },
     required: ["records", "label"], additionalProperties: false }

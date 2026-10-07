@@ -55,6 +55,7 @@ export async function recompileHybridSource(input: Omit<z.infer<typeof hybridCom
       { ...command, request: transportRequest } as HybridRunnerRequest))
     validateHybridRequestSources(response, request)
     let annotatedRequest: Record<string, JsonValue> | undefined
+    // WHY：/3 在线已对同一动作尝试一次源码生成；恢复只重编译，不能借旧补注解分支再调模型。
     if (request.compilerVersion === "bat-hybrid/2" && input.annotation
       && (missingSelectionActions(response).size || missingRepeatActions(response).size)) {
       if (!input.subject || !input.directory) throw new Error("hybrid_annotation_context_missing")
@@ -143,6 +144,9 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
       catch (error) {
         diagnostics?.recordTransportBoundary("author_result_schema_invalid", error)
         throw new Error("hybrid_source_protocol_invalid", { cause: error })
+      }
+      if (result.request.compilerVersion !== (source.sourceProtocol ?? "bat-hybrid/2")) {
+        throw new Error("hybrid_source_protocol_mismatch")
       }
       if (options?.closeAfterResponse && (await runner.close()).status === "unconfirmed") {
         throw new Error("upstream_runner_cleanup_unconfirmed")

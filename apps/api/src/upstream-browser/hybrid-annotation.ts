@@ -58,7 +58,7 @@ export function assertAnnotationSource(before: Record<string, JsonValue>, after:
     }
   })
   if (repeatAdded && !response.compilation.gaps.length) {
-    if (response.compilation.compilerVersion !== "bat-hybrid/2" || next.ordinary.plan.resultSpec.mode !== "data") mismatch()
+    if ((response.compilation.compilerVersion !== "bat-hybrid/2" && response.compilation.compilerVersion !== "bat-hybrid/3") || next.ordinary.plan.resultSpec.mode !== "data") mismatch()
     validateNaturalRepeats({ compilation: response.compilation, request: next.ordinary,
       assertFact: next.assertFact, outputSchema: next.ordinary.plan.resultSpec.schema })
   }

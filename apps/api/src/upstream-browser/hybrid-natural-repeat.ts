@@ -11,7 +11,7 @@ import { bindContinuationVariable } from "./hybrid-repeat-continuation.js"
 import { repeatAdvanceMode, assertRepeatDispatch, assertPassiveRepeatWait, assertInPageSamples, assertInPageSegment, type RepeatAdvanceMode } from "./hybrid-repeat-advance.js"
 import { assertNaturalBinding } from "./hybrid-natural-materialization.js"
 
-type Compilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>
+type Compilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" | "bat-hybrid/3" }>
 type Request = z.infer<typeof hybridNaturalRequestSchema>
 type Method = z.infer<typeof hybridRepeatMethodSchema>
 type Loop = Extract<StableChainNode, { kind: "loop" }>

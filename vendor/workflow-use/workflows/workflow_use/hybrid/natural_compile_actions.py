@@ -10,6 +10,7 @@ from .natural_readiness import NATURAL_SETTLE, consumer_readiness_by_action
 from .natural_repeat import repeat_context, repeat_sample_coverage
 from .natural_selection import bind_selection_function
 from .visible_wait_compile import failed_visible_wait_coverage
+from .inspected_compile import compile_inspected_navigation, inspection_coverage
 
 
 def classify_natural_prefix(request, registry, source_gaps=(), *, output_schema=None, dependencies=None):
@@ -23,6 +24,19 @@ def classify_natural_prefix(request, registry, source_gaps=(), *, output_schema=
     observations = {item.id: item for item in trace.observations}
     consumer_readiness = consumer_readiness_by_action(trace, NATURAL_SETTLE)
     for action in trace.actions:
+        if action.name == 'bat_inspect_action' and request.compilerVersion == 'bat-hybrid/3':
+            row = inspection_coverage(trace, action) if valid_native_action(registry, action) else None
+            if row is not None:
+                ledger.append(row)
+                continue
+            inserted, segment, method_issues = compile_inspected_navigation(request, registry, action, segments, repeat)
+            issues.extend(method_issues)
+            if segment is not None:
+                segments.extend([*inserted, segment])
+            ledger.append(ActionCoverage(actionRef=action.id, disposition='compiled' if segment else 'not_compilable',
+                ownerSegmentId=segment['id'] if segment else None, exclusionRule=None,
+                evidenceRefs=[action.resultRef] if action.resultRef else []))
+            continue
         if repeat and action.id in repeat['probeRefs'] and valid_native_action(registry, action):
             ledger.append(repeat_sample_coverage(repeat, action))
             continue

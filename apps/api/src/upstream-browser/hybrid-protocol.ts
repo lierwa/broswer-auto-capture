@@ -102,6 +102,7 @@ export const hybridCompileRequestSchema = z.object({ id, type: z.literal("hybrid
   verifiedChildren: z.array(hybridVerifiedChildSchema).max(100).default([]) }).strict()
 
 export const hybridAuthorSourceSchema = z.object({ task: z.string().min(1).max(100000), input: jsonValueSchema,
+  sourceProtocol: z.enum(["bat-hybrid/2", "bat-hybrid/3"]).optional(),
   readOnly: z.boolean().optional(),
   inputSchema: valueSchemaSchema, outputSchema: valueSchemaSchema, resultSpec: resultSpecSchema,
   requirementId: z.string(), requirementVersion: z.number().int().positive(),

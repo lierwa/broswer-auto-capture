@@ -51,6 +51,8 @@ def compile_natural_request(request, registry, compilation_type, linear_graph, s
         request, registry, source_gaps, output_schema=output_schema)
     if not request.trace.completed or request.trace.finalResultRef is None:
         issues.append(gap('invalid_source', [], 'completed_business_result_required', 'reject_trace'))
+    from .method_receipt import method_receipt_issues
+    issues.extend(method_receipt_issues(request))
     return finalize_natural_compilation(
         request, registry, compilation_type, linear_graph, output_schema, segments, ledger, issues, repeat=repeat)
 

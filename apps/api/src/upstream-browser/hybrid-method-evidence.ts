@@ -8,6 +8,7 @@ import { naturalSourceContext } from "./hybrid-natural-payload.js"
 import { readSpecificationSchema } from "./hybrid-schema.js"
 import { contentValueSchema, isContentResult } from "./page-content-contract.js"
 import { elementEntryValueSchema } from "./element-entry-contract.js"
+import { preparationMethodOutcomeSchema } from "./hybrid-method-source.js"
 
 type ValuePath = Array<string | number>
 type Source = Pick<HybridSourceResult, "request" | "canonicalRequest" | "output">
@@ -18,6 +19,7 @@ const actionSchema = z.object({ id: z.string(), name: z.string(), args: jsonValu
   resultRef: z.object({ ref: z.string(), digest: hash }).strict() }).passthrough()
 const doneSchema = z.object({ success: z.literal(true), reason: z.string().min(1),
   readRefs: z.array(readRef).default([]) }).strict()
+const methodDoneSchema = doneSchema.extend({ methodOutcome: preparationMethodOutcomeSchema }).strict()
 const methodFactSchema = z.object({ actionRef: z.string(), specification: readSpecificationSchema,
   outputPath: valuePathSchema, readPath: z.array(z.string()), output: jsonValueSchema,
   resultDigest: hash, urlDigest: hash, targetId: z.string().min(1), containerIdsDigest: hash,
@@ -50,7 +52,7 @@ export function representativeSourceOutput(contract: TaskPlan["outputContract"],
   if (new Set(request.trace.actions.map((action) => action.id)).size !== request.trace.actions.length) {
     throw new Error("hybrid_method_action_duplicate")
   }
-  let selected = doneSchema.parse(done.args).readRefs
+  let selected = (request.compilerVersion === "bat-hybrid/3" ? methodDoneSchema : doneSchema).parse(done.args).readRefs
   if (new Set(selected).size !== selected.length) throw new Error("hybrid_method_read_ref_duplicate")
   if (request.plan.resultSpec.mode === "execution") {
     if (selected.length || contract.schema.type !== "null") throw new Error("hybrid_method_execution_read_forbidden")

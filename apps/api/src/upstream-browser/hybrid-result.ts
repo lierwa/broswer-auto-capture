@@ -8,7 +8,7 @@ import { repeatForBinding, type ValidatedNaturalRepeat } from "./hybrid-natural-
 import { hybridNaturalRequestSchema, hybridOutputAssemblyEvidenceSchema, hybridOutputAssemblySchema, hybridResultBindingSchema,
   hybridResultBranchSchema, readSpecificationSchema, type HybridCompilation, type HybridSegment } from "./hybrid-schema.js"
 
-type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" }>
+type NaturalCompilation = Extract<HybridCompilation, { compilerVersion: "bat-hybrid/2" | "bat-hybrid/3" }>
 
 export function materializeNaturalResult(input: { compilation: NaturalCompilation;
   request: z.infer<typeof hybridNaturalRequestSchema>; payload: ReturnType<typeof naturalPayloadContext>;

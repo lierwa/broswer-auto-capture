@@ -23,6 +23,16 @@ def natural_bindings(request, action, pre, has_target, prior_segments=(), *, dep
             continue
         if key in IGNORED_TECHNICAL_PARAMETERS.get(action.name, frozenset()):
             continue
+        from .inspected_compile import inspected_navigation_source
+        if (getattr(request, 'compilerVersion', None) == 'bat-hybrid/3' and key == 'url'
+                and inspected_navigation_source(request.trace, action) is not None):
+            # WHY：真实导航合并已检查的方法时必须消费选择函数，不能退回样本行号或常量。
+            method = selection_navigation_binding(request, action, key, prior_segments)
+            if method is None:
+                issues.append(gap('missing_binding', [action.id], 'selection_function_evidence_required', 'collect_evidence'))
+            else:
+                decisions.append(method)
+            continue
         matches = [fact for fact in facts if fact.value.get('argumentPath') == key]
         if len(matches) != 1:
             derived = (derived_repeat_navigation_binding(request, action, key, args[key], prior_segments)

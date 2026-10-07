@@ -41,7 +41,7 @@ export function materializeHybridNodes(input: { compilation: HybridCompilation; 
       return [materializeSelectionFunction(segment, { request: context.request, compilation,
         assertFact: context.payload.assertFact })]
     }
-    if (context.version === 2 && compilation.compilerVersion === "bat-hybrid/2" && segment.kind === "explicit_llm") {
+    if (context.version === 2 && (compilation.compilerVersion === "bat-hybrid/2" || compilation.compilerVersion === "bat-hybrid/3") && segment.kind === "explicit_llm") {
       const summary = materializeNaturalSummary({ segment: naturalSummarySegmentSchema.parse(segment), compilation,
         request: context.request,
         assertFact: context.payload.assertFact, model: input.model })

@@ -31,8 +31,11 @@ from .method_read_schema import representative_schema
 from .natural_reads import value_at_path
 from .author_action_helpers import find_elements_outcome, field_read_outcome, normalize_author_action
 from .human_wait import human_step_callback, register_human_wait_tool
+from .method_inspection import register_inspection_tool
+from .method_receipt import attach_method_receipt
 
 class AuthorInput(Contract):
+    sourceProtocol: Literal['bat-hybrid/2', 'bat-hybrid/3'] = 'bat-hybrid/2'
     readOnly: bool = False
     task: str = Field(min_length=1, max_length=100000)
     input: JsonValue
@@ -64,7 +67,7 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
     output_model, unwrap = output_model_for(request.outputSchema, 'HybridAgentOutput')
     # WHY：执行能力缺口保留在 registry/coverage；不允许源码执行和文件操作绕开受控能力。
     collector = None
-    tools = author_tools_for_result_spec(output_model, request.resultSpec)
+    tools = author_tools_for_result_spec(output_model, request.resultSpec, source_protocol=request.sourceProtocol)
     tools._bat_human_wait = human_wait
     field_read_records, summary_records = tools._bat_field_read_records, tools._bat_summary_records
     if field_read_records is not None:
@@ -88,6 +91,7 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
                                   summary_records=summary_records,
                                   dispatch_audit=dispatch_audit, result_spec=request.resultSpec)
     tools._bat_selections.bind(collector, request, models['agent'])
+    tools._bat_method_collector, tools._bat_method_requirement = collector, request.requirementDigest
     redaction = put('redaction-manifest', {'policy': 'execution-values-preserved/v1', 'rawHistorySaved': False})
     live = AuthorCompilation(request, collector, tools._bat_selections, compilation_exchange, redaction, models['semantic_annotation']) \
         if compilation_exchange is not None else None
@@ -108,6 +112,8 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
                                                settle_dispatch=dialog_bridge.settle)
             guidance = (NATURAL_EXECUTION_AGENT_GUIDANCE if request.resultSpec.mode == 'execution'
                         else NATURAL_AGENT_GUIDANCE)
+            if request.sourceProtocol == 'bat-hybrid/3':
+                guidance += METHOD_AGENT_GUIDANCE
             # WHY：保留全部原生默认观察属性；已有 href 是识别无字链接的证据，不能只反馈点击成功。
             agent = Agent(task=request.task, browser=browser, tools=tools, llm=models['agent'],
                           include_attributes=[*AgentSettings().include_attributes, 'href'],
@@ -118,6 +124,8 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
                            file_system_path=directory, save_conversation_path=None,
                           extend_system_message=guidance)
             callbacks.bind(agent)
+            tools._bat_method_can_continue = lambda: (not callbacks.failed and not agent.state.stopped
+                and not agent.state.paused and agent.state.n_steps < request.maxSteps)
             if field_read_records is not None:
                 field_read_records.feedback_provider = lambda read_ref: repeat_query_feedback(collector, agent.history, read_ref)
             observation_scope.start()
@@ -156,6 +164,7 @@ async def author_step(browser, raw, models, output_model_for: Callable, diagnost
 async def finish_author_source(tools, request, trace, gaps, registry, output, source_success, models, live=None):
     # The normalized trace itself is persisted inside the v2 artifact; raw AgentHistory is never serialized.
     trace = tools._bat_selections.attach(trace)
+    trace = attach_method_receipt(trace, request)
     if source_success:
         trace, repeat_gaps, repeat_advances = await annotate_repeat_method(request, trace, models['semantic_annotation'])
         gaps.extend(repeat_gaps)
@@ -246,6 +255,19 @@ NATURAL_AGENT_GUIDANCE = (
     'Never invent DOM selectors to fill absent business parameters or require a global completion judge.')
 NATURAL_EXECUTION_AGENT_GUIDANCE = NATURAL_AGENT_GUIDANCE
 
+METHOD_AGENT_GUIDANCE = (
+    ' Preparation must retain how to perform the task on future inputs, not only report current state. '
+    'When a choice depends on current page data, read complete candidates with native find_elements '
+    'including text and href. Successful native actions already record the method; recorded does not '
+    'require bat_inspect_action. If the selected target is already open, use bat_inspect_action instead '
+    'of clicking or navigating to it again. This records navigation without dispatch. '
+    'If a later inspection fails, it does not erase earlier successful actions. '
+    'After an inspection, record required page-wide effects with native wait; '
+    'do not reuse an earlier playback observation as proof after that navigation. '
+    'The host compiles selection source once; do not write code, IDs, graphs or tests. '
+    'methodOutcome in done distinguishes a recorded reusable method from state_only or unsupported. '
+    'Never repeat external writes merely to record a method.')
+
 
 def _reject_navigation_scope_retry(agent):
     history = getattr(agent, 'history', None)
@@ -258,7 +280,7 @@ def _reject_navigation_scope_retry(agent):
             raise NavigationScopeViolation('hybrid_navigation_outside_authorized_scope')
 
 def author_tools(output_model, output_schema=None, *, summary_model=None, summary_context_provider=None,
-                 exclude_extract=False, result_spec=None, legacy_model_fields=False):
+                 exclude_extract=False, result_spec=None, legacy_model_fields=False, source_protocol='bat-hybrid/2'):
     # WHY：原生 Agent 继续拥有探索；唯一方法读取工具复用正式 ReadSpec，
     # done 只引用宿主记录，不让模型重抄业务值或另建一套执行图。
     excluded = ['evaluate', 'read_file', 'write_file', 'replace_file',
@@ -272,7 +294,8 @@ def author_tools(output_model, output_schema=None, *, summary_model=None, summar
         # 零模型复跑节点；动态列表读取必须走可证明的 find_elements/read-fields 合同。
         excluded.append('extract')
     tools = AuthorTools(output_model=output_model, exclude_actions=excluded,
-                        output_schema=output_schema, result_spec=result_spec, legacy_model_fields=legacy_model_fields)
+                        output_schema=output_schema, result_spec=result_spec, legacy_model_fields=legacy_model_fields,
+                        source_protocol=source_protocol)
     tools._bat_target_scroll_records = None
     tools._bat_visible_wait_records = None
     tools._bat_field_read_records = (register_method_read_tool(tools, output_schema=output_schema,
@@ -282,11 +305,13 @@ def author_tools(output_model, output_schema=None, *, summary_model=None, summar
     return tools
 
 def author_tools_for_result_spec(output_model, result_spec, *, selection_methods=False, human_intervention=True,
-                                 legacy_model_fields=False):
+                                 legacy_model_fields=False, source_protocol='bat-hybrid/2'):
     """Build the one registry shared by live authoring and offline recompilation."""
     schema = result_spec.schemaValue if result_spec.mode == 'data' else {'type': 'null'}
     tools = author_tools(output_model, schema, exclude_extract=False, result_spec=result_spec,
-                         legacy_model_fields=legacy_model_fields)
+                         legacy_model_fields=legacy_model_fields, source_protocol=source_protocol)
+    if source_protocol == 'bat-hybrid/3':
+        register_inspection_tool(tools)
     if human_intervention:
         register_human_wait_tool(tools)
     # WHY：旧来源注册表仍可精确重建；实际探索不再向 B-U 暴露编译函数工具。
@@ -302,7 +327,7 @@ def natural_compilation_request(request, trace, registry):
             'entryUrls': request.entryUrls,
             'inputSchemaDigest': digest(request.inputSchema), 'outputSchemaDigest': digest(request.outputSchema),
             'resultSpec': request.resultSpec.model_dump(mode='json', by_alias=True)}
-    return NaturalCompilationRequest.model_validate({'compilerVersion': 'bat-hybrid/2',
+    return NaturalCompilationRequest.model_validate({'compilerVersion': getattr(request, 'sourceProtocol', 'bat-hybrid/2'),
         'actionRegistryVersion': registry.schemaDigest,
         'requirement': {**requirement, 'digest': digest(requirement)},
         'plan': {**plan, 'digest': digest(plan)}, 'runtimeInputSchema': request.inputSchema,

@@ -13,6 +13,9 @@ def collection_read_action_ref(trace, action):
 
 
 def selection_read(trace, action, target):
+    if action.name == 'bat_inspect_action':
+        from .method_inspection import inspected_method_read
+        return inspected_method_read(trace, action)
     if action.name == 'navigate':
         return navigation_selection_read(trace, action)
     if (action.name != 'click' or not isinstance(target, dict)
@@ -51,6 +54,11 @@ def navigation_selection_read(trace, action):
     destination = action.args.get('url') if isinstance(action.args, dict) else None
     if before is None or not isinstance(destination, str):
         return None
+    from .inspected_compile import inspected_navigation_source
+    inspected = inspected_navigation_source(trace, action)
+    if inspected is not None:
+        from .method_inspection import inspected_method_read
+        return inspected_method_read(trace, inspected)
     if any(f.kind == 'natural_binding' and f.value.get('actionRef') == action.id
            and f.value.get('argumentPath') == 'url' for f in before.facts if isinstance(f.value, dict)):
         return None  # 已由输入/常量/唯一读取绑定，不再问模型。
@@ -76,11 +84,13 @@ def navigation_selection_read(trace, action):
 
 
 def selection_value(action, target):
+    if action.name == 'bat_inspect_action':
+        return action.args['action']['navigate']['url']
     return action.args['url'] if action.name == 'navigate' else target['ordinal']
 
 
 def selection_schema(action, read):
-    return {'type': 'string'} if action.name == 'navigate' else {
+    return {'type': 'string'} if action.name in ('navigate', 'bat_inspect_action') else {
         'type': 'integer', 'minimum': 1, 'maximum': read.specification.maxItems}
 
 
@@ -98,7 +108,7 @@ def selection_navigation_binding(request, action, key, segments):
 
 
 def bind_selection_function(request, action, segments, click_segment):
-    if action.name not in ('click', 'navigate'):
+    if action.name not in ('click', 'navigate', 'bat_inspect_action'):
         return [], click_segment, []
     target = click_segment.get('target')
     read_ref = collection_read_action_ref(request.trace, action)
@@ -114,8 +124,9 @@ def bind_selection_function(request, action, segments, click_segment):
     read_segments = [item for item in segments if item.get('operation', {}).get('name') == 'browser.read-fields'
                      and item['operation']['specification'] == runtime_read_specification(read.specification)
                      and any(output['sourceRef'] == fact.id for output in item.get('outputs', []))]
+    reference_key = 'methodRef' if action.name == 'bat_inspect_action' else 'actionRef'
     proposals = [item for observation in request.trace.observations for item in observation.facts
-                 if item.kind == 'selection_function' and item.value.get('actionRef') == action.id]
+                 if item.kind == 'selection_function' and item.value.get(reference_key) == action.id]
     if len(read_segments) != 1 or len(proposals) != 1:
         return [], None, [gap('missing_binding', [action.id],
                               'selection_function_evidence_required', 'collect_evidence')]

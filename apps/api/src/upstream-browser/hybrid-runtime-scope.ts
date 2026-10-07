@@ -37,7 +37,7 @@ const browserOperations = new Set(["browser.workflow-step", "browser.read-fields
 
 /** WHY：marker 只能来自完整源证据；这里不修改 Python 编译产物，也不推断站点语义。 */
 export function classifyRuntimeScopeDecisions(input: RuntimeScopeInput) {
-  if (input.compilation.compilerVersion !== "bat-hybrid/2") return [] as RuntimeScopeDecision[]
+  if ((input.compilation.compilerVersion !== "bat-hybrid/2" && input.compilation.compilerVersion !== "bat-hybrid/3")) return [] as RuntimeScopeDecision[]
   const result: RuntimeScopeDecision[] = []
   for (const segment of input.compilation.segments) {
     if (!browserOperations.has(segment.operation?.name ?? "") || !segmentScope(segment)) continue

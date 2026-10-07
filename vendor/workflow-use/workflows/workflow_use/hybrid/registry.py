@@ -57,7 +57,7 @@ class ActionRegistry(Contract):
 EFFECTS = {
     'done': 'none', 'wait': 'none', 'bat_validate_selection': 'none', 'screenshot': 'read', 'find_elements': 'read',
     'search_page': 'read', 'extract': 'read', 'bat_inspect_dom': 'read', 'bat_read_fields': 'read', 'bat_wait_for': 'read',
-    'bat_summarize': 'read', 'bat_request_human': 'read',
+    'bat_summarize': 'read', 'bat_request_human': 'read', 'bat_inspect_action': 'read',
     'dropdown_options': 'read',
     'navigate': 'navigation', 'go_back': 'navigation', 'switch': 'navigation', 'close': 'navigation',
     'scroll': 'ui_state', 'bat_scroll_to': 'ui_state',

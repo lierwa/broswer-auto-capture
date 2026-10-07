@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, create_model
 from pydantic.json_schema import SkipJsonSchema
 from .method_completion import complete_from_read_refs, content_read_refs
 from .page_content import content_result
+from .method_receipt import MethodOutcome
 
 
 COMPLETION_FAILURES = {
@@ -25,11 +26,17 @@ COMPLETION_FAILURES = {
 
 class AuthorTools(Tools):
     def __init__(self, *, output_model: type[BaseModel], exclude_actions=None,
-                 display_files_in_done_text=True, output_schema=None, result_spec=None, legacy_model_fields=False):
+                 display_files_in_done_text=True, output_schema=None, result_spec=None, legacy_model_fields=False,
+                 source_protocol='bat-hybrid/2'):
         self._bat_legacy_model_fields = legacy_model_fields
         self._bat_output_schema = output_schema or {'type': 'null'}
         self._bat_result_spec = result_spec
         self._bat_field_read_records = None
+        self._bat_source_protocol = source_protocol
+        self._bat_method_feedback_sent = False
+        self._bat_method_can_continue = lambda: False
+        self._bat_method_collector = None
+        self._bat_method_requirement = None
         super().__init__(output_model=output_model, exclude_actions=exclude_actions,
                          display_files_in_done_text=display_files_in_done_text)
         self.use_structured_output_action(output_model)
@@ -46,8 +53,14 @@ class AuthorTools(Tools):
         native = self.registry.registry.actions['done']
         # WHY：不能继承 StructuredOutputAction；其 schema 回调会隐藏 success，
         # 默认 true 会把 null 业务输出误记为来源成功。结束声明与业务 data 分开。
+        method_fields = {'methodOutcome': (MethodOutcome, Field(description=
+            'recorded: method retained by successful native actions or inspection; '
+            'state_only: only the current state satisfies the task; '
+            'unsupported: no supported replay method. This is separate from current business success.'))} \
+            if self._bat_source_protocol == 'bat-hybrid/3' else {}
         completion_model = create_model(
             'AuthorCompletion', __config__=ConfigDict(extra='forbid'),
+            **method_fields,
             success=(StrictBool, Field(description='Whether the requested task was completed successfully.')),
             reason=(str, Field(min_length=1, max_length=4000,
                                description='Observed reason for completion or inability to complete.')),
@@ -65,6 +78,13 @@ class AuthorTools(Tools):
             if not params.success:
                 return ActionResult(is_done=True, success=False, extracted_content=params.reason,
                     metadata={'batCompletion': {'success': False, 'reason': params.reason}})
+            if (getattr(params, 'methodOutcome', None) == 'state_only' and not self._bat_method_feedback_sent
+                    and self._bat_method_can_continue()):
+                # WHY：只提醒本次原生 Agent 一次；重复注册 done 不重置计数，不重放浏览器动作。
+                self._bat_method_feedback_sent = True
+                return ActionResult(error='preparation_method_required: current state alone is not a replay method. '
+                    'Read the current candidates and use bat_inspect_action for a real navigation target if supported. '
+                    'Do not repeat external writes. Otherwise finish with state_only or unsupported.')
             try:
                 references = params.readRefs
                 if content_result(self._bat_result_spec) and not references:

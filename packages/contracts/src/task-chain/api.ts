@@ -180,6 +180,7 @@ export const taskAuthoringJobSchema = z.object({
   browser: taskExecutionBrowserSchema.optional(),
   audit: authoringAuditSchema.nullable(),
   authoring: z.object({
+    sourceProtocol: z.enum(["bat-hybrid/2", "bat-hybrid/3"]).optional(),
     stage: z.enum(["planning", "exploring", "explored", "compiling", "compiled"]),
     level: z.enum(["E0", "E1", "E2", "E3", "E4"]), failureLayer: z.string().nullable(),
     // WHY：启动前失败也保留安全原因；旧 job 可缺失，不能把笼统分类当作具体诊断。

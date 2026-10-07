@@ -249,13 +249,15 @@ export const hybridRepeatMethodSchema = z.object({ id: keySchema, sourceRef: z.s
   proofRefs: z.array(reference).min(1), readSegmentId: keySchema, continuationSegmentId: keySchema,
   advanceSegmentId: keySchema, outputPath: valuePathSchema, readPath: valuePathSchema,
   stableKeyPath: valuePathSchema, sampleActionRefs: z.array(z.string().min(1)).min(5).max(500) }).strict()
-export const naturalCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.literal("bat-hybrid/2"),
+export const naturalCompilationSchema = z.object({ ...compilationBody, compilerVersion: z.enum(["bat-hybrid/2", "bat-hybrid/3"]),
   segments: z.array(z.discriminatedUnion("kind", [naturalDeterministic, naturalSummarySegmentSchema, functionSegmentSchema])).max(500),
   outputAssembly: hybridOutputAssemblySchema.nullable().optional(),
   resultBinding: hybridResultBindingSchema.nullable().optional(),
   resultBranches: z.array(hybridResultBranchSchema).max(20).optional(),
   repeatMethods: z.array(hybridRepeatMethodSchema).max(1).optional() }).strict()
-export const hybridCompilationSchema = z.discriminatedUnion("compilerVersion", [legacyCompilationSchema, naturalCompilationSchema])
+export const hybridCompilationSchema = z.discriminatedUnion("compilerVersion", [legacyCompilationSchema,
+  naturalCompilationSchema.extend({ compilerVersion: z.literal("bat-hybrid/2") }),
+  naturalCompilationSchema.extend({ compilerVersion: z.literal("bat-hybrid/3") })])
 export const hybridCompilerResponseSchema = z.object({ compilation: hybridCompilationSchema, canonicalPayload: z.string(),
   sourcePayloads: z.array(z.string()).length(5) }).strict()
 export type HybridCompilation = z.infer<typeof hybridCompilationSchema>
@@ -269,7 +271,7 @@ export const hybridAuthoritySchema = z.object({
     semanticOperations: z.array(semanticOperationSchema).default([]) }).strict(),
 }).strict()
 
-export const hybridNaturalRequestSchema = z.object({ compilerVersion: z.literal("bat-hybrid/2"),
+export const hybridNaturalRequestSchema = z.object({ compilerVersion: z.enum(["bat-hybrid/2", "bat-hybrid/3"]),
   actionRegistryVersion: hash,
   requirement: z.object({ id: z.string(), version: z.number().int().positive(), text: z.string().min(1),
     taskText: z.string().min(1), sourceDigest: hash, digest: hash }).strict(),

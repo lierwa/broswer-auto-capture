@@ -318,7 +318,11 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
             wait_probe = failed_bat_wait_probe(registry, trace, action, row)
             selection_probe = selection_validation_coverage(registry, action)
             selection_probe = selection_probe is not None and row == selection_probe
+            from .inspected_compile import inspection_coverage
+            method_inspection = inspection_coverage(trace, action)
+            method_inspection = method_inspection is not None and row == method_inspection
             if (not done and not lookup and not failed_lookup and not text_lookup and not inspection and not extraction
+                    and not method_inspection
                     and not execution_extraction
                     and not skipped and not field_probe and not wait_probe and not selection_probe):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'invalid_exclusion', 'reject_trace'))

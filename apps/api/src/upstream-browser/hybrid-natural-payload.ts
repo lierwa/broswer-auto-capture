@@ -18,7 +18,8 @@ const evidenceKinds = new Set(["dom_structure", "dom_query", "natural_binding", 
   "native_action_dispatch", "native_action_result", "native_dom_event", "browser_context",
   "url_digest", "verified_natural_read", "verified_target_scroll", "verified_visible_wait",
   "verified_natural_summary", "verified_output_assembly", "selection_function", "repeat_method",
-  "native_completion_review", "observation_diagnostic", "document_identity", "verified_human_resume"])
+  "native_completion_review", "observation_diagnostic", "document_identity", "verified_human_resume",
+  "inspected_method", "preparation_method_receipt"])
 
 /** WHY：采集只交接一份原始 request；不依赖编译结果才能验证或保存来源。 */
 export function naturalSourceContext(canonicalRequest: string) {
@@ -46,7 +47,7 @@ export function naturalSourceContext(canonicalRequest: string) {
 /** WHY：sourcePayloads 是 Python canonical bytes 的唯一词法锚；普通 request 仍负责结构和业务语义。 */
 export function naturalPayloadContext(envelope: Envelope, request: Record<string, JsonValue>) {
   validateHybridRequestSources(envelope, request)
-  if (envelope.compilation.compilerVersion !== "bat-hybrid/2") throw new Error("hybrid_natural_source_payloads_missing")
+  if ((envelope.compilation.compilerVersion !== "bat-hybrid/2" && envelope.compilation.compilerVersion !== "bat-hybrid/3")) throw new Error("hybrid_natural_source_payloads_missing")
   const ordinary = hybridNaturalRequestSchema.parse(request)
   const rawSources = envelope.sourcePayloads.slice(0, 4).map(parseRawPayload)
   const rawTrace = record(rawSources[2], "hybrid_natural_trace_payload_invalid")
@@ -67,11 +68,12 @@ export function naturalPayloadContext(envelope: Envelope, request: Record<string
 }
 
 export function validateHybridRequestSources(envelope: Envelope, request: Record<string, JsonValue>) {
+  if (request.compilerVersion !== envelope.compilation.compilerVersion) throw new Error("hybrid_source_protocol_mismatch")
   const withoutDigest = (value: unknown) => {
     const { digest: _digest, ...body } = z.record(z.string(), jsonValueSchema).parse(value)
     return body
   }
-  const sources = envelope.compilation.compilerVersion === "bat-hybrid/2"
+  const sources = (envelope.compilation.compilerVersion === "bat-hybrid/2" || envelope.compilation.compilerVersion === "bat-hybrid/3")
     ? [withoutDigest(request.requirement), withoutDigest(request.plan), withoutDigest(request.trace), request.runtimeInputSchema, []]
     : [withoutDigest(request.requirement), withoutDigest(request.plan), withoutDigest(request.trace),
       request.control, request.acceptedAnnotations]
