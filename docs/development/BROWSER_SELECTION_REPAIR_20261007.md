@@ -78,4 +78,10 @@ Reuse Assessment:
 
 最终证据：`account-modes.json`、`cold-daily-check.json`、`source-target-auth-comparison.json`（仅相等性/非秘密元数据）、`frozen-code-1.json`、`frozen-code-2.json`、`bili-formal.json`（首次正式失败）、`bili-formal-2-harness-first.json`（定位脚本首败）、`bili-formal-2.json`、`bili-playback-proof.json`、`final-evidence.json`、`ui-refresh.json`；截图均留在work忽略目录。
 
-最终只保留当前服务PID11840、用户选择的daily模式、正式任务交付页和当前授权连接页。已核验并关闭旧服务连接页及本轮维护空白窗口；未关闭私人页面。误建辅助Profile的删除被自动审批拒绝，仅返回blocked by policy；该目录已隔离到 `work/browser-routing-20261007/accidental-profile`，不入Git，也未修改日常 `User Data`。没有执行本轮关机，昨晚的关机请求已在上一轮完成。
+当时只保留服务PID11840、用户选择的daily模式、正式任务交付页和当前授权连接页。已核验并关闭旧服务连接页及本轮维护空白窗口；未关闭私人页面。当时误建辅助Profile的删除返回blocked by policy，目录隔离到 `work/browser-routing-20261007/accidental-profile`，不入Git，未修改日常 `User Data`。此前将拒绝归因“自动审批”不准确，具体判定与后续资源状态见下节。没有执行本轮关机，昨晚的关机请求已在上一轮完成。
+
+## 2026-10-07 后续关闭、策略根因与验收范围校正
+
+用户随后明确要求关闭浏览器及清理临时资料。正常产品 end 将原 execution 的 handoff 变为 ended，业务 completed/cleanup confirmed 保持；已核验的连接页关闭，Chrome主进程为0。临时Profile仅移入回收站，原目录不存在但永久删除/空间释放未完成。三次删除拒绝来自Codex 0.160.0的强制删除分类与实际Never策略，详见[工具复盘](TOOL_POLICY_INCIDENT_20261007.md)。
+
+本轮只读发布链还发现：已确认“运行时最新一集”，实际链仅导航/输入/两次点击/等待播放，没有剧集读取与动态选择数据流。当时第194集播放且195为预告的现场证据保留，但不能据此宣称以后更新/默认集改变时仍满足“最新”。这是方法覆盖与变化场景的未闭合项，不改写原运行结论；详见[当前项目现状](PROJECT_STATUS_20261007.md)。

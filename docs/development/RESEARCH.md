@@ -1,5 +1,11 @@
 # 技术调研与复用结论
 
+## 2026-10-07 开发工具策略根因与项目现状只读核验
+
+对照本机 Codex 0.160.0 与固定官方源码，三次 `Remove-Item … -Force` 的 BBP 来自 Windows 危险命令分类、Never→Forbidden 及 Other 通用错误文案；默认配置/空规则匹配均不能替代有效会话和内置判定。没有引入库、改安全配置、绕过策略或新增产品 LLM 调用。根因、执行门和未完成的永久清理见 [复盘](TOOL_POLICY_INCIDENT_20261007.md)。
+
+当前能力按源码、既有受控/真实验收、API/SQLite 和发布链交叉结算，见 [统一现状](PROJECT_STATUS_20261007.md)。已发布 Bilibili 链只有 navigate/input/click/click/wait/terminal，确认计划中的运行时“最新”没有显式读取/选择或等价规则证明；保留当次运行成功，不外推动态覆盖。本轮没有据此改 IR、添加完成 judge 或启动新任务。
+
 ## 2026-10-07 所选浏览器、冷启动连接及可复用登录来源
 
 继续复用固定MediaCrawler `380b4260`、social-auto-upload `0012d2c3`、Playwright扩展 `8b552173` 以及原AccountIdentities/PlatformChecks/AccountTransfers。修复宿主browserKind冻结、维护可见性、connect页既有keepalive生命周期；已安装扩展需要实际Reload，构建成功不能代替生效证据。
