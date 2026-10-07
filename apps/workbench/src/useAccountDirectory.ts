@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import type { AccountDirectory } from "@browser-capture/contracts/account-directory"
 import { accountRequest } from "./accountClient.js"
 
-export function useAccountDirectory() {
+export function useAccountDirectory(browserKind: "daily" | "dedicated") {
   const [state, setState] = useState<AccountDirectory | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false)
   const generation = useRef(0), mounted = useRef(false), request = useRef(false)
   useEffect(() => {
@@ -21,7 +21,8 @@ export function useAccountDirectory() {
   }, [])
   async function act(body?: unknown) {
     const version = ++generation.current; request.current = true; setBusy(true); setError("")
-    try { const next = await accountRequest(body); if (mounted.current && version === generation.current) setState(next) }
+    try { const scoped = body && typeof body === "object" && "type" in body && body.type !== "cancel" ? { ...body, browserKind } : body
+      const next = await accountRequest(scoped); if (mounted.current && version === generation.current) setState(next) }
     catch (e) { if (mounted.current && version === generation.current) setError((e as Error).message) }
     finally { request.current = false; if (mounted.current && version === generation.current) setBusy(false) }
   }

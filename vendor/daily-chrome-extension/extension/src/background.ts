@@ -111,7 +111,8 @@ class PlaywrightExtension {
         throw new Error('Pending client connection closed');
 
       await this._connectOwnedWindow(connection, clientName, authorizationToken);
-      await chrome.tabs.remove(selectorTabId).catch(() => {});
+      // WHY：保留上游 connect 页及其 20 秒 keepalive；提前删页会停掉保活，冷启动时还会关闭唯一窗口。
+      // 连接页不授予业务 target 权限，任务仍只控制 operation 自己创建的窗口。
     } catch (error: any) {
       debugLog('Failed to connect task window');
       throw error;

@@ -74,6 +74,7 @@
     }
   },
   "modifications": [
+    "Retain the original connect page and its 20-second service-worker keepalive; closing it before an owned task window exists can terminate cold-start Chrome and disconnect the relay",
     "After relay restart, close only host-authorized persisted target IDs through Chrome debugger.getTargets and tabs.remove; never infer ownership from titles or windows",
     "CDP browser-level Target compatibility; explicit owned targets only",
     "Local ManualPromise import; error reporting omits raw page/credential values",

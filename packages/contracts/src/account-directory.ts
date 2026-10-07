@@ -22,13 +22,14 @@ export const accountDirectorySchema = z.object({ items: z.array(z.object({ platf
   marker: z.object({ reference: id, platformId: z.string(), preview: z.string().max(120) }).strict().nullable(),
   customPage: z.object({ bindingId: id, revision: z.number().int(), name: z.string().max(120), url: z.url(), hasChain: z.boolean() }).strict().nullable(),
   customWindow: z.boolean(), notice: z.string().nullable() }).strict()
-const command = { requestId: id, platformId: z.string().min(1), revision: z.number().int().nonnegative() }
+const browser = { browserKind: browserIdentitySchema.shape.kind.optional() }
+const command = { requestId: id, platformId: z.string().min(1), revision: z.number().int().nonnegative(), ...browser }
 export const accountDirectoryCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.enum(["add", "check", "relogin", "switch", "open", "remove", "custom_check", "custom_add"]), ...command }).strict(),
   z.object({ type: z.literal("cancel"), requestId: id }).strict(),
-  z.object({ type: z.enum(["custom_open", "custom_read"]), requestId: id }).strict(),
+  z.object({ type: z.enum(["custom_open", "custom_read"]), requestId: id, ...browser }).strict(),
   z.object({ type: z.literal("custom_pick"), ...command }).strict(),
-  z.object({ type: z.literal("custom_confirm"), requestId: id, reference: id }).strict(),
+  z.object({ type: z.literal("custom_confirm"), requestId: id, reference: id, ...browser }).strict(),
   z.object({ type: z.literal("custom_attach"), ...command, chainId: id, chainVersion: z.number().int().positive() }).strict(),
 ])
 export type LogicalAccount = z.infer<typeof logicalAccountSchema>

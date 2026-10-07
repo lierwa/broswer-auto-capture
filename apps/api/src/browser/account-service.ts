@@ -54,10 +54,14 @@ export class BrowserAccountService {
     const command = accountDirectoryCommandSchema.parse(raw)
     if (command.type === "cancel") {
       if (this.operation?.requestId === command.requestId) this.controller?.abort()
-    } else this.exclusive(command.requestId, command.type, signal => this.directory.perform(command, signal, async () => {
+    } else {
+      // WHY：在接受操作时冻结浏览器，异步恢复及其它页面修改全局偏好不能改变本次目标。
+      const browserKind = command.browserKind ?? (this.repository.store.browserEnvironment().mode === "daily" ? "daily" : "dedicated")
+      this.exclusive(command.requestId, command.type, signal => this.directory.perform({ ...command, browserKind }, signal, async () => {
       // WHY：恢复是后台安全重试，不恢复已退休的窗口/同步 UI；原 owner 不明时仍拒绝写入。
       if (!["remove", "custom_attach"].includes(command.type)) await this.reuse.recoverPending(signal)
-    }), ["add", "relogin", "switch"].includes(command.type) ? 300000 : 120000)
+      }), ["add", "relogin", "switch"].includes(command.type) ? 300000 : 120000)
+    }
     await Promise.resolve()
     await this.directory.refreshProfiles()
     return this.directory.snapshot()

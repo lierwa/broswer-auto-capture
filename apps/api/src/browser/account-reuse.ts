@@ -104,10 +104,23 @@ export class AccountReuse {
       throw error
     }
   }
+  private async reuseSource(account: LogicalAccount, target: BrowserIdentity) {
+    const source = await this.assertFrozen(account)
+    if (source.id !== target.id) return source
+    // WHY：同UID检查会更新目录来源，但复用凭据可能先失效；保留另一当前Profile的已验证来源。
+    // 历史检查只选择候选，写入仍由原transfer重新核验实时UID、目标未登录和完整回滚条件。
+    const other = await this.identities.current(target.kind === "daily" ? "dedicated" : "daily")
+    const check = other && this.directory.repository.list("platformCheck")
+      .filter(v => v.browserIdentityId === other.id && v.platformId === account.platformId).at(-1)
+    if (!other || !account.identityKey || check?.platformVersion !== this.directory.version
+      || check.status !== "completed" || check.run?.status !== "completed" || !check.run.auditComplete
+      || check.result?.status !== "authenticated" || check.result.identityKey !== account.identityKey)
+      throw new DomainError("account_source_unconfirmed", `${this.directory.platform(account.platformId).name}的登录需要重新确认。`, 409)
+    return other
+  }
   async restoreLogin(account: LogicalAccount, target: BrowserIdentity, targetWindow: AccountMaintenance, targetCheck: PlatformCheck, signal: AbortSignal) {
     if (targetCheck.result?.status !== "unauthenticated") return targetCheck
-    const source = await this.assertFrozen(account), platform = this.directory.platform(account.platformId), requestId = randomUUID()
-    if (source.id === target.id) throw new DomainError("account_source_unconfirmed", `${platform.name}的登录需要重新确认。`, 409)
+    const source = await this.reuseSource(account, target), platform = this.directory.platform(account.platformId), requestId = randomUUID()
     if (!account.identityKey) throw new DomainError("account_identity_unconfirmed", `${platform.name}未提供可复用的稳定身份。`, 409)
     if (!platform.transferReady || !platform.cookieNames.length)
       throw new DomainError("account_scope_unverified", `${platform.name}尚未核验跨浏览器登录范围，请使用原浏览器。`, 409)

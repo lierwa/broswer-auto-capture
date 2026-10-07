@@ -12,8 +12,8 @@ export function useAccountViewport() {
     addEventListener("resize", change); return () => removeEventListener("resize", change) }, [])
   return { narrow: size.width < 640, short: size.height < 600 }
 }
-export function BrowserAccountView() {
-  const { state, error, busy, act } = useAccountDirectory()
+export function BrowserAccountView({ browserKind }: { browserKind: "daily" | "dedicated" }) {
+  const { state, error, busy, act } = useAccountDirectory(browserKind)
   const [selected, setSelected] = useState(""), [detail, setDetail] = useState(false), [remove, setRemove] = useState(false)
   const { narrow, short } = useAccountViewport()
   const item = state?.items.find(v => v.platform.id === selected) ?? state?.items[0]
@@ -86,6 +86,7 @@ function AccountDetail({ item, state, working, remove, failure, narrow, back, se
           {account && <>
             <DropdownMenu.Root><DropdownMenu.Trigger><IconButton size="2" variant="soft" color="gray" aria-label="更多账号操作" disabled={working}><MoreHorizontal size={18} /></IconButton></DropdownMenu.Trigger>
               <DropdownMenu.Content align="end">
+                <DropdownMenu.Item onSelect={() => command(item.custom ? "open" : "relogin")}>在当前浏览器登录</DropdownMenu.Item>
                 {!item.custom && <DropdownMenu.Item onSelect={() => command("switch")}>切换账号</DropdownMenu.Item>}<DropdownMenu.Separator /><DropdownMenu.Item color="red" onSelect={() => setRemove(true)}>移除账号</DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Root></>}
         </div>{failure && <div className="feedback-slot" aria-live="polite"><span className="feedback error"><CircleAlert size={14} /><span title={failure}>{failure}</span></span></div>}
         {state.notice && op?.platformId === item.platform.id && <div className="feedback-slot" role="status"><span className="feedback"><CircleAlert size={14} /><span>{state.notice}</span></span></div>}</>}

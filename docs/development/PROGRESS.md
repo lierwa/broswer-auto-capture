@@ -1,5 +1,11 @@
 # 开发进度
 
+## 当前有效状态：浏览器路由与登录复用修复，原Bilibili正式播放通过（10/7）
+
+纠正昨晚验收脚本擅自把原任务改为headless的问题；全局及任务均恢复daily。面板冻结目标browserKind，检查和登录使用对应可见浏览器；保留原自动登录复用。扩展不再握手后关闭唯一connect页，实际重载后冷启动检查通过。双浏览器check/relogin均由真实UI完成，owner对应kind、维护页closed。
+
+正式首轮43628676在账号准备失败：目录把检查成功的目标提升成唯一来源后，旧凭据失效无法选择另一当前Profile的同UID有效登录。新增候选选择仍经原transfer实时核验，不改网站/任务图。回归先失败后修复，23项定向验证、APIcheck、Workbench构建及对抗复核通过。951文件再次冻结后正式29077f0f自然completed，0模型；独立页面读取证明194正在播放、195为预告，播放时钟228→233秒，handoff active/delivery、cleanup confirmed，UI刷新和SQLite一致。首败、未测项和受审批拦截的临时目录清理分别保留，详见[最终证据](BROWSER_SELECTION_REPAIR_20261007.md)。以下为历史状态。
+
 ## 当前有效状态：账号检查恢复；Bilibili 准备、复验、发布完成，正式运行验收阻塞（10/7）
 
 原未写入 transfer 因恢复前置 inspect 失联而阻塞两个入口，已按 DPAPI 写前阶段修复；保存的真实 B 站账号通过现有 UI headless 检查和刷新，0 模型、窗口 closed。隔离原生关页故障注入证明失败不会再留下 pending，下一次 UI 检查通过；自动 headless 检查及转人工登录守卫经测试与对抗复审。首败、限制及完整证据见[本轮记录](ACCOUNT_RECOVERY_AND_BILI_20261007.md)。

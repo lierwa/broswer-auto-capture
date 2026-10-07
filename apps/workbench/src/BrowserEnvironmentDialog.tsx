@@ -12,20 +12,20 @@ export function BrowserEnvironmentDialog({ open, onOpenChange, doneLabel = "完�
   open: boolean; onOpenChange(open: boolean): void; doneLabel?: string; onTask?(id: string): void
 }) {
   const environment = useBrowserEnvironment(open)
-  const [accountKind, setAccountKind] = useState<boolean>(false)
+  const [accountKind, setAccountKind] = useState<"daily" | "dedicated" | null>(null)
   const pending = environment.busy
   const viewport = useAccountViewport()
-  useEffect(() => { if (!open) setAccountKind(false) }, [open])
+  useEffect(() => { if (!open) setAccountKind(null) }, [open])
   return <>
     <Dialog.Root open={open} onOpenChange={next => { if (!pending) onOpenChange(next) }}>
       <Dialog.Content className={accountKind ? `browser-environment-dialog account-dialog ${viewport.short ? "short" : ""}` : "browser-environment-dialog dialog-scroll"} maxWidth={accountKind ? "864px" : "560px"}>
         <div className="browser-environment-heading">
-          <div>{accountKind && <IconButton variant="ghost" color="gray" aria-label="返回浏览器设置" onClick={() => setAccountKind(false)}>‹</IconButton>}<Dialog.Title>{accountKind ? "网站账号" : "浏览器设置"}</Dialog.Title>
-            <Dialog.Description className={accountKind ? "account-sr-only" : ""}>{accountKind ? "检查登录状态，未登录时完成登录。" : "选择下次任务使用的浏览器。"}</Dialog.Description></div>
+          <div>{accountKind && <IconButton variant="ghost" color="gray" aria-label="返回浏览器设置" onClick={() => setAccountKind(null)}>‹</IconButton>}<Dialog.Title>{accountKind ? "网站账号" : "浏览器设置"}</Dialog.Title>
+            <Dialog.Description>{accountKind ? `在${accountKind === "daily" ? "日常 Chrome" : "专属浏览器"}中检查和登录。` : "选择下次任务使用的浏览器。"}</Dialog.Description></div>
           <Dialog.Close><IconButton variant="ghost" color="gray" aria-label={accountKind ? "关闭网站账号" : "关闭浏览器设置"} disabled={pending}>
             <X size={19} /></IconButton></Dialog.Close>
         </div>
-        {accountKind && <BrowserAccountView />}
+        {accountKind && <BrowserAccountView browserKind={accountKind} />}
         <div className="browser-environment-body" hidden={Boolean(accountKind)}>
           {environment.state && <BrowserEnvironmentSelect value={environment.state.mode}
             disabled={pending} onChange={mode => void environment.select(mode)} />}
@@ -41,7 +41,7 @@ export function BrowserEnvironmentDialog({ open, onOpenChange, doneLabel = "完�
             <div className="browser-account-entry">
               <KeyRound size={21} aria-hidden="true" />
               <div><strong>网站账号</strong><p>检查登录，复用已有登录。</p></div>
-              <Button variant="ghost" color="gray" disabled={pending} onClick={() => setAccountKind(true)}>管理账号<ChevronRight size={15} /></Button>
+              <Button variant="ghost" color="gray" disabled={pending} onClick={() => setAccountKind(environment.state!.mode === "daily" ? "daily" : "dedicated")}>管理账号<ChevronRight size={15} /></Button>
             </div>
           </div>}
         </div>

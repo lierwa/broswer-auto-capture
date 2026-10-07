@@ -1,5 +1,11 @@
 # 技术调研与复用结论
 
+## 2026-10-07 所选浏览器、冷启动连接及可复用登录来源
+
+继续复用固定MediaCrawler `380b4260`、social-auto-upload `0012d2c3`、Playwright扩展 `8b552173` 以及原AccountIdentities/PlatformChecks/AccountTransfers。修复宿主browserKind冻结、维护可见性、connect页既有keepalive生命周期；已安装扩展需要实际Reload，构建成功不能代替生效证据。
+
+真实差异证明旧日常凭据与仍有效的专属凭据不同而UID/UA相同；同一检查器在两者分别返回未登录/已登录。新来源选择只使用另一当前binding的同平台/版本/同UID已验证候选，写入仍由原transfer重新检查双方与回滚保护；不新增同步框架或站点特判。23项定向回归、两种真实维护入口、冷启动和冻结后的原正式任务通过。完整Product Alignment、Reuse Assessment、首败和冻结边界见[记录](BROWSER_SELECTION_REPAIR_20261007.md)。
+
 ## 2026-10-07 未写入登录转移的离线恢复
 
 现场 transfer `173d7956` 的 DPAPI 材料为 `rollback_ready`，无任何已写入凭据；恢复却前置 inspect，空 relay 枚举同时堵住账号检查和 B-U 准备。新增回归先在 HEAD 复现：未写入恢复仍调用浏览器。原始首次转移错误被旧 safeReason 抹去，不能将猜测当根因。

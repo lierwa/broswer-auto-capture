@@ -102,7 +102,7 @@ export class AccountDirectory {
   }
   private async open(identity: BrowserIdentity, platform: Pick<Platform, "url" | "name" | "origins">, operation: DirectoryOperation, signal: AbortSignal, navigate: boolean) {
     await this.verifyAvailability?.(identity.kind)
-    const window = await this.windows.open(identity, platform, signal, navigate)
+    const window = await this.windows.open(identity, platform, signal, navigate, false)
     this.patch(operation, { sourceIdentityId: identity.id, sourceBinding: identity.binding, ownerId: window.ownerId, leaseId: window.leaseId }, signal)
     return window
   }
@@ -120,7 +120,7 @@ export class AccountDirectory {
     if (!replacement && identity.id !== previous.sourceIdentityId && (!authenticated || changed))
       throw new DomainError("account_target_unconfirmed", changed
         ? "当前浏览器登录的是另一个账号，未覆盖。已保存的共享账号保留，可在更多操作中切换账号。"
-        : "当前浏览器尚未完成登录复用。已保存的共享账号保留，请重试检查登录。", 409)
+        : "当前浏览器尚未登录。已保存的账号保留，请在当前浏览器重新登录。", 409)
     // WHY：共享目录只在正向同 UID 证明后更新来源；未登录/未知不能丢失另一 Profile 的有效来源。
     const useCheckedSource = replacement || authenticated && !changed
     const record: LogicalAccount = { id: previous?.id ?? randomUUID(), platformId: operation.platformId,
@@ -156,7 +156,7 @@ export class AccountDirectory {
   async perform(command: Exclude<DirectoryCommand, { type: "cancel" }>, signal: AbortSignal, before?: () => Promise<void>) {
     const platformId = "platformId" in command ? command.platformId : "custom"
     const account = this.current(platformId), revision = account?.revision ?? 0
-    const kind = this.repository.store.browserEnvironment().mode === "daily" ? "daily" : "dedicated"
+    const kind = command.browserKind ?? (this.repository.store.browserEnvironment().mode === "daily" ? "daily" : "dedicated")
     const operation = this.repository.save("directoryOperation", { id: randomUUID(), requestId: command.requestId, platformId, intent: command.type,
       logicalRevision: revision, sourceIdentityId: account?.sourceIdentityId ?? null, sourceBinding: account?.sourceBinding ?? null,
       ownerId: null, leaseId: null, startedAt: now(), deadline: new Date(Date.now() + (["add", "relogin", "switch"].includes(command.type) ? 300000 : 120000)).toISOString(),
@@ -203,6 +203,7 @@ export class AccountDirectory {
     } else {
       identity = await this.maintenanceIdentity(kind)
       this.patch(operation, { phase: "opening" }, signal)
+      // WHY：导航与可见性分开；面板操作使用所选浏览器，检查器仍沿原只读入口。
       window = await this.open(identity, platform, operation, signal, command.type !== "check")
     }
     if (command.type === "open") return

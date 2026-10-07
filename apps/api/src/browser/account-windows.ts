@@ -16,11 +16,11 @@ export class AccountWindows {
   }
   assertControl(kind: BrowserIdentity["kind"]) { this.assertAvailable(kind) }
   async open(identity: BrowserIdentity, platform: Pick<Platform, "url" | "name" | "origins"> | null,
-    signal: AbortSignal, navigate = true) {
+    signal: AbortSignal, navigate = true, headless = identity.kind === "dedicated" && !navigate) {
     await this.identities.assertBound(identity)
     this.assertControl(identity.kind)
     let session = this.repository.active(identity.id)
-    if (session?.headless && navigate) {
+    if (session?.headless && !headless) {
       // WHY：人工登录不能复用上次自动检查遗留的隐藏窗口，须先确认原 owner 关闭。
       await this.finish(session)
       if (this.repository.get("maintenance", session.id).status !== "closed")
@@ -43,7 +43,7 @@ export class AccountWindows {
       this.assertAvailable(identity.kind)
       const ownerId = randomUUID()
       session = this.repository.save("maintenance", { id: randomUUID(), browserIdentityId: identity.id,
-        entryId: null, ownerId, leaseId: ownerId, headless: identity.kind === "dedicated" && !navigate, status: "opening", createdAt: new Date().toISOString(),
+        entryId: null, ownerId, leaseId: ownerId, headless, status: "opening", createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(), reason: null })
     }
     if (platform) {
@@ -63,7 +63,6 @@ export class AccountWindows {
     if (!this.upstream.withCapabilities) throw new Error("account_browser_unavailable")
     try {
       let handed = false
-      const headless = identity.kind === "dedicated" && !navigate
       await this.upstream.withCapabilities({ ownerId: session.ownerId, signal, sessionPurpose: "account",
         browserMode: identity.kind === "daily" ? "daily" : headless ? "dedicated-headless" : "dedicated-visible", headless,
         allowedOrigins: platform?.origins ?? ["http://127.0.0.1"],

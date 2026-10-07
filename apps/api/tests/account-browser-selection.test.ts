@@ -20,9 +20,36 @@ test("shared account check uses the selected browser and retains the account ide
     assert.equal(identity.kind, "dedicated")
     assert.equal(f.api.accounts.directory.current("bilibili")?.id, account.id)
     assert.equal(f.state.writes, 0)
-    assert.equal(modes.at(-1), "dedicated-headless:true")
+    assert.equal(modes.at(-1), "dedicated-visible:false")
     await f.command("open")
     assert.equal(modes.at(-1), "dedicated-visible:false")
+  } finally { await f.api.app.close() }
+})
+
+test("panel browser remains the reuse target when global preference changes", async () => {
+  const f = await directoryFixture(), original = f.upstream.withCapabilities!.bind(f.upstream), modes: string[] = []
+  f.upstream.withCapabilities = async (input, work) => { modes.push(input.browserMode!); return original(input, work) }
+  try {
+    f.api.store.saveBrowserEnvironment("dedicated-visible", f.api.store.browserEnvironment().revision)
+    await f.command("add")
+    f.state.daily = "none"
+    modes.length = 0
+    await f.api.accounts.directoryCommand({ type: "check", browserKind: "daily", requestId: randomUUID(),
+      platformId: "bilibili", revision: 1 })
+    await f.api.accounts.settled()
+    assert.equal(modes[0], "daily")
+    assert(modes.filter(mode => mode !== "daily").every(mode => mode === "dedicated-headless"))
+    assert.equal(f.api.accounts.directory.snapshot().operation?.status, "completed")
+    assert.equal(f.state.writes, 1)
+    assert.equal(f.state.daily, "B")
+    assert.equal(f.state.dedicated, "B")
+    modes.length = 0
+    await f.api.accounts.directoryCommand({ type: "relogin", browserKind: "daily", requestId: randomUUID(),
+      platformId: "bilibili", revision: f.api.accounts.directory.current("bilibili")!.revision })
+    await f.api.accounts.settled()
+    assert.deepEqual(modes, ["daily"])
+    assert.equal(f.api.accounts.directory.snapshot().operation?.status, "completed")
+    assert.equal(f.state.writes, 1)
   } finally { await f.api.app.close() }
 })
 
