@@ -49,6 +49,26 @@
 
 本地证据：`work/browser-routing-20261007/cleanup-receipt.json`、`recycle-cleanup-receipt.json`。它们保留各自时间点事实；原始 Profile、账号内容及私人页面不入 Git。
 
+## 2026-10-08：开发服务重载命令被拒绝
+
+W3 开发与受控验收完成后，为加载 daily relay 修改，先核验 `/api/health` 的 root 为当前 checkout、PID=11840；任务表无排队/运行记录，日常扩展 connected=false/busy=false。随后下列复合命令被工具以 `CreateProcess … rejected: blocked by policy` 拒绝；PowerShell 尚未创建，所有子操作均未执行。当前实际权限为 `approval_policy=never`、`sandbox_mode=danger-full-access`，未传 sandbox_permissions。原命令如下，仅作拒绝证据，不是重试建议：
+
+```powershell
+$ErrorActionPreference='Stop'
+$root=(Get-Location).Path
+$health=Invoke-RestMethod -Uri 'http://127.0.0.1:4175/api/health'
+if ($health.development.pid -ne 11840 -or [IO.Path]::GetFullPath($health.development.root) -ne $root) { throw 'development_owner_changed' }
+$daily=Invoke-RestMethod -Uri 'http://127.0.0.1:4175/api/browser/daily-chrome' -Headers @{ Origin='http://127.0.0.1:4175'; 'Sec-Fetch-Site'='same-origin' }
+if ($daily.connected -or $daily.busy -or $null -ne $daily.popupRequest) { throw 'daily_browser_busy' }
+$newService=Start-Process -FilePath 'C:\Program Files\nodejs\node.exe' -ArgumentList @('--import','tsx','scripts/dev.mjs') -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput (Join-Path $root 'work/antibot-m0/service-reload.stdout.log') -RedirectStandardError (Join-Path $root 'work/antibot-m0/service-reload.stderr.log') -PassThru
+@{ launchedPid=$newService.Id; previousPid=11840; entry='scripts/dev.mjs'; root=$root; at=[DateTimeOffset]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath 'work/antibot-m0/service-reload.json'
+Get-Content -LiteralPath 'work/antibot-m0/service-reload.json'
+```
+
+只读核验实际 Codex Desktop app-server 可执行文件 `--version` 为 **0.160.0**；PATH 上另一个 npm Codex CLI 是 0.154.0，不把后者当实际执行器。对应 [Windows 分类源码](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/shell-command/src/command_safety/windows_dangerous_commands.rs#L39) 把整段 PowerShell 分词，存在任意 URL 且任意词含 Start-Process 就判危险，并不核对该 URL 是否属于 Start-Process 的参数。这解释了本次本地健康查询 URL 与启动本地 node.exe 混在同一脚本中的命中。[审批决策源码](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/exec_policy.rs#L799) 在该分类下将 Never 转为 Forbidden。官方 [Sandbox 配置说明](https://learn.chatgpt.com/docs/sandboxing#configure-defaults) 区分 sandbox、approval policy 和 reviewer，不能从本错误推断自动 reviewer 拒绝。
+
+没有重复命令、拆分命令消除触发词、换 API/shell、改策略或索要重复聊天授权。拒绝后 `/api/health` 仍为原 PID 11840，服务健康，`service-reload.json` 不存在。**代码与独立宿主验证已完成；常驻服务加载新 relay 尚未完成。** 这是工具执行策略阻塞，不是 Windows 权限或文件占用，也不算产品代码回归。保留原服务，不把未重启说成已生效；后续正常服务重启仍需处理此交付项。
+
 ## 本次记录验证
 
 核对本机版本、三次实际命令/会话设置与固定版本官方判定代码；没有再次执行删除，没有改 Codex 安全配置，没有创建新浏览器/Profile。文档交付只做差异、链接及事实一致性检查，不为开发工具事件增加产品测试或新的 LLM 协议。

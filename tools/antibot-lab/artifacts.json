@@ -1,0 +1,7 @@
+[
+  {"name":"crowdsec-release.tgz","url":"https://github.com/crowdsecurity/crowdsec/releases/download/v1.8.1/crowdsec-release.tgz","sha256":"ae64cdab8ee49534d6c36eab4ce40b5478842a4b4abfe83f7796aace569821eb"},
+  {"name":"hub.tar.gz","url":"https://codeload.github.com/crowdsecurity/hub/tar.gz/f5cd0975d0bd69ebad09c5e6992d4f1a1ef594b0","sha256":"c3398fc1a7e914aef03a4cbbd9e07fa2900b5d5ce1cf5e6d8e4a7015f9726905"},
+  {"name":"traefik.tar.gz","url":"https://github.com/traefik/traefik/releases/download/v3.7.14/traefik_v3.7.14_linux_amd64.tar.gz","sha256":"d08641f5de2dd3788097bddab1ce4b29c10a0b788566970db707fa5c94c71f15"},
+  {"name":"bouncer.tar.gz","url":"https://codeload.github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin/tar.gz/710e88808baccb320d7b2b3560397e1474e3e98b","sha256":"a7569f5aaa6bbbda4ff30f569711c864bd2f6064a1f631a537a62c19f5d0eddf"},
+  {"name":"node.tar.xz","url":"https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-x64.tar.xz","sha256":"f52ec50e959d72d5c680d9731420b2661cd2a8070e94c7369b6ddfcd8b7278be"}
+]

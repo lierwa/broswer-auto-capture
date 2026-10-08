@@ -215,7 +215,7 @@
     },
     {
       "path": "workflows/workflow_use/hybrid/native_event_capture.py",
-      "sha256": "34b48f5b0f20c918b82f7fca121207eb6c4dce9d74d98262aa0a753e76e44f8a"
+      "sha256": "38929ace337a9c1869913c6990f212a3dab6e9c1f6ee54cdef92c9fe08168c67"
     },
     {
       "path": "workflows/workflow_use/hybrid/natural_binding_compile.py",

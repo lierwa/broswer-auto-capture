@@ -8,7 +8,8 @@ from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from browser_use import Browser, BrowserProfile
+from browser_use import BrowserProfile
+from browser_use_runner.task_browser import TaskBrowser as Browser
 import workflow_use
 from workflow_use.hybrid.capability import OrdinaryCapability
 from workflow_use.hybrid.evidence import digest

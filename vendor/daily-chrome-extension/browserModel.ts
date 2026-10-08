@@ -234,7 +234,13 @@ export class BrowserModel {
     const result = await this._sendToExtension('chrome.debugger.sendCommand', [
       { tabId: session.tabId }, 'Target.getTargetInfo',
     ]);
+    const previous = session.targetInfo;
+    if (!result.targetInfo || result.targetInfo.targetId !== previous?.targetId)
+      throw new Error('daily_chrome_target_identity_changed');
     session.targetInfo = result.targetInfo;
+    // WHY：B-U 的 URL/title 事实源是原生 Target 事件；查询刷新后必须同步，不能依赖重复 attach 刷新 SDK。
+    if (previous.url !== session.targetInfo.url || previous.title !== session.targetInfo.title)
+      this._emit({ method: 'Target.targetInfoChanged', params: { targetInfo: { ...session.targetInfo, attached: true } } });
     return session.targetInfo;
   }
 

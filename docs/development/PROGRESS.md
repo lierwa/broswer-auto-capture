@@ -1,5 +1,77 @@
 # 开发进度
 
+## 2026-10-08 当前：底层控制改造通过独立检测服务对照
+
+用户最后明确重点为底层浏览器控制，停止扩展链路编译和页面美化。本轮交付固定开源检测服务及控制改造证据：同一日常 Chrome、相同 CrowdSec balanced 原规则、每轮新 cookie 域，4304981 原控制代码三轮均因 CDP/100 分被拒；候选三轮均经真实挑战 accepted/solved 后读取并点击正确目标，普通控制零模型。参考 `control-reference-oC38an`，候选 `control-candidate-cG3Z28`；每轮资源清理 confirmed。
+
+服务不依赖 Docker，真实重启后 10 场景、9 业务事件、4 拒绝记录保留。API/工具类型检查、受管源码摘要通过；未运行全量。底层补丁仍只涉及原会话复用、隔离事件采集和原生 Target 事实通知，保留 B-U。此前完整链路样本 `product-C2IwfJ` 编译缺口未修，按用户最新优先级保留并停止扩展；不能误报为本轮业务链路修复。
+
+完整交付、首败、启动方式与限制见 [本轮交付](ANTIBOT_DELIVERY_20261008.md)。按用户指令在持久化交付和资源核验后关机；最终收据位于 `work/antibot-service/shutdown-readiness.json`。旧生产 API 没有被绕过工具拒绝而重启，新进程启动才加载新源码；关机后检测服务需通过 start.cmd 或 npm 入口启动。以下均为历史阶段状态。
+
+## 2026-10-08 历史：常驻检测服务与真实产品联调进行中
+
+此前 W3 仅完成局部探针和最小补丁，**整体任务未完成**，不能以“受控 P0–P4 完成”替代用户要求的独立检测服务。当前补齐网站侧真实检测/挑战/阻断及持久化，再让 B-A-T 正常准备、发布、复跑访问。用户已纠正 Docker 环境；采用核验可用的现有 WSL，不再启动 Docker。
+
+详见 [常驻服务实施记录](ANTIBOT_SERVICE_IMPLEMENTATION_20261008.md)。下面是历史阶段证据。
+
+## 2026-10-08 历史：W3 受控改造与效果复核完成
+
+**尚未交付的一项：常驻 API 加载新代码。** 已核验当前开发服务归属和空闲状态，重载命令在创建 PowerShell 前被工具策略拒绝，旧 PID 11840 保持健康。实际 Codex Desktop 执行器为 0.160.0；原复合脚本同时含本地 URL 和 Start-Process，命中 Windows 危险分类，Never 转 Forbidden。没有重复、拆分规避或改策略。详见 [原命令与判定依据](TOOL_POLICY_INCIDENT_20261007.md#2026-10-08开发服务重载命令被拒绝)；不把代码验收完成写成常驻服务已生效。
+
+按用户明确要求继续开发，没有再次停在 M0。保留 browser-use，生产修改仅为：Actor Page 复用原生会话、事件采集进入 Chromium isolated world、daily relay 将真实 Target URL/title 变化通知原 owner 的 SDK。没有伪造 webdriver、放宽来源保护或引入新的控制器。
+
+实际 daily / fpscanner：`daily-reference-p62qNs` CDP 3/3 → `daily-candidate-b986ja` 0/3。独立 Brotector（固定源码、原 Runtime 判定、禁用不相关 PDF 分支）：`daily-holdout-reference-t4dcmM` 3/3 → `daily-holdout-candidate-FNfgOB` 0/3；先在 `holdout-calibration-fn6xm_6d` 通过三正三负校准，再验证产品。四组均三轮动态选择正确、九命令、零模型、无 CSP 违规，收尾 confirmed。各组一任务窗口连续三个新文档；无新增人工操作。原三次候选失败、Brotector PDF 引起的验证器集成失败和启动前字符串语法失败保留，没有改写成首次通过。
+
+`method-completion-native.acceptance.ts` 使用原产品模型设置与独立数据库，`native-Gow4ru` 两个集合选择案例均完成正常准备、动态方法、sample/verification、变化试跑、发布、同 release 正常运行及无合格候选失败。十份 TaskRun 全部零模型，十份 execution 和两份准备生命周期清理确认。输入、导航、iframe/OOPIF/shadow 等能力由前述真实组件回归补充；不把两个选择案例说成两类能力。
+
+API 包类型检查、受管摘要、Python 语法/代码规模和差异检查通过；M0 定向回归 4/4。四项旧基线失败仍单列，不宣称全量、恢复、桌面 UI 或服务重启全通过。十二份主流程临时 Profile 对齐持久化 owner、确认无进程后永久删除约 221.6 MB；独立校准两个 Profile 与两份 PDF 已永久删除。日常个人 Profile/标签未清理，自有 lab/relay 已关闭；小型原始实验记录与制品保留在忽略的 work。
+
+当前结论仅为 E04 页面主上下文采集暴露与 E06 额外 Runtime 副作用的受控改善。人工历史样本来自新专属 Profile，日常自动化对照使用既有 Profile，不声称两者完全同环境；日常 fpscanner 两侧完整 Chrome 版本同为 154.0.8037.98。未访问京东/淘宝，未测网络/TLS/挑战/账号风险，不提前扩建后续包。常驻生产 API 未重启，新 relay 代码在正常重启后加载；源码已通过独立宿主验收。仍在 master@4304981，无 worktree、提交或推送。详见 [W3 验收](ANTIBOT_W3_EVENT_CAPTURE_20261007.md#2026-10-08w3-受控范围验收)。以下记录保留各阶段当时状态。
+
+## 2026-10-08 daily 实测首败，协议缺口已离线修复，真实效果未验收
+
+用户回复“开始”后，真实日常 Chrome 的参考组 `daily-reference-p62qNs` 三轮业务通过，webdriver 0/3、CDP 3/3、九命令/零模型。候选首次 `daily-candidate-KWwbEI` 点击失败；补现有脱敏诊断后的 `daily-candidate-hZmIFH` 定位到原生目标列表缺失。补 DOM 初始化的 `daily-candidate-0SmotX` 仍失败，十二次结构诊断 mappingSize=0，该无效初始化已撤掉。三次失败均未收集到有效候选检测样本，不能声称 daily CDP 已改善。
+
+源码与离线协议反例定位到既有 relay 只更新自身 URL/title，没有向 B-U 发 Target.targetInfoChanged；B-U 仍可能按 about:blank 跳过 DOM。已在既有原生查询结果上补标准事件，同一 target 身份核验、变化去重与 owner 隔离保留，不增加 attach、Runtime 订阅或轮询。新增定向协议测试通过；原较宽兼容测试在完成新断言后另遇旧 fixture 未模拟 bat.closeOwnedTarget，原测试已恢复不改，未将整文件记为通过。
+
+用户再次指出开窗干扰后停止可见验证。四次 daily lab 的进程均已退出，服务/自有 relay 关闭，cleanup confirmed/activeResources=false；生产扩展状态 paired=true、connected=false、busy=false，个人浏览器未关闭。候选真实 daily 复测、独立机制复核和完整发布链路仍待完成；本轮未重启生产 API、未更改测试网页或检测规则。证据与首败见 [W3 记录](ANTIBOT_W3_EVENT_CAPTURE_20261007.md#2026-10-08daily-首败与离线修复边界)。
+
+本次最终离线检查：API 包类型检查通过，Python 新入口语法通过，workflow-use 受管源码摘要校验通过（d50984…2e551），差异检查通过。未运行全量测试；仍在 master@4304981，未创建 worktree、未提交/推送。
+
+## 2026-10-07 纠正实验对象，W3 已实现并完成无界面组件验证
+
+全局实际设置是 daily/revision=55。此前六组专属测试 Profile 只证明该实验路径，不能代表日常浏览器；将 M0 当终点停止开发也是错误。旧记录保留，当前任务继续，W1 专属启动标记不再作为默认使用路径的优先修复。
+
+已改生产共用路径：TaskBrowser 通过 B-U Page 公开 session_id 复用现有有效会话；NativeEventCapture 使用 Chromium isolated world 与明确 context 绑定，不再自行启用 Runtime 事件流，不将监听状态/绑定放进网页主上下文。B-U 原生 Agent/动作保留；普通执行仍 0 模型，不改公共合同、数据库、UI、浏览器选择或个人 Profile。
+
+无界面旧组件 `capture-uc4oit9p`：内部对象可见、CDP=true；仅隔离采集后的 `capture-bo2ee9gk` 仍 CDP=true，保留该失败；补上 Actor 会话复用后的最新 `capture-58oz89_x`：对象不可见、CDP=false、真实点击/输入/导航/iframe/shadow/frame 身份/闲时停止及关闭释放通过。完整 Runner `run-EJ3HjO` 三轮动态选择通过、CDP 0/3、模型 0，cleanup confirmed，三份临时 Profile 永久删除。headless 的 webdriver 仍 true，未改探针或伪造属性；这些结果不替代日常/人工同环境验收。
+
+后续 `capture-j7rsgngw` 再验证跨进程 iframe，按 B-U 原 frameTargetId 路由到所属 session，真实点击、target/frame 身份及导航后的释放通过。API 类型检查与受管源码校验通过。窗口恢复现有测试 11 项中 8 通过、3 失败；恢复原 Browser 导入后相同 3 项仍失败。现有干扰浏览器测试在最后的 scroll_event_cancelled 错误码断言失败，4304981 原采集器+原 Browser 同样失败；此前 dialog/命中/滚动断言已执行。四个基线失败没有改写成通过，也没有扩展修复无关生命周期代码。
+
+日常扩展只读状态 paired=true、connected=false。已准备 `antibot-daily.acceptance.ts`，前后各一个窗口、窗口内三轮，参考 Runner 在独立进程只装载 4304981 原采集器与原 Browser，不改工作区/安装包。按用户此前桌面干扰反馈，已询问可见时机，收到答复前不运行。具体来源、首次失败和未测边界见 [W3 记录](ANTIBOT_W3_EVENT_CAPTURE_20261007.md)。仍在 master@4304981，未创建 worktree、未提交/推送。
+
+## 2026-10-07 M0 六组测量完成，生产改造尚未开始
+
+用户明确允许的最后六个可见窗口已全部完成并收尾，未增加额外轮次。`run-lIonWP` 的 B-U 观察三轮 webdriver=true/CDP=false；B-A-T Runner 执行三轮 webdriver=true/CDP=true，业务选择均正确，0 模型，每轮三条命令，原 cleanup 审计 confirmed/activeResources=false。
+
+六组 18 样本报告：`work/antibot-m0/comparison-1791384902365.json`，限定 webdriver 基线有效，其它机制按校准状态单列，productImprovement=not_tested。人工第二轮选择错误仍保留；修正了报告将人工选项正确性混入环境校准的门，新增回归同时确保自动化业务失败仍阻止整体通过，没有改变探针或检测规则。当前四项定向测试和 API 包类型检查通过。
+
+所有本轮实验窗口/进程已关闭，62696 无监听，六份 Profile 永久删除；原始数据按保留期留在 work。已更新两份方案状态与 RESEARCH/ROADMAP/实施记录，无生产源码变更、无 worktree、未提交/推送。下一候选是端口 0 启动标记，CDP 的具体调用归因仍待验证。
+
+## 2026-10-07 人工三轮完成，已形成局部有效检测对照
+
+用户重开人工流程并完成三轮。`run-CDgBAu` 各一份新文档/一次提交，五项预登记输入全部 observed、检测 false；同 Chrome/Windows/可见模式/新 Profile 策略的此前自动化三组共九轮 webdriver 均 true。三个人工操作为版本 7、7、13；第二轮正确目标 11，保留其业务失败，不影响环境负例。合并报告 `work/antibot-m0/comparison-1791384627858.json` 保留整体 incomplete_or_invalid，因为观察/产品执行尚缺；不宣称产品改善。
+
+当前四项定向测试、API 包类型检查通过。人工测试自然结束，Node 10868 退出、57395 无监听、三个 Profile 均永久删除，`lab-closed.json` 已保存。当前未启动额外浏览器。RESEARCH/ROADMAP/实施记录同步；未提交、未推送。
+
+## 2026-10-07 M0 部分实施，桌面实验已停止
+
+基线 `master@4304981`，未创建 worktree、未提交/推送。新增测试专用固定 fpscanner 加载、本地合成选择页、数据有效性/未知状态、原生 B-U 与现有 Runner 适配和比较脚本。生产系统未改。
+
+三项定向测试通过；首次 API 类型检查有两处测试空值类型错误，修正后通过。之后新增的收尾/比较草稿和可见会话启动门没有再次完整验证，不将此前通过外推。正例、仅调试端口、B-U 仅连接共九份结算样本全部 webdriver=true/CDP=false；缺人工负例及 CDP 正例，不能判“像真人”或产品改善。观察组中断，B-A-T 执行未跑。
+
+开发 agent 在用户暂时无空操作后批量启动可见浏览器，干扰了桌面；收到反馈立即停止。核验本轮进程剩余 0、57393/58597 无监听；十一份 owner 关闭收据已落盘，九份 Profile 正常收尾删除，剩余人工/中断观察两个 Profile 经核验永久删除，未使用回收站。原始实验结果按保留期留在忽略的 work 目录；没有全量清理数据。见 [详细记录](ANTIBOT_M0_IMPLEMENTATION_20261007.md)。
+
 ## 2026-10-07 方法留存最小方案已实施，本地两类动态任务验收通过
 
 新准备使用 `/3`：初态已满足时可只读研究真实候选，并编译为读取 → 选择函数 → 动态导航；复用原生 Agent、现有函数/运行能力，普通复跑零模型。旧 `/2` 和历史发布不改写。同一对抗 reviewer 复核后，本地 headless 两类正常产品流程（最新已发布资料、最高优先级未关闭记录）完成准备、变化试运行、发布与复跑；新增候选/换序/排除更大不合格项通过，无合格项明确失败。详见 [实现、首败与最终证据](TASK_METHOD_COMPLETION_PLAN_20261007.md#10-实施与证据2026-10-07)。

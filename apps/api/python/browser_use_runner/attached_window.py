@@ -11,11 +11,11 @@ from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from browser_use import Browser, BrowserProfile
+from browser_use import BrowserProfile
+from browser_use_runner.task_browser import TaskBrowser as Browser
 from cdp_use import CDPClient
 from pydantic import Field
 from workflow_use.hybrid.evidence import Contract
-
 from browser_use_runner.target_scope import TargetScope
 from browser_use_runner.startup_diagnostics import startup_causes
 from browser_use_runner.attached_startup_budget import AttachedStartupBudget

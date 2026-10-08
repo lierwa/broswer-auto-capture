@@ -17,7 +17,9 @@ CAPTURE_SCRIPT = r"""
   const stateKey = __BAT_STATE_KEY__;
   const eventTypes = __BAT_EVENT_TYPES__;
   const previous = globalThis[stateKey];
-  if (previous && typeof previous.cleanup === "function") return;
+  if (previous && typeof previous.cleanup === "function") {
+    previous.enabled = true; previous.intendedElement = null; return;
+  }
   const documentId = globalThis.crypto && typeof globalThis.crypto.randomUUID === "function"
     ? globalThis.crypto.randomUUID()
     : `${Date.now()}-${Math.random()}`;
@@ -114,6 +116,7 @@ CAPTURE_SCRIPT = r"""
     return data;
   };
   const capture = (event) => {
+    if (!state.enabled) return;
     const payload = {
       schemaVersion: "bat.native-dom-event-payload/v2", sequence: sequence++, documentId,
       scope: { url: globalThis.location.href, isTop: globalThis === globalThis.top },
@@ -125,9 +128,10 @@ CAPTURE_SCRIPT = r"""
     try { globalThis[bindingName](JSON.stringify(payload)); } catch (_) {}
   };
   for (const type of eventTypes) document.addEventListener(type, capture, true);
-  const state = { documentId, intendedElement: null, cleanup: () => {
+  const state = { documentId, enabled: true, intendedElement: null, cleanup: () => {
     for (const type of eventTypes) document.removeEventListener(type, capture, true);
     try { delete globalThis[stateKey]; } catch (_) {}
+    try { delete globalThis[bindingName]; } catch (_) {}
   }};
   Object.defineProperty(globalThis, stateKey, { value: state, configurable: true });
 })();
@@ -146,9 +150,9 @@ class NativeEventCapture:
         self.installed = {}
         self.binding = '__bat_native_event_' + uuid4().hex
         self.state_key = '__bat_native_event_state_' + uuid4().hex
+        self.world_name = 'bat-events-' + uuid4().hex
         self._handlers_registered = False
         self._binding_handler = self._on_binding_called
-        self._context_handler = self._on_context_created
 
     async def arm(self, action_name, target=None, element=None):
         policy = action_capture_policy(action_name)
@@ -160,14 +164,16 @@ class NativeEventCapture:
             raise ValueError('native_event_capture_already_active')
         await self._ensure_transport()
         sessions, limitations = await self._action_sessions(action_name, target)
+        frames, _sessions = await self.browser.get_all_frames()
         installed = []
         for session in sessions:
             try:
-                owner = await self._ensure_installed(session)
+                owner = await self._ensure_installed(session, frames)
                 installed.append(str(owner['sessionId']))
             except Exception:
                 limitations.append('listener_registration_failed:' + str(session.target_id))
         if not installed:
+            await self._disarm()
             raise ValueError('native_event_listener_registration_failed')
         intended = {}
         if isinstance(target, dict) and target.get('frameId'):
@@ -180,23 +186,50 @@ class NativeEventCapture:
                        'events': [], 'limitations': limitations,
                        'sessionIds': installed, 'intendedFrames': intended, 'seenPayloads': {}}
         if element is not None:
-            await self._set_intended(element)
+            try:
+                await self._set_intended(element)
+            except BaseException:
+                await self._disarm()
+                self.active = None
+                raise
         return {'status': 'armed', 'eventExpectation': policy.event_expectation,
                 'events': [], 'limitations': list(limitations)}
 
     async def _set_intended(self, element):
-        script = """() => {
-          const state = globalThis[%s];
-          if (!state || typeof state.cleanup !== 'function' || !this.isConnected) return {accepted:false};
-          state.intendedElement = this;
-          return {accepted:true};
-        }""" % json.dumps(self.state_key)
-        try:
-            accepted = json.loads(await element.evaluate(script))
-        except Exception as error:
-            raise ValueError('native_event_intended_target_unavailable') from error
-        if accepted != {'accepted': True}:
+        info = await element.get_basic_info()
+        backend = info.get('backendNodeId') if isinstance(info, dict) else info.backendNodeId
+        if type(backend) is not int:
             raise ValueError('native_event_intended_target_unavailable')
+        for (session_id, context_id) in self.contexts:
+            if session_id not in self.active['sessionIds']:
+                continue
+            if await self._set_context_intended(backend, session_id, context_id):
+                return
+        raise ValueError('native_event_intended_target_unavailable')
+
+    async def _set_context_intended(self, backend, session_id, context_id):
+        script = """function() {
+          const state = globalThis[%s];
+          if (!state || !state.enabled || !this.isConnected || this.ownerDocument !== document) return false;
+          state.intendedElement = this;
+          return true;
+        }""" % json.dumps(self.state_key)
+        object_id = None
+        try:
+            resolved = await self.client.send.DOM.resolveNode(params={
+                'backendNodeId': backend, 'executionContextId': context_id}, session_id=session_id)
+            object_id = resolved.get('object', {}).get('objectId')
+            if not object_id:
+                return False
+            result = await self.client.send.Runtime.callFunctionOn(params={
+                'functionDeclaration': script, 'objectId': object_id, 'returnByValue': True},
+                session_id=session_id)
+            return result.get('result', {}).get('value') is True
+        except Exception:
+            return False
+        finally:
+            if object_id:
+                await self.client.send.Runtime.releaseObject(params={'objectId': object_id}, session_id=session_id)
 
     async def complete(self):
         if self.active is None:
@@ -204,6 +237,7 @@ class NativeEventCapture:
                     'limitations': ['listener_not_active']}
         active = self.active
         await self._barrier(active)
+        await self._disarm()
         events = list(active['events'])
         limitations = sorted(set(active['limitations']))
         self.active = None
@@ -278,19 +312,47 @@ class NativeEventCapture:
         targets.extend(frames[frame_id].get('frameTargetId') for frame_id in included)
         return list(dict.fromkeys(value for value in targets if value))
 
-    async def _ensure_installed(self, session):
+    async def _ensure_installed(self, session, frames):
         target_id = str(session.target_id)
-        if target_id in self.installed:
-            return self.installed[target_id]
-        await self.client.send.Runtime.enable(session_id=session.session_id)
-        await self.client.send.Runtime.addBinding(params={'name': self.binding}, session_id=session.session_id)
+        session_id = str(session.session_id)
+        tree = await self.client.send.Page.getFrameTree(session_id=session_id)
+        pending = [tree['frameTree']]
         script = capture_script(self.binding, self.state_key)
-        result = await self.client.send.Page.addScriptToEvaluateOnNewDocument(
-            params={'source': script, 'runImmediately': True}, session_id=session.session_id)
-        installed = {'sessionId': session.session_id, 'targetId': target_id,
-                     'identifier': result['identifier']}
+        installed = {'sessionId': session_id, 'targetId': target_id}
+        # WHY：复用 Chromium 隔离世界与显式 context 绑定，既不污染页面 global，也不启停共享 Runtime 订阅。
+        # 每个动作重新取得当前 frame/context；不能假设导航前的监听仍存在。
         self.installed[target_id] = installed
+        for key in [key for key in self.contexts if key[0] == session_id]:
+            del self.contexts[key]
+        while pending:
+            branch = pending.pop()
+            pending.extend(branch.get('childFrames', []))
+            frame_id = branch['frame']['id']
+            # WHY：跨进程 iframe 必须走 B-U 认定的所属 session，不能在主 target 上重复安装。
+            frame_target = frames.get(frame_id, {}).get('frameTargetId')
+            if frame_target and str(frame_target) != target_id:
+                continue
+            world = await self.client.send.Page.createIsolatedWorld(params={
+                'frameId': frame_id, 'worldName': self.world_name}, session_id=session_id)
+            context_id = world['executionContextId']
+            self.contexts[(session_id, context_id)] = {'frameId': frame_id, 'contextUniqueId': None}
+            await self.client.send.Runtime.addBinding(params={
+                'name': self.binding, 'executionContextId': context_id}, session_id=session_id)
+            result = await self.client.send.Runtime.evaluate(params={
+                'expression': script, 'contextId': context_id, 'returnByValue': True}, session_id=session_id)
+            if result.get('exceptionDetails'):
+                raise ValueError('native_event_listener_registration_failed')
         return installed
+
+    async def _disarm(self):
+        expression = f'if (globalThis[{json.dumps(self.state_key)}]) globalThis[{json.dumps(self.state_key)}].enabled = false'
+        for session_id, context_id in self.contexts:
+            try:
+                await self.client.send.Runtime.evaluate(params={
+                    'expression': expression, 'contextId': context_id, 'returnByValue': True}, session_id=session_id)
+            except Exception:
+                # 导航销毁旧 context 后已无监听可停；不改写已捕获的导航前事件。
+                pass
 
     async def _barrier(self, active):
         for session_id in active['sessionIds']:
@@ -320,11 +382,6 @@ class NativeEventCapture:
                     await self.client.send.Runtime.evaluate(params=params, session_id=session_id)
                 except Exception:
                     pass
-            try:
-                await self.client.send.Page.removeScriptToEvaluateOnNewDocument(
-                    params={'identifier': installed['identifier']}, session_id=session_id)
-            except Exception:
-                pass
             try:
                 await self.client.send.Runtime.removeBinding(
                     params={'name': self.binding}, session_id=session_id)
@@ -364,15 +421,6 @@ class NativeEventCapture:
         except Exception:
             active['limitations'].append('event_payload_invalid')
 
-    async def _on_context_created(self, event, session_id):
-        context = event.get('context') if isinstance(event, dict) else None
-        if not isinstance(context, dict) or type(context.get('id')) is not int:
-            return
-        auxiliary = context.get('auxData') if isinstance(context.get('auxData'), dict) else {}
-        self.contexts[(str(session_id), context['id'])] = {
-            'frameId': str(auxiliary['frameId']) if auxiliary.get('frameId') else None,
-            'contextUniqueId': context.get('uniqueId'), 'origin': context.get('origin')}
-
     def _normalize_event(self, payload, session_id, context_id):
         raw_scope = payload.get('scope') if isinstance(payload.get('scope'), dict) else {}
         raw_url = raw_scope.get('url')
@@ -396,10 +444,9 @@ class NativeEventCapture:
             return
         registry = self.client._event_registry
         methods = registry.get_registered_methods()
-        if 'Runtime.bindingCalled' in methods or 'Runtime.executionContextCreated' in methods:
+        if 'Runtime.bindingCalled' in methods:
             raise ValueError('native_event_handler_conflict')
         self.client.register.Runtime.bindingCalled(self._binding_handler)
-        self.client.register.Runtime.executionContextCreated(self._context_handler)
         self._handlers_registered = True
 
     def _unregister_handlers(self):
@@ -407,8 +454,7 @@ class NativeEventCapture:
             return
         registry = self.client._event_registry
         # cdp-use 固定版本只有单 handler registry；只在仍持有自己的 handler 时释放，避免覆盖其他所有者。
-        for method, handler in [('Runtime.bindingCalled', self._binding_handler),
-                                ('Runtime.executionContextCreated', self._context_handler)]:
+        for method, handler in [('Runtime.bindingCalled', self._binding_handler)]:
             if registry._handlers.get(method) is handler:
                 registry.unregister(method)
         self._handlers_registered = False

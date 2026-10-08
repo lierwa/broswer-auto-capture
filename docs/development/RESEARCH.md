@@ -1,5 +1,63 @@
 # 技术调研与复用结论
 
+## 2026-10-08 当前冻结：无 Docker 检测服务及底层控制对照
+
+CrowdSec 1.8.1（909b515…，MIT）、Hub f5cd097…（MIT）、Traefik 3.7.14（MIT）、bouncer v1.8.0-alpha（710e888…，Apache-2.0）通过公开 localplugins 与 AppSec 原生挑战协议组合。便携发行包 SHA256 固定在 tools/antibot-lab/artifacts.json，现有 WSL/systemd 用户服务管理生命周期；没有另写评分/挑战/PoW/规则安装器。候选选择及公开配置源见 [服务实施](ANTIBOT_SERVICE_IMPLEMENTATION_20261008.md)。Alpha 状态保留为兼容风险。
+
+固定 Hub 已缓存 YAML 时，cscli install 跳过外部数据集下载，导致 SQLi/XSS 等已有规则报缺文件；核验固定 CrowdSec clihub.upgrade 源码后，使用其官方 hub upgrade 数据刷新解决，未换规则分支，实际数据摘要另存。源码：https://github.com/crowdsecurity/crowdsec/blob/909b5157986a2b2c2163300fdaef5ed01289f7d2/cmd/crowdsec-cli/clihub/hub.go 。
+
+明确测量边界：之前人工访问可能留下 clearance，不能把后续同域放行当独立自动化阴性。每个新样本改用 UUID.localhost，检测器不读取分组标签，双侧同默认 balanced/75；旧 Browser+原事件桥三轮均 CDP/100 拒绝，新会话复用/隔离事件采集三轮官方 challenge_accepted/solved 增一且业务完成。精确候选得分未知，不能记 0。根因和修复属于底层控制，未新增产品依赖或改变 B-U Agent loop。
+
+已完成服务真实重启持久化及最小类型/源码检查。网络 TLS/JA4、长期请求频率、商用风控未测；没有把本轮结果扩展成全网不可识别。完整首败和交付见 [结果记录](ANTIBOT_DELIVERY_20261008.md)。
+
+## 2026-10-08 历史：无 Docker 的固定开源组合验证中
+
+复用 CrowdSec 1.8.1、固定 Hub、Traefik 3.7.14 与支持 AppSec 原生挑战的固定 bouncer 1.8.0-alpha。现有 WSL Ubuntu/systemd 已核验可用，便携制品限于 work/antibot-service。评分、挑战签名、PoW 和跨请求规则均属于上游，不在 B-A-T 重写。选型仍需真实样本验证，详见实施记录。
+
+详见 [常驻服务实施记录](ANTIBOT_SERVICE_IMPLEMENTATION_20261008.md)。下面是历史阶段证据。
+
+## 2026-10-08 W3 效果确认与独立探针冻结
+
+保留 browser-use 0.13.8 / cdp-use 1.4.5；以原 Page 的公开 session_id、Chromium isolated world/显式 Runtime.addBinding 和既有 daily BrowserModel 的标准 Target 事件完成最小适配。真实 daily 下，固定 fpscanner 1.0.8 的 CDP 信号从三轮均命中变为三轮均未命中，webdriver 两侧本来均 false；没有修改网页属性或采用专属启动参数修正替代日常路径。
+
+独立采用 [Brotector 98b3309](https://github.com/ttlns/brotector/blob/98b330999e9928a226ca0c8254dddf909d1583bd/brotector.js) 的 Runtime 分支，MIT、浏览器 JS、测试期本地托管；不加入产品运行依赖。固定 JS/LICENSE/PDF 摘要见 [W3 复用记录](ANTIBOT_W3_EVENT_CAPTURE_20261007.md)。当前 Chrome 中 stack getter 计数为 0，而原版 Error.prototype.name 计数对显式 Runtime.enable 正例为 3；因此不能采用只看旧 stack getter 的探针作为独立证明。Brotector 原版 PDF 分支会干扰单主文档来源，首次日常复核第二轮被来源保护拒绝；通过公开派生适配只禁用该无关分支、保留 Runtime 源码/阈值，重新三正三负校准有效，再取得日常修正前 3/3、修正后 0/3。产品代码未按独立探针调参。
+
+既有 `method-completion-native.acceptance.ts` 完成真实准备、发布、动态变化和失败分支，零普通复跑模型调用；没有复制 Agent loop、检测引擎或发布调度。效果范围限定为已测 E04/E06；人工 Profile 差异、十六项 fpscanner unknown、四个原测试基线失败、常驻 API 未重启及未测网络/挑战维度均在交付记录中保留。以下调研条目记录各阶段当时认识。
+
+## 2026-10-08 W3 daily 兼容缺口：标准 Target 事实通知
+
+实际 daily 的旧实现三轮 webdriver=false、CDP=true，证明先前 dedicated webdriver 阳性不能用于此模式。候选真实失败在 TargetResolver 的 selector map 为空，尚未进入事件桥；单补 DOM.enable 无效，已撤销。B-U 固定 0.13.8 的 SessionManager 通过 Target.targetInfoChanged 更新 URL/title，DOMWatchdog 根据该缓存选择是否采集 DOM；现有 Playwright 派生 relay 虽已查询真实 TargetInfo，却没有把查询后的变化通知 SDK。
+
+保留成熟 BrowserModel、chrome.debugger 原生查询和 B-U 事实源，仅在同一 target 的真实 URL/title 改变时发标准事件，复用 CDPOwnerScopes 投递给原 owner。无新依赖、无新轮询、不恢复多余 attach/Runtime 订阅。协议回归已复现缺事件，并验证修正、去重、身份拒绝、原生查询失败保留及 owner 隔离。真实浏览器修正结果仍未测；完整选型和日志见 [W3 记录](ANTIBOT_W3_EVENT_CAPTURE_20261007.md#2026-10-08daily-首败与离线修复边界)。
+
+独立复核只做了源码范围核验：固定 [BotD error_trace](https://github.com/fingerprintjs/BotD/blob/66da86e9d9e7206e817a0f7fdbdfa8fe37f3cd47/src/sources/error_trace.ts) 和 [CreepJS headless](https://github.com/abrahamjuliot/creepjs/blob/10aa6724cd33a1015db1574211890518cd04f0cc/src/headless/index.ts) 所列检测不能直接当作本轮 Runtime 订阅机制的独立证明；Rebrowser Bot Detector 有相关候选，但尚未锁版本、核验全源码或运行，不宣称已接入独立探针。
+
+## 2026-10-07 W3：复用 B-U 会话和 Chromium 隔离上下文
+
+实际全局模式 daily/revision=55，前次 dedicated 实验不能代表此路径。已保留原 browser-use/cdp-use 和控制动作，仅在 Browser 构造适配中为原 Page 传入 SessionManager 已有 session_id；事件采集复用 Page.createIsolatedWorld、显式 context 的 Runtime.addBinding、DOM.resolveNode。原生事件结构、目标命中和来源合同继续保留，不重造浏览器控制/Agent loop，也不在网页伪造 webdriver。
+
+固定上游源码表明：B-U 不传 session_id 的 Actor 会额外 attach 并启用 Runtime；V8 的 bindingCalled 不要求开启整个 Runtime 流，但仅删除 enable 会失去原 executionContextCreated 与跨文档绑定。通过公开 isolated world 返回的真实 context ID 建立 frame 关联，每次动作重新取得当前 frame/context，避免直接关闭别人的 Runtime 订阅。
+
+运行结果明确分阶段：原组件 CDP=true；仅隔离桥仍 true；会话复用后 false。完整 Runner 无界面三轮动态选择、零模型和清理通过。日常扩展前后比较、独立探针、正式发布链尚未验收。完整 Product Alignment、Reuse Assessment、源码 URL、失败与清理证据见 [W3 实施记录](ANTIBOT_W3_EVENT_CAPTURE_20261007.md)。
+
+## 2026-10-07 M0 六组闭环：启动标记与执行路径差异已复现
+
+用户明确安排剩余两组可见实验后，B-U 观察与 B-A-T 原 Runner 执行各三轮完成，合并人工/校准/调试/连接共 18 样本。Chrome 154.0.8037.98 下，主页面/iframe webdriver：人工 0/3、其余各组 3/3；CDP：仅 B-A-T 执行 3/3，其余各组 0/3。B-A-T 三轮动态选择均正确，每轮三条普通能力命令、0 模型，cleanup confirmed。限定 M0 测量闭环已完成，非反检测效果验收。
+
+现有 `_launch` 使用端口 0；[GoogleChrome 固定版本文档](https://github.com/GoogleChrome/chrome-launcher/blob/a8e688f6b7524eb8fa59bdb8f5d201e7b567c6e0/docs/chrome-flags-for-tools.md)明确该配置设置 webdriver=true，与实测相符。将其列为 W1 最小候选，生产配置尚未改。CDP 差异只能定位到完整 Runner 路径，尚不能归因单个动作/观察调用，不进行批量 stealth 注入。明细及 P2/P3 边界见 [M0 结算](ANTIBOT_M0_IMPLEMENTATION_20261007.md#六组测量完成后的结算)。
+
+## 2026-10-07 后续人工对照：已取得有效 webdriver 正反例
+
+用户重新授权并亲自完成三轮人工测试，`run-CDgBAu` 的已登记五项信号输入均有效、均未命中。与此前 `run-2DrjRv` 的正例/仅调试端口/B-U 连接各三轮相比，浏览器二进制 SHA256、Windows、可见模式及全新 Profile 策略匹配；主页面和 iframe 的 webdriver 有稳定正反例。CDP 规则两侧均 false，仍缺机制阳性校准，不能据此宣称控制不可见。
+
+人工第二轮选择版本 7（当轮最大已发布为 11），业务选择保留 failed；真人身份/环境采样仍有效。报告将信号校准与任务正确性分别列出，不要求为了环境参考重复人工操作。现有 ManagedWindow 启动源码使用 `--remote-debugging-port=0`，仅登记为后续待验证的 W1 路径，尚未改生产代码。详见 [人工补测记录](ANTIBOT_M0_IMPLEMENTATION_20261007.md#人工补测与离线比较)。
+
+## 2026-10-07 M0 首轮实施：部分证据，可见测试已停止
+
+测试侧复用 fpscanner 1.0.8 固定 npm 制品，sha512 及 ES bundle sha256 均锁定；入口与五条规则源码逐一匹配复审固定提交。只接本地 node:http、B-U 原生接口与现有 RunnerProcess，无生产代码/数据库/协议改造。实现前 Product Alignment/Reuse Assessment、探针有效性和边界见 [M0 实施记录](ANTIBOT_M0_IMPLEMENTATION_20261007.md)。
+
+正例、仅开启调试端口、B-U 仅连接各三轮：webdriver 均命中，CDP 规则均未命中。后者没有机制阳性校准，不能称“未暴露 CDP”。人工数据缺失、观察组中断、产品执行未测；未触发生产补丁。用户暂时无空人工操作后，开发 agent 错误批量启动可见测试干扰桌面，随后按用户反馈立即停止并核验关闭。后续不得把“先做其他工作”当作批量可见测试许可。
+
 ## 2026-10-07 已满足初态下的方法留存适配
 
 复用 browser-use 0.13.8 的 Tools 注册、原生 Agent/step/done、现有 find_elements 与只读字段采样，复用现有 source-only 选择注解及 QuickJS 0.32.0 验证，保持 LangGraph 1.4.14 的运行职责。没有增删依赖、重写调度器或增加普通复跑模型调用。具体 Product Alignment/Reuse Assessment 及证据见 [实施方案](TASK_METHOD_COMPLETION_PLAN_20261007.md#10-实施与证据2026-10-07)。

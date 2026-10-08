@@ -13,7 +13,8 @@ from typing import Literal
 from uuid import UUID
 
 import psutil
-from browser_use import Browser, BrowserProfile
+from browser_use import BrowserProfile
+from browser_use_runner.task_browser import TaskBrowser as Browser
 from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
 from pydantic import Field
 
