@@ -5,6 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from browser_use_runner.account_secrets import RollbackStore
+from browser_use_runner.account_borrow import navigate
 
 
 def canonical(state):
@@ -49,7 +50,7 @@ async def storage_origin(borrowed, origin):
         url = urlsplit(borrowed.page.url)
         return f'{url.scheme}://{url.netloc}'
     if actual() != origin:
-        await borrowed.page.goto(origin, timeout=15000, wait_until='domcontentloaded')
+        await navigate(borrowed.page, origin, timeout=15000, wait_until='domcontentloaded')
     if actual() != origin:
         raise ValueError('account_storage_scope_denied')
 

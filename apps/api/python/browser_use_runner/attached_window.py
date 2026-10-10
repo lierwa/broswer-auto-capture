@@ -328,7 +328,7 @@ class AttachedWindow:
     def _browser(self, lease, allowed_domains):
         profile = BrowserProfile(cdp_url=lease.cdpUrl, is_local=False, use_cloud=False,
                                  headless=False, keep_alive=True, enable_default_extensions=False,
-                                 cross_origin_iframes=False, allowed_domains=allowed_domains,
+                                 allowed_domains=allowed_domains,
                                  no_viewport=True, storage_state=None)
         # WHY：个人实例直接使用现有站点存储；不配置个人 user_data_dir，也不导出 storage_state。
         return Browser(browser_profile=profile, cdp_url=lease.cdpUrl, is_local=False,

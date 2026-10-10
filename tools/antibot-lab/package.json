@@ -1,5 +1,11 @@
 {
   "name": "@browser-capture/antibot-lab-tools",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "csrf-sync": "4.2.1",
+    "lru-cache": "11.4.0",
+    "structured-headers": "2.0.3",
+    "svg-captcha": "1.4.0"
+  }
 }

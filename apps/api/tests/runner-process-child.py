@@ -39,6 +39,10 @@ def main():
                 channel.write(json.dumps({'id': request['id'], 'ok': True,
                                           'result': cleanup_result(mode)}) + '\n')
                 return 1 if mode == 'nonzero_exit' else 0
+            if mode == 'policy_probe':
+                channel.write(json.dumps({'id': request['id'], 'ok': True,
+                    'result': {'policyFile': os.environ.get('BAT_ACCESS_POLICY_FILE')}}) + '\n')
+                continue
             channel.write(json.dumps({'id': request['id'], 'ok': True,
                                       'result': {'mode': 'controlled/v1', 'modelCalls': 0}}) + '\n')
     finally:

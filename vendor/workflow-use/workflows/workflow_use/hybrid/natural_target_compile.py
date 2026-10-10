@@ -43,12 +43,20 @@ def natural_target(action, pre, requirement_text='', input_schema=None, post=Non
         if candidate is None:
             return None, [], [gap('unsupported_capability', [action.id],
                                   'natural_target_query_candidate_invalid', 'collect_evidence')]
-        return {'strategy': 'structure', 'scope': target_scope,
+        target = {'strategy': 'structure', 'scope': target_scope,
                 'container': candidate.container.model_dump(mode='json'),
                 'items': candidate.items.model_dump(mode='json'),
                 'ordinal': candidate.matchedItemOrdinal,
                 'withinItem': (candidate.withinItem.model_dump(mode='json')
-                               if candidate.withinItem is not None else None)}, fact.sourceRefs, []
+                               if candidate.withinItem is not None else None)}
+        if candidate.readActionRef == action.id:
+            from .host_collection import host_read_for_target
+            try:
+                if host_read_for_target(pre, target, action.id) is None:
+                    raise ValueError('host_collection_missing')
+            except (ValueError, KeyError, TypeError):
+                return None, [], [gap('invalid_source', [action.id], 'host_collection_source_mismatch', 'reject_trace')]
+        return target, fact.sourceRefs, []
     raw_history = value.get('historyTarget')
     if action.name == 'click' and unbound_collection_choice(value, requirement_text):
         # WHY：同一集合里的第 N 个元素只是一次试做的坐标；没有完整候选读取时，
@@ -106,7 +114,8 @@ def _validated_candidate(raw, structure, pre):
         and candidate.targetRef == structure.get('targetRef')
         and candidate.container.kind == 'css' and candidate.container.value == 'html'
         and candidate.items.kind == 'css' and bool(candidate.items.value)
-        and candidate.matchedItemOrdinal is not None and candidate.withinItem is None
+        and candidate.matchedItemOrdinal is not None
+        and (candidate.withinItem is None or candidate.readActionRef == structure.get('actionRef'))
     ) else None
 
 

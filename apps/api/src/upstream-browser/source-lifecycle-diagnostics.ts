@@ -77,6 +77,15 @@ const runtimeCauseSchema = attachedStartupSchema.shape.causes.unwrap().element.e
 })
 const runtimeCommandFailureSchema = z.object({ phase: z.literal("runtime_command_failure"), status: z.literal("failed"),
   actionRef: z.string().regex(/^[A-Za-z0-9._:-]{1,256}$/), causes: z.array(runtimeCauseSchema).min(1).max(4),
+  eventCapture: z.object({ status: z.enum(['missing', 'captured', 'listener_unavailable', 'not_applicable']),
+    events: z.number().int().min(0).max(1000000), limitations: z.number().int().min(0).max(1000000),
+    inputAcknowledgements: z.object({ mouseMoved: z.number().int().min(0).max(1000000),
+      mousePressed: z.number().int().min(0).max(1000000), mouseReleased: z.number().int().min(0).max(1000000) }).strict().optional(),
+    inputDispatch: z.object(Object.fromEntries(['mouseMoved', 'mousePressed', 'mouseReleased'].map((kind) => [kind,
+      z.object({ attempted: z.number().int().min(0).max(1000000), cancelled: z.number().int().min(0).max(1000000),
+        failed: z.number().int().min(0).max(1000000) }).strict(),
+    ]))).strict().optional(),
+  }).strict().optional(),
 }).strict()
 
 const actionNameSchema = z.enum([

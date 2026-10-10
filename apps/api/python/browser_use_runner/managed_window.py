@@ -23,6 +23,7 @@ from browser_use_runner.connection_policy import disconnected_handler
 from browser_use_runner.window_lease_archive import owner_path
 from browser_use_runner.managed_replay import prepare_replay
 from browser_use_runner.managed_targets import ManagedTargets, load_owned_storage
+from browser_use_runner.managed_temp import create_browser_temp, cleanup_browser_temp
 
 
 class WindowLease(Contract):
@@ -32,6 +33,7 @@ class WindowLease(Contract):
     browserPid: int | None = None
     browserStarted: float | None = None
     browserExe: str | None = None
+    browserTempPath: str | None = None
     cdpPort: int | None = None
     browserId: str | None = None
     sessionId: str | None = None
@@ -43,14 +45,11 @@ class WindowLease(Contract):
     retainedProcess: bool = False
     headless: bool = False
 
-
 def _target_digest(target_id):
     return hashlib.sha256(target_id.encode('ascii')).hexdigest()
 
-
 def _same_path(left, right):
     return os.path.normcase(str(Path(left).resolve())) == os.path.normcase(str(Path(right).resolve()))
-
 
 def _owner_process(lease):
     if lease.browserPid is None or lease.browserStarted is None or lease.browserExe is None:
@@ -66,7 +65,6 @@ def _owner_process(lease):
         return owner
     except (psutil.NoSuchProcess, psutil.ZombieProcess):
         return None
-
 
 def _profile_process_present(profile_path):
     # WHY：租约文件可能在 end 后、SQLite 回写前消失；只有确认专属 Profile 无 Chrome 进程才能解锁。
@@ -85,11 +83,9 @@ def _profile_process_present(profile_path):
             return True
     return False
 
-
 def _cdp_json(port, path):
     with urllib.request.urlopen(f'http://127.0.0.1:{port}{path}', timeout=2) as response:
         return json.load(response)
-
 
 def _browser_id(port):
     endpoint = _cdp_json(port, '/json/version').get('webSocketDebuggerUrl', '')
@@ -97,11 +93,9 @@ def _browser_id(port):
         raise ValueError('hybrid_managed_window_cdp_changed')
     return endpoint.rsplit('/', 1)[-1]
 
-
 def _target_exists(lease):
     return any(item.get('type') == 'page' and item.get('id') == lease.targetId
                for item in _cdp_json(lease.cdpPort, '/json/list'))
-
 
 def _window_api():
     api = ctypes.windll.user32
@@ -246,6 +240,7 @@ class ManagedWindow:
         if _profile_process_present(self.profile_path):
             raise ValueError('hybrid_managed_window_controlled' if lease.status != 'handoff'
                              else reason or 'hybrid_managed_window_owner_unknown')
+        cleanup_browser_temp(lease)
         self.path.unlink(missing_ok=True)
         self.acquired = False
         return _state(lease, False, reason or 'hybrid_managed_window_lease_inactive_verified')
@@ -280,6 +275,7 @@ class ManagedWindow:
         if lease.status != 'handoff' and not allow_controlled:
             raise ValueError('hybrid_managed_window_controlled')
         if lease.browserPid is None and lease.status == 'starting' and lease.creatorPid == os.getpid():
+            cleanup_browser_temp(lease)
             self.path.unlink()
             self.acquired = False
             return _state(lease, False)
@@ -300,6 +296,10 @@ class ManagedWindow:
             psutil.wait_procs(alive, timeout=5)
             if _owner_process(lease) is not None:
                 raise ValueError('hybrid_managed_window_end_unconfirmed')
+        # WHY：Browser.close可能先退出主进程；Profile子进程未退时不得删除租约或宣布清理确认。
+        if _profile_process_present(self.profile_path):
+            raise ValueError('hybrid_managed_window_end_unconfirmed')
+        cleanup_browser_temp(lease)
         self.path.unlink()
         self.acquired = False
         return _state(lease, False)
@@ -326,6 +326,8 @@ class ManagedWindow:
                                  is_local=False, storage_state=storage_state)
         browser = Browser(browser_profile=profile, cdp_url=profile.cdp_url, is_local=False,
                           **({'id': lease.sessionId} if lease.sessionId else {}))
+        # WHY：SW可跨标签共享；只对已核验owned进程/Profile启用浏览器级准入，日常资料不加此权。
+        object.__setattr__(browser, '_bat_managed_profile', True)
         browser._auto_reconnect = disconnected_handler(lambda: setattr(self, 'connection_lost', True))
         if resume and lease.targetId and not lease.ownedTargets:
             lease.ownedTargets = [lease.targetId]
@@ -373,14 +375,15 @@ class ManagedWindow:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         (self.profile_path / 'DevToolsActivePort').unlink(missing_ok=True)
-        args = [str(executable), f'--user-data-dir={self.profile_path}', '--remote-debugging-port=0',
+        # WHY：沿用固定 B-U 的端口分配；port=0 会额外改变可见 Chrome 的 webdriver 标记。
+        debug_port = LocalBrowserWatchdog._find_free_port()
+        args = [str(executable), f'--user-data-dir={self.profile_path}', f'--remote-debugging-port={debug_port}',
                 '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check', '--no-startup-window']
         # WHY：只启动原 Chrome/CDP 进程；ManagedTargets 是本次操作窗口的唯一创建入口。
         # WHY：两个专属模式复用同一 Profile 和既有进程 owner；不要经 SDK 的 Chrome Profile 复制分支。
         if self.headless:
             args.insert(-1, '--headless=new')
-        browser_temp = self.profile_path / 'browser-temp'
-        browser_temp.mkdir(exist_ok=True)
+        browser_temp = create_browser_temp(self, lease)
         environment = os.environ.copy()
         # WHY：Runner 的临时目录必须能在控制进程退出时清理；交付后的 Chrome 不得继续占用它。
         environment.update({'TMP': str(browser_temp), 'TEMP': str(browser_temp), 'TMPDIR': str(browser_temp)})
@@ -400,8 +403,13 @@ class ManagedWindow:
             if owner.poll() is not None:
                 raise ValueError('hybrid_managed_window_launch_failed')
             try:
-                lines = (self.profile_path / 'DevToolsActivePort').read_text(encoding='ascii').splitlines()
-                lease.cdpPort = int(lines[0])
+                # WHY：空闲端口释放后可能被抢占；先证实监听者为本租约 owner，禁止误连其他浏览器。
+                process = _owner_process(lease)
+                if process is None or not any(connection.status == psutil.CONN_LISTEN
+                        and connection.laddr.ip == '127.0.0.1' and connection.laddr.port == debug_port
+                        for connection in process.net_connections(kind='tcp')):
+                    raise OSError('hybrid_managed_window_cdp_not_owned')
+                lease.cdpPort = debug_port
                 lease.browserId = _browser_id(lease.cdpPort)
                 self._save(lease)
                 return lease
@@ -460,6 +468,7 @@ class ManagedWindow:
             return _state(lease, False)
         if lease.retainedProcess:
             if _owner_process(lease) is None and not _profile_process_present(self.profile_path):
+                cleanup_browser_temp(lease)
                 lease.status = 'ended'
                 lease.targetCreationPending = False
                 self._save(lease)
@@ -474,13 +483,14 @@ class ManagedWindow:
             # WHY：整浏览器关闭只用于已核验的专属进程；日常 Chrome 的 AttachedWindow 不调用此入口。
             if not self._verify(lease, require_target=False)[0]:
                 raise ValueError('hybrid_managed_window_cdp_changed')
+            owned_processes = owner.children(recursive=True) + [owner]
             try:
                 async with _client(f'ws://127.0.0.1:{lease.cdpPort}/devtools/browser/{lease.browserId}',
                                    timeout=1.5, stop_timeout=0.3) as client:
                     await client.send.Browser.close()
             except Exception:
                 pass  # 连接退出不能算清理证明，仍由原 owner/end 核验并清理。
-            await asyncio.to_thread(psutil.wait_procs, [owner], timeout=5)
+            await asyncio.to_thread(psutil.wait_procs, owned_processes, timeout=5)
         return self.end(lease_id, allow_controlled=allow_controlled)
 
     def ensure_connection(self):

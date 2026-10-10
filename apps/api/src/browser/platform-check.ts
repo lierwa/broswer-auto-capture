@@ -8,6 +8,13 @@ import { platformChain } from "./platform-chain.js"
 import { accountRequest, displayAccountIdentity } from "./account-runtime.js"
 import { accountWaitChain } from "./account-wait-chain.js"
 import { setTimeout as delay } from "node:timers/promises"
+import { DomainError } from "../errors.js"
+
+function accessFailure(reason: string | undefined) {
+  if (reason === "challenge") return new DomainError("account_access_restricted", "网站要求验证或限制了访问，请在网站处理后重试。", 409)
+  if (reason === "http_error") return new DomainError("account_service_unavailable", "网站暂时无法完成状态检查，自动检查已停止，请稍后重试。", 503)
+  return null
+}
 
 export class PlatformChecks {
   constructor(private repository: AccountRepository, private upstream: UpstreamBrowserRuntime,
@@ -58,6 +65,9 @@ export class PlatformChecks {
           invocation.signal.throwIfAborted()
           const parsed = platformResultSchema.parse(raw)
           result = { ...parsed, displayIdentity: parsed.displayIdentity ? displayAccountIdentity(parsed.displayIdentity) : null }
+          // WHY：明确403/429挑战或503等HTTP错误不是尚未登录；保留结果并退出，不能每3秒重复失败请求。
+          const failure = accessFailure(result.reason)
+          if (failure) throw failure
           observedSignedOut ||= result.status === "unauthenticated"
           const same = intent.expectedIdentityKey ? !result.identityKey || result.identityKey === intent.expectedIdentityKey
             : !intent.expectedDisplayIdentity || !result.displayIdentity || result.displayIdentity === intent.expectedDisplayIdentity
@@ -71,6 +81,9 @@ export class PlatformChecks {
         status: signal.aborted ? "cancelled" : "interrupted", result: { status: "inconclusive", reason: signal.aborted ? "cancelled" : "runtime_failed",
           identityKey: null, displayIdentity: null, identityConfirmed: false, evidence: [], sources: [], modelCalls: 0, globalInitSuppressed: false } })
     }
-    return this.repository.get("platformCheck", initial.id)
+    const checked = this.repository.get("platformCheck", initial.id)
+    const failure = accessFailure(checked.result?.reason)
+    if (failure) throw failure
+    return checked
   }
 }

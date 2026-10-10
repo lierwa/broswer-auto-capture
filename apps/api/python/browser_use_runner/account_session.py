@@ -2,7 +2,7 @@
 import asyncio, hashlib, importlib.util, json
 from pathlib import Path
 
-from browser_use_runner.account_borrow import borrow_window
+from browser_use_runner.account_borrow import borrow_window, navigate
 from browser_use_runner.account_sources import ROOT
 from browser_use_runner.account_auth import capture, prepare, write, restore
 from browser_use_runner.account_secrets import RollbackStore
@@ -11,13 +11,13 @@ from browser_use_runner.site_scope import origin
 
 async def open_page(borrowed, payload):
     # WHY：人工登录打开沿 Playwright 原 API；首页重定向不是检查失败，不使用业务链精确 URL 后置条件。
-    from playwright.async_api import TimeoutError as PlaywrightTimeout
+    from patchright.async_api import TimeoutError as PlaywrightTimeout
     url, origins = payload['url'], payload['origins']
     if not origins or origin(url) not in origins:
         raise ValueError('account_navigation_outside_scope')
     if borrowed.page.url != url:
         try:
-            await borrowed.page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await navigate(borrowed.page, url, wait_until='domcontentloaded', timeout=30000)
         except PlaywrightTimeout:
             if origin(borrowed.page.url) not in origins:
                 raise ValueError('account_navigation_unavailable')

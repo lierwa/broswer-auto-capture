@@ -36,3 +36,28 @@ test("hybrid 主文档认证等待与外部阻断使用不同结果", () => {
   assert.equal(limited?.externalFailure?.category, "rate_limited")
   assert.equal(hybridExternalFailure(new Error("ordinary_target_missing"), browser), null)
 })
+
+test("主文档5xx保留实际状态并归为外部暂时阻断，不扩大到4xx或非法状态", () => {
+  for (const status of [500, 503, 599]) {
+    const result = hybridExternalFailure(new Error(`hybrid_runner_failed:RuntimeError:capture_server_error_${status}`), null)
+    assert.equal(result?.outcome, "blocked")
+    assert.equal(result?.externalFailure?.category, "transient")
+    assert.equal(result?.externalFailure?.httpStatus, status)
+    assert.equal(result?.externalFailure?.retryAt, null)
+  }
+  for (const status of [499, 600, 5030]) {
+    assert.equal(hybridExternalFailure(new Error(`capture_server_error_${status}`), null), null)
+  }
+})
+
+test('显式挑战进入原verification人工等待，保留实际HTTP状态；普通403仍阻断', () => {
+  for (const status of [200, 403, 503]) {
+    const result = hybridExternalFailure(new Error(`capture_verification_required_${status}`), null)
+    assert.equal(result?.outcome, 'human_required')
+    assert.equal(result?.externalFailure?.category, 'verification')
+    assert.equal(result?.externalFailure?.httpStatus, status)
+  }
+  assert.equal(hybridExternalFailure(new Error('capture_access_denied'), null)?.outcome, 'blocked')
+  for (const suffix of ['', '_99', '_600', '_4030'])
+    assert.equal(hybridExternalFailure(new Error('capture_verification_required'+suffix), null), null)
+})

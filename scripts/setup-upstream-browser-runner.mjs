@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
@@ -30,8 +31,14 @@ if (!process.argv.includes("--check") && !process.argv.includes("--record-verifi
   // WHY：账号适配依赖独立固定；不改上游frozen lock，sync之后安装防止被移除。
   run(python, ["-m", "ensurepip", "--upgrade"])
   run(python, ["-m", "pip", "install", "--no-cache-dir", "-r", path.join(root, "apps/api/python/account-requirements.txt")])
+  run(python, ["-m", "pip", "install", "--no-deps", "--require-hashes", "-r", path.join(root, "apps/api/python/runtime-requirements.txt")])
 }
 if (!existsSync(python)) throw new Error("hybrid_python_missing:run_upstream_setup")
+if (run(python, ['-c', "import importlib.metadata as m;print(m.version('diskcache'))"]) !== '5.6.3') throw Error('access_state_dependency_mismatch')
+if (run(python, ['-c', "import importlib.metadata as m;print(m.version('pyrate-limiter'))"]) !== '4.5.0') throw Error('access_quota_dependency_mismatch')
+if (run(python, ['-c', "import importlib.metadata as m;print(m.version('filelock'))"]) !== '3.19.1') throw Error('access_quota_lock_dependency_mismatch')
+if (run(python, ['-c', "import importlib.metadata as m;print(m.version('urllib3'))"]) !== '2.7.0') throw Error('retry_after_parser_dependency_mismatch')
+await prepareAccountDriver()
 if (!(await usesManagedPython())) throw new Error("hybrid_python_not_managed:run_upstream_setup")
 const versions = JSON.parse(run(python, ["-c", `import importlib.metadata as m,json,sys,workflow_use
 print(json.dumps({'python':sys.version_info[:2],'browserUse':m.version('browser-use'),'cdpUse':m.version('cdp-use'),'workflowUse':m.version('workflow-use'),'mcp':m.version('mcp'),'tenacity':m.version('tenacity'),'source':workflow_use.__file__}))`],
@@ -54,6 +61,23 @@ else {
   if (recorded.sourceDigest !== sourceDigest || recorded.commit !== pinnedCommit) throw new Error("hybrid_installed_source_changed")
 }
 console.log(`workflow-use hybrid v2 ready; source ${sourceDigest}`)
+
+async function prepareAccountDriver() {
+  if (run(python, ['-c', "import importlib.metadata as m;print(m.version('patchright'))"]) !== '1.63.0') throw Error('account_driver_version_mismatch')
+  const directory = run(python, ['-c', "import pathlib,patchright;print(pathlib.Path(patchright.__file__).parent)"])
+  const file = path.join(directory, 'driver/package/lib/coreBundle.js')
+  const source = await readFile(file), digest = value => createHash('sha256').update(value).digest('hex')
+  const patchedSha = '38f9f625508e917ddac324d2a78a82c7c6f5aaff92b41ccb6aaa719dce07f886'
+  if (digest(source) === patchedSha) return
+  if (process.argv.includes('--check')) throw Error('account_driver_focus_patch_missing')
+  if (digest(source) !== '34898aeefffcbe4f5b3c02d24cc510362fe401055ee26d40a95db91af5152c8d') throw Error('account_driver_source_changed')
+  // WHY：固定Patchright f34b861的焦点补丁漏掉原Playwright no_defaults；只恢复原默认上下文保护。
+  const before = 'if (this._isMainFrame() && !this._crPage._browserContext._options.focusControl)'
+  if (source.toString().split(before).length !== 2) throw Error('account_driver_patch_ambiguous')
+  const next = source.toString().replace(before, 'if (this._isMainFrame() && !skipDefaultOverrides && !this._crPage._browserContext._options.focusControl)')
+  if (digest(next) !== patchedSha) throw Error('account_driver_patch_mismatch')
+  await writeFile(file, next)
+}
 
 async function usesManagedPython(expectedPython) {
   try {

@@ -15,14 +15,17 @@ from workflow_use.hybrid.capability import OrdinaryCapability
 from workflow_use.hybrid.evidence import digest
 from workflow_use.hybrid.postconditions import PostconditionNotMet
 from workflow_use.hybrid.read import read_fields
+from browser_use_runner.read_readiness import wait_required_paths
 from workflow_use.hybrid.rendered_field_text import FieldReadError
 from workflow_use.hybrid.author import author_step
-from workflow_use.hybrid.human_wait import HumanWaitControl
+from browser_use_runner.author_access import AuthorAccessControl
+from browser_use_runner.access_cooldown import DocumentResponses, document_key, guard, external_document_error
 from browser_use_runner.ai_connect import AIConnectModel
 from browser_use_runner.output_schema import output_model_for
 from browser_use_runner.hybrid_compile import compile_offline
 from browser_use_runner.popup_resume import PopupResumeAdapter
 from browser_use_runner.diagnostic_channel import DiagnosticChannel
+from browser_use_runner.runtime_diagnostics import pointer_counts, attach_pointer_counts
 from browser_use_runner.author_request_loop import AuthorRequestLoop
 from browser_use_runner.compilation_control import CompilationAck, CompilationControl
 from browser_use_runner.site_scope import origin, normalize_allowed_site, allowed_domain_patterns, allowed_url
@@ -86,7 +89,7 @@ class Runner:
         self.allowed_sites = []
         self.commands = 0
         self.capability = None
-        self.document_status = {}
+        self.document_status = DocumentResponses()
         self.diagnostic = diagnostic or (lambda _event: None)
         self.close_task = None
         self.popup_resume = None
@@ -151,6 +154,8 @@ class Runner:
         if isinstance(request, AuthorRequest):
             if self.browser is None:
                 raise ValueError('hybrid_session_not_started')
+            for url in request.source.entryUrls:
+                guard(url)
             endpoint = urlsplit(request.model.endpoint)
             if endpoint.scheme != 'http' or endpoint.hostname != '127.0.0.1' or endpoint.username or endpoint.password:
                 raise ValueError('hybrid_model_bridge_invalid')
@@ -162,8 +167,9 @@ class Runner:
             self.browser.browser_profile.keep_alive = True
             self.author_request_id = request.id
             self.compilation = CompilationControl(request.id, self.publish_compilation) if request.onlineCompilation else None
-            self.human_wait = HumanWaitControl(self.browser, lambda url: allowed_url(url, self.allowed_sites),
-                lambda wait: self.publish_human_wait(str(request.id), wait)) if self.publish_human_wait else None
+            self.human_wait = AuthorAccessControl(self.browser, lambda url: allowed_url(url, self.allowed_sites),
+                (lambda wait: self.publish_human_wait(str(request.id), wait)) if self.publish_human_wait else None,
+                self.assert_document_access)
             self.diagnostic({'phase': 'author', 'status': 'started'})
             try:
                 result = await author_step(self.browser, request.source.model_dump(mode='json', by_alias=True), models, output_model_for,
@@ -266,7 +272,7 @@ class Runner:
             manager, scope = self.browser.session_manager, self.managed_window.scope
             if manager is None or scope is None or manager.get_target_id_from_session_id(_session_id) not in scope.owned:
                 return
-        response = event.get('response') if event.get('type') == 'Document' else None
+        response = event.get('response') if event.get('type') in ('Document', 'Fetch', 'XHR') else None
         if not isinstance(response, dict) or not isinstance(response.get('url'), str):
             return
         try:
@@ -274,12 +280,15 @@ class Runner:
                 return
         except ValueError:
             return
-        status = response.get('status')
-        if isinstance(status, (int, float)) and not isinstance(status, bool):
-            self.document_status[document_key(response['url'])] = int(status)
+        client = getattr(self.browser, '_cdp_client_root', None)
+        gate = getattr(client.send.Fetch, '_bat_access', None) if client else None
+        # WHY：专属browser Fetch已在放响应前持久化；Network仍采集文档状态，不能把同响应加罚两次。
+        self.document_status.record(event, persist_cooldown=not (gate and gate.browser_session))
 
     def assert_document_access(self, url):
-        code = external_document_error(self.document_status.get(document_key(url)))
+        code = self.document_status.error_for(url)
+        if code and code.startswith('capture_verification_required_'): raise RuntimeError(code)
+        guard(url)
         if code is not None:
             raise RuntimeError(code)
 
@@ -294,6 +303,7 @@ class Runner:
         if isinstance(command, StepCommand) and command.actionName == 'navigate':
             if not allowed_url(command.args.get('url', ''), self.allowed_sites):
                 raise ValueError('hybrid_origin_denied')
+            guard(command.args['url'])
             # WHY：前次同 URL 的拒绝不能冒充本次响应；仅本次派发记录可归因。
             self.document_status.pop(document_key(command.args['url']), None)
         else:
@@ -306,18 +316,24 @@ class Runner:
                 raise RuntimeError(read_stage_code('pre_scope', error)) from error
         self.commands += 1
         if isinstance(command, StepCommand):
+            if command.actionName != 'navigate':
+                guard(await (await self.browser.get_current_page()).get_url())
+            input_before = pointer_counts(self.browser)
             try:
                 output = await self.capability.execute_checked(command.actionName, command.args, command.target, command.postconditions)
-            except RuntimeError as error:
+            except (Exception, asyncio.CancelledError) as error:
+                attach_pointer_counts(error, input_before, pointer_counts(self.browser))
                 if isinstance(error, PostconditionNotMet) and isinstance(action_ref, str):
                     self._emit_action_failure(action_ref, command.actionName, error)
                 # WHY：HTTP 拒绝也可能令原生导航先失败；保留同次主文档证据，不重发动作。
-                if command.actionName == 'navigate' and str(error) == 'ordinary_action_failed':
+                if (isinstance(error, RuntimeError) and command.actionName == 'navigate'
+                        and str(error) == 'ordinary_action_failed'):
                     self.assert_document_access(command.args['url'])
                 raise
         elif isinstance(command, ReadCommand):
             scope = command.scope.model_dump(exclude_none=True) if command.scope is not None else None
             try:
+                await wait_required_paths(self.browser, command, scope)
                 output = await read_fields(self.browser, command.specification, scope=scope,
                                            required_paths=command.requiredPaths, inherited=command.inherited)
             except Exception as error:
@@ -349,7 +365,7 @@ class Runner:
             self.assert_document_access(browser['url'])
         except Exception as error:
             if not isinstance(command, ReadCommand) or str(error) in (
-                    'capture_authentication_required', 'capture_access_denied', 'capture_rate_limited'):
+                    'capture_authentication_required', 'capture_access_denied', 'capture_rate_limited') or str(error).startswith(('capture_server_error_', 'capture_verification_required_')):
                 raise
             raise RuntimeError(read_stage_code('document_access', error)) from error
         return {'output': output, 'browser': browser, 'browserCommands': self.commands, 'modelCalls': 0}
@@ -435,25 +451,11 @@ class Runner:
                 self.popup_resume = None
             self.capability = None
             self.browser = None
-            self.document_status = {}
+            self.document_status = DocumentResponses()
             self.profile_path = None
             self.allowed_sites = []
             self.managed_window = None
         return {'closed': all(stage['status'] != 'unconfirmed' for stage in stages), 'stages': stages}
-
-def document_key(url):
-    value = urlsplit(url)
-    return value._replace(fragment='').geturl()
-
-def external_document_error(status):
-    if status == 401:
-        return 'capture_authentication_required'
-    if status == 403:
-        return 'capture_access_denied'
-    if status == 429:
-        return 'capture_rate_limited'
-    return None
-
 
 async def main():
     diagnostics = DiagnosticChannel()

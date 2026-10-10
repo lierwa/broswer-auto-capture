@@ -46,7 +46,19 @@ class ManagedTargets:
         scope = TargetScope(browser, lease.ownedTargets, self.record, self.prepare, prevent_reconnect=True,
                             allow_storage_import=browser.browser_profile.storage_state is not None)
         scope.install()
+        object.__setattr__(browser, '_bat_native_range_owner', self.native_range_owner)
         return scope
+
+    def native_range_owner(self, target_id):
+        from browser_use_runner.managed_window import _owner_process
+        lease = self.window._load(self.window.owner_id)
+        if lease.headless: return None
+        scope = self.window.scope
+        accepted = target_id in lease.ownedTargets or scope is not None and scope.accepts({'type': 'iframe', 'targetId': target_id})
+        if not accepted or lease.status != 'running':
+            raise ValueError('native_range_target_not_owned')
+        if _owner_process(lease) is None: raise ValueError('native_range_owner_closed')
+        return {'pid': lease.browserPid, 'started': lease.browserStarted}
 
     async def end(self, lease):
         if lease.targetCreationPending:

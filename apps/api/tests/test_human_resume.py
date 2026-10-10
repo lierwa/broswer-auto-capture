@@ -1,14 +1,16 @@
 """Protect host-confirmed continuation across real URL changes without weakening ownership."""
 import sys
+import asyncio
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))
 from workflow_use.hybrid.human_wait import HumanRequestParams, HumanWaitParams, HumanWaitControl
 from workflow_use.hybrid.human_wait_compile import compile_human_wait
 from workflow_use.hybrid.evidence import EvidenceRef, digest
+from browser_use_runner.author_access import AuthorAccessControl
 
 
 class HumanResumeTests(unittest.IsolatedAsyncioTestCase):
@@ -90,6 +92,78 @@ class HumanResumeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(segment['postconditions'], [])
         value['after']['tabId'] = 'foreign'
         self.assertIsNone(compile_human_wait(action, pre, post)[0])
+
+
+class AuthorAccessResumeTests(HumanResumeTests):
+    """The HTTP stop adapter must retain the inherited owner/confirmation boundaries."""
+    def control(self):
+        super().control()
+        return AuthorAccessControl(self.browser, lambda url: url.startswith('https://example.test/'),
+                                   lambda _: None, lambda _: None)
+
+    async def test_explicit_response_wait_requires_real_clearance(self):
+        # 保护原Agent边界：宿主确认不等于挑战解除，也不能额外决策或伪造人工动作证据。
+        for cleared in (True, False):
+            control = self.control()
+            challenge = RuntimeError('capture_verification_required_403')
+            control.guard = Mock(side_effect=[challenge, None, None] if cleared else
+                [challenge, RuntimeError('capture_verification_required_403'), None, None])
+            published = asyncio.Event()
+            control.publish = lambda _: published.set()
+            capture = SimpleNamespace(close=AsyncMock())
+            collector = SimpleNamespace(source_gaps=[], dispatch_audit=SimpleNamespace(event_capture=capture))
+            agent, after = SimpleNamespace(stop=Mock()), AsyncMock(return_value='settled')
+            task = asyncio.create_task(control.finish_step(agent, collector, after))
+            try:
+                await asyncio.wait_for(published.wait(), 1)
+                self.assertFalse(task.done()); agent.stop.assert_not_called()
+                self.assertEqual(control.guard.call_count, 1)
+                capture.close.assert_awaited_once(); after.assert_awaited_once()
+                pending = control.pending
+                if not cleared:
+                    with self.assertRaisesRegex(RuntimeError, 'capture_verification_required_403'):
+                        await control.resume(pending['id'])
+                    self.assertIs(control.pending, pending); self.assertIsNone(pending['after'])
+                    self.assertFalse(task.done()); self.assertFalse(pending['event'].is_set())
+                    agent.stop.assert_not_called()
+                await control.resume(pending['id']); control.release(pending['id'])
+                self.assertEqual(await task, 'settled')
+                self.assertEqual(collector.source_gaps, []); agent.stop.assert_not_called()
+                self.assertIsNone(control.pending)
+                self.assertEqual(control.guard.call_count, 3 if cleared else 4)
+            finally:
+                if not task.done(): task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    async def test_no_host_and_plain_denial_preserve_stop(self):
+        for code, host in [('capture_verification_required_403', None), ('capture_access_denied', Mock())]:
+            control = self.control(); control.publish = host
+            control.guard = Mock(side_effect=RuntimeError(code))
+            collector, agent = SimpleNamespace(source_gaps=[]), SimpleNamespace(stop=Mock())
+            with self.assertRaisesRegex(RuntimeError, code):
+                await control.finish_step(agent, collector, AsyncMock())
+            self.assertIsNone(control.pending); agent.stop.assert_called_once()
+            self.assertEqual(collector.source_gaps[0].reason, code)
+            if host is not None: host.assert_not_called()
+
+    async def test_existing_explicit_human_action_keeps_evidence(self):
+        control = self.control(); params = HumanRequestParams(reason='captcha', prompt='Complete local challenge')
+        await control.request(params)
+        collector = SimpleNamespace(pending={'action': {'bat_request_human': params.model_dump(mode='json')}, 'actionId': 'a'},
+            align_pending=Mock(), observations=[], value_fact=lambda kind, value: (kind, value))
+        async def after(_): collector.observations.append(SimpleNamespace(tabId='owned-tab', url=await self.page.get_url(), facts=[]))
+        ready = asyncio.Event(); control.publish = lambda _: ready.set()
+        task = asyncio.create_task(control.finish_step(SimpleNamespace(history=[]), collector, after))
+        try:
+            await asyncio.wait_for(ready.wait(), 1)
+            await control.resume(control.pending['id']); control.release(control.pending['id'])
+            await task
+            kind, value = collector.observations[0].facts[0]
+            self.assertEqual(kind, 'verified_human_resume'); self.assertEqual(value['actionRef'], 'a')
+            self.assertEqual(value['schemaVersion'], 'bat.human-resume/v2'); self.assertTrue(value['resumed'])
+        finally:
+            if not task.done(): task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 if __name__ == '__main__':

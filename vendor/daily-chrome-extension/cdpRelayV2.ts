@@ -104,7 +104,7 @@ export class ExtensionProtocolV2 {
       case 'Target.detachFromTarget': {
         // WHY：原extension拥有debugger租约，借用结束只删除已有tab的会话别名。
         if (typeof params?.sessionId === 'string' && this._model.hasSession(params.sessionId)) {
-          this._model.releaseBorrow(params.sessionId);
+          await this._model.releaseBorrow(params.sessionId);
           return { result: {} };
         }
         return undefined;

@@ -73,7 +73,7 @@ async def verified_labeled_query(browser, summary, identity):
     return replace(identity, selector=selector), target
 
 
-async def verified_collection_query(browser, summary, identity, queries, selector_index):
+async def verified_collection_query(browser, summary, identity, queries, selector_index, action_ref=None):
     """Find a complete query whose clicked item belongs to a local repeated collection."""
     page = await _same_page(browser, summary, identity)
     unscoped_match = False
@@ -109,6 +109,11 @@ async def verified_collection_query(browser, summary, identity, queries, selecto
                       'items': {'kind': 'css', 'value': query.query.value},
                       'ordinal': matches[0], 'withinItem': None, 'readActionRef': query.actionRef}
             return replace(identity, selector=query.query.value), target
+    if action_ref is not None:
+        from .host_collection import capture_collection
+        captured = await capture_collection(browser, summary, selector_index, identity, action_ref)
+        if captured is not None:
+            return identity, captured
     if unscoped_match:
         raise CollectionReadRequired()
     return identity, None

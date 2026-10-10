@@ -19,7 +19,11 @@ def instrument(runner):
                     {'file': Path(frame.filename).name, 'line': frame.lineno, 'function': frame.name}
                     for frame in traceback.extract_tb(current.__traceback__)]})
                 current = current.__cause__ or current.__context__
-            Path(os.environ['BAT_M0_DIAGNOSTIC_PATH']).write_text(json.dumps(chain), encoding='utf-8')
+            try:
+                if output := os.environ.get('BAT_M0_DIAGNOSTIC_PATH'):
+                    Path(output).write_text(json.dumps(chain), encoding='utf-8')
+            except OSError:
+                pass  # 诊断不可写不能覆盖真正的浏览器启动失败。
             raise
 
     runner.start = start

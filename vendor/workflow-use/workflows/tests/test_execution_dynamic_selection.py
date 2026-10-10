@@ -106,7 +106,7 @@ class DynamicSelectionTest(unittest.TestCase):
             fact('query', 'dom_query', current.model_dump(mode='json')),
             fact('read', 'verified_natural_read', value.model_dump(mode='json')),
         ])
-        action = SimpleNamespace(id='a-0001', name='find_elements',
+        action = SimpleNamespace(id='a-0001', name='find_elements', args={},
                                  resultRef=EvidenceRef(ref='result', digest='2' * 64))
         request = SimpleNamespace(plan=SimpleNamespace(outputSchemaDigest=digest({'type': 'null'})))
 
@@ -330,6 +330,75 @@ class DynamicSelectionTest(unittest.TestCase):
         self.assertEqual(issues, [])
         self.assertEqual(conditions[0]['kind'], 'media_playback')
         self.assertEqual(conditions[0]['equals'], 'playing')
+
+
+class HostCollectionTest(unittest.IsolatedAsyncioTestCase):
+    """Protect complete host reads, changing row identity, and ordinary replay bindings."""
+    def layout(self, table=True):
+        from test_record_projection_capture import Node
+        controls = [Node('a' if table else 'button', text='Open') for _ in range(3)]
+        rows = [Node('tr', children=[Node('td', text=str(i)), Node('td', children=[control])]) if table
+                else Node('li', children=[Node('span', text=str(i)), control])
+                for i, control in enumerate(controls)]
+        Node('body', children=[Node('table', children=[Node('tbody', children=rows)]) if table else Node('ul', children=rows)])
+        summary = SimpleNamespace(url=URL, dom_state=SimpleNamespace(selector_map={3: controls[1]}))
+        identity = SimpleNamespace(target_id='tab-1', url=URL)
+        return summary, identity, rows
+
+    async def capture(self, table=True):
+        from workflow_use.hybrid.host_collection import capture_collection, collection_plan
+        summary, identity, rows = self.layout(table)
+        target, backends = collection_plan(summary, 3)
+        self.assertEqual(target['ordinal'], 2)
+        self.assertNotIn('nth-', target['items']['value'])
+        browser = SimpleNamespace(get_current_page=AsyncMock(return_value=SimpleNamespace(
+            get_elements_by_css_selector=AsyncMock(return_value=[Element(value) for value in backends]))))
+        output = [{'text': f'Option {i}', 'ordinal': i} for i in range(1, 4)]
+        with patch('workflow_use.hybrid.host_collection.read_fields_with_proof',
+                   AsyncMock(return_value=(output, digest(backends)))):
+            captured = await capture_collection(browser, summary, 3, identity, 'a-0002')
+        return captured
+
+    async def test_table_and_list_read_own_collection_without_an_agent_read_action(self):
+        for table in [True, False]:
+            captured = await self.capture(table)
+            self.assertEqual(len(captured['hostRead']['read']['output']), 3)
+            self.assertIsNotNone(captured['withinItem'])
+
+    async def test_live_extra_row_rejects_incomplete_snapshot(self):
+        from workflow_use.hybrid.host_collection import capture_collection
+        summary, identity, rows = self.layout()
+        browser = SimpleNamespace(get_current_page=AsyncMock(return_value=SimpleNamespace(
+            get_elements_by_css_selector=AsyncMock(return_value=[Element(row.backend_node_id) for row in rows] + [Element(99999)]))))
+        with self.assertRaisesRegex(ValueError, 'snapshot_incomplete'):
+            await capture_collection(browser, summary, 3, identity, 'a-0002')
+
+    async def test_host_read_compiles_existing_nodes_and_rejects_foreign_identity(self):
+        from workflow_use.hybrid.host_collection import host_read_for_target
+        captured = await self.capture()
+        target = {key: captured[key] for key in ('strategy', 'container', 'items', 'ordinal', 'withinItem')}
+        value = {**captured['hostRead'], 'targetRef': 'n-0001'}
+        host = fact('host', 'host_collection_read', value)
+        structure = {'actionRef': 'a-0002', 'targetRef': 'n-0001', 'queryCandidate': {'readActionRef': 'a-0002'}}
+        pre = SimpleNamespace(id='pre', url=URL, tabId='tab-1', facts=[host, fact('dom', 'dom_structure', structure)])
+        action = SimpleNamespace(id='a-0002', name='click', preObservationRef='pre')
+        trace = SimpleNamespace(actions=[action], observations=[pre])
+        request = SimpleNamespace(trace=trace, requirement=SimpleNamespace(sourceDigest='4' * 64))
+        read = value['read']
+        draft = {'language': 'javascript', 'source': 'function main({candidates}) { return candidates[1].ordinal; }',
+            'inputs': {'candidates': read['specification']['outputSchema']},
+            'outputSchema': {'type': 'integer', 'minimum': 1, 'maximum': 300},
+            'examples': [{'input': {'candidates': read['output']}, 'output': 2}]}
+        pre.facts.append(fact('selection', 'selection_function', {'actionRef': action.id, 'readFactRef': host.id,
+            'requirementDigest': '4' * 64, 'draft': draft}))
+        inserted, selected, issues = bind_selection_function(request, action, [], {'target': target})
+        self.assertEqual(issues, [])
+        self.assertEqual(inserted[0]['operation']['name'], 'browser.read-fields')
+        self.assertEqual(inserted[1]['inputBindings']['candidates']['nodeId'], inserted[0]['id'])
+        self.assertEqual(selected['target']['ordinalBinding']['nodeId'], inserted[1]['id'])
+        host.value['read']['targetId'] = 'foreign-tab'
+        with self.assertRaisesRegex(ValueError, 'source_mismatch'):
+            host_read_for_target(pre, target, action.id)
 
 
 if __name__ == '__main__':

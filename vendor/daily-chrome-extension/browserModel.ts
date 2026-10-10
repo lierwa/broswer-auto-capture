@@ -57,6 +57,7 @@ type TabSession = {
   // tracked via Target.attachedToTarget / Target.detachedFromTarget events.
   childSessions: Set<string>;
 };
+type FetchOwner = { sessionId: string; authSessionId: string | undefined; params: any; previous: FetchOwner | undefined };
 
 export class BrowserModel {
   private _sendToExtension: SendCommand;
@@ -76,6 +77,7 @@ export class BrowserModel {
   private _announcedSessions = new Set<string>();
   private _borrowedSessions = new Map<string, TabSession>();
   private _runtimeReplayed = new Set<number>();
+  private _fetchOwners = new Map<number, FetchOwner>();
 
   constructor(sendToExtension: SendCommand) {
     this._sendToExtension = sendToExtension;
@@ -90,6 +92,7 @@ export class BrowserModel {
     this._announcedSessions.clear();
     this._borrowedSessions.clear();
     this._runtimeReplayed.clear();
+    this._fetchOwners.clear();
   }
   prepareOwnerConnection(targets: string[]) {
     for (const session of this._tabSessions.values()) if (targets.includes(session.targetInfo?.targetId)) {
@@ -141,6 +144,13 @@ export class BrowserModel {
     // Top-level CDP events for the tab use the tab's relay sessionId.
     // Child CDP sessions (workers, oopifs) keep their own sessionId.
     const sessionId = source.sessionId || tabSession.sessionId;
+    const fetchOwner = !source.sessionId ? this._fetchOwners.get(tabSession.tabId) : undefined;
+    // WHY：借用别名共用一个原生debugger；Fetch暂停只能交一个放行责任方，不能广播给原driver抢先continue。
+    if (fetchOwner && (method === 'Fetch.requestPaused' || method === 'Fetch.authRequired')) {
+      this._emit({ sessionId: method === 'Fetch.authRequired'
+        ? fetchOwner.authSessionId ?? sessionId : fetchOwner.sessionId, method, params });
+      return;
+    }
     this._emit({ sessionId, method, params });
     // WHY：原生选取事件属于具体已批准tab；只投递给该tab的临时借用，detach后停止。
     if (!source.sessionId && ['Overlay.inspectNodeRequested', 'Overlay.inspectModeCanceled'].includes(method)) {
@@ -273,6 +283,8 @@ export class BrowserModel {
     }
     if (!tabSession)
       throw new Error(`No tab found for sessionId: ${sessionId}`);
+    if (!cdpSessionId && (method === 'Fetch.enable' || method === 'Fetch.disable'))
+      return this._configureFetch(tabSession, sessionId, method, params);
     if (method === 'Runtime.enable' && !cdpSessionId && !this._runtimeReplayed.has(tabSession.tabId)) {
       // WHY：Chrome debugger仍拥有旧Runtime订阅；新SDK需要原生重发已有执行上下文。
       // 每次连接只作用于已经准入的任务tab，不重attach、不影响个人tab。
@@ -312,6 +324,36 @@ export class BrowserModel {
     return tabSession;
   }
 
+  private async _configureFetch(tab: TabSession, sessionId: string, method: string, params: any) {
+    const previous = this._fetchOwners.get(tab.tabId);
+    if (previous && previous.sessionId !== sessionId && this._borrowedSessions.has(previous.sessionId))
+      throw Error('daily_chrome_fetch_owner_busy');
+    const borrowing = this._borrowedSessions.has(sessionId);
+    if (method === 'Fetch.disable' && borrowing && previous?.sessionId === sessionId)
+      return this._restoreFetch(tab, previous);
+    const actual = borrowing && previous?.params?.handleAuthRequests ? { ...params, handleAuthRequests: true } : params;
+    if (method === 'Fetch.enable') this._fetchOwners.set(tab.tabId, { sessionId, params: actual,
+      authSessionId: params?.handleAuthRequests ? sessionId : previous?.authSessionId,
+      previous: borrowing ? (previous?.sessionId === sessionId ? previous.previous : previous) : undefined });
+    else this._fetchOwners.delete(tab.tabId);
+    try {
+      return await this._sendToExtension('chrome.debugger.sendCommand', [{ tabId: tab.tabId }, method, actual]);
+    } catch (error) {
+      if (previous) this._fetchOwners.set(tab.tabId, previous); else this._fetchOwners.delete(tab.tabId);
+      throw error;
+    }
+  }
+
+  private async _restoreFetch(tab: TabSession, active: FetchOwner) {
+    const previous = active.previous;
+    // WHY：借用结束恢复原配置与认证归属；不把页面留在无接收者的Fetch暂停状态。
+    if (previous) this._fetchOwners.set(tab.tabId, previous); else this._fetchOwners.delete(tab.tabId);
+    try {
+      return await this._sendToExtension('chrome.debugger.sendCommand', [{ tabId: tab.tabId },
+        previous ? 'Fetch.enable' : 'Fetch.disable', previous?.params ?? {}]);
+    } catch (error) { this._fetchOwners.set(tab.tabId, active); throw error; }
+  }
+
   hasSession(sessionId: string): boolean {
     return this._borrowedSessions.has(sessionId) || !!this._findTabSession(session => session.sessionId === sessionId);
   }
@@ -327,7 +369,10 @@ export class BrowserModel {
     return { sessionId };
   }
 
-  releaseBorrow(sessionId: string): void {
+  async releaseBorrow(sessionId: string): Promise<void> {
+    const tab = this._borrowedSessions.get(sessionId);
+    const active = tab && this._fetchOwners.get(tab.tabId);
+    if (tab && active?.sessionId === sessionId) await this._restoreFetch(tab, active);
     this._borrowedSessions.delete(sessionId);
   }
 
@@ -348,6 +393,7 @@ export class BrowserModel {
     if (!tabSession)
       return;
     this._tabSessions.delete(tabId);
+    this._fetchOwners.delete(tabId);
     for (const [id, borrowed] of this._borrowedSessions) {
       if (borrowed === tabSession) this._borrowedSessions.delete(id);
     }

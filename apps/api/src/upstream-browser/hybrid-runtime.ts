@@ -268,13 +268,14 @@ function materializeEntryTarget(target: unknown, input: Record<string, unknown>)
 export function hybridExternalFailure(error: unknown,
   browser: ReturnType<typeof hybridBrowserStateSchema.parse> | null): NodeCapabilityResult | null {
   if (!(error instanceof Error)) return null
-  const match = error.message.match(/capture_(authentication_required|access_denied|rate_limited)$/)
+  const match = error.message.match(/capture_(authentication_required|access_denied|rate_limited|verification_required_([1-5]\d{2})|server_error_(5\d{2}))$/)
   if (!match) return null
-  const code = match[1] as "authentication_required" | "access_denied" | "rate_limited"
+  const code = match[2] ? "verification_required" : match[3] ? "server_error" : match[1] as "authentication_required" | "access_denied" | "rate_limited"
   let origin: string | null = null
   try { origin = browser ? new URL(browser.url).origin : null } catch { /* Invalid runner URL stays untrusted. */ }
-  const category = code === "authentication_required" ? "authentication" : code
-  return { outcome: code === "authentication_required" ? "human_required" : "blocked", reason: code,
+  // WHY：主文档5xx复用原外部暂时错误，不进入链路修复，也不新增自动重试。
+  const category = code === "authentication_required" ? "authentication" : code === "verification_required" ? "verification" : code === "server_error" ? "transient" : code
+  return { outcome: code === "authentication_required" || code === "verification_required" ? "human_required" : "blocked", reason: code,
     ...(browser ? { browser } : {}), externalFailure: { category, code, origin, observedOrigin: origin,
-      httpStatus: code === "authentication_required" ? 401 : code === "access_denied" ? 403 : 429, retryAt: null } }
+      httpStatus: match[2] || match[3] ? Number(match[2] || match[3]) : code === "authentication_required" ? 401 : code === "access_denied" ? 403 : 429, retryAt: null } }
 }

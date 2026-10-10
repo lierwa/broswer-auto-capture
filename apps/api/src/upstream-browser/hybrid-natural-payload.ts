@@ -16,7 +16,7 @@ const parseWithSource = JSON.parse as (text: string,
   reviver: (key: string, value: unknown, context: { source: string }) => unknown) => unknown
 const evidenceKinds = new Set(["dom_structure", "dom_query", "natural_binding", "native_extraction",
   "native_action_dispatch", "native_action_result", "native_dom_event", "browser_context",
-  "url_digest", "verified_natural_read", "verified_target_scroll", "verified_visible_wait",
+  "url_digest", "verified_natural_read", "host_collection_read", "verified_target_scroll", "verified_visible_wait",
   "verified_natural_summary", "verified_output_assembly", "selection_function", "repeat_method",
   "native_completion_review", "observation_diagnostic", "document_identity", "verified_human_resume",
   "inspected_method", "preparation_method_receipt"])

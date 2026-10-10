@@ -1,9 +1,7 @@
-"""HTTPX public transport adapter for the original MC client check methods."""
-import json, random, types, zipfile
-from types import SimpleNamespace
-
-import httpx
+"""Original MC check methods adapted to the already-owned browser transport."""
+import random, types, zipfile
 from browser_use_runner.account_sources import SOURCE, upstream_function, source_tree
+from browser_use_runner.account_browser_http import browser_request
 
 
 class ReadClient:
@@ -19,6 +17,7 @@ class ReadClient:
     async def initialize(self):
         self.headers['User-Agent'] = await self.borrowed.page.evaluate('() => navigator.userAgent')
         cookies = await self.borrowed.cookies(self.cookie_urls)
+        # WHY：固定上游签名函数仍消费内存Cookie字符串；browser_request不把它作为请求头传出。
         self.headers['Cookie'] = '; '.join(f"{c['name']}={c['value']}" for c in cookies)
         self.cookie_dict = {c['name']: c['value'] for c in cookies}
 
@@ -26,9 +25,9 @@ class ReadClient:
         if method not in ('GET', 'POST') or not any(url.startswith(origin + '/') for origin in self.platform['origins']):
             raise ValueError('account_http_scope_denied')
         try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
-                response = await client.request(method, url, headers=kwargs.pop('headers', self.headers), **kwargs)
-                return self.observe(response)
+            response = await browser_request(self.borrowed, self.platform['origins'], method, url,
+                                             headers=kwargs.pop('headers', self.headers), **kwargs)
+            return self.observe(response)
         except Exception:
             self.observations['errors'].append('request_error')
             raise
@@ -36,8 +35,10 @@ class ReadClient:
     def observe(self, response):
         if len(response.content) > 100000:
             raise ValueError('account_response_too_large')
+        observation = {'status': response.status_code, 'body': None}
+        self.observations['responses'].append(observation)
         payload = response.json()
-        self.observations['responses'].append({'status': response.status_code, 'body': payload})
+        observation['body'] = payload
         # WHY：原MC pong消费原客户端已解包的data；未登录码不被吞为成功。
         return payload.get(self.platform.get('envelope'), payload) if self.platform.get('envelope') else payload
 
@@ -56,18 +57,16 @@ class ReadClient:
 class RecordingClient:
     def __init__(self, owner):
         self.owner = owner
-        self.client = httpx.AsyncClient(timeout=15, follow_redirects=False)
 
     async def __aenter__(self):
-        await self.client.__aenter__()
         return self
 
     async def __aexit__(self, *args):
-        return await self.client.__aexit__(*args)
+        return False
 
     async def get(self, url, **kwargs):
         try:
-            response = await self.client.get(url, **kwargs)
+            response = await browser_request(self.owner.borrowed, self.owner.platform['origins'], 'GET', url, **kwargs)
             self.owner.observe(response)
             return response
         except Exception:

@@ -127,9 +127,11 @@ CAPTURE_SCRIPT = r"""
     };
     try { globalThis[bindingName](JSON.stringify(payload)); } catch (_) {}
   };
-  for (const type of eventTypes) document.addEventListener(type, capture, true);
+  // WHY：Window捕获先于document委托，后者正常处理业务后可能停止传播。
+  // 复用浏览器事件路径；不替换页面处理器、不抑制事件、不改变输入。
+  for (const type of eventTypes) globalThis.addEventListener(type, capture, true);
   const state = { documentId, enabled: true, intendedElement: null, cleanup: () => {
-    for (const type of eventTypes) document.removeEventListener(type, capture, true);
+    for (const type of eventTypes) globalThis.removeEventListener(type, capture, true);
     try { delete globalThis[stateKey]; } catch (_) {}
     try { delete globalThis[bindingName]; } catch (_) {}
   }};
@@ -430,7 +432,7 @@ class NativeEventCapture:
         frame_id = context.get('frameId') or intended
         limitations = [] if context.get('frameId') else ['runtime_frame_identity_unavailable']
         return {'sequence': payload.get('sequence'), 'documentId': payload.get('documentId'),
-            'association': 'single_browser_action_window/v1', 'captureBoundary': 'document_capture',
+            'association': 'single_browser_action_window/v1', 'captureBoundary': 'window_capture',
             'scope': {'url': safe_url(raw_url), 'urlDigest': digest(raw_url),
                       'isTop': raw_scope.get('isTop'), 'targetId': session.get('targetId'),
                       'sessionId': session_id, 'frameId': frame_id,

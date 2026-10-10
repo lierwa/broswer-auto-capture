@@ -1,7 +1,7 @@
 import { retireWorkflowV1 } from "./retirement.js"
 import { randomUUID } from "node:crypto"
 import { spawn, type ChildProcess } from "node:child_process"
-import { mkdtemp, realpath, rm } from "node:fs/promises"
+import { mkdtemp, realpath, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import readline from "node:readline"
@@ -183,11 +183,20 @@ export class RunnerProcess {
     const python = this.envValue("BAT_UPSTREAM_BROWSER_PYTHON")
       ?? path.join(this.root, "work", "upstream-browser-hybrid", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python")
     const script = this.lifecycle.runnerScript ?? path.join(this.root, "apps", "api", "python", "browser_use_runner", entry)
+    const policyPath = path.join(this.root, 'data', 'access-policies.json')
+    // WHY：默认文件可选；只在实际存在时声明，明确声明后丢失仍由Python拒绝，不能把无配置当故障。
+    const policyFile = await stat(policyPath).then(() => policyPath, (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined
+      throw error
+    })
     const child = spawn(python, [script], { cwd: this.root, env: { PATH: process.env.PATH, LANG: "en_US.UTF-8",
       TMPDIR: this.temporaryDirectory, TMP: this.temporaryDirectory, TEMP: this.temporaryDirectory,
+      BAT_BROWSER_TEMP_ROOT: path.dirname(ownerDirectory),
       PYTHONPATH: [path.join(this.root, "vendor", "workflow-use", "workflows"), path.join(this.root, "apps", "api", "python")].join(path.delimiter),
       PYTHONDONTWRITEBYTECODE: "1", ANONYMIZED_TELEMETRY: "false",
       BROWSER_USE_CLOUD_SYNC: "false", BROWSER_USE_SETUP_LOGGING: "false",
+      BAT_ACCESS_STATE_DIR: path.join(this.root, 'data', 'access-state'),
+      BAT_ACCESS_POLICY_FILE: policyFile,
       // WHY：Windows 持久 Profile 可能由较新的系统 Chrome 创建；交给现有 Browser-Use owner
       // 查找系统浏览器，避免默认旧 Chromium 降级启动。owner 临时目录不含 bundled 浏览器。
       ...(process.platform === "win32" ? { PLAYWRIGHT_BROWSERS_PATH: ownerDirectory } : {}),

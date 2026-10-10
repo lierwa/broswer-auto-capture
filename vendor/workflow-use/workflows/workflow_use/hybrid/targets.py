@@ -377,6 +377,9 @@ def _walk_structural(root):
 def _descendant_selector(parent, child):
     if child.lstrip().startswith(('>', '+', '~')):
         raise ValueError('unsupported_relative_selector')
+    # WHY：DOM投影的 :scope 是所选行；直接嵌套 :is(:scope > ...) 会错误地绑定到文档根。
+    if child.startswith(':scope > '):
+        return f':is({parent}){child[len(":scope"):]}'
     # WHY: :is() preserves selector-list grouping while the browser remains the only selector parser.
     return f':is({parent}) :is({child})'
 

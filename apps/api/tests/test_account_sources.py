@@ -2,15 +2,20 @@
 import asyncio, importlib.util, json, sys, unittest, os
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
-import httpx
-from playwright.async_api import async_playwright
+from urllib.parse import urlsplit
+from patchright.async_api import async_playwright
 
 ROOT = Path.cwd().resolve()
 sys.path.insert(0, str(ROOT/'apps/api/python'))
 from browser_use_runner.account_session import catalog, module_from
 from browser_use_runner.account_sources import sau_check, mc_check, BorrowedContext
 from browser_use_runner.account_http import ReadClient, xhs_methods, graphql_query
+from browser_use_runner.account_borrow import AccountPage
+
+def cors(platform):
+    url = urlsplit(platform['url'])
+    return {'Access-Control-Allow-Origin':f'{url.scheme}://{url.netloc}', 'Access-Control-Allow-Credentials':'true',
+        'Access-Control-Allow-Methods':'GET, POST, OPTIONS', 'Access-Control-Allow-Headers':'*'}
 
 async def three_states(module, platform, borrowed, page, positive):
     key=platform['id']; results=[]
@@ -19,12 +24,14 @@ async def three_states(module, platform, borrowed, page, positive):
       'tiktok':'<button>Log in</button>', 'youtube':'<button>Sign in</button>'}
     for scenario in ('unauthenticated','challenge','http503','timeout','changed'):
         status=401 if scenario=='unauthenticated' else 403 if scenario=='challenge' else 503 if scenario=='http503' else 200
-        native=httpx.AsyncClient
-        def transport(request):
-            if scenario=='timeout': raise httpx.ReadTimeout('owned fixture timeout',request=request)
-            return httpx.Response(status,json=positive if scenario=='http503' else {})
-        def factory(*args,**kwargs): return native(*args,**kwargs,transport=httpx.MockTransport(transport))
         async def route(route):
+            if 'host' in platform:
+                if route.request.is_navigation_request():
+                    await route.fulfill(status=200,content_type='text/html',body='<main>Owned</main>'); return
+                if scenario=='timeout': await route.abort('timedout'); return
+                await route.fulfill(status=status,content_type='application/json',
+                    headers={**cors(platform), 'Access-Control-Allow-Headers':route.request.headers.get('access-control-request-headers', '*')},
+                    body=json.dumps(positive if scenario=='http503' else {})); return
             if scenario=='timeout': await route.abort('timedout'); return
             if key=='tieba' and '/c/s/pc/sync' in route.request.url:
                 await route.fulfill(status=200 if scenario=='unauthenticated' else status,content_type='application/json',
@@ -33,7 +40,7 @@ async def three_states(module, platform, borrowed, page, positive):
               body=negative.get(key,'<main>Fixture</main>') if scenario=='unauthenticated' else '<main>Changed or blocked</main>')
         await page.route('**/*',route)
         try:
-            with patch('httpx.AsyncClient',factory): checked=await module.check(platform,borrowed)
+            checked=await module.check(platform,borrowed)
         finally: await page.unroute('**/*')
         expected='unauthenticated' if scenario=='unauthenticated' else 'inconclusive'
         assert checked['status']==expected,(key,scenario,checked)
@@ -63,22 +70,27 @@ class SourceCompatibility(unittest.IsolatedAsyncioTestCase):
                 page = await browser.new_page()
                 page.set_default_timeout(3000)
                 async def cookies(_urls): return [{'name': 'a1', 'value': 'synthetic', 'domain': '.xiaohongshu.com', 'path':'/'}]
-                borrowed = SimpleNamespace(page=page, cookies=cookies)
+                borrowed = SimpleNamespace(page=AccountPage(page), cookies=cookies)
                 for platform in data['platforms']:
                     key = platform['id']
-                    if os.environ.get('BAT_SOURCE_PLATFORM') and key != os.environ['BAT_SOURCE_PLATFORM']: continue
+                    selected = os.environ.get('BAT_SOURCE_PLATFORM', '').split(',')
+                    if selected != [''] and key not in selected: continue
                     observations = {'sources':[], 'errors':[], 'responses':[]}
                     source = platform['source']
                     if key in cases:
-                        native = httpx.AsyncClient
-                        def factory(*args, **kwargs):
-                            return native(*args, **kwargs, transport=httpx.MockTransport(lambda req: httpx.Response(200, json=cases[key])))
-                        with patch('httpx.AsyncClient', factory):
+                        async def api_route(route):
+                            await route.fulfill(status=200, content_type='text/html' if route.request.is_navigation_request() else 'application/json',
+                                headers={**cors(platform), 'Access-Control-Allow-Headers':route.request.headers.get('access-control-request-headers', '*')},
+                                body='<main>Owned</main>' if route.request.is_navigation_request() else json.dumps(cases[key]))
+                        await page.route('**/*', api_route)
+                        try:
+                            await page.goto(platform['url'])
                             client = ReadClient(platform, borrowed, observations)
                             await client.initialize()
                             if key == 'xiaohongshu': xhs_methods(client)
                             if key == 'kuaishou': graphql_query(client)
                             await mc_check(source['file'], client, observations, BorrowedContext(borrowed, platform, observations))
+                        finally: await page.unroute('**/*')
                         assert observations.get('upstreamBoolean') is True, key
                         checked = {'bilibili':module.bili,'weibo':module.weibo,'zhihu':module.zhihu,'xiaohongshu':module.xhs,'kuaishou':module.kuaishou}[key](platform, observations)
                     elif key == 'tieba':
@@ -117,6 +129,7 @@ class SourceCompatibility(unittest.IsolatedAsyncioTestCase):
                 assert module.xhs(xhs, {'responses':[{'status':200,'body':{'data':{'result':{'success':True},'user':{'guest':True}}}}], 'errors':[]})['status']=='inconclusive'
             finally:
                 await browser.close()
-        (ROOT/'work/account-rebuild-20261003/source-compatibility.json').write_text(json.dumps({'passed':True,'cases':receipts,'exceptionTrueRejected':True}, indent=2)+'\n')
+        output = Path(os.environ.get('BAT_ACCOUNT_PROOF_DIR', ROOT/'work/account-rebuild-20261003'))
+        (output/'source-compatibility.json').write_text(json.dumps({'passed':True,'cases':receipts,'exceptionTrueRejected':True}, indent=2)+'\n')
 
 if __name__=='__main__': unittest.main()

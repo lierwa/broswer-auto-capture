@@ -13,7 +13,7 @@ from .navigation import (NAVIGATION_ACTIONS, navigation_tab_ids, reconcile_new_n
                          navigation_action_owner, assert_navigation_owner)
 from .registry import ActionRegistry
 from .scroll_observation import inspect_page_scroll, scroll_dispatch_metadata, scroll_failure_code
-from .target_preparation import current_document_id, verify_event_target
+from .target_preparation import attach_event_capture, current_document_id, event_target_error, verify_event_target
 from .target_scroll import TargetScrollParams, register_target_scroll_tool
 from .targets import TARGET_ORDINAL_ARGUMENT, TargetResolver, materialize_target
 from .visible_wait import VisibleWaitParams, register_visible_wait_tool
@@ -135,6 +135,7 @@ class OrdinaryCapability:
             raise ValueError('ephemeral_target_argument')
         parameters = dict(args)
         prepared = None
+        capture = None
         if action_name == 'bat_scroll_to':
             return await self.execute_target_scroll(parameters, target)
         if action_name == 'bat_wait_for':
@@ -163,7 +164,7 @@ class OrdinaryCapability:
             result, capture = await self._dispatch_captured(
                 action_name, dispatch, intended, prepared.element)
             if result.error:
-                raise RuntimeError('ordinary_action_failed')
+                raise event_target_error('ordinary_action_failed', capture)
             event_count = verify_event_target(capture)
             self.last_event_diagnostic = safe_event_target(capture)
             metadata = result.metadata if isinstance(result.metadata, dict) else {}
@@ -190,7 +191,7 @@ class OrdinaryCapability:
         else:
             result = await self._act(action, native_dialog_policy)
         if result.error:
-            raise RuntimeError('ordinary_action_failed')
+            raise event_target_error('ordinary_action_failed', capture)
         return result
 
     async def execute_target_scroll(self, parameters, target):
@@ -288,7 +289,7 @@ class OrdinaryCapability:
             if failure is None:
                 failure = error
         if failure is not None:
-            raise failure
+            raise attach_event_capture(failure, capture)
         return result, capture
 
     async def _act(self, action, dialog_policy=None):

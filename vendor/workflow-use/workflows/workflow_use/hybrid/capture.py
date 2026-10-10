@@ -25,6 +25,7 @@ from .fixed_target import capture_fixed_target
 from .method_read_evidence import verified_method_read as verified_field_read
 from .history import from_agent_history
 from .host_read_facts import attach_host_read_facts
+from .host_collection import host_read_facts
 from .natural_effects import read_page_effect, read_target_state, read_target_value
 from .natural_facts import binding_facts
 from .natural_reads import NaturalReadFailure, capture_find_elements_read
@@ -130,12 +131,13 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
                         entry_fact = None
                 if name == 'click' and entry_fact is None and structure.fixedTargetAuthority is None:
                     target_identity, query_target = await verified_collection_query(
-                        self.browser, summary, target_identity, self.completed_queries, selector_index)
+                        self.browser, summary, target_identity, self.completed_queries, selector_index, action_id)
                 if query_target is None and entry_fact is None and structure.fixedTargetAuthority is None:
                     target_identity, query_target = await verified_labeled_query(
                         self.browser, summary, target_identity)
                 if query_target is not None:
                     structure = attach_query_candidate(structure, query_target, True)
+                    facts.extend(host_read_facts(self, query_target, structure))
                     structure.limitations = [item for item in structure.limitations
                                              if item != 'query_candidate_unavailable']
                 if name in ('input', 'select_dropdown'):
@@ -455,7 +457,7 @@ class EvidenceCollector(CaptureSnapshots, ObservationCapture):
         if value == fact.value:
             return fact
         direct = {'dom_structure', 'dom_query', 'natural_binding', 'native_extraction',
-                  'verified_natural_read', 'verified_natural_summary', 'verified_output_assembly'}
+                  'verified_natural_read', 'verified_natural_summary', 'verified_output_assembly', 'host_collection_read'}
         return self.value_fact(fact.kind, value) if fact.kind in direct else self.fact(fact.kind, value)
 
     def strip_pending_action_facts(self):

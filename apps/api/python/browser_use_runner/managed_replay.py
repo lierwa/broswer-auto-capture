@@ -1,6 +1,7 @@
 """Release a verified delivery receipt, preserving process and target ownership."""
 import os
 from browser_use_runner.window_lease_archive import archive_lease
+from browser_use_runner.managed_temp import cleanup_browser_temp
 
 
 def prepare_replay(window):
@@ -24,6 +25,7 @@ def prepare_replay(window):
     elif _profile_process_present(window.profile_path):
         raise ValueError('hybrid_managed_window_owner_unknown')
     else:
+        cleanup_browser_temp(previous)
         previous.status = 'ended'
     if previous.targetCreationPending:
         raise ValueError('hybrid_attached_window_create_unconfirmed')
@@ -35,4 +37,4 @@ def prepare_replay(window):
     if not live:
         return {'_replaceReceipt': True}
     return {'_replaceReceipt': True, **{key: getattr(previous, key) for key in ('browserPid', 'browserStarted', 'browserExe',
-        'cdpPort', 'browserId', 'retainedProcess')}}
+        'cdpPort', 'browserId', 'retainedProcess', 'browserTempPath')}}

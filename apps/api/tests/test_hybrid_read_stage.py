@@ -1,10 +1,15 @@
 """Replay read failures identify the stage without exposing dependency messages."""
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from browser_use_runner.hybrid_main import Runner, safe_runtime_error_code
 from workflow_use.hybrid.rendered_field_text import FieldReadError
+from browser_use_runner.hybrid_commands import ReadCommand
+from browser_use_runner.read_readiness import wait_required_paths
+from workflow_use.hybrid.host_collection import collection_spec
+from workflow_use.hybrid.postconditions import PostconditionNotMet
 
 
 READ_COMMAND = {
@@ -24,6 +29,33 @@ def runner_on_page():
 
 
 class HybridReadStageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_required_read_reuses_bounded_wait_without_retrying_actions(self):
+        command = ReadCommand(name='browser.read-fields', version=2,
+                              specification=collection_spec('.items'), requiredPaths=[[0]])
+        policy = SimpleNamespace(maxMs=200, maxAttempts=3, intervalMs=10)
+        not_ready = PostconditionNotMet('ordinary_postcondition_failed_read_fields_projection_not_ready')
+        with patch('browser_use_runner.read_readiness.settle_policy', return_value=policy), \
+                patch('workflow_use.hybrid.postconditions.verify_once',
+                      AsyncMock(side_effect=[not_ready, None])) as check:
+            await wait_required_paths(object(), command, None)
+            self.assertEqual(check.await_count, 2)
+        with patch('browser_use_runner.read_readiness.settle_policy', return_value=policy), \
+                patch('workflow_use.hybrid.postconditions.verify_once', AsyncMock(side_effect=not_ready)) as check:
+            with self.assertRaises(PostconditionNotMet):
+                await wait_required_paths(object(), command, None)
+            self.assertEqual(check.await_count, 3)
+
+    async def test_optional_empty_read_skips_wait_and_cancellation_escapes(self):
+        command = ReadCommand(name='browser.read-fields', version=2, specification=collection_spec('.items'))
+        with patch('browser_use_runner.read_readiness.verify_declared', AsyncMock()) as check:
+            await wait_required_paths(object(), command, None)
+            check.assert_not_awaited()
+        command.requiredPaths = [[0]]
+        with patch('workflow_use.hybrid.postconditions.verify_once', AsyncMock(side_effect=asyncio.CancelledError)) as check:
+            with self.assertRaises(asyncio.CancelledError):
+                await wait_required_paths(object(), command, None)
+            self.assertEqual(check.await_count, 1)
+
     async def test_bounded_read_code_survives_without_field_or_page_details(self):
         for code in ('read_collection_limit', 'ambiguous_or_missing_read_field'):
             with self.subTest(code=code):

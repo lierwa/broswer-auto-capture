@@ -10,8 +10,10 @@ const prototype = CDPRelayServer.prototype as unknown as {
   _handleCDPCommand(method: string, params: Record<string, unknown>, sessionId?: string): Promise<unknown> }
 const original = prototype._handleCDPCommand
 prototype._handleCDPCommand = async function(method, params, sessionId) {
-  appendFileSync(path.join(process.cwd(), "work/account-rebuild-20261003/cdp-target-trace.jsonl"),
-    JSON.stringify({ method, sessionId, targetId: params?.targetId, detachSession: params?.sessionId }) + "\n")
+  appendFileSync(process.env.BAT_TEST_TRACE_FILE ?? path.join(process.cwd(), "work/account-rebuild-20261003/cdp-target-trace.jsonl"),
+    JSON.stringify({ method, sessionId, targetId: params?.targetId, detachSession: params?.sessionId,
+      ...(method === 'Target.setAutoAttach' ? { autoAttach: params?.autoAttach,
+        waitForDebuggerOnStart: params?.waitForDebuggerOnStart, filter: params?.filter } : {}) }) + "\n")
   return original.call(this, method, params, sessionId)
 }
 

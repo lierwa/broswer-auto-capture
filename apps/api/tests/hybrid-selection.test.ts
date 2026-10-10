@@ -5,9 +5,10 @@ import { jsonValueSchema } from "@browser-capture/contracts"
 import { z } from "zod"
 import { digestCanonicalJson, validateHybridResponse } from "../src/upstream-browser/hybrid-materializer.js"
 import { naturalPayloadContext } from "../src/upstream-browser/hybrid-natural-payload.js"
-import { functionSegmentSchema } from "../src/upstream-browser/hybrid-schema.js"
+import { functionSegmentSchema, hybridNaturalRequestSchema, hybridCompilationSchema } from "../src/upstream-browser/hybrid-schema.js"
 import { materializeSelectionFunction, validateSelectionFunctions, withSelectionValidation } from "../src/upstream-browser/hybrid-selection.js"
-import { assertNaturalBinding } from "../src/upstream-browser/hybrid-natural-materialization.js"
+import { assertNaturalBinding, assertNaturalReadSegment } from "../src/upstream-browser/hybrid-natural-materialization.js"
+import { assertHostCollection } from "../src/upstream-browser/hybrid-host-collection.js"
 
 const hash = (value: unknown) => digestCanonicalJson(jsonValueSchema.parse(value))
 const reference = (value: unknown) => ({ ref: `sha256:${hash(value)}`, digest: hash(value) })
@@ -131,4 +132,70 @@ test("点击的集合读取引用必须与 Function 输入来源一致", () => {
   structure.value = { actionRef: "a-0002", queryCandidate: { readActionRef: "a-9999" } }
   assert.throws(() => materializeSelectionFunction(segment, { request: payload.ordinary,
     compilation: envelope.compilation, assertFact: payload.assertFact }), /selection_function_source_mismatch/)
+})
+
+function hostFixture() {
+  const base = fixture(), url = "https://example.test/", actionRef = "a-0002", nodeId = `collection-${actionRef}`
+  const output = rows(["release 4", "preview 9", "release 7"])
+  const schema = { type: "array", minItems: 0, maxItems: 300, items: { type: "object",
+    properties: { text: { type: "string" }, ordinal: { type: "integer", minimum: 1, maximum: 300 } },
+    required: ["text", "ordinal"], additionalProperties: false } }
+  const specification = { container: "body > ul > li", fields: { text: { selector: ":scope", attribute: null,
+    valueType: "string", normalizeWhitespace: true } }, maxItems: 300, maxInputBytes: 128000, includeOrdinal: true, outputSchema: schema }
+  const scope = { url, urlDigest: hash(url) }, target = { strategy: "structure", container: { kind: "css", value: "html" },
+    items: { kind: "css", value: specification.container }, ordinal: 3, withinItem: { kind: "css", value: ":scope > a" } }
+  const read = fact("host-read", "host_collection_read", { actionRef, targetRef: "target", target: { ...target, readActionRef: actionRef },
+    read: { actionRef, specification, output, stable: true, outputPath: [], readPath: [], targetId: "tab-1",
+      resultDigest: hash(output), urlDigest: hash(url), containerIdsDigest: hash([1, 2, 3]), readRef: null,
+      coverage: null, documentRootId: null } })
+  const structure = fact("dom-a-0002", "dom_structure", { actionRef, targetRef: "target", queryCandidate: {
+    container: target.container, items: target.items, withinItem: target.withinItem, matchedItemOrdinal: target.ordinal,
+    complete: true, targetRef: "target", readActionRef: actionRef, scope: { kind: "document", tabId: "tab-1", frameId: null } } })
+  const draft = { ...base.segment.draft, inputs: { candidates: schema }, outputSchema: { type: "integer", minimum: 1, maximum: 300 } }
+  const selection = fact(base.segment.id, "selection_function", { actionRef, readFactRef: read.id,
+    requirementDigest: "1".repeat(64), draft })
+  const segment = functionSegmentSchema.parse({ ...base.segment, draft, proofRefs: selection.sourceRefs,
+    inputBindings: { candidates: { source: "node", nodeId, path: [] } } })
+  const readSegment = { ...base.envelope.compilation.segments[0], id: nodeId,
+    operation: { name: "browser.read-fields", version: 2, specification },
+    target: { strategy: "css", value: specification.container, scope },
+    preconditions: [{ kind: "source_observation", evidenceRef: "o-3" }],
+    postconditions: [{ kind: "output_schema", schemaDigest: hash(schema) }],
+    outputs: [{ schema, sourceRef: read.id }], proofRefs: read.sourceRefs }
+  const consumer = { ...base.envelope.compilation.segments[2], target: { ...target, scope,
+    ordinalBinding: { source: "node", nodeId: segment.id, path: [] } } }
+  const compilation = hybridCompilationSchema.parse({ ...base.envelope.compilation,
+    segments: [readSegment, segment, consumer], coverage: [{ actionRef, disposition: "compiled",
+      ownerSegmentId: "s-a-0002", exclusionRule: null, evidenceRefs: structure.sourceRefs }] })
+  const request = hybridNaturalRequestSchema.parse({ ...base.request, trace: {
+    ...hybridNaturalRequestSchema.parse(base.request).trace,
+    actions: [{ id: actionRef, name: "click", status: "succeeded", preObservationRef: "o-3", postObservationRef: "o-4" }],
+    observations: [{ id: "o-3", url, tabId: "tab-1", facts: [read, structure, selection] }] } })
+  const assertFact = (item: typeof request.trace.observations[number]["facts"][number]) =>
+    assert.deepEqual(item.sourceRefs, [reference(item.value)])
+  return { request, compilation, assertFact, segment, read }
+}
+
+test("宿主真实读取属于同一次点击，复用读取和Function节点并保持后代目标", () => {
+  const context = hostFixture()
+  assert.equal(materializeSelectionFunction(context.segment, context).kind, "function")
+  const read = context.compilation.segments[0]!
+  assert.equal(read.kind, "deterministic")
+  if (read.kind !== "deterministic") throw Error("missing_read")
+  const payload = { ...naturalPayloadContext(fixture().envelope, fixture().request), assertFact: context.assertFact }
+  assertNaturalReadSegment(read, { version: 2, request: context.request, payload }, context.compilation)
+})
+
+test("宿主读取拒绝换页、移除归属及替换运行读取，即使候选样本能选对", () => {
+  for (const mutation of ["page", "coverage", "read"] as const) {
+    const context = hostFixture()
+    if (mutation === "page") context.request.trace.observations[0]!.tabId = "foreign-tab"
+    if (mutation === "coverage") context.compilation.coverage = []
+    const segment = context.compilation.segments[0]!
+    if (mutation === "read" && segment.kind === "deterministic" && segment.operation.name === "browser.read-fields") {
+      segment.operation.specification.container = "unrelated"
+    }
+    assert.throws(() => assertHostCollection(context.request, context.compilation, context.assertFact, context.read.id),
+      /hybrid_host_collection_(source|binding)_mismatch/)
+  }
 })

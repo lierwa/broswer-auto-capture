@@ -39,7 +39,8 @@ class SDKFixture:
             attachToTarget=self.attach, activateTarget=self.activate), Runtime=SimpleNamespace(runIfWaitingForDebugger=AsyncMock()),
             Network=SimpleNamespace(enable=AsyncMock()))
         self.response_callback = None
-        self.client.register = SimpleNamespace(Page=SimpleNamespace(javascriptDialogOpening=lambda _f: None),
+        self.client.register = SimpleNamespace(Target=SimpleNamespace(attachedToTarget=lambda _f: None,
+            detachedFromTarget=lambda _f: None), Page=SimpleNamespace(javascriptDialogOpening=lambda _f: None),
             Network=SimpleNamespace(responseReceived=self.register_response))
         object.__setattr__(self.browser, 'start', self.start)
         object.__setattr__(self.browser, 'stop', self.stop)

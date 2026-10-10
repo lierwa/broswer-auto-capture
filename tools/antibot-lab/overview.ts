@@ -5,12 +5,13 @@ import { page } from "./pages.ts"
 const escape = (value: unknown) => String(value ?? "—").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;")
 export async function overview(base: string, db: DatabaseSync) {
   const report = await snapshot(base, db)
-  const cases = db.prepare("SELECT id,kind,variant,created FROM cases ORDER BY created DESC LIMIT 12").all()
+  const cases = db.prepare("SELECT id,kind,variant,created FROM cases WHERE kind IN ('catalog','booking') ORDER BY created DESC LIMIT 12").all()
   const metrics = report.detectorMetrics
   const funnel = "appsec-challenge" in metrics ? Object.values(metrics["appsec-challenge"].funnel) : []
   const count = (name: string) => funnel.reduce((sum, item) => sum + (item[name] ?? 0), 0)
-  return page("反爬检测服务", `<p>检测服务独立运行。B-A-T 访问下方场景网址，网站侧记录挑战、拒绝和业务访问。</p>
+  return page("反爬检测服务", `<p><a href="https://localhost:4185/measurement/check">打开真人 / 机器人检测网站 →</a></p><p>这里是管理入口。检测网站独立运行，B-A-T与真人可使用同一检测页面。</p>
   <p><strong>CrowdSec 1.8.1 · 原始 balanced 规则 · 拒绝阈值 75 分</strong></p>
+  <p>地理数据：${escape(report.geographySource.status)} · <a href="https://db-ip.com">IP Geolocation by DB-IP</a>（CC BY 4.0，国家/ASN线索）</p>
   <table><tr><th>当前引擎周期</th><th>次数</th></tr><tr><td>请求挑战</td><td>${count("requested")}</td></tr>
   <tr><td>挑战完成</td><td>${count("solved")}</td></tr><tr><td>提交被拒绝</td><td>${count("rejected_submission")}</td></tr></table>
   <p><small>计数随引擎重启归零；历史拒绝和业务记录保留。没有记录不表示通过。采集状态：${escape(metrics.status)}</small></p>

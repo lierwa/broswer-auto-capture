@@ -211,18 +211,36 @@ async def prepare_mapped_target(resolver, target, action_name, page, mapping, ta
 def verify_event_target(capture, *, require_trusted=False):
     events = capture.get('events') if isinstance(capture, dict) else None
     if capture.get('status') != 'captured' or not isinstance(events, list) or not events:
-        raise RuntimeError('ordinary_event_target_unverified')
+        raise event_target_error('ordinary_event_target_unverified', capture)
     relations = [event.get('graph', {}).get('intentRelation') for event in events
                  if isinstance(event, dict) and isinstance(event.get('graph'), dict)]
     accepted_events = [event for event in events if event.get('graph', {}).get('intentRelation')
                        in ('self', 'descendant', 'composed')]
     accepted = [event.get('graph', {}).get('intentRelation') for event in accepted_events]
     if not accepted:
-        raise RuntimeError('ordinary_event_target_mismatch')
+        raise event_target_error('ordinary_event_target_mismatch', capture)
     if require_trusted and not any(event.get('event', {}).get('isTrusted') is True
                                    for event in accepted_events):
-        raise RuntimeError('ordinary_event_untrusted')
+        raise event_target_error('ordinary_event_untrusted', capture)
     return len(accepted)
+
+
+def event_target_error(code, capture):
+    return attach_event_capture(RuntimeError(code), capture)
+
+
+def attach_event_capture(error, capture):
+    # WHY：原动作异常同样保留已完成的采集摘要；不替换错误/取消、不覆盖原有更具体的诊断。
+    if getattr(error, 'event_capture', None) is not None:
+        return error
+    status = capture.get('status') if isinstance(capture, dict) else None
+    events = capture.get('events', []) if isinstance(capture, dict) else None
+    limitations = capture.get('limitations', []) if isinstance(capture, dict) else None
+    # WHY：只保留原采集的状态和数量，不能把节点、正文或输入值放入错误诊断，也不补造成功事件。
+    if (status in {'missing', 'captured', 'listener_unavailable', 'not_applicable'}
+            and isinstance(events, list) and isinstance(limitations, list)):
+        error.event_capture = {'status': status, 'events': len(events), 'limitations': len(limitations)}
+    return error
 
 
 def _point(value):

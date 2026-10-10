@@ -30,7 +30,7 @@ def target_value(action_ref, target_ref, value, sanitizer):
 
 def replace_action_identity(value, previous, current):
     if isinstance(value, dict):
-        return {key: (current if key in ('actionRef', 'nodeId') and item == previous
+        return {key: (current if key in ('actionRef', 'readActionRef', 'nodeId') and item == previous
                       else replace_action_identity(item, previous, current))
                 for key, item in value.items()}
     if isinstance(value, list):

@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "web-bot-auth": "0.2.0"
+  },
+  "private": true
+}

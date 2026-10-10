@@ -1,0 +1,65 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>B-A-T 本地真人采样</title>
+<style>
+body{font:18px/1.7 system-ui;background:#f4f5f7;color:#182333;max-width:850px;margin:35px auto;padding:0 24px}
+main{background:white;border:1px solid #ccd3de;border-radius:16px;padding:28px}button,input,textarea{font:inherit;padding:12px;margin:8px;border:1px solid #8391a5;border-radius:8px}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #2767bc}button{cursor:pointer;background:#edf4ff}button:disabled{cursor:default;background:#eee}textarea{width:85%}#area{min-height:220px}#status{font-weight:bold;color:#174d85}.targets{display:flex;justify-content:space-between;padding:25px 0 60px}
+</style>
+<main><h1>B-A-T 本地真人采样</h1><p id="intro">约 3 分钟，共 3 段。这里只记录本页鼠标坐标、动作时序、事件类型和文字长度；不会保存文字、按键内容或剪贴板内容。请使用下面指定的测试文字，不输入个人信息。</p>
+<h2 id="heading"></h2><p id="instructions"></p><p id="status">尚未开始</p><button id="start">开始本段</button>
+<section id="area" hidden><div class="targets"><button>目标 A</button><button>目标 B</button><button>目标 C</button></div>
+<label>练习输入<input id="entry" maxlength="2000" autocomplete="off"></label><p>用于手动复制粘贴的文字：<strong>BAT 粘贴 2026</strong></p>
+<label>多行输入<textarea maxlength="2000" rows="4"></textarea></label><p>可滚动查看，再回到上方。按自然习惯操作，不必故意放慢或追求固定节奏。</p>
+<div style="height:350px">本地测试区</div><button id="end" disabled>保存本段</button></section><p id="done" aria-live="polite"></p></main>
+<script type="module">
+import {createCollector} from '/measurement/human/collector.js';
+const phase = Number(new URL(location.href).searchParams.get('phase') || 0);
+const focusSample = new URL(location.href).searchParams.get('mode') === 'focus';
+const prompts = [
+ ['第 1 段 · 鼠标和滚动','用鼠标按自己的习惯依次点击 A、C、B，再自由点击几次、滚动页面。约 45 秒后保存。'],
+ ['第 2 段 · 键盘操作','用 Tab 在控件间切换，输入 BAT test 2026，按 Backspace 修改，再在多行框输入两行测试文字。约 45 秒后保存。'],
+ ['第 3 段 · 中文和粘贴','使用中文输入法输入 本地输入测试；手动复制页面的 BAT 粘贴 2026 并粘贴到输入框，然后全选替换。约 45 秒后保存。']
+];
+if (!prompts[phase]) throw Error('invalid_phase');
+document.querySelector('#heading').textContent = prompts[phase][0];
+document.querySelector('#instructions').textContent = prompts[phase][1];
+if (focusSample) {
+ document.querySelector('#intro').textContent='这次只做一段约 1 分钟的补测，不要求输入文字。只记 Tab 次数、焦点/可见性变化和原有动作元数据，不保存文字或按键内容。';
+ document.querySelector('#heading').textContent='补测 · Tab 与后台切换';
+ document.querySelector('#instructions').textContent='① 点「开始本段」，再点目标 A。② 按 Tab 4 次，看蓝色焦点框移动；再按 Shift+Tab 2 次。③ 按 Win+D 显示桌面，等约 5 秒，从任务栏点回标题为「B-A-T 本地真人采样」的窗口。④ 满 45 秒后点「保存本段」。下面会显示已采到的次数。';
+}
+const start = document.querySelector('#start'), end = document.querySelector('#end'), status = document.querySelector('#status');
+let collector, timer, audit = [], hidden = false, counts = {}, started;
+const types = ['input','beforeinput','paste','compositionstart','compositionend','keydown','keyup','focus','blur'];
+function record(e) {
+ counts[e.type] = (counts[e.type] || 0) + 1;
+ if (e.type==='keydown' && e.key==='Tab') counts.tabKeydown=(counts.tabKeydown || 0)+1;
+ if (audit.length < 5000) audit.push({type:e.type,trusted:e.isTrusted,at:performance.now()-started,
+   inputType:e.inputType || '',composing:!!e.isComposing,length:Math.min(2000,e.target.value?.length || 0)});
+}
+start.onclick = async () => {
+ start.disabled = true; document.querySelector('#area').hidden = false; started = performance.now();
+ await new Promise(resolve=>setTimeout(resolve,0));
+ collector = createCollector({limits:{mouse:5000,events:15000,keys:1000,scroll:1000,clicks:200}}); collector.attach();
+ for (const type of types) document.addEventListener(type,record,true);
+ document.addEventListener('visibilitychange',() => {if(document.hidden) hidden=true;
+   const name=document.hidden?'documentHidden':'documentVisible'; counts[name]=(counts[name]||0)+1;});
+ for(const type of ['focus','blur']) window.addEventListener(type,()=>{
+   const name=type==='focus'?'windowFocus':'windowBlur';counts[name]=(counts[name]||0)+1;});
+ timer = setInterval(() => {const seconds=Math.floor((performance.now()-started)/1000);
+   status.textContent = seconds < 45 ? '已采集 '+seconds+' 秒，45 秒后可保存。' : '本段已满 45 秒，可以保存。'; end.disabled=seconds<45;
+   if(focusSample) status.textContent+=' Tab：'+(counts.tabKeydown||0)+'；进入后台：'+(counts.documentHidden||0)+'；返回可见：'+(counts.documentVisible||0)+'。';
+ },500);
+};
+end.onclick = async () => {
+ end.disabled=true; clearInterval(timer); collector.detach(); for(const type of types) document.removeEventListener(type,record,true);
+ status.textContent='正在保存…';
+ try {
+   const response=await fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({phase,data:collector.getData(),audit,hidden,counts})});
+   if(!response.ok) throw Error('保存失败，HTTP '+response.status+'。请保留页面并通知 Codex。');
+   if(phase<2) location.href=location.pathname+'?phase='+(phase+1);
+   else {status.textContent=focusSample?'补测已保存，谢谢。':'三段已保存，谢谢。';document.querySelector('#area').hidden=true;
+     document.querySelector('#done').textContent='可以回到 Codex。此独立测试窗口将在几秒后自动关闭。';}
+ } catch(error) {status.textContent=error.message;}
+};
+</script></html>

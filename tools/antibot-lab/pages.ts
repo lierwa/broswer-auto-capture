@@ -1,7 +1,7 @@
 export function page(title: string, body: string) {
   return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title>
   <link rel="icon" href="data:,"><style>body{font:18px/1.7 system-ui;margin:48px auto;max-width:820px;padding:24px;color:#20303a;background:#f4f6f8}main{padding:32px;background:white;border-radius:12px}a{color:#135ba1}label,input,select,button{display:block;margin:14px 0}input,select,button{font:inherit;padding:8px}table{width:100%;border-collapse:collapse}td,th{padding:12px;border-bottom:1px solid #ddd;text-align:left}code{overflow-wrap:anywhere}small{color:#556}</style>
-  <main><small>本机反爬实验站 · 合成业务数据</small><h1>${title}</h1>${body}</main></html>`
+  <main><small>本机反爬实验站 · 合成业务数据</small><h1>${title}</h1>${body}</main><footer><small><a href="https://db-ip.com">IP Geolocation by DB-IP</a> · CC BY 4.0</small></footer></html>`
 }
 export function catalog(id: string, variant: number) {
   const versions = variant === 4 ? [] : variant === 1 ? [4, 7, 2] : variant === 2 ? [11, 4, 7] : [2, 13, 7]

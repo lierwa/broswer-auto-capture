@@ -18,6 +18,10 @@ def selection_read(trace, action, target):
         return inspected_method_read(trace, action)
     if action.name == 'navigate':
         return navigation_selection_read(trace, action)
+    if action.name == 'click' and collection_read_action_ref(trace, action) == action.id:
+        from .host_collection import host_read_for_target
+        pre = next(item for item in trace.observations if item.id == action.preObservationRef)
+        return host_read_for_target(pre, target, action.id)
     if (action.name != 'click' or not isinstance(target, dict)
             or target.get('strategy') != 'structure'
             or target.get('container') != {'kind': 'css', 'value': 'html'}
@@ -121,7 +125,12 @@ def bind_selection_function(request, action, segments, click_segment):
         return [], None, [gap('missing_binding', [action.id],
                               'collection_selection_read_required', 'collect_evidence')]
     fact, read = match
-    read_segments = [item for item in segments if item.get('operation', {}).get('name') == 'browser.read-fields'
+    inserted = []
+    if fact.kind == 'host_collection_read':
+        from .host_collection import host_read_segment
+        pre = next(item for item in request.trace.observations if item.id == action.preObservationRef)
+        inserted = [host_read_segment(pre, fact, read)]
+    read_segments = [item for item in [*segments, *inserted] if item.get('operation', {}).get('name') == 'browser.read-fields'
                      and item['operation']['specification'] == runtime_read_specification(read.specification)
                      and any(output['sourceRef'] == fact.id for output in item.get('outputs', []))]
     reference_key = 'methodRef' if action.name == 'bat_inspect_action' else 'actionRef'
@@ -146,4 +155,4 @@ def bind_selection_function(request, action, segments, click_segment):
     if action.name == 'click':
         selected['target']['ordinalBinding'] = {'source': 'node', 'nodeId': identity, 'path': []}
     # WHY：从一次末项点击推导 count 是样本猜测。只有需求绑定的纯函数可拥有动态选择语义。
-    return [function], selected, []
+    return [*inserted, function], selected, []

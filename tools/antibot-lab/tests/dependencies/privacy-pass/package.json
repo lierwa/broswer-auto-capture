@@ -1,0 +1,1 @@
+{"name":"bat-private-token-calibration","private":true,"type":"module","dependencies":{"@cloudflare/privacypass-ts":"0.9.0"}}

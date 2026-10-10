@@ -29,8 +29,14 @@ ROOT = Path.cwd().resolve()
 BUNDLE = ROOT / 'work/antibot-m0/artifact/package/dist/fpScanner.es.js'
 PAGE = b'''<!doctype html><meta charset="utf-8">
 <button id="choose" onclick="this.dataset.done='yes'">Choose</button>
+<button id="delegated">Delegated</button>
 <input id="entry"><div id="shadow"></div>
-<script>document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML =
+<script>document.addEventListener('click', event => {
+  if (event.target.id !== 'delegated') return;
+  event.target.dataset.done = 'yes';
+  event.stopImmediatePropagation();
+}, true);
+document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML =
   '<button id="shadow-button">Inside</button>';</script>'''
 
 
@@ -56,6 +62,7 @@ class CaptureIsolationTest(unittest.IsolatedAsyncioTestCase):
                          '75abba497a00625ed053ce7a0bc9353fa5d5c9859cc67438141fe83d8d0946b2')
         parent = ROOT / 'work/antibot-m0'
         directory = Path(tempfile.mkdtemp(prefix='capture-', dir=parent)).resolve()
+        self.evidence_directory = directory
         profile = directory / 'profile'
         profile.mkdir()
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
@@ -108,6 +115,7 @@ class CaptureIsolationTest(unittest.IsolatedAsyncioTestCase):
 
     async def exercise(self, browser, capture, url):
         page = await browser.get_current_page()
+        await self.delegated_click(browser, page, capture)
         target = (await page.get_elements_by_css_selector('#choose'))[0]
         await capture.arm('click', element=target)
         await target.click()
@@ -144,9 +152,31 @@ class CaptureIsolationTest(unittest.IsolatedAsyncioTestCase):
                 'contextId': context_id, 'returnByValue': True}, session_id=session_id)
             self.assertEqual(released['result']['value'], ['undefined', 'undefined'])
         return {'mainWorldCaptureKeys': keys, 'cdp': cdp, 'click': True, 'input': True,
+                'delegatedClick': True,
                 'navigation': True, 'frameIdentity': all(event['scope']['frameId']
                     for result in [click, typed, after_navigation] for event in result['events']),
                 **additional, 'bridgeReleased': True, 'modelCalls': 0, 'scope': 'headless component only'}
+
+    async def delegated_click(self, browser, page, capture):
+        target = (await page.get_elements_by_css_selector('#delegated'))[0]
+        await capture.arm('click', element=target)
+        await target.click()
+        result = await capture.complete()
+        done = await target.get_attribute('data-done') == 'yes'
+        save(self.evidence_directory, 'delegated-click.json', {'businessCompleted': done,
+            'captureStatus': result['status'], 'eventCount': len(result['events']),
+            'trustedEvents': sum(event['event']['isTrusted'] is True for event in result['events'])})
+        self.assertTrue(done)
+        self.assert_event(result, 'click', 'delegated')
+        from workflow_use.hybrid.capability import OrdinaryCapability
+        capability = OrdinaryCapability(browser)
+        capability.event_capture = capture
+        await target.evaluate("() => { this.dataset.done = 'no'; }")
+        replay = await capability.execute_checked('click', {}, {'strategy': 'css', 'value': '#delegated'}, [])
+        self.assertEqual(await target.get_attribute('data-done'), 'yes')
+        self.assertEqual(replay['metadata']['batActionPreparation']['eventCount'], 1)
+        save(self.evidence_directory, 'delegated-replay.json', {'businessCompleted': True,
+            'capturedEvents': replay['metadata']['batActionPreparation']['eventCount'], 'modelCalls': 0})
 
     async def frame_and_shadow(self, browser, page, capture):
         session = await browser.get_or_create_cdp_session(focus=False)
@@ -180,7 +210,12 @@ class CaptureIsolationTest(unittest.IsolatedAsyncioTestCase):
         self.assert_event(result, 'click', 'choose')
         self.assertEqual(result['events'][-1]['scope']['targetId'], target_id)
         # Idle/close is checked in the actual worlds, not inferred from the Python active flag.
+        frames, _sessions = await browser.get_all_frames()
+        live_targets = {str(frame.get('frameTargetId')) for frame in frames.values()}
         for session_id, context_id in capture.contexts:
+            # 导航已销毁的iframe没有活动监听；只校验仍存在的真实document，不能向旧session发查询。
+            if capture.sessions.get(session_id, {}).get('targetId') not in live_targets:
+                continue
             state = await client.send.Runtime.evaluate(params={'expression':
                 f'globalThis[{json.dumps(capture.state_key)}].enabled', 'contextId': context_id,
                 'returnByValue': True}, session_id=session_id)

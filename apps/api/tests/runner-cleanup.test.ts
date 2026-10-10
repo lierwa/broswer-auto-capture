@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -18,6 +18,37 @@ function controlledRunner(mode: "normal" | "close_stage_failure" | "browser_clos
   return new RunnerProcess(projectRoot, signal, undefined, { runnerScript: childScript,
     browserMode: "dedicated-headless", runnerEnvironment: { BAT_TEST_RUNNER_MODE: mode }, closeTimeoutMs: 150, childCloseTimeoutMs: 150 })
 }
+
+test("optional default access policy stays unset while declared policies reach the actual child", async () => {
+  // 保护宿主→Python边界：无策略不是丢失；显式路径不能被宿主存在性探测静默移除。
+  const directory = await mkdtemp(path.join(tmpdir(), 'bat-runner-policy-'))
+  const python = process.env.BAT_UPSTREAM_BROWSER_PYTHON
+  process.env.BAT_UPSTREAM_BROWSER_PYTHON = python ?? path.join(projectRoot, 'work/upstream-browser-hybrid/.venv',
+    process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+  const probe = async (override?: string) => {
+    const runner = new RunnerProcess(directory, new AbortController().signal, undefined, {
+      runnerScript: childScript, runnerEnvironment: { BAT_TEST_RUNNER_MODE: 'policy_probe',
+        ...(override ? { BAT_ACCESS_POLICY_FILE: override } : {}) } })
+    try {
+      await runner.startCompiler()
+      return await runner.request({ id: randomUUID(), type: 'hybrid_observe' })
+    } finally { assert.equal((await runner.close()).status, 'confirmed') }
+  }
+  try {
+    assert.deepEqual(await probe(), { policyFile: null })
+    const explicit = path.join(directory, 'explicit-missing.json')
+    assert.deepEqual(await probe(explicit), { policyFile: explicit })
+    await mkdir(path.join(directory, 'data'))
+    const configured = path.join(directory, 'data/access-policies.json')
+    await writeFile(configured, '{"version":1,"policies":[]}')
+    assert.deepEqual(await probe(), { policyFile: configured })
+  } finally {
+    if (python === undefined) delete process.env.BAT_UPSTREAM_BROWSER_PYTHON
+    else process.env.BAT_UPSTREAM_BROWSER_PYTHON = python
+    assert.equal(path.dirname(directory), tmpdir())
+    await rm(directory, { recursive: true })
+  }
+})
 
 test("真实 Python/browser child 正常 close，重复 close 等待同一份 confirmed report", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-runner-cleanup-real-"))

@@ -16,14 +16,30 @@ test("runtime command causes retain trusted source locations and reject raw deta
       locations: [{ source: "bat_capability", line: 82 }, { source: "sdk_element", line: 90 }] }
     const event = { phase: "runtime_command_failure", status: "failed", actionRef: "a-0002", causes: [cause] }
     diagnostics.acceptPythonLine(JSON.stringify(event))
+    const eventCapture = { status: 'missing', events: 0, limitations: 1,
+      inputAcknowledgements: { mouseMoved: 1, mousePressed: 1, mouseReleased: 1 } }
+    diagnostics.acceptPythonLine(JSON.stringify({ ...event, eventCapture }))
+    const inputDispatch = Object.fromEntries(['mouseMoved', 'mousePressed', 'mouseReleased'].map(kind =>
+      [kind, { attempted: 1, cancelled: kind === 'mousePressed' ? 1 : 0, failed: 0 }]))
+    diagnostics.acceptPythonLine(JSON.stringify({ ...event, eventCapture: { ...eventCapture, inputDispatch } }))
     for (const invalid of [{ ...event, message: "private" }, { ...event, actionRef: "private/url" },
       { ...event, causes: [{ ...cause, locations: [{ source: "private", line: 1 }] }] },
       { ...event, causes: [{ ...cause, locations: Array(9).fill(cause.locations[0]) }] }]) {
       diagnostics.acceptPythonLine(JSON.stringify(invalid))
     }
+    for (const invalid of [{ ...eventCapture, url: 'private' }, { ...eventCapture, events: -1 },
+      { ...eventCapture, inputAcknowledgements: { ...eventCapture.inputAcknowledgements, text: 'private' } }]) {
+      diagnostics.acceptPythonLine(JSON.stringify({ ...event, eventCapture: invalid }))
+    }
+    for (const invalid of [null, {}, { ...inputDispatch, mousePressed: { attempted: 1, cancelled: 1, failed: -1 } },
+      { ...inputDispatch, mousePressed: { attempted: 1, cancelled: 1, failed: 0, text: 'private' } }]) {
+      diagnostics.acceptPythonLine(JSON.stringify({ ...event, eventCapture: { ...eventCapture, inputDispatch: invalid } }))
+    }
     const rows = readFileSync(diagnostics.file, "utf8").trim().split("\n").map((line) => JSON.parse(line))
-    assert.equal(rows.length, 1)
+    assert.equal(rows.length, 3)
     assert.deepEqual(rows[0].causes, [cause])
+    assert.deepEqual(rows[1].eventCapture, eventCapture)
+    assert.deepEqual(rows[2].eventCapture.inputDispatch, inputDispatch)
     assert.ok(!JSON.stringify(rows).includes("private"))
   } finally { diagnostics.close(); rmSync(directory, { recursive: true, force: true }) }
 })

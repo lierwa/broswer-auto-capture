@@ -7,6 +7,7 @@ import { functionDraftSchema, functionSegmentSchema, hybridNaturalRequestSchema,
 import { naturalPayloadContext } from "./hybrid-natural-payload.js"
 import { validateSelectionDraft } from "./selection-validation.js"
 import { assertInspectedMethod, selectionNavigationUrl } from "./hybrid-method-source.js"
+import { assertHostCollection } from "./hybrid-host-collection.js"
 
 type Request = z.infer<typeof hybridNaturalRequestSchema>
 type Segment = z.infer<typeof functionSegmentSchema>
@@ -87,7 +88,7 @@ function assertSelectionSource(segment: Segment, context: Context) {
     }
   } else if (action?.name === "bat_inspect_action") throw new Error("selection_function_source_mismatch")
   const source = request.trace.observations.flatMap((owner) => owner.facts
-    .filter((item) => item.id === value.readFactRef && item.kind === "verified_natural_read")
+    .filter((item) => item.id === value.readFactRef && ["verified_natural_read", "host_collection_read"].includes(item.kind))
     .map((item) => ({ item, owner })))
   if (!action || !["click", "navigate", "bat_inspect_action"].includes(String(action.name)) || action.status !== "succeeded"
     || action.preObservationRef !== observation.id || source.length !== 1
@@ -97,7 +98,9 @@ function assertSelectionSource(segment: Segment, context: Context) {
   }
   const { item: readFact, owner } = source[0]!
   assertFact(readFact, owner.id)
-  const read = z.object({ actionRef: z.string(), output: jsonValueSchema,
+  const host = readFact.kind === "host_collection_read"
+    ? assertHostCollection(request, compilation, assertFact, readFact.id) : null
+  const read = host?.read ?? z.object({ actionRef: z.string(), output: jsonValueSchema,
     specification: readSpecificationSchema, stable: z.literal(true) }).passthrough().parse(readFact.value)
   if (action.name === "navigate" || action.name === "bat_inspect_action") {
     assertNavigationSelection(segment, context, action, read, owner, observation)
@@ -115,11 +118,12 @@ function assertSelectionSource(segment: Segment, context: Context) {
   assertFact(structures[0]!, observation.id)
   const readIndex = request.trace.actions.findIndex((item) => item.id === read.actionRef)
   const clickIndex = request.trace.actions.findIndex((item) => item.id === action.id)
-  const binding = { candidates: { source: "node", nodeId: `s-${read.actionRef}`, path: [] } }
+  const binding = { candidates: { source: "node", nodeId: host?.nodeId ?? `s-${read.actionRef}`, path: [] } }
   const consumer = compilation.segments.find((item) => item.id === `s-${action.id}`)
   const target = consumer?.kind === "deterministic" ? consumer.target : null
-  if (readIndex < 0 || readIndex >= clickIndex || !read.specification.includeOrdinal
-    || request.trace.actions[readIndex]?.postObservationRef !== owner.id
+  const priorRead = readIndex >= 0 && readIndex < clickIndex && request.trace.actions[readIndex]?.postObservationRef === owner.id
+  if ((!host && !priorRead) || (host && (host.action.id !== action.id || owner.id !== observation.id))
+    || !read.specification.includeOrdinal
     || !isDeepStrictEqual(segment.inputBindings, binding)
     || !isDeepStrictEqual(segment.draft.inputs, { candidates: read.specification.outputSchema })
     || !isDeepStrictEqual(segment.draft.outputSchema, { type: "integer", minimum: 1, maximum: read.specification.maxItems })

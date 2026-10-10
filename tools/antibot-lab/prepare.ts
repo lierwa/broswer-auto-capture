@@ -29,9 +29,17 @@ export async function prepare() {
   const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string().regex(/^[a-f0-9]{64}$/) }))
     .parse(JSON.parse(await readFile(path.join(root, "tools/antibot-lab/artifacts.json"), "utf8")))
   await Promise.all(items.map(artifact))
-  for (const [archive, folder] of [["crowdsec-release.tgz", "crowdsec"], ["traefik.tar.gz", "traefik"], ["node.tar.xz", "node"], ["hub.tar.gz", "hub"], ["bouncer.tar.gz", "bouncer"]]) {
+  await prepareEdgeArtifacts()
+  await prepareH2Artifacts()
+  for (const [archive, folder] of [["crowdsec-release.tgz", "crowdsec"], ["traefik.tar.gz", "traefik"], ["node.tar.xz", "node"], ["hub.tar.gz", "hub"], ["bouncer.tar.gz", "bouncer"], ["botd-2.0.0.tgz", "botd"], ["motion-attestation-1.1.0.tgz", "motion"]]) {
     await extract(archive!, path.join(directory, "runtime", folder!))
   }
+  const fingerprint = path.join(directory, 'runtime/crowdsec-909b5157986a2b2c2163300fdaef5ed01289f7d2/pkg/appsec/challenge/js/fpscanner/fpscanner.js')
+  if (!await exists(fingerprint)) wsl(['tar', '-xf', linuxPath(path.join(directory, 'upstream/crowdsec-source-v1.8.1.tar.gz')),
+    '-C', linuxPath(path.join(directory, 'runtime'))], true)
+  const creep = path.join(directory, 'runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/lies/index.ts')
+  if (!await exists(creep)) wsl(['tar', '-xf', linuxPath(path.join(directory, 'upstream/creepjs-10aa6724.tar.gz')),
+    '-C', linuxPath(path.join(directory, 'runtime'))], true)
   const pluginDestination = path.join(directory, "plugins-local/src", pluginModule)
   if (!await exists(pluginDestination)) await cp(path.join(directory, "runtime/bouncer", `crowdsec-bouncer-traefik-plugin-${pluginCommit}`), pluginDestination, { recursive: true })
   const secretPath = path.join(directory, "secrets.json")
@@ -45,7 +53,7 @@ export async function prepare() {
   const cli = [bin.cscli, "-c", `${base}/config/config.yaml`, "--branch", hubCommit]
   // WHY：复用 cscli 解析依赖、校验固定 Hub 内容；不复制 collection 安装器。
   wsl([...cli, "collections", "install", "crowdsecurity/appsec-bot-challenge", "crowdsecurity/appsec-generic-rules", "crowdsecurity/appsec-virtual-patching", "crowdsecurity/traefik"])
-  wsl([...cli, "parsers", "install", "crowdsecurity/syslog-logs"])
+  wsl([...cli, "parsers", "install", "crowdsecurity/syslog-logs", "crowdsecurity/dateparse-enrich"])
   wsl([...cli, "parsers", "remove", "crowdsecurity/whitelists"])
   // WHY：已缓存 Hub 项目不会由 install 补齐数据集；官方 upgrade 会刷新已安装项目的数据。
   wsl([...cli, "hub", "upgrade"])
@@ -59,4 +67,30 @@ export async function prepare() {
   wsl([bin.crowdsec, "-c", `${base}/config/config.yaml`, "-t"])
   await writeFile(path.join(directory, "prepared.json"), JSON.stringify({ base, checkout, artifacts: items, at: new Date().toISOString() }, null, 2))
   console.log("Prepared pinned CrowdSec/Hub/Traefik. No Docker or system installation.")
+}
+
+export async function prepareEdgeArtifacts() {
+  const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string() }))
+    .parse(JSON.parse(await readFile(path.join(root, 'tools/antibot-lab/artifacts.json'), 'utf8')))
+  await Promise.all(items.filter(item => /^(haproxy|ja4-haproxy)-/.test(item.name)).map(artifact))
+  wsl(['dpkg-deb', '-x', linuxPath(path.join(directory, 'upstream/haproxy-3.2.9-ubuntu.deb')),
+    linuxPath(path.join(directory, 'runtime/haproxy'))], true)
+  wsl([binaries(linuxPath(directory)).haproxy, '-vv'], true)
+}
+
+export async function prepareH2Artifacts() {
+  wsl(['/usr/bin/python3', '-c', 'import sys; assert sys.version_info >= (3, 11), "h2_requires_python_3_11"'], true)
+  const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string() }))
+    .parse(JSON.parse(await readFile(path.join(root, 'tools/antibot-lab/artifacts.json'), 'utf8')))
+  await Promise.all(items.filter(item => /^(hypercorn|h2|hpack|hyperframe|h11|priority|wsproto|kitsune-h2)-/.test(item.name)).map(artifact))
+  const target = path.join(directory, 'runtime/h2-hints')
+  await mkdir(target, { recursive: true })
+  const source = await readFile(path.join(directory, 'upstream/kitsune-h2-f0a22b3.go'), 'utf8')
+  if (source.split('package fingerprint').length !== 2) throw Error('h2_upstream_package_changed')
+  await writeFile(path.join(target, 'h2.go'), source.replace('package fingerprint', 'package main'))
+  await cp(path.join(root, 'tools/antibot-lab/h2-fingerprint.go'), path.join(target, 'main.go'))
+  const base = linuxPath(target)
+  wsl(['go', 'build', '-o', `${base}/h2-hints`, `${base}/h2.go`, `${base}/main.go`], true)
+  await writeFile(path.join(directory, 'h2-online.json'), JSON.stringify({ prepared: true,
+    classifierSha256: createHash('sha256').update(await readFile(path.join(target, 'h2-hints'))).digest('hex') }))
 }

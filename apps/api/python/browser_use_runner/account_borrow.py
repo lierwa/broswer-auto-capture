@@ -1,16 +1,27 @@
-"""Borrow the original owner window; Playwright owns only its connection."""
+"""Borrow the original owner window through the compatible account driver."""
 import asyncio
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
-from playwright.async_api import async_playwright
+from patchright.async_api import async_playwright
 from browser_use_runner.attached_window import AttachedWindow
 from browser_use_runner.managed_window import ManagedWindow, _cdp_json
+from browser_use_runner.access_cooldown import guard, remember
+from browser_use_runner.task_access import borrow as borrow_admission, configured as admission_configured
 
 
 def accepts(url, origins):
     parts = urlsplit(url)
     return f'{parts.scheme}://{parts.netloc}' in origins
+
+
+async def navigate(page, url, **kwargs):
+    # WHY：打开账号页、检查、存储准备共用站点冷却；保留原Playwright等待/Response语义。
+    guard(url)
+    response = await page.goto(url, **kwargs)
+    if response is not None and not (isinstance(page, AccountPage) and page.response_admission):
+        remember(url, response.status, response.headers)
+    return response
 
 
 @asynccontextmanager
@@ -26,9 +37,10 @@ async def borrow_window(profile_path, owner_id, lease_id, kind):
     endpoint = (lease.cdpUrl if kind == 'daily' else
                 _cdp_json(lease.cdpPort, '/json/version')['webSocketDebuggerUrl'])
     playwright = await async_playwright().start()
-    session = None
+    session, admission, network_session = None, None, None
     try:
-        browser = await playwright.chromium.connect_over_cdp(endpoint, timeout=15000)
+        # WHY：借用既有页面不应开启焦点仿真/改下载；兼容驱动保留原no_defaults语义。
+        browser = await playwright.chromium.connect_over_cdp(endpoint, timeout=15000, no_defaults=True)
         owned = None
         for context in browser.contexts:
             for page in context.pages:
@@ -42,9 +54,15 @@ async def borrow_window(profile_path, owner_id, lease_id, kind):
                 break
         if owned is None:
             raise ValueError('account_owned_page_unavailable')
-        yield Borrowed(owned, session)
+        # WHY：handoff保留的SW不属于page Fetch；原浏览器级入口只用于已核验专属进程。
+        if kind != 'daily' and admission_configured():
+            network_session = await browser.new_browser_cdp_session()
+        admission = await borrow_admission(network_session or session, observe_responses=network_session is not None)
+        yield Borrowed(owned, session, response_admission=network_session is not None)
     finally:
         try:
+            if admission is not None: await admission.close()
+            if network_session is not None: await asyncio.wait_for(network_session.detach(), 5)
             if session is not None:
                 await asyncio.wait_for(session.detach(), 5)
         finally:
@@ -52,9 +70,24 @@ async def borrow_window(profile_path, owner_id, lease_id, kind):
             await asyncio.wait_for(playwright.stop(), 5)
 
 
+class AccountPage:
+    """Preserve Playwright main-world evaluation while reusing its locator APIs."""
+    def __init__(self, page, *, response_admission=False):
+        self.native = page
+        self.response_admission = response_admission
+
+    def __getattr__(self, name):
+        return getattr(self.native, name)
+
+    async def evaluate(self, expression, arg=None):
+        # WHY：账号Fetch/存储沿页面原CSP、全局对象及原生网络语义；不能悄悄切到隔离世界。
+        return await self.native.evaluate(expression, arg, isolated_context=False)
+
+
 class Borrowed:
-    def __init__(self, page, cdp):
-        self.page, self.cdp = page, cdp
+    def __init__(self, page, cdp, *, response_admission=False):
+        self.page, self.cdp = AccountPage(page, response_admission=response_admission), cdp
+        self.response_admission = response_admission
 
     async def cookies(self, urls):
         if not urls:
@@ -97,7 +130,7 @@ class CheckPage:
             self.observations['navigationSuppressed'] = True
             return None
         try:
-            response = await self.borrowed.page.goto(url, timeout=15000, wait_until='domcontentloaded')
+            response = await navigate(self.borrowed.page, url, timeout=15000, wait_until='domcontentloaded')
             if response and response.status >= 400:
                 self.observations['errors'].append('http_error')
             if not accepts(self.url, self.origins):

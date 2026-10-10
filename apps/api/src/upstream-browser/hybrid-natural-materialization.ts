@@ -8,6 +8,7 @@ import { jsonValueAtPath } from "./hybrid-json-path.js"
 import { assertSelectionValueBinding } from "./hybrid-selection.js"
 import { assertPriorBrowserContext } from "./hybrid-browser-context.js"
 import { boundReadSpecification } from "./hybrid-read-input.js"
+import { assertHostCollection } from "./hybrid-host-collection.js"
 
 type NaturalContext = { version: 2; request: z.infer<typeof hybridNaturalRequestSchema>;
   payload: ReturnType<typeof naturalPayloadContext> }
@@ -212,6 +213,11 @@ function assertNaturalNodeBinding(value: z.infer<typeof naturalBindingFactValueS
 export function assertNaturalReadSegment(segment: Extract<HybridSegment, { kind: "deterministic" }>,
   context: NaturalContext, compilation: HybridCompilation) {
   if (segment.operation.name !== "browser.read-fields") throw new Error("hybrid_natural_read_operation_mismatch")
+  if (segment.id.startsWith("collection-")) {
+    const host = assertHostCollection(context.request, compilation, context.payload.assertFact, segment.outputs[0]?.sourceRef ?? "")
+    if (host.nodeId !== segment.id) throw Error("hybrid_host_collection_binding_mismatch")
+    return
+  }
   const coverage = compilation.coverage.filter((item) => item.ownerSegmentId === segment.id && item.disposition === "compiled")
   if (coverage.length !== 1 || segment.outputs.length === 0
     || new Set(segment.outputs.map((item) => item.sourceRef)).size !== segment.outputs.length) {

@@ -2,6 +2,7 @@
 import asyncio
 import inspect
 from contextvars import ContextVar
+from functools import partial, wraps
 from importlib.metadata import version
 
 from browser_use.browser.session_manager import SessionManager
@@ -9,6 +10,7 @@ from browser_use.browser.session_manager import SessionManager
 from browser_use_runner.popup_resume import PopupResumeAdapter
 from browser_use_runner.connection_policy import disconnected_handler
 from browser_use_runner.target_events import TargetEvents
+from browser_use_runner.task_access import attach as attach_access, configured as access_configured
 
 
 class TargetScope:
@@ -23,6 +25,8 @@ class TargetScope:
         self.popup_adapters = []
         self.managers = set()
         self.storage_watchdogs = set()
+        self.related_sessions = {}
+        self.worker_passthrough = {}
         self.original_start = None
         self.start_wrapper = None
         self.prevent_reconnect, self.connection_lost = prevent_reconnect, False
@@ -70,6 +74,9 @@ class TargetScope:
         return original
 
     def accepts(self, info):
+        if info.get('type') == 'iframe':
+            return any(target == info.get('targetId') and owner in self.owned
+                       for target, owner, _parent in self.related_sessions.values())
         if info.get('type') not in ('page', 'tab'):
             return False
         target_id = info.get('targetId')
@@ -102,6 +109,8 @@ class TargetScope:
         if client is None:
             raise ValueError('hybrid_attached_window_cdp_unavailable')
         self._scope_enumeration(client)
+        self._scope_frames(client)
+        self._scope_frame_start(client)
         self._scope_dialogs(client, manager)
         self.disable_storage_sync()
         adapter = PopupResumeAdapter(self.browser)
@@ -109,8 +118,7 @@ class TargetScope:
         original_attached = manager._handle_target_attached
 
         async def attached(event):
-            if self.accepts(event.get('targetInfo', {})):
-                await original_attached(event)
+            await self._attach_owned(manager, original_attached, event)
 
         original_pages, original_recover = manager.get_all_page_targets, manager._recover_agent_focus
 
@@ -140,9 +148,91 @@ class TargetScope:
         self._replace(manager, '_handle_target_detached', self.target_events.detached(manager))
         self._replace(manager, '_get_session_for_target', self.target_events.session_lookup(manager))
 
+    async def _attach_owned(self, manager, original, event):
+        info = event.get('targetInfo', {})
+        sid = event.get('sessionId')
+        worker = self.worker_passthrough.get(sid)
+        if info.get('type') == 'worker' and worker and worker[0] == info.get('targetId'):
+            client = self.browser._cdp_client_root
+            try:
+                if event.get('waitingForDebugger'):
+                    await client.send.Runtime.runIfWaitingForDebugger(session_id=sid)
+            finally:
+                await client.send.Target.detachFromTarget(params={'sessionId': sid})
+                self.worker_passthrough.pop(sid, None)
+            return
+        if not self.accepts(info) or info.get('type') == 'iframe' and event.get('sessionId') not in self.related_sessions:
+            return
+        admit = info.get('type') == 'iframe' and self._frame_admission_required()
+        await original({**event, 'waitingForDebugger': False} if admit else event)
+        if not admit: return
+        session = next(item for item in manager.get_all_sessions_for_target(info['targetId'])
+                       if item.session_id == event['sessionId'])
+        client = self.browser._cdp_client_root
+        try:
+            # WHY：原SDK仅对顶层页开启Network监控；iframe响应仍交原持久退避器，不漏429/503。
+            await attach_access(self.browser, session, observe_responses=True)
+        except BaseException:
+            gate = getattr(client.send.Fetch, '_bat_access', None)
+            if gate: gate.failure = 'capture_access_state_unavailable'
+            raise
+        if event.get('waitingForDebugger'):
+            await client.send.Runtime.runIfWaitingForDebugger(session_id=session.session_id)
+
+    def _scope_frames(self, client):
+        for name, handler in [('attachedToTarget', self._frame_attached), ('detachedFromTarget', self._frame_detached)]:
+            original = getattr(client.register.Target, name)
+            def register(callback, native=original, dispatch=handler):
+                return native(partial(dispatch, callback))
+            self._replace(client.register.Target, name, register)
+
+    def _frame_admission_required(self):
+        return not getattr(self.browser, '_bat_managed_profile', False) and access_configured()
+
+    def _scope_frame_start(self, client):
+        original = client.send.Target.setAutoAttach
+        async def auto_attach(params=None, session_id=None, **kwargs):
+            if (params and params.get('autoAttach') and session_id in self.related_sessions
+                    and self._frame_admission_required()):
+                # WHY：Chromium先通知renderer暂停普通Worker，再做filter；排除Worker会无session可恢复。
+                # 显式接收本任务普通worker后立即resume/detach；不纳入SDK或共享SW归属，iframe仍等准入。
+                params = {**params, 'waitForDebuggerOnStart': True,
+                          'filter': [{'type': 'iframe'}, {'type': 'worker'}, {'exclude': True}]}
+            return await original(params=params, session_id=session_id, **kwargs)
+        self._replace(client.send.Target, 'setAutoAttach', auto_attach)
+
+    def _frame_attached(self, callback, event, session_id=None):
+        info, sid = event.get('targetInfo', {}), event.get('sessionId')
+        target, owner = info.get('targetId'), None
+        parent = self.related_sessions.get(session_id)
+        if (info.get('type') == 'worker' and sid and target and parent and parent[1] in self.owned
+                and self._frame_admission_required()):
+            self.worker_passthrough[sid] = (target, session_id)
+        if info.get('type') == 'iframe':
+            if parent: owner = parent[1]
+        elif self.accepts(info):
+            owner = target
+        # WHY：父CDP session才是任务内框架的归属证据；URL/同Profile或共享worker关联不能授予所有权。
+        if sid and target and owner in self.owned:
+            self.related_sessions[sid] = (target, owner, session_id)
+        return callback(event, session_id)
+
+    def _frame_detached(self, callback, event, session_id=None):
+        removed = {event.get('sessionId')}
+        while True:
+            descendants = {sid for sid, (_target, _owner, parent) in self.related_sessions.items()
+                           if parent in removed and sid not in removed}
+            if not descendants: break
+            removed.update(descendants)
+        for sid in removed: self.related_sessions.pop(sid, None)
+        for sid, (_target, parent) in list(self.worker_passthrough.items()):
+            if sid in removed or parent in removed: self.worker_passthrough.pop(sid, None)
+        return callback(event, session_id)
+
     def _scope_enumeration(self, client):
         original = client.send.Target.getTargets
 
+        @wraps(original)
         async def get_targets(*args, **kwargs):
             result = await original(*args, **kwargs)
             return {**result, 'targetInfos': self._select(result.get('targetInfos', []))}
@@ -155,7 +245,7 @@ class TargetScope:
         def register(callback):
             async def owned_dialog(event, session_id=None):
                 target_id = manager.get_target_id_from_session_id(session_id) if session_id else None
-                if target_id not in self.owned:
+                if target_id not in self.owned and session_id not in self.related_sessions:
                     return
                 result = callback(event, session_id)
                 if inspect.isawaitable(result):
@@ -219,6 +309,8 @@ class TargetScope:
         except TimeoutError as error:
             raise ValueError('hybrid_attached_window_connection_cleanup_required') from error
         self.owned.clear()
+        self.related_sessions.clear()
+        self.worker_passthrough.clear()
         self.prepare_targets = None
         self.on_owned = lambda _target_id: None
         self.clear_operation_state()
@@ -241,6 +333,8 @@ class TargetScope:
             watchdog._stopping = True
 
     def close(self):
+        self.related_sessions.clear()
+        self.worker_passthrough.clear()
         if getattr(self.browser, '_bat_target_events', None) is self.target_events.events:
             if self.previous_events is None:
                 object.__delattr__(self.browser, '_bat_target_events')

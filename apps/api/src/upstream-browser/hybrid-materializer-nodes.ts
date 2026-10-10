@@ -125,6 +125,7 @@ function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }
   if (inheritedRead) bindings.record = { source: "input", path: [] }
   const contextOutput = context.version === 2 && assertBrowserContextOutput(segment, context.request, context.payload)
   const config = operation.name === "browser.read-fields" ? { specification: operation.specification,
+    ...(segment.id.startsWith("collection-") ? { requiredPaths: [[0]] } : {}),
     ...(bindings.take ? { readTakeInput: "take" } : {}),
     ...(readScope ? { scope: readScope } : {}), ...runtimeConfig }
     : { actionName: operation.actionName, target, postconditions: segment.postconditions,

@@ -73,6 +73,27 @@ class HumanWaitControl:
             raise ValueError('hybrid_human_resume_not_confirmed')
         pending['event'].set()
 
+    async def wait_for_confirmation(self, collector):
+        pending = self.pending
+        if pending is None:
+            raise ValueError('hybrid_human_wait_not_pending')
+        audit = getattr(collector, 'dispatch_audit', None)
+        if audit is not None and audit.event_capture is not None:
+            # WHY：人工事件不能混入自动动作；恢复仍用原控制会话和宿主确认，不新增等待引擎。
+            await audit.event_capture.close()
+        params = pending['params'].model_dump(mode='json')
+        url = urlsplit(pending['before']['url'])
+        self.publish({'id': pending['id'], 'reason': params['reason'], 'prompt': params['prompt'],
+                      'origin': url.scheme + '://' + url.netloc})
+        # 等待仍位于原Agent on_step_end中，在原生step_timeout之外。
+        await pending['event'].wait()
+        current = await self.identity()
+        if (current['sessionId'] != pending['after']['sessionId']
+                or current['tabId'] != pending['after']['tabId']
+                or (isinstance(pending['params'], HumanWaitParams) and current != pending['after'])):
+            raise ValueError('hybrid_human_resume_state_changed')
+        return current
+
     async def finish_step(self, agent, collector, after_step):
         pending = self.pending
         if pending is None:
@@ -84,21 +105,8 @@ class HumanWaitControl:
                 raise ValueError('hybrid_human_capture_mismatch')
             collector.align_pending(agent.history)
             action_ref = collector.pending['actionId']
-            audit = getattr(collector, 'dispatch_audit', None)
-            if audit is not None and audit.event_capture is not None:
-                # WHY：人工键盘事件不能成为自动动作证据；释放既有监听器，下一自动动作再按原入口安装。
-                await audit.event_capture.close()
-            url = urlsplit(pending['before']['url'])
-            self.publish({'id': pending['id'], 'reason': params['reason'], 'prompt': params['prompt'],
-                          'origin': url.scheme + '://' + url.netloc})
-            # WHY：等待在 Agent 的 on_step_end 中，位于原生 step_timeout 外；模型不能自行确认。
-            await pending['event'].wait()
-            current = await self.identity()
+            current = await self.wait_for_confirmation(collector)
             legacy = isinstance(pending['params'], HumanWaitParams)
-            if (current['sessionId'] != pending['after']['sessionId']
-                    or current['tabId'] != pending['after']['tabId']
-                    or (legacy and current != pending['after'])):
-                raise ValueError('hybrid_human_resume_state_changed')
             await after_step(agent)
             if not collector.observations:
                 raise ValueError('hybrid_human_post_observation_missing')

@@ -8,6 +8,7 @@ sys.path.insert(0, str(ROOT / 'apps/api/python'))
 from browser_use_runner.managed_window import ManagedWindow
 from browser_use_runner.attached_window import AttachedWindow
 from browser_use_runner.account_borrow import borrow_window
+from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
 from playwright.async_api import async_playwright
 import psutil
 
@@ -37,7 +38,21 @@ async def dedicated():
         window.end(owner, allow_controlled=True)
 
 
-async def daily(probe=None, product_probe=None):
+async def daily_port(profile, process, configured):
+    async with asyncio.timeout(20):
+        while True:
+            assert process.returncode is None, 'owned_daily_chrome_exited'
+            if configured:
+                owner = psutil.Process(process.pid)
+                if any(c.status == psutil.CONN_LISTEN and c.laddr.ip == '127.0.0.1'
+                       and c.laddr.port == configured for c in owner.net_connections(kind='tcp')):
+                    return configured
+            elif (profile / 'DevToolsActivePort').exists():
+                return int((profile / 'DevToolsActivePort').read_text().splitlines()[0])
+            await asyncio.sleep(.1)
+
+
+async def daily(probe=None, product_probe=None, launch_args=(), *, headless=True):
     owner = str(uuid4())
     profile = OUTPUT / 'daily'
     profile.mkdir(exist_ok=True)
@@ -58,15 +73,14 @@ async def daily(probe=None, product_probe=None):
         ready = json.loads(await asyncio.wait_for(relay.stdout.readline(), 20))
         proof['dailyStage'] = 'chrome_launch'
         (profile / 'DevToolsActivePort').unlink(missing_ok=True)
-        process = await asyncio.create_subprocess_exec(binary, f'--user-data-dir={profile}',
-            '--headless=new', '--remote-debugging-port=0', '--no-first-run',
-            '--no-default-browser-check', '--enable-unsafe-extension-debugging', 'about:blank',
+        # WHY：可见模式对照不能继承headless/port=0产生的webdriver标记；原无头夹具保持默认。
+        configured = 0 if headless else LocalBrowserWatchdog._find_free_port()
+        visibility = ['--headless=new'] if headless else []
+        process = await asyncio.create_subprocess_exec(binary, f'--user-data-dir={profile}', *visibility,
+            f'--remote-debugging-port={configured}', '--remote-debugging-address=127.0.0.1', '--no-first-run',
+            '--no-default-browser-check', '--enable-unsafe-extension-debugging', *launch_args, 'about:blank',
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-        port_file = profile / 'DevToolsActivePort'
-        async with asyncio.timeout(20):
-            while not port_file.exists():
-                await asyncio.sleep(0.1)
-        port = int(port_file.read_text().splitlines()[0])
+        port = await daily_port(profile, process, configured)
         proof['dailyStage'] = 'native_connect'
         async with async_playwright() as pw:
             client = await pw.chromium.connect_over_cdp(f'http://127.0.0.1:{port}')

@@ -1,6 +1,1125 @@
 # 技术调研与复用结论
 
-## 2026-10-08 当前冻结：无 Docker 检测服务及底层控制对照
+## 2026-10-10 B03独立键盘联合判据窄校准
+
+最小在线适配已验：原FCaptcha输入函数与MIT许可按固定URL/SHA登记artifacts；cadence.ts仅做无内容输入形状/有效性与原API适配，均值/方差来自实测时序。原FormAnalyzer会拦截form.submit并按field id/name合并，本项目不复用其整个页面控制器；在现有collector中仅给当前textarea焦点段配对原生时刻，标识仅内存、100键窗口、失焦错误/缺keyup/重复/IME/粘贴保留无效或排除。原整页paste排除在换字段后仍保留。device-1y96mqod六在线控制/业务7与device-73vyfl72容量/恢复边界通过，详见PROGRESS；不把规则的独立正常校准外推为一般行为模型。
+
+此前FCaptcha14个脚本persona不能证明真人误报，但不因此否定每个原函数。复用本地MIT固定56aa2b38b8a5b7333cc7bf7d179a9e14538b2c5b的server-node/inputforensics.js导出checkTypingCadence（SHA256 28c90a5d442eb3a1db5d7922129c7369fe998ae66b6554a087e0ac68de002d32），不启动其服务/下载依赖或改阈值。CMU原DD/H每条11键，51人/408session/20400条、零误报；原快速联合控制触发，粘贴/缺hold/正常hold/慢节奏不触发。d10-fcaptcha-cadence.json保存匿名分组分母、源码/原CSV摘要；缺hold仍须标不可测，不把原函数空数组当阴性。这只验证键盘子规则，B02一般鼠标/行为分类未解决，尚未接在线采集；不拼接独立session满足另一个20键模型的门。
+
+新论文[arXiv2607.26935v1](https://arxiv.org/html/2607.26935v1)说明真实agent与CAPTCHA正常来源、合成bot及事件级特征，作者明确跨控制框架泛化未实测。现有B-A-T已不等于其缺路径点击基线；论文数字不能作为本项目接受率。正文未提供可直接加载的固定模型/实现入口，继续查公开制品；不复刻9401模型搜索、不把异源采样频率当已校准人机规则。
+
+## 2026-10-10 E04重复采样的原告警归属
+
+随后有效性复核：原worker/index.ts:378/382对硬件字段的truthy前置不满足时不运行比较；原adapter以非null作已测，在实际Worker零值控制device-uhxawevt误报clear。仅对齐这两原前置条件，device-xj1ckgem两个不可测/正常恢复与HTTP入库通过。原四条件、版本和阈值不变，不将此子项外推到原语言例外。最后检索的DELBOT/BeCAPTCHA/Lightweight候选仍是已有否决或输入/授权未闭合的实现，没有新的有效模型可直接替换，未重复下载/运行。
+
+固定CreepJS10aa6724的lieRecords是模块累计数组，原worker-client用includes读整个历史，真实同文档恢复后仍假报platform矛盾（device-t93wuxdm）。复用既有哈希锁定workerOptions构建适配：原四比较的documentLie仍执行，同时产生函数局部comparisonLies回执；不改原条件、清历史、重写检测或增加调度器。在线client只读本次回执，缺回执为error。修后device-stlv5a1q三采样及原HTTP入库、device-rzg9ltxb真实交叠Worker/不可用再恢复通过；构建源版本和最小事件适配SHA保存在原manifest。原源文件没有编辑，语言正常切换例外不在本修复中关闭。
+
+## 2026-10-10 B01增强颜色原生入口
+
+固定[Chrome154原ColorPicker](https://github.com/chromium/chromium/blob/154.0.8037.98/third_party/blink/renderer/core/html/forms/resources/color_picker.js#L1937)的HEX字段支持8位透明度，原FormatToggler用ArrowUp切格式。复用当前ColorWell的AX子树、原DOM.focus/CDP char，既不复制CSS解析器，也不把整数百分比alpha slider当精确128/255。实际Blink增强仅在owned验收Profile显式开启，产品启动不增flag。HEX6/8无损输入已通过；非HEX CSS/P3仍原保真兼容，并修复Watchdog真实blur提交。原ColorPicker输出srgb，无公开原生P3通道入口，不能把压成sRGB的值说成P3正确。
+
+iframe首败来源得到[固定InspectorAccessibilityAgent](https://github.com/chromium/chromium/blob/154.0.8037.98/third_party/blink/renderer/modules/accessibility/inspector_accessibility_agent.cc#L199)及运行双证据：getFullAXTree未传frameId会用root；同源frame共用session并不意味着同一AX树。按目标backendNode祖先frameId取原树后，同源/OOPIF两入口及主frame正式联合通过。详细分母与首败见PROGRESS。
+
+## 2026-10-10 B01精细range复用与验收
+
+候选已完成最小真实验证并适配：device-v67zt93m四主frame与device-h0030y9a四frame/OOPIF样本、device-zr5pytjb真实取消/焦点变化、6新+10原边界、device-8aimoag3完整HTTPS普通动作采集/盾/业务7均通过。无需新增第三方包；Windows自带UIAutomationClient只承担原生RangeValuePattern，B-A-T只提供原租约/TargetScope证明、目标匹配和两阶段动作/结果校验。DOM实际值才是设值结果，UIA缓存可能滞后；native_range.py/.ps1不输出名称/输入/原错误，只有固定状态。只扩展owned可见窗口能力，其它模式保留原兼容路径；原回退限制不能从文档删除。
+
+## 2026-10-10 N06 JA4L后续源码核验
+
+纠正此前许可表述：FoxIO1.1明确包含个人/内部测试用途，不能仅因其不是BSD就认定本地校准不可复用；对外托管/商业化需另按原条款核验，不随盾独立化自动授权。固定c6469a7b0dbf8fe963810162429fbfd9d1acc4d5的LICENSE及原Zeek JA4L源码/摘要已存upstream/candidate-review/ja4l-c6469a7b。原实现输出TCP/应用时延、TTL和delta，没有给出能排除合法端点处理延迟的bot分类器；此前本地CPU延迟正常反例仍未解决。此轮只核源码，没有安装Zeek/重新捕获流量或修改线上阈值，N06判据仍未闭合，不能将已有测量冒称代理/机器人判定。
+
+此前“Chrome键盘1/100精度不可达”不能直接推出所有原生接口均不可达。固定[AXSlider源码](https://github.com/chromium/chromium/blob/154.0.8037.98/third_party/blink/renderer/modules/accessibility/ax_slider.cc#L74)覆盖原生range SetValue/input/change；固定[Windows原生入口](https://github.com/chromium/chromium/blob/154.0.8037.98/ui/accessibility/platform/ax_platform_node_win.cc#L3217)将IRangeValueProvider的double传入既有kSetValue。复用[Windows公开RangeValuePattern.SetValue](https://learn.microsoft.com/en-us/dotnet/api/system.windows.automation.rangevaluepattern.setvalue?view=windowsdesktop-9.0)先做独占窗口小样本；文档明确控件可能规范化值，必须核实际值和原生事件，不能凭接口签名宣称成功。尚未接入产品/新增依赖；精确目标/owner、焦点和取消边界均须另验。
+
+## 2026-10-10 V06 在线collector截止与独立测量
+
+复用原collector的15秒Promise.race及固定BotD2.0.0/CreepJS10aa6724，不改变检测规则。真实业务`device-oken5jnl`在collector已加载且高熵UA调用1次挂起时，三组环境探针均未启动；前两个原型注入影响挑战页的结果不作为此证据。适配把UA/BotD/worker/WebGL独立启动，UA及BotD有界等待，各自保留error/timeout；客户端高熵有效性是可选协议字段，非measured必须null，迟到返回不得重新覆盖已结算状态。上游BotD [notification_permissions.ts](https://github.com/fingerprintjs/BotD/blob/v2.0.0/src/sources/notification_permissions.ts)直接await permissions.query，因此另外验证此原采集挂起和模块加载失败；没有请求权限/采集私有资料。现有对象探针可能观察测试注入，控制必须按具体规则区分，不拿对象替换告警冒充其它检测。修后`device-xvqxowcx`三项通过；7项协议/identity与定点TS通过，迟到/其它失败及正式链联合验收继续，结果见PROGRESS。
+
+## 2026-10-10 D6移动后坐标过期修复
+
+固定[B-U Actor源码](https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/actor/element.py)的click在移动前计算坐标，Watchdog同序；新增真实布局反例`capture-o4onzk5y`确认Actor和正式ordinary均在目标移动后点击旧位置，ACK齐全、trusted click落到目标外、业务未执行。该反例第一次移动没有生成多段轨迹，因此不能说只由ghost-cursor引起；附加轨迹仅扩大该间隔。
+
+复用原Element.hover在原点击计算几何之前完成移动，最终原click使用任务局部ContextVar保留上游原移动时序；两入口共用薄适配，不复制几何/遮挡/按下/释放或原回退，不重发已点击动作。8项原指针及新取消/参数/任务隔离验证通过，`capture-_ibc4gyu`两个实际入口均一次点击新中心且业务成功、原input/Shadow/iframe/OOPIF/导航/采集/CDP探针及释放通过。第一次修后布局已通过，但旧夹具查询已销毁iframe报-32001，`capture-qsziupx1`保留；只修测试按当前frame target核活动监听。三个Profile永久删除。连续运动/恶意每次移入移位仍非绝对稳定保证；历史3isei3ss/9jri6mtt缺当次坐标，不能追认这就是其根因。
+
+## 2026-10-10 D2固定denseMatrix的窄筛选
+
+实测`d10-dense-canary-result.json`：原6个human有3个被原0.2阈值误报；bot2可测命中/2不足，空输入不足。按运行前门拒绝，不再扩到47人或在线B-A-T，不把原训练canary当独立效度。运行不到一秒，无训练/调参；锁文件依赖只在owned ignored runtime，校验精确绝对路径后永久删除（d10-dense-runtime-cleanup.json），原制品和报告保留。
+
+Reuse Assessment: capability=一般鼠标行为候选判别；existing=已归档DELBOT1.3.3/TF.js4.0.0及固定712a00ea994738b680b0b11bb4b518979385d07b源码/原制品；selected=candidate-only denseMatrix（不是已失败的convolutional）；public surface=TensorFlowModel/DataMovementMatrix/Recorder.isHuman，原像素/原0.2阈值。MIT根许可证与npm Apache字段差异继续保留，两者源码证据不改；纯JS临时运行，Windows、无浏览器/产品状态/模型调用冲突。只适配本地固定制品载入，不写模型/特征算法。预定门：10条原canary只作管线否决、不当独立准确率；任一可测human误报即停止，后续独立47人及各类bot既定门不放宽。旧失败模型不重跑、不调阈值、B-A-T不参与选型或训练。
+
+## 2026-10-10 D6正常事件委托造成假缺失
+
+原document捕获监听晚于页面既有委托，后者可以先完成业务并调用stopImmediatePropagation。真实Chrome组件首败`capture-3n7jxb8q`确认业务完成、采集missing/0，不能把这种采集缺失等同没有派发。复用[WHATWG DOM事件路径](https://dom.spec.whatwg.org/#concept-event-dispatch)，只把既有隔离世界监听/解绑移动到window capture，原生事件内容/目标验证/浏览器派发均保留，captureBoundary如实为window_capture。没有覆盖页面函数或重新实现事件系统；更早的window阻断仍可能不可采集，不宣称绝对完备。
+
+`capture-80gvc5n8`原点击/输入/Shadow/iframe/OOPIF/导航/监听清理/固定fpscanner CDP阴性通过；`capture-dlbtft9u`另补正式OrdinaryCapability委托点击验证通过，0模型，全部临时Profile永久删除。原12轮`combined-w_9poft8`仅说明当次未重现历史故障；这些新反例均不能追认为3isei3ss/9jri6mtt已定因。
+
+公开同类调查：[B-U #5469](https://github.com/browser-use/browser-use/issues/5469)报告Input成功而DOM无事件，但其routing修法在browser-harness CLI；本项目走固定Python SDK，不能用升级CLI结算。行为候选[Charweb](https://github.com/Sg-fit/Charweb)数据规模和未见bot类别召回不足、[cside说明](https://cside.com/blog/catching-bots-that-dont-want-to-be-caught)未公开判据/权重、[AegisNano](https://huggingface.co/anckursingh/aegis-nano/blob/main/README.md)所链源码当前404，均未安装或冻结；BeCAPTCHA申请限制与既有DELBOT输入核验复用旧记录。当前不把继续搜到宣传材料当分类器进展。
+
+## 2026-10-10 D6动作失败诊断丢失修复
+
+复用已有OrdinaryCapability/NativeEventCapture/event_target_error和Runner安全诊断契约，不替换B-U输入、等待、取消或错误语义。真实源码路径中complete成功后，dispatch抛错与Tools返回error两种分支丢弃采集结果；Runner仅捕获RuntimeError，另使TimeoutError/取消的派发统计缺失。最小离线原函数调用先复现，再经原AuthorRequestLoop输出口保护错误类型、计数和敏感文本边界；11项定点验证通过，首次与修复中暴露的第二缺口日志分别保留。LOCAL-CHANGES按原LF摘要更新两个自有适配文件。此修复只保留已有失败证据，不补造事件、不重试动作、不宣称历史零事件根因已定位。详见PROGRESS当前包。
+
+## 2026-10-10 D2新候选OpenSentinel源码筛选
+
+固定[de86cee82b11c92d2a9c8edb890b7b7bfaa7b2bf训练源码](https://github.com/Azanian-Eagle/OpenSentinel/blob/de86cee82b11c92d2a9c8edb890b7b7bfaa7b2bf/scripts/train_model.py)、LICENSE和实际Git树：MIT、最近提交2026-10-05，确有15916字节ONNX。训练“human”全部由五个特征区间独立均匀随机生成，bot亦由三个手造区间生成；随机划分后的合成测试准确率不能当真人/跨源校准。输入还要求同session鼠标与键盘两通道，现有独立鼠标样本不能无依据补造键盘值。源码/树与SHA保存reports/d10-opensentinel-source.json及d10-opensentinel。不安装其Rust服务/ONNX依赖、不执行或重训模型，不把“发现制品”升级成一般行为分类通过；当前仍无满足原误报<=1%、每类召回>=80%及输入契约的已验证候选。
+
+## 2026-10-10 E05/V06原异步探针的截止适配
+
+固定[CreepJS10aa6724音频实现](https://github.com/abrahamjuliot/creepjs/blob/10aa6724cd33a1015db1574211890518cd04f0cc/src/audio/index.ts)的getRenderedBuffer/hasFakeAudio只等待complete；原creep-entry顺序await会阻断之后的fonts/media。复用原算法，适配只用原生Promise.race/setTimeout为各模块加4000ms截止并在finally清计时器；timeout字段lied=null，不改变任何bot判据。底层原库没有取消接口，页面生命周期释放上下文，不能称超时已经取消采集。
+
+input-1dtqriin实际页面将OfflineAudioContext.startRendering保持pending，8秒后整probe仍无输出；input-a2s_ywt8修后四控制正常/挂起/缺API/恢复分别measured/timeout/unavailable/measured，五模块均有状态、fonts/media正常。所有Profile关闭/永久删除。原online webglIntegrity函数不变；Rollup固定构建的新SHA25c738c8b7533606916d5a4b3b18ee68b73c207f27ed16c7a02766def8264f23已由原readProbe摘要校验加载。初次未设BAT_RUN_OWNED_INPUT仅为测试入口错误、未创建浏览器，实际首败另存。
+
+## 2026-10-10 普通Worker暖恢复的Fetch协议边界
+
+公开检测`launch-xmemt5nr`暴露专属恢复失败；原owned浏览器上普通worker返回-32601，page/shared_worker可执行Fetch.enable。固定Chromium[33a59a99普通Worker](https://github.com/chromium/chromium/blob/33a59a9936447ff271246583d88c785ac04f14dd/content/browser/devtools/dedicated_worker_devtools_agent_host.cc)仅注册IO/Storage/Target/Network；[所属frame更新实现](https://github.com/chromium/chromium/blob/33a59a9936447ff271246583d88c785ac04f14dd/content/browser/devtools/render_frame_devtools_agent_host.cc#L1153)通过DedicatedWorkerHostsForDocument同时更新普通Worker的factory。源码快照不是本机Chrome精确构建，行为以本机实证为准。
+
+Reuse Assessment: capability=已拥有专属Profile恢复准入；existing=RequestGate/refresh_owned_factories；selected=原Chrome Target/Fetch及B-U0.13.8；adapter=只向有原生Fetch的page/iframe/service_worker/shared_worker发送空patterns更新；普通worker由所属frame更新，不吞协议错误、不创建第二个拦截器；license/runtime/state=原BSD/Windows、既有owned租约、0模型；validation=launch-slgmue3l复现首读成功但恢复失败，launch-iii6q3cm同worker恢复后8请求仅1个实际到达，累计2且7拒绝，原页面与Worker不刷新/不重建。
+
+日常启动暂停修复同时已由launch-wtikdgwi完整4183两模式三业务/37条检测对照、admission-6yq2qg50原iframe初始配额/429/click/release证明。公开静态23/交互26信号两模式均阴性；专属恢复首败另列，不重跑外站制造全绿。
+
+## 2026-10-10 日常扩展iframe启动暂停误伤普通Worker
+
+本轮可见Chrome154.0.8037.98实测：`launch-m_quzfvj`专属三业务通过而日常挑战不提交；`launch-73ikba4_`扫描器已完成；`launch-31lgvvut`5个原Worker零message/error/附着事件；原relay命令明确为waitForDebuggerOnStart=true、filter只包含iframe。仅诊断关闭iframe启动暂停后日常三业务/恢复通过。原规则、PoW难度与扫描器不改，不将诊断旁路算准入验收。
+
+[Chrome debugger官方接口](https://developer.chrome.com/docs/extensions/reference/api/debugger)提供父tab下flat子session。Chromium[固定修复86f02ace](https://chromium.googlesource.com/chromium/src/+/86f02acec0a7e06df10c197b97a1ea0666eb311b)记录filter排除worker却先暂停的同类死锁；[固定target_auto_attacher源码8b96632e](https://chromium.googlesource.com/chromium/src/+/8b96632ef93385dbf3039bb44b9447240102dbd9/content/browser/devtools/protocol/target_auto_attacher.cc)的RendererAutoAttacherBase先向renderer传wait标志，ChildWorkerCreated再DispatchAutoAttach。前者修复service/shared等路径不自动证明本机普通Worker路径已修；运行证据独立保存，不把源码快照冒称本机精确构建。
+
+复用现有TargetScope/B-U0.13.8/Chrome debugger，无新库。薄适配把普通worker加入当前owned父session的autoAttach过滤，仅接收本次附着事件→原Runtime.runIfWaitingForDebugger→Target.detachFromTarget；不加入页面owned集合或SDK目标池，不启用Worker Runtime/Fetch，不接管shared_worker/service_worker。iframe继续暂停到原准入就绪。验收必须包括原日常完整盾业务、iframe初始配额/429、外部父session和共享Worker拒绝、父session释放撤销待恢复权限；全量替代和历史点击根因分别结算。
+
+## 2026-10-10 共享SW主线源码补证（未解决，未扩大拦截）
+
+复用原15x6cgt6漏门、h3uhf2i6无关页误伤、qhexxnlq同URL四请求的运行证据，不重复浏览器实验。固定CDP源码`8033bef7599713ae32b8777386fcbd82a7e612ed`：[Fetch](https://github.com/ChromeDevTools/devtools-protocol/blob/8033bef7599713ae32b8777386fcbd82a7e612ed/pdl/domains/Fetch.pdl)、[Network](https://github.com/ChromeDevTools/devtools-protocol/blob/8033bef7599713ae32b8777386fcbd82a7e612ed/pdl/domains/Network.pdl)、[ServiceWorker](https://github.com/ChromeDevTools/devtools-protocol/blob/8033bef7599713ae32b8777386fcbd82a7e612ed/pdl/domains/ServiceWorker.pdl)。networkId能连接同一请求的协议事件；controlledClients是worker客户集合，不是每条请求的因果页面字段。实际worker记录中的loaderId为空、frame/initiator未区分两页面，与协议没有矛盾。
+
+固定[Chromium ServiceWorker.postMessage源码](https://github.com/chromium/chromium/blob/3cd4500069b0eaa3dd5da1c6b98ff2a718b22f3a/third_party/blink/renderer/modules/service_worker/service_worker.cc)没有发送方异步栈赋值。不能据此宣称所有浏览器实现都不可能；当前没有证明可复用的跨消息逐请求归属链。Playwright[官方SW路由说明](https://playwright.dev/docs/service-workers#network-events-and-routing)也把SW请求和Frame请求分开：透明转发的Frame请求不直接可路由，SW拥有的请求没有Frame API归属。Chrome [webRequest](https://developer.chrome.com/docs/extensions/reference/api/webRequest)的documentId可选、无相关标签时tabId为-1，未给出消息触发fetch的因果保证；没有因此增加扩展权限。
+
+原fixture只有message处理器，不含fetch处理器，结论限于已测message→fetch；不能把透明转发说明写成已做新的真实实验。当前不采用URL/时序猜归属，不把附着tab等同请求方，不扩大共享Profile拦截、不禁用SW、不替换用户选择的浏览器模式。静态补证保存在`work/antibot-service/reports/d8-mainline-source-audit.json`，含每文件SHA/commit/摘录；未新增依赖或产品实现。关闭条件仍为实际任务配额生效且同Profile无关页面不受损，当前未达到。
+
+## 2026-10-10 E05剩余字体有效性（实施前）
+
+固定CreepJS字体源码getPixelEmojis内部catch返回emojiSet=[]/pixelSizeSystemSum=0，当前适配当measured；getFontFaceLoadFonts的原Promise.allSettled永不settle时整probe卡住。复用现有固定SHA Rollup诊断插件/原函数，新增该次emoji catch状态及仅枚举等待的有限采集预算，采用标准Promise.race与finally clearTimeout；不修改字体清单、判断算法、浏览器API或bot阈值。超时只标本次字段timeout/partial/lied=null，emoji与其它模块继续保留；不重试、不宣称底层Promise可取消。独立真实页面先复现layout-error和pending，再校准原生/恢复与异常边界。只改实验测量出口，已校准在线webglIntegrity逻辑保持原算法，无产品模型调用、个人字体或音视频内容落盘。
+
+结果：input-q4xyyn1c实际复现emoji异常仍measured/false、FontFace.load永不settle令8秒外层诊断返回probe-pending；修复后input-8f7xtlpn八控制通过：原生、布局异常、永久pending、check/constructor/同步load异常、合法空清单、恢复。3秒枚举采集截止只将该组字段标timeout，emoji保留；emoji错误只影响其两字段和完整判定，枚举保留。bundle 05c0ab6a1aee2eb4b9655e50307853b3bf9529d759dadf27b137c23c1ff12630，原在线webglIntegrity函数未变；两浏览器关闭/Profile永久删除、0模型。首次命令遗漏测试环境gate发生在资源创建前，d4-font-remaining-first单列，不改gate。多硬件/整体模块无限等待的外层有效性仍不由本控制外推。
+
+## 2026-10-10 D3准入层新首败：已消失的拦截ID污染后续请求
+
+N06加载后H2完整入口9控制及独立解码通过；combined-xm_khvq1实际B-A-T在导航前ERR_BLOCKED_BY_CLIENT。sgp9t_pw被动栈定位Admission.decide→Fetch.continueRequest；再采原CDP固定错误字段确认-32602/Invalid InterceptionId.，随后self.failure把另一Document也拒绝。不归因RTT规则（未新增）、Windows权限或策略耗尽。插入探针安装步骤的t5huyu8j可到业务，只说明时序差异，不当修复。所有运行保留关闭/永久删除证据。
+
+Reuse Assessment:
+- capability: 已取消/失效的原生Fetch拦截与真正准入状态错误分离
+- existing implementation in repository: Admission调用原CDP continueRequest；所有异常目前均永久污染gate
+- mature candidates and pinned versions: browser-use0.13.8/cdp-use1.4.5；Playwright1.61.0 crNetworkManager.ts RouteImpl.continue/catchDisallowedErrors
+- selected implementation: 保留原SDK/单一Fetch责任方，沿成熟实现的已取消请求容错语义做更窄的协议边界适配
+- reused public surface: 原Fetch.continueRequest与CDP -32602 Invalid InterceptionId.；[固定源码](https://github.com/microsoft/playwright/blob/v1.61.0/packages/playwright-core/src/server/chromium/crNetworkManager.ts)
+- B-A-T-owned adapter and remaining gap: 仅原continueRequest送达阶段的准确错误记interception-gone，不重发/退款/放行新请求；准入检查、策略/存储错误及其它CDP错误仍原失败关闭；委托原责任方不更改
+- license/runtime/platform fit: 原库均保留，参考Apache-2.0实现的协议语义，不移植网络管理器
+- browser/runtime/state ownership conflicts: 无新浏览器/代理或全Profile接管；只处理原已拥有请求的发送结果
+- replay model calls: 0
+- rejected candidates and evidence: 统一吞RuntimeError或给每次导航加等待会掩盖真正错误；重发/改配额不符合原契约
+- focused validation: 首次失效ID后下一合法请求仍可继续，未知CDP/存储/策略错误不能变成成功；真实完整入口业务及异常盾控制
+
+Product Alignment:
+- natural-language task: 页面导航选择与表单提交中，已失效网络请求不能污染后续合法动作
+- reusable chain boundary: 原普通节点/原RequestGate不变
+- runtime inputs: 既有Fetch暂停请求和原生协议返回
+- dynamic task outputs: 页面实际读取、选择与提交结果
+- generic platform capability used: 原访问准入及错误生命周期映射
+- replay model calls: 0
+- site/task-specific code added: no
+
+实际验证：d3-admission-delivery-first四边界中失效ID后gate污染先失败，其余3过；修复后四项及原cancelled_admission通过。admission-ipm9qi78真实8并发、耗尽前2到达、缓存、重定向2到达、真实短到期、独立origin和坏策略零放行通过。combined-kdul8ku5导航已恢复、两次click均有原生事件，但原测试马上goto下一case，两个链接请求未到源站；补等待原URL提交后rcnw6e22三业务结果正确、异常标记/脚本输入和缺探针仍有效。随后旧断言把同批行为健康行当重复输入，修为仅检查本包单一input行。最终combined-7dsjtysf完整通过：三业务、34原生事件、12 TLS/H2记录、零协议误报、原异常仍命中，遥测并发202/400及重启后400、missing→timeout有效，0模型。origin由原验收流程重启；窗口关闭/Profile永久删除确认。不能将此夹具导航取消等同历史3isei3ss零事件根因。
+
+## 2026-10-10 D6完整链新首败：指纹采集等待AI可用性
+
+新诊断需要受影响链回归；为保留SaTblJ全部原证据，用原SQLite backup+manifest复制到新owned实验目录（不是Git worktree）。product-d6-counters-3DrRmg首次在collection-a-0003等待30秒后hybrid_read_fields_runtime_error，未到点击。源站记录只有初始挑战/两个脚本，无submit/业务opened。W24bS3给原scanner外层加只记完成状态的诊断仍复现；UCmXxO按固定原函数名投影7异步子项，只有ai=pending，媒体/键盘/高熵/WebGPU/Canvas/Worker完成；页面visible且focused。原3isei3ss/9jri6mtt点击首败仍是另一问题，不能混淆。
+
+CrowdSec909b515固定submodule为fpscanner c701505f1d755d24e2be99ad269283c79e3a0ee7。实际src/signals/ai.ts对非Opera依次await Summarizer.availability()和带language参数的availability，没有超时；上游ce79dc8（2026-07-02）只以Opera例外解决同类挂起，不能照抄成Chrome豁免。原库collectFingerprint用Promise.all，任何此类pending会卡整个挑战。公开Chrome文档说明availability只查状态、create才触发实例/下载，本轮没有调用create/模型。requestIdleCallback不存在，媒体不可见猜测也由当前测量排除；不以猜测归因用户切换窗口。
+
+独立ManagedWindow+原B-U的combined-1yizyjtm为scanner约2.8秒完成、3.9秒到业务；精简env对照f5t1x_4g也成功，排除环境裁剪。Profile路径125字符的k4r3_ghs成功；正式布局138字符的6c79kgnq挂起36秒。保留同样深Profile，仅Chrome TMP/TEMP/TMPDIR改为本次owned较短目录的pnukyewj于4.06秒进入业务，说明问题位于临时路径。w8740b7u原深临时目录再现，并记录Chrome154.0.8037.98 unzipper_impl的writing_assistance配置文件FILE_ERROR_NOT_FOUND；不是模型推理调用。Windows具体下层长度上限尚未独立证明，不把它归因权限。所有浏览器关闭/Profile永久删除；k4r3_ghs首次cleanup断言只支持浅目录，补精确路径核验后单独完成删除，未重跑业务。
+
+Product Alignment:
+- natural-language task: 动态目录选择与表单任务均需真实Chrome功能和稳定资源生命周期
+- reusable chain boundary: 原发布链/浏览器owner边界不变
+- runtime inputs: 原Profile、owner、宿主临时目录
+- dynamic task outputs: 原页面读取/选择/点击结果
+- generic platform capability used: 专属Chrome临时目录随浏览器而非Runner存活
+- replay model calls: 0
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 深工作目录下Chrome临时文件能力与handoff/恢复/收尾
+- existing implementation in repository: ManagedWindow把Chrome TEMP嵌在Profile下以免占用Runner临时目录；长路径已实测退化
+- mature candidates and pinned versions: Python现有tempfile.mkdtemp/shutil、原ManagedWindow owner/lease/psutil关闭核验；Chrome154.0.8037.98
+- selected implementation: 标准库原子创建短临时目录，路径写入原租约，沿原进程生命周期删除
+- reused public surface: tempfile.mkdtemp、shutil.rmtree；Node os.tmpdir只传宿主根，不继承Runner临时根
+- B-A-T-owned adapter and remaining gap: 增加临时目录归属标记/路径校验，handoff保留，确认进程关闭后删除；恢复及共享专属进程沿原lease迁移
+- license/runtime/platform fit: 标准库既有依赖，无新增浏览器控制器或系统配置
+- browser/runtime/state ownership conflicts: 不改Profile/日常浏览器/原Chrome参数；拒绝链接、异属目录，不做共享TEMP扫描或全局清理
+- replay model calls: 0
+- rejected candidates and evidence: 直接使用Runner TMP会破坏handoff；只缩项目文件名或Chrome AI豁免会掩盖通用缺口；8.3别名不保证卷启用
+- focused validation: 归属/未确认关闭/恢复和失败清理边界，真实深Profile冻结发布链，原handoff输入保持；盾不变
+
+修复后product-d6-temp-CQbajs四冻结变体通过（7/11/13及无合格99拒绝），普通0模型、11条H2正常、四execution清理confirmed、四Profile永久删除；d6-temp-handoff-real同session/tab跨Runner保留/恢复并确认TEMP最终不存在。7新边界（实际Windows junction拒绝，无skip）/7原策略/API check通过。test_window_replay首次8/11，3项daily旧夹具仍期待全局owner锁或依赖本机Chrome存在。按现有独立owner收据契约改夹具并显式模拟存活后9/11；余2项需要Browser.getVersion模拟，补齐后仅重跑inspect两项通过。d6-temp-replay-boundary、d7-window-replay-fixture-final、d7-window-replay-inspect-final保留各次结果；未改daily产品代码或隐去首败。原3isei3ss/9jri6mtt仍未定因。
+
+## 2026-10-10 E05内部采集异常诊断
+
+原fontEnumerationValidity只查API存在，不能看到原CreepJS内部catch。固定src/fonts/index.ts的getFontFaceLoadFonts在check、constructor或同步load抛错时直接返回[]；Promise.allSettled的缺字体拒绝则是合法空清单。既有夹具新增三异常+正常空清单/恢复先复现。最小适配复用原Rollup load插件模式，仅把局部catch是否发生作为该次fonts返回值的布尔诊断，原算法/列表/判据不动、不包装浏览器API；adapter把相应字段映射error/partial，保留emoji结果。锁定源文件SHA，源码变化拒绝构建；新增诊断不成为bot评分。无需新依赖/产品模型/个人字体日志，属于已授权E05测量错误边界。
+
+input-t37b30h0先复现三异常全部measured；适配后input-r9us7edk六控制通过，三异常error/partial、合法空列表与原生/恢复measured。两个owned Profile均永久删除，0模型；新bundle摘要f9636312，原源码仍ce2bcefd，构建回执记录适配摘要。WebGL原导出不变，没有扩大线上处置范围。
+
+## 2026-10-10 N06 RTT复用审计（未冻结）
+
+H3补证：rtt-quic-f8u5onls原quic-go0.55.0单请求200，但fc_rtt(us)=0、source=unavailable，首次断言错误地期待所有本地QUIC均正数。固定HAProxy源码quic_loss-t.h的srtt/rtt_var本身是整数毫秒，不能因导出us称微秒分辨率；原日志缺样本显示“-”而非HTTP响应夹具的空串。保持生产字段/分类不变，只在原测试发送器的标准net.PacketConn加20ms收包延迟（原quic.Transport、TLS和HTTP3不变），rtt-quic-lqt7u7f9实测24000us/11000us方差、direct-quic；TLS指标仍unavailable。两客户端退出、未创建浏览器/新服务，无网络系统设置变更；零值不当零耗时正常或机器人。该控制只校准字段和分辨率，不是公网/真实Chrome H3重测或代理判定。[固定quic-go公开Dial接口](https://github.com/quic-go/quic-go/blob/v0.55.0/client.go)。
+
+候选7780205e十控制rtt-native-a5jt8c5n已实测：TLS1.2/1.3冷连接及1.3恢复可测，TLS1.2恢复的原API返回-1/error，不补0；延迟客户端处理200ms也会令TLS值约201ms，而HTTP等待200ms不计入TLS。首跳值经TLV与内层回环值分开，缺TLV为空/unavailable。首轮s3gs1pxl误期待所有恢复可测；第二轮a5jt8c5n明确错误码后只复验已保存十条，不重发请求。miu1wkg2在构建未结束时误验证旧候选，未启动进程；配置f-string单括号语法首误也保留。两实际临时unit及4196/4197/4198均关闭，无浏览器/个人数据。
+
+N06被动字段已激活，rtt-activation-CASuwj保存旧binary/config/receipt与新摘要；维护脚本误用systemctl start已被--collect回收的临时unit，后续catch stop又遮蔽原错误。原lab start成功恢复edge9161/ready，其余四服务未停；d1-rtt-activation/recovery均保留，不记无首败。正式lab激活入口现保留校验rtt摘要、明确传候选能力，旧/首次/坏摘要边界与定点TS通过。h2-integrated-mm4ts75g原9控制/独立解码/来源与容量边界通过。没有新增CrowdSec RTT判bot规则。
+
+原BADPASS论文的50ms差值是其网络数据上的阈值，不得照搬成本站真人判定；本轮客户端处理延迟反例说明需要分开解释。CalcuLatency正式论文还用WebSocket/ICMP/0trace等层；censoredplanet/calculatency-code固定18b0248f无根LICENSE，公开树是评估/抖动数据，并非完整成品分类器；zerotrace-code固定3f511496为MPL-2.0的主动TCP路由测量器，不是本轮被动计时的替换。不部署主动公网测量、云或跨天；RTT公开判据/真实正常网络校准仍是未关闭子项。
+
+后续源码核验找到可直接复用的正式API：[OpenSSL3.5 SSL_get_handshake_rtt](https://docs.openssl.org/3.5/man3/SSL_get_handshake_rtt/)。现有HAProxy3.2.9实际编译/运行库均3.5.5，固定头文件含此函数；HAProxy固定ssl_sample.c没有导出它。其值含端点处理时间，不是纯网络传播。BYU候选ae6b3148的旧3.0.5补丁无单独LICENSE且已被正式API替代，不安装旧deb/重写计时。此前“未取得TLS计时”调查缺口由本条更新，判定和真实网络反例仍未关闭。
+
+Reuse Assessment:
+- capability: N06首跳传输RTT与原TLS握手RTT测量，不等同代理或bot判定
+- existing implementation in repository: 固定HAProxy扩展构建、原PROXY v2 TLV、OpenSSL3.5.5已存在
+- mature candidates and pinned versions: HAProxy3.2.9-1ubuntu2.2 GPL-2.0-or-later；OpenSSL3.5.5 Apache-2.0；既有artifact完整性锁
+- selected implementation: 原fc_rtt(us)/fc_rttvar(us)及SSL_get_handshake_rtt；先在独立候选进程校准，不提前激活
+- reused public surface: OpenSSL原计时/错误返回，HAProxy原sample和PROXY TLV
+- B-A-T-owned adapter and remaining gap: 只导出原值和可用性、传递首跳值；不另造计时器/网络解码器/分类引擎；判据/正常网络泛化仍待校准
+- license/runtime/platform fit: 沿用既有Windows客户端+WSL本地盾，无新增系统包或远程服务
+- browser/runtime/state ownership conflicts: 候选另用runtime子目录，原binary与五服务不变；临时user unit/回环端口均记录owner并finally关闭
+- replay model calls: 0
+- rejected candidates and evidence: 旧BYU补丁已被正式API替代；JA4L不套JA4许可；内层fc_rtt只代表回环转接不能当首跳
+- focused validation: TLS1.2/1.3冷/恢复、单纯HTTP等待反例、TLS客户端处理延迟、PROXY来源一致和缺失；只记录元数据，不落报文/Cookie/密钥
+
+现有HAProxy3.2.9可直接复用[fc_rtt(us)/fc_rttvar](https://docs.haproxy.org/3.2/configuration.html#7.3.3-fc_rtt)：TCP为内核RTT，QUIC为平滑RTT；不是TLS应用握手耗时。当前TLS端口前还有owned_hello TCP转接，直接在内层读TCP RTT会把回环代理当原客户端；需首跳取值并经已有PROXY TLV传递，不能先填报“已测”。[BADPASS原论文](https://www.eurecom.edu/publication/7056/download/sec-publi-7056.pdf)区分TCP/TLS RTT；当前未取得与此匹配、经正常CPU/网络变化校准的原TLS计时实现。单个RTT不能当真实地理/代理/bot证明。
+
+JA4L候选的[原实现/许可证](https://github.com/FoxIO-LLC/ja4/blob/main/LICENSE)属于FoxIO1.1，不能把JA4的BSD许可套到JA4L；当前不新增依赖或自写等价算法。已固定Kitsune f0a22b3 registry中没有可直接启用的通用RTT差异判据，宣传页不当源码证据。N06此项继续作为具体复用/校准缺口，不自动归入外部豁免；本次未改edge配置或重启服务。
+
+## 2026-10-10 D5/V04本地Privacy Pass协议验收前置
+
+真实issuer未配置只阻塞外部信任，不免除本地协议检查。本轮复用已下载官方0.9.0源码及RFC9577/9578；registry的gitHead确认为4edc0e2bf639a60142a3f809d38ce7bd5c6f8c9e。先在独立ignored协议依赖目录安装固定发行包（禁安装脚本），沿原Client/Issuer/Origin跑本地2048-bit RSA盲签及错误路径；没有Attester，不伪造设备证明，不调用fetchToken/远程issuer，不让实验token绕过原CrowdSec。
+
+Reuse Assessment:
+- capability: V04公开Privacy Pass本地发行与验证协议、错误边界
+- existing implementation in repository: 原web-bot-auth独立校准及PAT子资源401/403归因；Privacy Pass此前只有源码审计
+- mature candidates and pinned versions: Cloudflare privacypass-ts0.9.0 / 4edc0e2b；RFC9577/9578，官方原协议测试向量
+- selected implementation: 先候选校准官方发行包，未经最小样本不冻结生产选型
+- reused public surface: publicVerif.Client/Issuer/Origin、Token/TokenChallenge、原HTTP header编码
+- B-A-T-owned adapter and remaining gap: 仅实验编排和证据；原Origin.verify只验证签名，挑战/issuer绑定与一次消费需单独验证，不重写密码算法
+- license/runtime/platform fit: Apache-2.0，Node>=20，当前Windows Node；依赖lock/官方完整性核对
+- browser/runtime/state ownership conflicts: 本地进程内合成issuer，无浏览器/持久私钥/个人身份/远程网络验证
+- replay model calls: 0
+- rejected candidates and evidence: Web Bot Auth证明签名agent身份，不能替代Privacy Pass；真实签发/硬件信任不在合成样本中冒称
+- focused validation: 正常协议、错签名/密钥/nonce/digest/type/长度、重放与跨挑战；先保留原库实际结果，再决定是否需要薄边界适配
+
+private-token-tCqAF7实际盲签/headers往返与10错误控制通过；原库跨Origin/重复签名验证仍true，尾随token/challenge字节被忽略、空issuer可构造、非零byteOffset失败。这些不是完整Origin的验收通过。按[RFC9577 2.2.3](https://www.rfc-editor.org/rfc/rfc9577.html#section-2.2.3)在private-token-verifier.mjs添加应用边界：调用方固定issuer公钥/已签发challenge，长度先验、独立buffer、digest/keyID一致、原verify、原SQLite唯一约束消费回调。原crypto/编码没有复制或修改，不按客户端声明发现issuer，不新增信任根。
+
+private-token-binding-NuBy9F：13控制通过；有效签名错上下文、错issuer配置、nonce/key/digest/signature改动、超长/短/缺失/过期都拒绝，无效票不消费；有效offset可用且重放拒绝，SQLite重开连接后仍拒绝，8并发仅1接受，存储异常拒绝。只落hash、摘要和布尔状态，私钥/原token不落盘。现冻结官方库用于独立本地协议夹具及薄边界适配，通过原prepare-fixtures复制固定lock、禁安装脚本；没有在线路由或真实Attester，硬件/issuer信任仍未验，数据库重开不冒称完整服务重启。
+
+V04后续独立进程验收private-token-binding-9cXGhp：首个Node验签消费后退出，另一独立进程同票拒绝；八进程竞争另一张合法票仅1次成功，十进程全部退出且SQLite只存两个摘要。合成公钥/挑战/票据只经IPC；不重跑已过13控制，不当断电/分布式或真实issuer证明。入口沿原校准器--processes及private-token-process.mjs，未新增在线旁路。
+
+## 2026-10-10 D4/E05字体API缺失有效性（先复现）
+
+固定CreepJS10aa6724的src/fonts/index.ts:getFontFaceLoadFonts在FontFace或document.fonts.check不可用/抛错时内部catch返回[]，外层仍返回含emoji测量/lied=false的对象；现有creep-entry仅凭对象存在把整项及空fontFaceLoadFonts标measured。真实缺口是采集不可用被误记阴性，不是缺少真人概率模型。
+
+先在既有独立probe里删除本地页面FontFace能力复现，随后最小适配只读取原能力是否存在/读取是否抛错，并给字体枚举字段区分measured/unavailable/error；保留正常空数组、原emoji字段和所有原检测判据。复用固定CreepJS、原Rollup/noCheck、原owned-input启动/finally；不访问个人字体清单/音视频、没有新库/外发/模型调用，不扩冻结访客网站。验收为原生、FontFace缺失、document.fonts缺失、getter抛错、OfflineAudioContext缺失与恢复；缺失/错误不能标正常，同机控制不冒充多硬件。此项仅盾测量适配，不改变产品链路。
+
+实际首败input-dmz1osjc：no-fontface仍fonts.measured且lied=false。更早input-g_juv8c1为原Page.evaluate不支持async单参数箭头的测试格式错误，单列保留。修复后input-vptp3hlz七控制通过：原生/恢复/有效空清单measured，FontFace/FontFaceSet缺失字段unavailable，getter抛错error；部分测量父级partial且lied=null，emoji保留measured；OfflineAudioContext缺失仍unavailable。只修creep-entry能力映射、重建原bundle，未改原规则/在线WebGL导出/产品输入。三次owned浏览器关闭及Profile永久删除确认，0模型。未覆盖所有FontFace.load内部失败，也不称多设备校准或整个E05完成。
+
+## 2026-10-10 D2新增公开候选：先离线校准，不装入盾
+
+进一步静态核验：not-a-robot0.1.0发布源码SHA256 a3822a74fb62e51a48b8e05f687d3a4a545525a8bf59fe03d98dbdac92d55ce5实际MIT/Alpha，BotDetector默认CalibratedClassifierCV+RandomForest，score在未fit时抛错，发行38文件无预训练权重；不是新可直接运行的分类模型。未安装/拟合/调参，源码/许可/receipt在candidate-review/not-a-robot-0.1.0，不能把同一批旧数据重新拟合作新盲测。behaviorDNA固定4dd0ba0bf00036c7d490a4815d3f86270f9020c0完整树无LICENSE，权重为DVC引用；该游戏识别候选未接入、未下载DVC模型，不外推浏览器bot准确率。[发行来源](https://pypi.org/project/not-a-robot/0.1.0/)、[固定候选树](https://github.com/Lo1s/behaviorDNA/tree/4dd0ba0bf00036c7d490a4815d3f86270f9020c0)。
+
+后续只读筛选：BotSight固定5c09da65无LICENSE/预训练权重，需训练；Behavioral-Biometrics-Bot-Detection固定c48e77fd无LICENSE文件/权重，README宣称不当许可或验收。palisade固定440ed12f实际baseline.go只有请求量、序列间隙、导航类别、外部判定等粗规则，没有通用鼠标分类器；server AGPL3/sensor Apache2、Go1.27、六源码/许可及摘要留candidate-review/palisade-440ed12f。其新凭据/检测引擎会重复现有CrowdSec职责，不为B02引入整套系统。均未安装/运行，不以静态拒绝冒称算法校准。
+
+Mouse-BB-Team/Bot-Detection固定4438d8ccec1baaa22f3357213e6d52a62ff6d618（2020-12-24，MIT）实际inceptionV3.py仅ImageNet特征+新Dense层并调用fit，Git树无已训练人机模型；不是可直接使用的分类器。Lightweight固定618f2b35树内确有ONNX和PTH，但无LICENSE，原客户端明文human信任缺陷仍在；不将这次源码检查冒称模型已校准或下载安装到产品。
+
+新候选[bot-signal2.0.18](https://github.com/okasi/bot-signal/tree/5cda0e5fb6e39840b66d253321cdee2d9b03e757)最后提交2026-10-05，MIT，TypeScript；公开analyzeBehavioralSamples可独立消费保存轨迹，原analysis/scoring纯函数没有网络、浏览器或状态所有权。已核原源码、阈值/样本要求和collector；只下载固定六个源码/许可文件到ignored candidate-review，不运行其安装脚本、浏览器collector、服务/IP模块，不替换CrowdSec。它是固定加权启发式，不把score称真人概率，也不凭Star/README证明成熟。
+
+运行前固定：沿用原47人2776段AdSERP末500点及原adaptive非增强跨来源样本；不修时钟/插值/改变坐标，少于6点或非递增时钟独立记不可测。仅校准鼠标几何/时序子集，原数据没有isTrusted/movementX/screen等字段；统一禁用synthetic事件线索（isTrusted=true只是此离线控制条件，不是实际trusted证据），其它缺项不补造，点击/键盘/触屏空集。原0.55阈值、固定权重均不改；不训练，既有开发数据不是新盲测。先正常反例，再报告每类bot召回，沿原正常误报<=1%、每类>=80%门，仅满足也不能越过缺字段及在线校准门直接上线。新依据是原实现新增滑窗线性/快速跳跃组合，不重复失败RF/motion/DELBOT。
+
+behavior-bot-signal-xUHcww实际结果：AdSERP2772可测/4无效、跨源human203可测/1无效，均无误报；10类bot415可测全部漏检，23不足/1坏时钟分列。固定启发式在只有原数据x/y/t的条件下未过召回门，不能作为一般鼠标分类器接盾；也不外推该库含点击/键盘等其它输入的整套行为能力已经被否决。没有训练、调权重/阈值、追加模型或B-A-T浏览器试跑；六个源码文件和报告留ignored，未安装任何运行依赖。
+
+## 2026-10-10 D6输入未发送与超时取消的被动诊断缺口
+
+三份历史首败分别有页面零事件/无业务请求、普通链ordinary_event_target_unverified，但无当次Input发送/取消证据，无法凭后续四次成功定位根因。当前只有成功ACK计数；固定browser-use0.13.8的actor/element.py及default_action_watchdog.py分别吞掉1/3秒、3/5秒press/release TimeoutError。新假设为原超时取消与真正ACK后零事件需要分开，尚未认定历史首败由此引起。
+
+最小差异：在现有task_pointer的原Input调用处记录三种固定事件的attempted/cancelled/failed计数，并沿原Python→Zod→owner诊断文件保留本动作差值；不额外查询浏览器、不保存坐标/URL/正文、不改变时序/期限/异常/动作次数。Product Alignment：通用点击导航和表单任务；原普通动作边界；输入是原Input结果，动态输出仍为原业务结果；平台能力为原运行审计，普通0模型、网站特判no。Reuse Assessment：复用已固定B-U/CDP及原DiagnosticChannel/SourceLifecycleDiagnostics；只扩B-A-T诊断映射，不复制输入引擎/恢复器。最小验证保护取消与原错误传播、零重发、旧诊断兼容及敏感额外字段拒绝；模拟的取消不冒称重现历史浏览器首败。
+
+验证：5项pointer、2项原Runner失败通道、9项TS owner持久诊断均通过。API原check暴露既有盾测试引入.ts扩展但noEmit配置未允许的5条TS5097；显式同check加allowImportingTsExtensions通过。将该选项固化到API已有noEmit配置，兼容原tsx执行路径，不改盾源码/网页或发射产物。首次误用不存在的typecheck脚本也保留日志；必要检查以实际check为准。当前只关闭诊断缺口，历史缺点击根因仍未关闭，不据此宣布D6通过。
+
+## 2026-10-10 D3共享SW逐请求归属字段核验（未能恢复页面归属）
+
+真实缺口沿用15x6cgt6（SW冷暖8/8到达，页面2/4）与h3uhf2i6（拦共享SW误伤另一窗口2/2，释放后恢复）。现有RequestGate仅对owned专属Profile使用browser Fetch；daily page/iframe的TargetScope不能把关联SW视作独占。扩展BrowserModel把child session转给拥有debugger的tab，这只是调试传输归属，不是SW请求发起窗口。
+
+公开来源：[CDP Fetch原协议](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Fetch.pdl)、[Network原协议](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Network.pdl)、[Playwright SW路由说明](https://playwright.dev/docs/service-workers#network-events-and-routing)、[Chrome webRequest](https://developer.chrome.com/docs/extensions/reference/api/webRequest)，2026-10-10复核。Fetch有requestId/frameId/networkId/redirectedRequestId；Network有requestId/loaderId/documentURL/frameId/initiator；二者均未承诺message事件来源clientId。webRequest允许tabId=-1，initiator只是origin；不能凭API字段名认定能逐请求归属。
+
+本轮新假设：以networkId连接Fetch与Network后，原initiator/异步栈或frame是否仍带发消息窗口。最小差异只加所属apps/api/tests诊断，复用现有真实daily extension验收、两个owned窗口和原finally；两窗口向同一SW发送同一URL，按执行阶段留标签，标签不能作为产品判据。只保存本地合成请求的元数据，不记录Cookie/正文；分别记录动作、请求尝试/暂停和源站到达，直连夹具无网关，不能伪称网关计数。接受条件是可靠页面归属且无关窗口正常；若缺失，保留此项未完成并继续其它包，不引入时间/URL猜测，不全Profile拦截，不改SW/缓存/库/个人Profile。
+
+Reuse Assessment：复用browser-use0.13.8/cdp-use1.4.5、原Chrome扩展及已有测试启动/收尾；没有新增产品引擎、运行依赖或模型调用。此步仅协议边界诊断，不是新链路功能；没有修复结论前不扩产品能力声明。
+
+实际admission-qhexxnlq：任务窗口/另一窗口各1条message、各2个相同URL请求，四条均暂停后原样放行并到达源站；Fetch.networkId全部关联成功，但Fetch.frameId四条相同、Network.frameId均缺失、loaderId为空，documentURL与initiator调用栈仅sw.js且完全相同，没有message来源clientId。该公开字段关联假设被实际反例否决；序号或诊断phase只能说明测试安排，不能作为归属规则。继续保留D3未完成。可兼容路径仍是用户明确选择原受管独占Profile，不能静默替换daily；共享模式需浏览器提供因果归属或业务SW主动协作，当前通用公开接口不能由此证明支持任意自主请求。
+
+首轮admission-jorlpui0在建立观察前5秒超时：此前iframe修复已使原daily autoAttach过滤掉SW，不是请求被准入器阻断。后续只在owned诊断夹具内临时允许原CDP观察SW，产品scope不改；未因此重跑原冷暖泄漏试验。两轮daily窗口/测试进程沿原finally关闭，daily-profile-deleted.json确认永久删除；0模型，无个人Profile。诊断通过不称共享SW修复。
+
+## 2026-10-10 盾的访问者检测网站
+
+后续用户已纠正优先级：下述页面代码保留但暂停扩展；先完成原反爬主线并本地提交，再处理独立化及专业网站。该段仅记录已有页面的复用选择，不是当前继续做页面的指令。执行入口见PROGRESS及其2026-10-10交接链接。
+
+用户明确目标是独立真人/机器人检测网站和好看的结果反馈。参考https://deviceandbrowserinfo.com/are_you_a_bot_interactions的公开说明，邮箱/密码用于虚构交互测试，不是真实登录。现有origin首页只是创建夹具提示，overview是管理员表，不能视为已交付该网站。采用frontend-design技能，设计为浅暖色检测工作台、深色结果区、清晰状态和可展开证据；不增加前端框架或展示虚构概率。
+
+Reuse Assessment：BotD2.0.0、固定CreepJS及Kitsune/原identity函数、collector→ingest→CrowdSec已校准，全部保留；HTML原生表单/details和现有Node/Zod/SQLite用于界面与会话，无新依赖。自有代码只投影原检测行（类型/判据/有效性/结果）及本次事件计数，不传回IP、Cookie、账号、原始指纹或输入内容。独立观察入口沿现有4185的measurement路由，不改完整4183挑战/封禁；明示本次报告范围，尚未接入网络/长期关联的展示保持未覆盖。校准复用旧判据，仅新增报告边界和一次实际浏览器正常/异常/不可用及响应式检查；不把网页变绿当全部检测或矛能力验收。
+
+## 2026-10-09 D2输入节奏后的长文本预算兼容
+
+Product Alignment：通用长表单/编辑任务，复用原input动作与文本参数，最终控件值和框架状态不变，普通0模型、无网站特判。新增逐字等待必须覆盖长文本，不能只验邮箱/密码。固定B-U TypeTextEvent默认60秒、bubus原事件dispatcher在执行前取event_timeout；Agent原步骤180秒和产品运行预算是另外的上限。Reuse Assessment：仍由原B-U逐字输入和bubus调度/取消；仅在本Browser事件分派前，为未显式配置的TypeTextEvent默认预算加上本适配器最大附加等待（1.5秒×字符数）。显式event_timeout、TIMEOUT_TypeTextEvent环境配置及外层步骤/运行预算完全保留，不重发字符、不自动转粘贴、不扩通用调度器。用既有输入验收的315字符正常文本先记录原失败，再核同动作完整值/原生事件；边界保护显式超时和取消。
+
+实测input-pefb31cm在原60秒期限取消；input-s8euzfwh同315字符完整匹配，约78.95秒、1246条采集事件全部原生、0模型，原滚动/按键/锚点测量继续。d2-long-input-independent-review物理复核三份owned Profile关闭且永久删除。中间q1i_ivdb原输入返回成功，但测试把Python的True字符串与小写true比较而失败，改结构化JSON后通过，未因此改产品；2条预算/原bubus取消边界通过，首次model_construct跳过事件初始化与dict节点不合原serializer的夹具错误保留。不是外层180秒/任意长度文本全部已验，也未放宽用户配置的期限。
+
+## 2026-10-09 D7在线探针制品的启动校验
+
+真实缺口：lab readiness只验证端口、管理归属和首页200，不读在线CreepJS/Worker bundle；探针文件缺失或错版仍可能先报告ready，直到业务页加载才变error。复用现有bundle/manifest及Node crypto、Zod，把creep.ts与worker.ts重复的读取/摘要校验合并为同一适配，启动前及status核四个既有制品；不是新健康监控引擎，也不以制品齐全代替检测验收。不重建M0、不重装依赖、不重开浏览器；使用独立小目录校准缺失/损坏/错版/正常，然后只读当前制品与服务状态。motion-attestation分类器虽未采纳，其原collector仍由human.ts使用，因此保留该库，不能误删采集能力。
+
+实施结果：d7-probe-assets-boundary及d7-probe-assets-types通过，临时校准目录按归属永久删除。d7-probe-status实机五服务/制品/网络和地理来源可用；未重启常驻服务，新的HTTP读取校验随下次原origin启动加载，CLI start/status已直接使用本次代码。未把制品健康计作新的检测通过。差异检查曾错误关闭Git CRLF转换把整份既有文档报为行尾空格；恢复原配置后定点检查通过，未重写文档行尾。
+
+前一项d2-trace-calibration：固定Kitsune函数对47人2776段没有重复hash，复制/改时间的异常仍同hash；但12个静止采样仍返回hash，坐标低16位截断也允许不同形状同hash。原“运动下限/字节相同即必为回放”说明不能当成立，暂不接成封禁规则；未改线上盾或训练另一分类器。它不关闭B02的一般分类缺口。
+
+## 2026-10-09 D6公开交互输入修复及独立复核通过
+
+[DeviceAndBrowserInfo指纹页](https://deviceandbrowserinfo.com/are_you_a_bot)明示供bot测试；[交互页](https://deviceandbrowserinfo.com/are_you_a_bot_interactions)明示可提交任意虚构邮箱/密码，并增加CDP鼠标坐标、速度和交互判据。仅用owned临时可见Profile、原B-U/OrdinaryCapability各一次，不涉及真实登录；保存其公开命名布尔结果、测量有效性及资源收尾，不存原指纹或页面正文。复用既有ignored public-probe及原生命周期，不添加产品依赖/新浏览器驱动。它是第三方检测交叉核验，不替代本地校准或自然语言准备/发布。
+
+首轮public-probe-l1xz209c的独立指纹页有效返回isBot=false及22个公开信号false，实际保留原B-U控制连接。交互页邮箱/密码原生输入完成，但该页另有代理查询表单，验收脚本宽泛submit selector被原目标唯一性门拒绝，尚未提交；原首败保留。只将测试selector限定该站公开loginForm，再仅跑未完成的交互页，不重复指纹页，不修改产品定位或盾判据。
+
+实际交互public-probe-b45e_toe成功提交，但isBot=true且唯一阳性为suspiciousClientSideBehavior；superHumanSpeed、hasCDPMouseLeak及22个指纹项阴性。原B-U/OrdinaryCapability原生动作，0模型，两个窗口关闭/Profile永久删除。不能把动作成功当检测通过。公开device_info.min.js的collectAsyncInteractions采集字符修饰键、字段/提交点击位置、时序和querySelector调用栈；源码SHA256 cac11e743ba20871b499abab4a7a075c169f36efaa5287fc226ffa410405b677。固定B-U输入的char事件未传递keyDown的modifiers/code，可能造成真实键盘语义不一致；下一步仅被动观察原请求中的这些字段，不记录完整指纹/token，不盲目调整延迟或服务器判据。
+
+kgk9dwek被动测量确认typeAtCharacter=true、typeAtWithModifier=false、hasModifierKeyPressed=false；无字段点击、提交正中心也为实际采集事实，暂不推定哪个触发服务器规则。原本地React输入验收新增keypress不变量后，Actor/Watchdog的@/!均暴露修饰键丢失，d2-keypress-first保存首败。按[CDP正式Input协议](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Input.pdl)每条事件的modifiers默认0、code默认空，Chrome不会自动继承之前keyDown的参数。
+
+Product Alignment：通用表单填写/编辑任务；原input节点、文本输入和页面动态结果；普通0模型，无网站特判。Reuse Assessment：复用固定B-U 0.13.8原字符映射/顺序/清空/框架提交及原CDP dispatcher；只在同会话相邻keyDown→char间补缺失modifiers/code，不生成新按键、不复制键盘映射、不改时序/采集。明确给出的字段原样保留，keyUp/异常/取消清除待传递状态，跨会话隔离。关键不变量用原真实React两入口及换行/中文/替换回归，加无效/取消/显式覆盖边界验证；第三方判定再独立测一次，不能从协议修复推定检测已通过。
+
+后续修饰键本地修复已通过，公开3cnczxpj仍阳性。一次三组受控对照d6-public-behavior-factors：只增加每键120ms实际等待即全部阴性，只改变提交坐标仍阳性，两者组合阴性；未拦改站点采集/上报，原中心点击/无字段点击/页面栈仍存在。这支持修复打字节奏，不支持同时改点击几何或重写定位。CloakBrowser固定37d81bce9bc79159b9adf189119ae9ee63ae67e4的human模块已核源码：提供整体替代输入、随机错字/纠正及无CDP时脚本派发，与保留B-U和输入语义冲突，不引入另一引擎或二进制；其独立时序只依赖标准random/sleep。这里直接复用Python标准random.uniform与asyncio.sleep给原B-U可打印keyDown加120–200ms可取消间隔，导航/快捷键原样；不复制按键映射/事件循环、不伪造时间。CMU原数据204000个DD间隔四分位128.4/191.1/300.7ms支持数量级，未训练或把此区间称人类分布模型；保留原60秒输入事件超时，长文本逐字输入耗时会增长，不自动转粘贴或放宽运行预算。实际产品与外站需再验。
+
+上述窄均匀间隔仅为首版尝试：omqlmr6r仍阳性，不能从受控固定120ms通过推出它也通过。用户6mnui357在同B-U连接但无自动输入的独立窗口完成正常对照，全部阴性；邮箱/密码中位232/194ms，标准差535/351ms。只记无内容布尔/统计结果，Profile永久删除。替换窄均匀等待为标准库lognormvariate（mu=-1.655、sigma=.63，由独立CMU中位191.1ms和四分位跨度确定），保留右偏停顿并限额60–1500ms；这是输入节奏适配，不是训练检测器或声称完整真人分布。原CMU判据/盾阈值不动，再做原输入兼容与真实公开判定；若仍失败继续保留，不无界调参过此站。
+
+最终f58my_b7使用正式产品路径、没有测试侧按键等待/坐标偏移，isBot及全部25个具名信号阴性。邮箱/密码键间中位232/296ms，原中心点击、无字段点击和页面采集继续存在。input-d5gv6t3p原Actor/Watchdog中文/清空/替换/React/换行/number通过，4项隔离/显式参数/异常与取消边界通过；joint-calibration-BMK7jo复用此次实际键时刻，原Kitsune两判据均阴性、已有真人三段正常、固定快速/慢速异常仍检出，未改盾阈值。该统计线索不是普遍人机分类器，B02继续未关闭。
+
+独立4hnide0t去掉请求观察器、时序及坐标试验包装，正式输入/click再次全部阴性。原ignored public-probe迁移为apps/api/tests/antibot-public.acceptance.py并移除实验分支，只保留原生测量、显式真人模式及既有finally资源收尾；无新浏览器引擎。八个本轮Profile永久删除已物理复核，d2-public-input-independent-review保存前后/真人/资源结算；第四方检测模型未外推。
+
+## 2026-10-09 B02剩余公开候选源码筛查
+
+DELBOT既有失败已复核预处理：DataMovementMatrix的mayNormalize=false与原训练scale=1一致，模型输入是像素位移矩阵而非时间，标签由!isHuman.result正确转换；原canary也有6个人类样本中4个误报。d2-delbot-input-audit.json记录未发现接线错误，未重装或重跑该候选。Bot_tracker固定932d48ebe96b00b510aa32d4954cfa5425a2f288只交付README，无可运行实现/权重，不安装。下一小项只校准已固定Kitsune traceHash的跨会话重复轨迹；原32位坐标hash不认证真人、会有量化/碰撞/平凡轨迹问题，须先用已有47人2776轨迹及缺失/重复控制验证，再决定是否适配原CrowdSec，不先增加产品代码或另建分类器。
+
+本次只查源码与复用条件，没有安装、训练或另开浏览器。BotSight固定`5c09da65cba35199943a6c740edbf98e39c97f4e`的[train_rf.py](https://github.com/abdulmalik505/BotSight/blob/5c09da65cba35199943a6c740edbf98e39c97f4e/train_rf.py)把已计算角度熵重新赋零，时钟不齐直接填零，入口仍需训练而未交付模型；translator实际是SHAP文案而非README声称的特征提取。未达到本次直接复用成熟分类器的条件，不能把该README当改善证据。DualChannelBotDMM固定`98bb6b8d01102013bbaf061759161eeab6c2bac6`针对[社交账号内容/关系表示](https://github.com/JaydenDuan/DualChannelBotDMM/tree/98bb6b8d01102013bbaf061759161eeab6c2bac6)，不是鼠标轨迹分类，不接入本项。
+
+Lightweight-Mouse固定`618f2b3517b737478cce81452c188fc2b5190403`的[app_simple.py](https://github.com/Saksham-Lakhera/Lightweight-Bot-Detection-using-mouse-telemetry/blob/618f2b3517b737478cce81452c188fc2b5190403/app_simple.py)直接接受客户端两值及明文status=human Cookie；(0,0)即获human判定，不能采用为真人证明。这只否决该完整示例的可信边界，不代表其ONNX模型已做准确率验证；未下载安装或执行模型，许可证/独立正常校准亦未完成。不由这些筛查推断所有公开方案无效，一般行为分类仍未关闭；已有失败组合不重训、不改验收阈值。
+
+## 2026-10-09 D6准备阶段明确挑战恢复通过
+
+真实缺口：新的verification响应已在普通TaskRun恢复，但AuthorAccessControl原停止码不识别它，首测pswwk1g3实际1次导航/1次固定回复后以native_agent_run_failed结束，未进入人工等待；仅加停止码也会使真人可解决的挑战终止准备。复用刚通过的主文档分类、原HumanWaitControl request/resume/release、宿主同job人工等待和B-U on_step_end。只把原publish/等待/同session-tab核验提取为共享方法，供明确响应触发的等待调用；不伪造模型bat_request_human动作或编译证据，不增加模型调用、自动求解、动作重发或新状态机。原普通403/429等停止边界保留；无宿主人工通道时拒绝且保留原错误。在原resume应答前检查实际主文档状态；仍是挑战则拒绝确认并保留同一等待，用户处理完成后可再确认；release后再核一次防止状态已变化。不能把点击“继续”当解除证明。
+
+Product Alignment：自然语言网页采集/表单准备；复用链路边界为原探索导航/读取；输入为官方主文档挑战标记，输出为原探索结果；通用能力为原宿主人工等待；模型仍仅原Agent决策，响应分类不询问模型；网站任务特判no。Reuse Assessment：固定B-U on_step_end＋现有HumanWaitControl及TS人工恢复；自有改动仅适配自动识别的访问状态，原显式人工动作编译保持；验收用既有真实B-U本地HTTP夹具先复现，再验证同控制会话等待/确认后继续、未解除与无宿主拒绝、原显式人工协议。该本地确认夹具不冒充真人样本或外站准备发布验收。
+
+真实B-U验收ldkr1zh8及最终nmukraj6：第一次403暂停，夹具模拟确认后200，Agent继续下一次原导航200；同session/tab、3次固定本地模型回复、0外部模型调用、sourceGaps为空，均关闭并永久删除Profile。13项Python身份/拒绝/仍等待/原显式证据及2项TS宿主恢复边界通过；source校验摘要1ed8c397addd3a08e3998714e0fe2e7e4964947f689ea633e62fe26c139bb879。确认门单测首次复用了同一个异常实例，assertRaises清理旧traceback导致暂停协程清理，修为每次独立异常后通过，原失败日志保留；未因此改产品判据。
+
+## 2026-10-09 D6被动计数复跑与D3归属边界复核
+
+只执行一次不增加CDP读取的原冻结链回归：d6-passive-product四次7/11/13/无资格99正确，普通0模型，4个owned Profile永久删除；历史缺点击仍未复现，不当根因修复、不再重复。查到[上游类似报告](https://github.com/browser-use/browser-use/issues/5469)，但属于另一harness/macOS路径且没有稳定复现或修复，不能归因本机故障，未引入其JS点击/重附着后备。
+
+[Playwright官方Service Worker说明](https://playwright.dev/docs/service-workers#network-events-and-routing)确认SW发出的请求仅在context层可路由且没有frame归属，页面对应事件不能直接拦截；与15x6cgt6漏门和h3uhf2i6误伤证据一致。原Chrome扩展ServiceWorker域权限限制仍在。仅更换库不能证明逐请求归属，未新增第二驱动/全Profile接管/禁用SW，日常共享SW治理继续未完成；已有独占专属Profile冷暖/重启/借用恢复不重跑。
+
+## 2026-10-09 D6外站正式人工恢复通过
+
+用户已同意为这次正式TaskRun验收再完成一次人工验证。准备时发现原执行器将403统一映射blocked，不能进入已存在的verification/human_required检查点。按[Cloudflare正式响应协议](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/)仅识别主文档`cf-mitigated: challenge`，保留实际HTTP状态；无标记403仍拒绝、子资源/PAT不污染主文档、后续正常响应清除旧状态。复用原DocumentResponses、已有verification分类、ManagedWindow handoff和TaskChainRuntime恢复；不识别验证码内容或自动求解，不写特定测试站分支。Product Alignment：通用访问/表单的人工挑战恢复，输入为原响应元数据，动态输出为原任务结果，普通0模型。Reuse Assessment：官方挑战标记＋原运行/恢复能力，新增仅响应映射，不新建人工状态机；最小验证先保留原403误归类首败，再验证文档范围/解除/普通拒绝及真实同run恢复。
+
+实际`bat-human-wait-real-WNvXve`首次403归类verification，TaskRun保存observe检查点并交还原窗口。用户明确完成后，同一run恢复重新导航，原browser.read-fields读取到公开成功正文，completed、0模型、首败事件保留；owned窗口关闭及Profile永久删除。外站未做“尚未完成时再次挑战”请求，receipt的stillWaiting仅表示保存的检查点，不能算第二次外站恢复试验。该夹具走真实TaskChainRuntime/Runner/人工恢复，是正式运行协议验收；不冒称该外站完成过自然语言准备/发布。原本地401重复等待证据仍单列。首个分类失败见d6-challenge-classification-first.log；修复后文档范围Python、TS映射5项、API类型及本次实际恢复通过。
+
+## 2026-10-09 N06运行期GeoIP时效修复与验收
+
+查原sourceRules已用每事件TimeNow保护Tor名单，无需重做。GeoIP目前只有启动/报告检查，固定Hub的timezone_country评分hook没有运行期有效期条件；原EvaluateMismatches每请求继续查询已加载MMDB。复用原CrowdSec Expr TimeNow与完整Hub评分配置，只给这一依赖GeoIP的hook加真实构建截止；原5分、其它评分/阈值/挑战不变。生成配置覆盖owned配置别名，不编辑固定Hub源码，不新建刷新服务/定时引擎。期满表示地理测量不可用，现有报告继续显示stale，不当正常反例；来源刷新仍走原维护路径。最小验收：先保存原hook过期仍加5分；原Expr同进程短截止前后、同国正常、非Geo评分保留，再核实际配置加载。不等待35天，不用缩短测试声称真实长测已验。
+
+已验d1-geo-live-expiry-first/final：原Geo hook在截止后仍5分，新原Expr条件当前异常5/同国0/同进程短截止后0；actual生成配置校准同样通过。2项配置/来源边界确认除了该filter及注释，其余原Hub源码逐字不变；TS通过。原engine PID3011经归属/无长测核验后停止，配置-t通过，原start重新加载为5243，五服务ready；source SHA e5445319b2f281ea5cd9f5420fb6f953fadbebf2a190bd1510d6bf827df16bc8不变，当前真实截止2026-11-05T01:36:12Z。报告d1-geo-guard-activation/ready保存；不报热更新或35天通过。恢复时start只在engine停下时更新owned配置；active且需改动则明确拒绝，避免磁盘变更冒充已加载。
+
+## 2026-10-09 D3/D4最终框架验收与D6点击首败
+
+原扩展路径admission-4iy0c07g、专属路径admission-aaa781nh：iframe初始inline脚本4请求只有2次实际到达；429后下一请求源站零到达。同源/跨源原DOM和click、任务关闭清空池/归属、日常连接保留均通过，两个Profile永久删除。v18vutb9提前请求4次全到达及cc0ad8rx响应退避失效两次真实首败保留。原23连接、5归属/错误边界、2响应/取消回归通过；共享SW仍未覆盖，不扩大其所有权。
+
+冻结product-SaTblJ的无诊断正式复跑首次7成功、11报ordinary_event_target_unverified，源站确实没有selected；首败保存在reports/d6-frame-product-first-failure。仅通过已有RunnerLifecycle.runnerScript挂一次临时诊断后，7/11/13及无合格99四次原正式复跑正确、0模型，三次click原move/press/release均ACK且采集1个事件。诊断首个入口漏原TLS runner造成的导航失败单列d6-frame-diagnostic-tls-first；修为链接原runner/SPKI而非系统信任后通过。d6-frame-independent-review核4次状态及Profile永久删除。后续成功不是历史零事件根因修复，不能归因用户失焦；既有最小化/恢复combined-4wl6pb5r也已通过，不重测。
+
+Product Alignment:
+- natural-language task: 点击动态选中的候选，以及在表单中操作控件。
+- reusable chain boundary: 原普通动作派发与事件校验失败诊断。
+- runtime inputs: 原动作、原事件采集和既有CDP输入应答。
+- dynamic task outputs: 原业务结果不变；失败增加固定计数。
+- generic platform capability used: 现有Runner/DiagnosticChannel/Zod持久化。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment:
+- capability: 定位原生输入应答成功但事件缺失。
+- existing implementation in repository: task_pointer、verify_event_target、runtime_diagnostics与source-lifecycle-diagnostics。
+- mature candidates and pinned versions: 保留当前B-U原Input和既有原生采集，不新接控制库。
+- selected implementation: 原失败通道添加可选eventCapture状态/事件数/限制数及三类Input ACK计数。
+- reused public surface: 原异常、原DiagnosticChannel和严格Zod结构。
+- B-A-T-owned adapter and remaining gap: 只适配自身运行审计；不记录URL、文本、节点、输入值或限制详情，不添加动作/重试/等待。
+- license/runtime/platform fit: 原依赖不变，无新增包。
+- browser/runtime/state ownership conflicts: 无新会话；原失败类型、目标校验和生命周期不变。
+- replay model calls: 0。
+- rejected candidates and evidence: 不靠重发点击、抢焦点或JS事件掩盖首败。
+- focused validation: Python诊断2项、原pointer4项、TS诊断9项通过；API类型检查通过。首个新断言误把fixture的RuntimeError格式当详细reason，已修断言；首次tsc漏现有allowImportingTsExtensions参数，按既有参数重跑通过，未改无关导入。
+
+## 2026-10-09 D3框架首次请求准入首败与复用
+
+初步修复8ihbvius观察前请求2到达/2拒、rv9q682t初始inline脚本同样2到达/2拒；二者原DOM/click与释放池/保留连接通过。续测cc0ad8rx实际429后下一请求仍到达，定位原SDK只为page/tab开启Network监控、Runner也只接顶层响应；iframe以原Fetch Response stage交既有Admission.remember，不复制退避算法，不把HTTP响应再次计配额。此错误首败保留，修复后重测初始请求/退避/清理。
+
+admission-v18vutb9实际扩展路径：OOPIF被DOM观察前4请求全部到达，预算仅2；此前5_x4sv1w只验证观察后有效。复用原RequestGate/Fetch及固定B-U SessionManager，不增加控制器或配额引擎；原Chrome Target.setAutoAttach只对已拥有父session的iframe设置等待，SDK建立session后先启原准入器再恢复执行。共享Worker和无关页不暂停、不授予新所有权。默认原采集和现有顶层控制保留，独占Profile原browser级Fetch路径不改。验收必须包含初始脚本和观察前真实到达数、原DOM/click/清理及错误边界，不能仅测观察后。
+
+V04公开资料审计：Cloudflare明确PAT子请求401是可预期降级。d5-pat-status验证原Runner子资源401/403不改变主文档200、不设冷却，真正主文档401仍报authentication_required，产品不改。官方privacypass-ts0.9.0固定4edc0e2b源码已核，Apache-2.0/Node>=20；Origin.verify仅验原签名，不负责挑战绑定/重放/设备信任，不能直接当成完整盾。此次未安装依赖、未发令牌或外部请求；真实issuer/PAT信任仍未验。来源：https://developers.cloudflare.com/cloudflare-challenges/reference/private-access-tokens/ 、https://github.com/cloudflare/privacypass-ts/tree/4edc0e2bf639a60142a3f809d38ce7bd5c6f8c9e 。
+
+## 2026-10-09 D4跨源框架恢复验收
+
+父session归属薄适配后，原B-U DOM/ClickElementEvent在专属9207xv25与实际chrome.debugger扩展h9ycj574均发现并点击同源/跨源iframe按钮。8wiiwjql再证明关闭含OOPIF任务页后原release_operation清空SDK目标池、页/子session归属且连接仍存；不另造恢复引擎。原23连接复用、3归属/对话框边界通过。扩展53bpoc77首败属于测量器错误：扩展getTargets只枚举获准顶层页；改为独占测试Profile的原生只读getTargets核对OOPIF，未扩大产品枚举。全部owned Profile关闭并永久删除。
+
+## 2026-10-09 继续执行：点击投递边界与特殊颜色输入
+
+D3/B06：复用历史3isei3ss/9jri6mtt及原B-U eb412692的click。一次bounded会话combined-3r0i4nv9分别测正常冷flow、Chrome显式ignore-input控制、恢复与冷catalog，命令仅内存计时。三正常单次点击送达，ignore控制三命令均应答但页面零事件；原资源finally关闭并永久删除。该控制证明CDP ack不足以证明送达，不证明历史故障原因；未添加重试/抢焦点或修改产品点击。依据[Chromium InputInjector](https://github.com/chromium/chromium/blob/main/content/browser/devtools/protocol/input_handler.cc)：事件未排入队列也可sendSuccess。停止重复普通焦点检查，历史项继续未定位。
+
+D2/B01真实缺口：fill_color依据HTML属性存在就回退，未区分浏览器实际支持；空颜色值在旧控件实际规范化为黑色，但适配直接拒绝原生输入。旧五项首败/兼容证据input-s_lxi7za保留，原React夹具不改。input-skg2d4hn已验：actor/watchdog六项颜色值/React/提交/焦点正确、脚本事件0；原两个range回退保持值正确，owned Profile关闭并永久删除。真正增强颜色仍未测。
+
+大范围range改造已验：复用Chrome原thumb/track几何与原B-U Mouse.move/click作一次原生定位，再按实际值走原有键盘微调；不写拖拽/输入引擎，不放宽精确值或既有检测。input-pba8y3m0横向LTR/RTL、纵向和CSS缩放共八项actor/watchdog值/React/提交正确，每项一次原生click、零脚本事件。input-z2n4mk69九项旧特殊回退中八项原生化（六颜色、两range），超精细step=any的0.12345仍保留原兼容四脚本事件；Chrome键盘可达的0.12已原生化。原28项非文本兼容input-qo25sjm2通过。取消释放原按键、遮挡不点击两项边界通过。首次d2-range-native-first.log为误把B-U异步mouse属性当函数，修调用方式后才通过；没有重跑无关全量。
+
+复用固定[Chrome154 SliderThumbElement](https://github.com/chromium/chromium/blob/154.0.8037.98/third_party/blink/renderer/core/html/forms/slider_thumb_element.cc)位置/方向语义；适配只选坐标，值计算/钳位由Chrome负责。旋转/倾斜不套轴向公式，命中检查必须仍是目标控件。独立读取上述原报告确认8/8 native、9项中唯一精细回退、旧28项及四个Profile关闭/永久删除；最后result.json的旧字段nativeColors=8包括两range，生成端已改名nativeCases，原证据不覆写。真正alpha/P3增强和其它平台仍未验，不能按HTML属性存在假称已启用。
+
+B02离线数据契约审计d2-feature-contract-audit.json：复用原六特征、原训练/留出分组，无新模型、拟合或阈值修改。原56bot训练样本速度变异系数中位0.069/0.171，新独立bot为0.421–1.0；原submovement比例中位0.329/0.341，新bot约0.029–0.167，与human分布重叠。统一坐标缩放10倍/时间单位换算的最大特征变化0.004（浮点峰值比较），不是可解释417全漏检的千倍时钟错误。结论是当前训练域/特征不能支持跨来源分类，不能以重装候选或调整阈值消去首败；一般分类仍未关闭。
+
+D3下一具体调查：原daily chrome.debugger相关target是否包含共享SW、原page Fetch能否约束其自主请求。只用已有owned daily验收Profile/原服务器作边界诊断，保留非任务页正常请求。不能把Target父子通知解释为独占整个Profile，不能停用SW或把日常模式静默改为专属。原CrowdSec dump数据为诊断输出，当前固定源码未发现活动bucket跨进程restore；不把SIGHUP配置重载报作恢复。
+
+D3实测admission-15x6cgt6：相同2次/分钟预算下，原daily page Fetch使4次直接请求只有2次到达，但同SW冷/暖各4次全部到达，原related事件实际包含service_worker。admission-h3uhf2i6追加另一个窗口：向该关联SW启用Fetch拦截后，第二个窗口触发的两请求也被拦，释放拦截后两次恢复200。证明“相关target”不是可按页面隔离的准入边界；直接纳入原gate会影响共享该SW的其它正常页面，不能作为合格修复。两次有效报告均原finally关闭并永久删除Profile，0模型、未操作个人浏览器。shared-control首败35_87o13为诊断回调内部await CDP造成读循环等待，原60秒超时；外部释放同测试会话Fetch后原finally完成清理。改用原Admission已有的调度方式才完成共享对照，未修改产品准入/采集或启动参数。
+
+接续D2/B03：现有键盘判据只有本机一人反例，鼠标47人数据不能补键盘。选[CMU DSN2009公开基准](https://www.cs.cmu.edu/~keystroke/)51人、每人8session/400次测量，用其原DD键间间隔还原相对keydown时刻，秒转毫秒；只用于既有固定Kitsune判据离线正常反例，不训练/调阈值、不识别用户、不分发数据或复制生物认证算法。官网明确分享供研究复现，要求引用Killourhy/Maxion DSN2009；无通用开源许可证声明，数据只留ignored研究目录。Aalto136M有research/noncommercial条款且体积大，本次不下载。原始键名/文本不进入评测结果；公开历史跨session数据不替代本机真实跨天作业。
+
+B03结果d2-keyboard-independent.json：51人20400段全部可测，原30ms间隔与0.15熵阈值均零误报；固定快/慢自动节奏仍触发原相应判据。已核官方MD5，源SHA256 b11d23538b1865fa6ecf4e8b78567caa312e9c1027604bb022fcc6ad7eaa7a33。没有模型拟合、判据修改、新依赖或浏览器运行。固定文本正确输入不代替自由输入/IME/粘贴人群反例。
+
+B02补充公开候选复用评估：motion-attestation1.1.0/bea077b307e58d7a034a75fdaf84979f438cfdd7，MIT、Node>=18、纯ESM零运行依赖，mini公开analyze接受现有[x,y,ms]轨迹，无浏览器/状态/模型调用冲突；固定六运动特征与原0.55阈值，实际源码已读。只有4个公开提交，不能按README的27个内置正常样本认定成熟或一般有效；限一次既有独立47人正常集的离线否决检查，未安装包、不运行其服务/挑战/采集器、不采用nonce认证真人的说法。无法通过独立正常反例时不扩展到B-A-T或另开浏览器。首次GitHub API限流403改用公开git引用/codeload固定归档只提取源码与许可；不是工具策略拒绝。
+
+结果d2-motion-candidate.json：47人2776段中4坏时钟/1不足；2771可测真人866判bot、1905判human，不能采用为一般分类，停止该候选，不扩大浏览器实验。
+
+B02一次有变化的验证协议（运行前固定）：前次RF只训练56段两类bot，原数据契约审计已证明未覆盖新来源。复用同sklearn1.7.2 RandomForestClassifier(random_state=20261009,n_jobs=1,class_weight=balanced)、原六特征、原默认决策，不调参/阈值；加入公开非增强bot中的七类作训练，完整留出stealth/trace_conditioned/llm三类；AdSERP原37训练/10人592段留出保持不变，新来源human按原文件名SHA首字节奇偶整文件分组，不拆同文件segment。独立留出正常超过1%误报或三类任一低于80%识别即否决，不继续搜索；不足/坏时钟不计为正常通过。此次是已有公开数据上的预定开发验证，不能冒充新的盲测数据；不让B-A-T参加训练、不把候选分数作为产品验收。复用成熟估计器而非新建学习引擎，安装到本次独占ignored环境，结果和版本保留，结束撤下依赖。
+
+behavior-transfer-fixed结果：stealth40/40、trace_conditioned23/40、llm2/34识别；新来源human11/99误报，AdSERP原独立592和原39正常均零误报。两个预定门都失败，否决，不能用局部召回改善声称模型有效。原六特征/估计器组合没有解决一般行为分类，停止这一组合，不搜索阈值。d2-transfer-runtime-removed确认本次独占venv及cache永久删除；模型/来源/评测保留。首次uv默认C盘cache与D盘临时文件跨盘持久化失败，改为本次专属D盘cache后安装成功；非Windows权限或审批拒绝。
+
+B01复核首败input-7tuog1lu：新增range位置逻辑在真实Shadow DOM中值正确但回到脚本事件，原因是document.elementFromPoint返回host而非内部input。前两个启动/夹具错误分别为遗漏显式owned-input环境门、手工backend入口未先DOM.getDocument，未算产品失败。最小改动改用[原生DOM.getNodeForLocation](https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-getNodeForLocation)，同一整数坐标用于原生命中和原B-U鼠标，includeUserAgentShadowDOM=false只取控件而非其UA内部thumb。复用原Chrome命中/遮挡/frame实现，不自建Shadow选择器遍历；保留遮挡拒绝、取消释放与原fallback。验证范围仅本次range：Shadow/同源iframe两个容器、既有八几何条件和两异常边界，不重跑模型准备或全部输入。
+
+iframe续败4iu5l0gj/yo3b7i2h/vvoainh_实际原始geometry已定位：getNodeForLocation在[Chrome154 InspectorDOMAgent](https://github.com/chromium/chromium/blob/154.0.8037.98/third_party/blink/renderer/core/inspector/inspector_dom_agent.cc#L1741)按文档坐标处理，而Input/BoxModel为视口坐标。调用原Page.getLayoutMetrics把命中点加cssLayoutViewport.pageX/Y，鼠标仍用原视口点；不是放开遮挡检查。ej0b2br8两个真实嵌套场景通过后移除临时命中探针；最终input-zmyqfxqj八几何+Shadow+同源iframe十项全部原生、一次click、值正确；两边界包括滚动坐标/取消释放保持通过。原28项输入回归未无变化重跑，真实跨源OOPIF另审计。
+
+D4具体缺口调查：原固定B-U0.13.8 SessionManager的原attached处理负责iframe/session与递归autoAttach；现有TargetScope过滤仅page/tab，AttachedWindow显式关cross_origin_iframes，与原BrowserProfile默认true不同。先复用原admission owned Profile/本地HTTP入口做同源正常与跨源OOPIF对照，确认DOM发现和ClickElementEvent业务是否受损；不能用全Profile枚举放开个人页，也不另建iframe/浏览器引擎。若确有裁剪则保留原SDK实现，只修B-A-T的归属适配及配置。
+
+D4真实首败admission-16nuer9n：同源iframe按钮发现1并原生点击成功；跨源Chrome实际iframe target=1，原B-U开关true，但SDK iframe session=0、按钮发现0。l1jougc3是诊断Page.evaluate参数格式错误，非产品首败；两个owned Profile均按原finally关闭/永久删除。
+
+Product Alignment: natural-language task=处理内嵌认证表单或页面内嵌应用；reusable chain boundary=原浏览器DOM观察/普通click；runtime inputs=已获准任务页及框架；dynamic task outputs=框架内控件与动作结果；generic platform capability used=原B-U OOPIF/SessionManager；replay model calls=0；site/task-specific code added=no。
+
+Reuse Assessment: capability=恢复任务页内跨源iframe的原SDK能力；existing=TargetScope、原SessionManager与Chrome扁平related事件；selected=依据已批准父session的原生attached事件识别派生iframe，再交原SDK递归autoAttach/DOM/动作，不复制frame树、连接、选择器或恢复引擎。B-A-T只保存活动session的父关系用于归属，iframe不写入顶层页面租约；外国页/根级未关联iframe/共享worker仍不扩权。沿用固定browser-use0.13.8与Chrome CDP，原许可证/runtime不变；日常路径删除B-A-T额外设置的false，使用原默认true。焦点及关闭仍仅顶层owned page。最小验收=协议父子/嵌套/外部目标/断开；实际专属和日常扩展的同源/跨源发现与原生click，清理和原owner边界。
+
+Product Alignment: natural-language task=表单配置或页面偏好设置；reusable chain boundary=原普通输入；runtime inputs=目标及请求值；dynamic task outputs=Chrome规范化值与框架提交；generic platform capability used=原生颜色控件/原B-U输入；replay model calls=0；site/task-specific code added=no。
+
+Reuse Assessment: existing=fill_color的原Chrome AX popup、B-U键盘与原fallback；selected=同控件未连接clone的浏览器原生规范化、有效alpha/colorSpace能力判断；只把值解释适配给现有原生popup，不复制CSS颜色解析器。依据[HTML颜色规范](https://html.spec.whatwg.org/multipage/input.html#color-state-(type=color))及固定Chrome154实测。有效增强属性仍保留原fallback，不把未启用功能算增强已验。最小验收=旧三颜色回退实例在actor/watchdog两路径值/React/blur/原生事件；超精细range仍保持兼容，不伪称原生。
+
+## 2026-10-09 D6受影响整链与D7收尾修复
+
+E03/E04在线采集后，d6-worker-product.log复用既有product-SaTblJ发布版，仅新增四次正式运行，不重做模型准备：7/11/13与无资格99失败正确，普通模型0、11条H2一致。独立日志复核为72原BotD、44身份、四WebGL正常，三个页面完成四项Worker测量；无资格页结束快，未完成的Worker测量不填正常。输入行为42条无样本仍unavailable，不因业务成功结算为真人行为。四execution关闭确认，原报告备份d6-before-worker-5651d246。
+
+实际发现验收脚本只关闭host、未永久删除Profile：本次专属测试根下留有13个历次复跑目录。核原manifest、零Chrome进程、精确路径及无链接后已永久删除；旧profile-cleanup仅属于原初次验收，不能覆盖后续复跑。复用已有tests/helpers/owned-profile-cleanup.py和ManagedWindow原进程核验，新增明确的antibot-product分支；只在原host关闭后核归属、拒绝链接/活进程/无法核验，再永久删除该测试Profile。原产品持久Profile与旧helper入口不改，业务失败记录不被清理覆盖。两个针对真实删除边界的测试、实际Python child清理及API类型检查通过。首次child路径缺PYTHONPATH、首次误用不存在npm typecheck脚本均保留；修为同root Python路径与实际tsc入口后通过，无额外浏览器重跑。
+
+复用审计：此次没有增加通用资源管理器或清理产品资料；只补本验收脚本原finally遗漏。删除仅为临时测试根下Profile，SQLite/报告/固定发布链路保留。函数22行，独立子进程调用由Node原execFile完成，失败留下profile-cleanup-failure而不伪称已删。
+
+## 2026-10-09 E04 跨Worker判据在线接入（本子项已验）
+
+combined-cs55bitl：完整HTTPS六case初始24项原生全部正常；平台/UA/内存/硬件并发数四单侧矛盾各触发一个原CrowdSec告警；真实worker-src CSP阻止创建后四项均unavailable/null，报告同样不可用、无bot误告警。原108条BotD与六个WebGL镜像仍正常，单次原生点击实际源站version7正确，0模型。在线probe未注册SW，最终专属Worker为零，浏览器关闭confirmed/Profile永久删除，independent-receipt.json逐条复核。严格协议重复/缺项/矛盾状态/原值拒绝和Worker五种生命周期通过。
+
+构建首败d4-worker-online-build.log：Rollup TypeScript插件在load阶段已输出JS，transform阶段不能再比原TS哈希；改为原文件校验后的load+固定TypeScript.transpileModule，仅指定worker模块，原比较算法保留。最终worker-client edb2561e、source f0f42c33。最小类型检查暴露source-data已存在let别名无法缩窄，条件改为等价previous?.lastModified后通过，不改变来源时效行为。没有改检测阈值/增加依赖或B-A-T注入。
+
+现有独立校准证明平台/UA/内存三项矛盾，但业务collector未调用。固定CreepJS worker/index.ts原函数无参数，默认相对路径./creep.js且先注册/注销Service Worker；不能直接移植到业务页覆盖其现有SW。仅构建期扩可选scriptSource/dedicatedOnly，默认路径/顺序不变，在线选择同源短生命周期DedicatedWorker，三秒无结果也terminate。检测比较仍全部执行固定上游原函数，不复制判据；不把Worker缺失当正常。上游源SHA256 0599255c8661c1c6fcbe3cf2f069a8c32a03fc21a788be9fcbb9c3e3fd641d61。
+
+Reuse Assessment: capability=已校准跨上下文判据接入在线盾；existing=creep-worker-client/source、固定[CreepJS worker函数](https://github.com/abrahamjuliot/creepjs/blob/10aa6724cd33a1015db1574211890518cd04f0cc/src/worker/index.ts)、collector/telemetry和原CrowdSec browser-marker；selected=固定原算法加可选Worker地址/类型的构建适配、原生Worker生命周期，复用现有三态遥测；rejected=原默认直接调用会干扰业务SW，隔离iframe只比较子frame不能代表业务主上下文；license/runtime/platform=原MIT、既有Rollup/浏览器Worker，不新增依赖；ownership=只拥有创建的专属Worker、成功/错误/超时均terminate，不注册SW、不改现有业务SW；replay model calls=0；focused validation=原生四字段、单侧四矛盾、真实worker-src拒绝、旧BotD/WebGL不回归、实际业务结果。遥测只保留字段名/判定，不落原UA或硬件值。
+
+## 2026-10-09 N04 form-factors补齐（本子项已验）
+
+combined-pru4axf9：实际Chrome十一字段全部正常；新增formFactors单侧矛盾产生原CrowdSec告警1；真实iframe权限拒绝七项unavailable、零身份误告警；单次原生点击源站选择version=7/correct=true，0模型。独立逐行复核保存independent-receipt.json，owned关闭confirmed、Profile永久删除。原十项控制复用既有证据，不重复跑。四个定点组通过；首次类型命令误带不存在的types.d.ts未执行检查，纠正为实际两个入口后最小类型检查通过；未修改盾阈值/B-A-T身份。原normalBrandOrder字段现在只在确实运行该控制时记true。
+
+沿[UA-CH规范3.4](https://wicg.github.io/ua-client-hints/#sec-ch-ua-form-factors)复用现有structured-headers与原identity/CrowdSec规则，补最后一个非弃用高熵字段。HTTP为sf-list，JS为字符串数组，大小写有意义；只比较列表内容，不把空/缺失或权限拒绝当真人证据。保留旧六字段payload兼容；不复刻解析器，不新增依赖、网络重试或UA覆盖。定点正常/矛盾/大小写/畸形/缺失测试后，用既有combined入口只跑新增控制及一条实际业务，不重跑旧十项异常。
+
+D7当前Tor来源即将到期，先在source-refresh-8qjbNO用原refreshSource/configureSource取得实际新1174地址（published 2026-10-09T09:00Z，expires 2026-10-10T09:00Z），校验后才停owned engine加载三条原来源规则；原配置备份在stage/before，其它规则/edge未改，没有真实长窗任务。d7-source-refresh-start.log确认五服务ready=true，随后身份在线验收通过；刷新仍为维护动作，非自动热更新。
+
+## 2026-10-09 E03 已校准WebGL判据接在线盾（本子项已验）
+
+combined-r1fzbajl：完整4183四个实际case原生均测量正常，原72条BotD无额外阳性；单侧VENDOR矛盾实际原CrowdSec告警1、双侧一致无告警、缺WebGL2明确unavailable无bot告警。原生单click源站实际选择7，原输入采集trusted click保留。独立日志/业务/关闭复核保存independent-webgl-receipt.json。combined-fgfqof6z在同case暖会话用真实CSP阻止creep.js，实际securitypolicyviolation已确认；BotD仍measured、WebGL为error，报告明确区分，无假正常。1kj2rp7p首败是验收将原Page.evaluate的标量True当JSON解析，探针当时已error；改包裹对象只复测CSP分支，未重复前四控制。三Profile全部关闭并永久删除，0模型。
+
+改动仅原creep-entry导出既有判据、collector异步有界采集、Zod三态输入与脱敏日志、report逐页有效性；复用原browser-marker规则，无新规则/阈值/白名单，无新生产依赖。新bundle e4b140b8；只重启owned origin，engine/edge未重启。已有验收BotD固定18条向量现在按其原版本投影，避免把新增Creep一条误拼入BotD协议；没有删旧判据。新增边界首败未知integrity字段→修复通过，类型首败测试fixture错误→真实IncomingMessage后通过，均保留日志。
+
+Reuse Assessment: capability=将已校准的CreepJS镜像一致性接入真实业务遥测/原CrowdSec；existing=固定CreepJS10aa6724原webgl/getTrash、creep-entry及telemetry/browser-marker原规则；selected=仅导出原WebGL探针的三态结果、collector异步调用、Zod输入适配，复用已有browser-marker告警，不新增检测/风险引擎；license/runtime/platform=原MIT/原浏览器bundle和Node/Zod；ownership=一个owned可见Profile、无GPU原值持久化，finally原关闭；replay model calls=0；focused validation=真实原生业务无误报，单侧矛盾告警、双侧一致正常、缺WebGL2/导入失败不冒充正常，受影响原输入/采集仍工作。先做边界首败，再接入和实际HTTP验收；不重跑所有五探针或主业务准备。
+
+D2固定分类实验未达到门槛：behavior-classifier-zdk_oga6用37人训练、10人完整留出；592有效独立正常/39跨采集器正常/本机3段全正常。但独立adaptive真实原始bot417段全部漏检，21段不足、1段时钟无效；正常203段全正常、1段无效。2628增强副本按预定元数据排除，未参与训练/验证；未把439bot session等同独立用户。未调参数、阈值或添加B-A-T训练数据，不能上线或关闭一般行为分类。首败d2-classifier-first为输入标签枚举拼写，cross-source首败为原数据两种容器形状，均修适配后才完成上述判断。候选运行依赖撤下，模型、来源摘要及报告留ignored可复现；独立人群数据缺口已补，分类有效性仍未解决。下一独立包E03在线联接不需用户操作。
+
+## 2026-10-09 D2 独立行为样本补齐（进行中）
+
+用户指出主线未完成却再次停下：当前无整体阻塞、无待用户操作，继续已授权软件工作。此次先补独立正常样本，避免再用单人三段冒充人群证据。AdSERP [Zenodo 15236546](https://zenodo.org/records/15236546)原数据说明为47参与者、2776次查询，CC BY 4.0；只读取约10MB鼠标数据与必要元数据，不下载屏幕录像/页面/眼动。不根据检测结果挑样本，不伪造缺失时钟/设备字段，不用于识别人。
+
+Reuse Assessment: capability=已有行为判据的独立人群和跨采集器校准；existing implementation=固定Kitsune biomech原特征、js-bot-detector原规则及已有校准入口；selected implementation=先复用原算法和公开分组数据，必要分类训练只考虑成熟库公开API，不重造特征/模型引擎；license/runtime/platform fit=原MIT判据、CC BY 4.0数据、现有Python/Node；ownership conflicts=离线ignored研究数据，无浏览器和个人数据；replay model calls=0；focused validation=真实时钟/原用户分组/固定正常集、异常集与缺失分离，B-A-T不参与拟合。选型尚未冻结。
+
+首轮完成：behavior-independent-l0061a33按原始mousemove/末500点固定契约读取全部2776条、47参与者；不插值、不修时钟，4条无效。Kitsune原0.05规则2759正常/13误报（12人）；同数据js-bot-detector原规则behavior-candidate-YK5Ioq有2754正常/18误报。只证明独立正常集表现，旧高级bot漏检未被关闭。新增数据下载首次使用concept DOI构造文件URL得404；改用原record API返回的具体文件链接20391173，不猜数据内容或误记源数据不可得。
+
+下一次有限模型实验的预注册：只用固定Kitsune trace_descriptor六个原特征，不加入数据来源、用户ID、绝对坐标、UA或样本总数；复用[scikit-learn 1.7.2 RandomForestClassifier](https://github.com/scikit-learn/scikit-learn/blob/1.7.2/sklearn/ensemble/_forest.py)原fit/predict，BSD-3-Clause，Windows wheel。固定random_state=20261009/n_jobs=1/class_weight=balanced，其余默认，不网格搜索、不调分类阈值。AdSERP按参与者ID数字模5分组，0为完整未训练正常留出；原100条公开集仅bot（moderate/advanced）用于训练，原human全作跨采集器正常验证；新adaptive数据全作跨来源留出、本机单人三段及B-A-T全不参与训练。部署门：所有原有正常操作必须保留；有误报/高级漏检就如实保留，不因aggregate准确率高冻结为封禁器。实验依赖仅ignored独立目录，失败撤下依赖；不重写通用分类器。
+
+新增来源核验：adaptive-captcha-defense固定c0d7b8513a79d49a760ad1827ebf1e6221eee0a3的LICENSE实际0字节，不因GitHub显示License入口而当成代码许可；其[独立公开数据20391172](https://zenodo.org/records/20391172)有CC BY 4.0，只可单独评估数据契约。CaptchaSolve30k明确无跨session身份、坐标归一到200网格且原输入只有固定采样序号，不能冒充独立用户分组或原DOM时钟。Balabit训练用户可区分，但数据是RDP用户身份任务、仓库无标准许可证，不直接当通用bot标注。GitHub REST首次遇到限流，元数据查询未成功；没有安装候选运行依赖。
+
+## 2026-10-09 N04 高熵Client Hints
+
+本增量已验：d1-high-entropy-boundaries.log三个定点组与typecheck通过；combined-k52o3uzj十个真实HTTP/JS正常字段、原规则十个独立矛盾告警通过。combined-pnvg88n3只补单次原生点击后的源站业务断言，version=7/correct=true，不重复13控制；combined-8qg0hgy_再用真实iframe Permissions Policy禁止高熵读取（非getter假值），原API确实返回低熵字段、高熵六项缺失，在线六项均unavailable、零误告警，正常业务仍到达7。三个Profile已关闭并永久删除，0模型。新增信息始终内存比较，报告没有原值。未重跑全部产品准备/发布；原冻结整链证据保留，本改动作用于盾的身份采集/对照，不改B-A-T身份或主业务。
+
+当前实际结果：combined-k52o3uzj十字段原生正常、十单侧矛盾各一个CrowdSec告警、重排正常及低/高熵API缺失分离通过。独立业务复核发现旧验收最后click后立即finally关闭，未保存selected；本次有真实trusted click，12ms后窗口hidden，不能混同既往零事件。independent-business-first.json与independent-input-first.json保留；只补验收等待与源站selected断言，不改产品点击/加重试，下一次只验业务分支而不重跑13个控制。重启owned origin后首次status过早读到ready=false已保留，实际两秒后初始化且进程running；无engine/edge重启，不归因反爬。
+
+真实缺口：identity.ts只对照UA及三个低熵CH字段，尚无Accept-CH/原getHighEntropyValues对照。沿[Chrome官方](https://developer.chrome.com/docs/privacy-security/user-agent-client-hints)与[UA-CH规范](https://wicg.github.io/ua-client-hints/)补architecture/bitness/fullVersionList/model/platformVersion/wow64六项；只在实验case响应请求提示，比较后仅落clear/mismatch/unavailable/invalid，不保存硬件/版本值。缺权限/缺头不判bot，桌面空model合法，品牌重排不误判，不增加Critical-CH重试。
+
+Reuse Assessment: capability=已有HTTP/JS一致性判据扩展；existing implementation=identity.ts原structured-headers2.0.3+Zod、collector、CrowdSec request-identity；selected implementation=复用原RFC解析与规则，仅扩字段映射/Accept-CH及原浏览器API；license/runtime/platform fit=现有库/标准浏览器API，无新依赖；ownership conflicts=自有测试case+Profile，值只在请求内存，复跑0模型；focused validation=正常六字段、逐项单侧矛盾、品牌重排、空model、无权限/缺头及实际CrowdSec告警。仅盾增量，B-A-T保留原Chrome身份，不伪造提示。
+
+公开Sannysoft诊断：public-probe-jonmhm3q当前可见ManagedWindow一次原生访问，实际读取25项均passed、无挑战，含CHR_DEBUG_TOOLS/SELENIUM_DRIVER/HEADCHR_IFRAME。原采样器未归一标签名换行，部分Intoli行未保存，因此只结算25项，未重新开窗补数字；静态urllib此前403不是B-A-T失败。0模型、Profile关闭并永久删除。该站复用fpscanner，与本地同库不能计作独立算法，非网站业务或“大多数网站”通过证明。
+
+## 2026-10-09 E03 WebGL跨API原判据出口
+
+结果：device-4m1jyzh8首测五分支均无比较出口、原对象lied=false，首败保留。补原getTrash出口及两种渲染测量有效性后，device-j5lit4ec实际可见Chrome单側VENDOR矛盾命中；原生、双侧相同变化及版本差异均正常，WebGL2不可用返回unavailable/null。先完成原生对象扫描再注入控制，五分支均getLies为空，排除用方法篡改信号冒充跨API判据。旧bundle/receipt保存于d4-creep-before-mirror，新24702ca6由原Rollup固定构建成功；上游源码/原始字段不改，不落硬件值。两个Profile关闭/永久删除确认，0模型。这是已有独立探针的本地判据校准，尚非CrowdSec在线处置，也不关闭WebGPU物理身份/跨硬件正常反例。
+
+固定CreepJS的webgl模块已比较WebGL/WebGL2镜像参数，按原VersionParam排除版本相关合法差异；但差异进入getTrash而不是getLies，现有creep-entry只返回lied/getLies，漏了这条判据。拟只补原getTrash的规则名与比较有效性，不保存参数/GPU指纹，不改上游判据或历史能力哈希表。源码：[固定webgl模块](https://github.com/abrahamjuliot/creepjs/blob/10aa6724cd33a1015db1574211890518cd04f0cc/src/webgl/index.ts)。
+
+Reuse Assessment: capability=已有跨WebGL版本一致性判据可见；existing implementation=固定CreepJS10aa6724原getCanvasWebgl/getTrash及现有测量页；selected implementation=扩原creep-entry脱敏输出、复用原ManagedWindow验收；public surface=原导出probe/getTrash，判据完全由上游计算；license/runtime/platform fit=沿原MIT/浏览器构建；ownership conflicts=一个owned可见Profile、finally关闭删除，不控制个人浏览器；replay model calls=0；focused validation=原生、单侧vendor矛盾、双侧一致变更、合法版本差异、缺WebGL2。此为镜像一致性，不能推出WebGL与WebGPU属于同一物理GPU。
+
+## 2026-10-09 D1 来源数据有效期门
+
+结果：d1-source-validity-first.log实际复现有效期被改后仍available、过期304未报错。最小适配后d1-source-validity-final.log四组边界通过（Node含父项5tests）：新鲜304不续期、损坏到期拒绝、过期304拒绝/200换新后可配置、503不损坏有效缓存；失败均保留已生成规则和原缓存。只扩原校验，lab start增加Tor与既有GeoIP并列启动门，未改检测阈值。d1-source-validity-typecheck.log通过，d7-status-after-source-validity.json现场5服务ready、两来源available；未重启活跃服务，启动拒绝本身按入口静态核验、未通过篡改活跃数据实测。长期进程仍沿原CrowdSec过期告警与维护刷新，不声称自动热更新。
+
+发现可修软件缺口：Tor缓存读取只验地址摘要/数量，未校验expires是否仍为published+24h；refreshSource在过期缓存收到304时仍返回成功，configureSource和start也未拒绝过期Tor来源。原运行中CrowdSec stale规则保留，但不能把旧数据重新装入后显示整盾ready。先在独立临时数据目录复现，再补已有入口的校验；不重启当前服务、不清规则、不增加调度器。
+
+Reuse Assessment: capability=外部数据有效性与启动门；existing implementation=source-data.ts/原Zod/Node fetch/原CrowdSec过期规则；selected implementation=只扩已有读缓存/刷新/配置/启动条件，无新依赖；license/runtime/platform fit=既有Node/Zod，Windows+WSL；ownership conflicts=测试仅本次临时目录，不改活跃服务；replay model calls=0；focused validation=正常缓存、过期304、损坏有效期、失败刷新保留旧数据及拒绝生成过期规则。盾适配，不改产品链路。
+
+共享SW边界未变：[Chrome webRequest](https://developer.chrome.com/docs/extensions/reference/api/webRequest)允许无所属tab的请求，tabId为-1；换用该API仍不能据此取得共享worker逐请求归属，不扩大全Profile拦截。行为候选[BeCAPTCHA-Mouse](https://github.com/BiDAlab/BeCAPTCHA-Mouse)提供研究基准说明，但下载要求签署许可并提供联系方式，不是本次可直接采用的公开模型；没有代用户发送申请或安装依赖，原四候选结果保留。
+
+## 2026-10-09 D6 未连接控制器的公开挑战对照
+
+用户随后同意并亲自完成公开练习站验证：public-human-gqj0hiht先用原ManagedWindow交接并断开控制器，UIA确认存在验证勾选框；用户回复完成后，控制器仍未连接时UIA已确认成功内容。原ManagedWindow resume后再次读取到成功页；独立20ms租约观察确认owner/lease/session/target四项不变，0模型。关闭/Profile永久删除均已核。这是实际外站人工验证后的底层接回/内容读取；未测接回后的新HTTP请求，也不是正式TaskRun外站checkpoint验收，不能把旧自动初访403改写为自动穿透。
+
+public-uncontrolled-w6dlgqon：普通可见Chrome、全新owned Profile，无CDP/automation/headless/证书绕过参数；仅通过[Windows UIA FromHandle](https://learn.microsoft.com/en-us/dotnet/api/system.windows.automation.automationelement.fromhandle)读取本进程窗口，15/35秒均显示验证页，未到业务成功内容。没有人工交互，不测HTTP状态，不能称真人验证失败或复现403；只排除“初始挑战只在连接B-A-T时出现”的解释。原B-A-T403仍未通过，不据此改控制接口或自动处理第三方挑战。
+
+首轮a9yjb6_7选中同进程翻译气泡，documentCount=0，测量作废；改为同owner最大可见窗口后w6dlgqon取得3个Document节点。两个浏览器均关闭确认/Profile永久删除，原首败保留；无个人资料/系统信任变更。
+
+## 2026-10-09 D2 后续行为候选实际核验
+
+三项新增候选没有直接进入依赖：BotSight固定5c09da65只有训练源码、未附LICENSE或冻结模型，train_rf.py还把已算角熵覆盖为0；evolved-civilian/Behavioral-Biometrics-Bot-Detection固定c48e77fd完整Git树仅README.md，没有宣称的模型/实现。均不能据README准确率接入。[BotSight固定源码](https://github.com/abdulmalik505/BotSight/blob/5c09da65cba35199943a6c740edbf98e39c97f4e/train_rf.py)、[仅README候选](https://github.com/evolved-civilian/Behavioral-Biometrics-Bot-Detection/tree/c48e77fd4ff29872c1cada9b55335151173cff93)。
+
+js-bot-detector固定2cd13e65、package1.1.0声明MIT且无运行依赖；读取原MouseMovementSignal/Signal后，仅下载这两个固定源码与package并核SHA到ignored候选目录，未npm安装/修改主依赖。behavior-candidate-i8SRgD原阈值离线复用原样本：公开44human中39时钟有效均不触发，5时钟无效单列；28moderate全触发，28advanced全部漏检；本机一人三段均未触发。一点数据原方法直接判可疑，缺失不能作正常阴性。属于跨采集器诊断，不报独立人群准确率；不调阈值，不替换既有盾或宣称一般分类完成。[原判据](https://github.com/niksbanna/js-bot-detector/blob/2cd13e65626a96864dd2d808e6a5a77187cc77f0/src/signals/behavior/MouseMovementSignal.js)。
+
+复核CrowdSec1.8.1原cmd/crowdsec/dump.go与官方配置：--dump-data保存解析/注桶诊断，不是活动桶恢复入口。当前SQLite历史和精确配额已独立持久化；不为补表格另写通用漏桶恢复引擎。lab.ts start原本已有实际persistent-engine摘要校验，没有添加重复校验/重复构建。
+
+## 2026-10-09 D2 颜色候选列表兼容（实施前）
+
+固定Chromium154.0.8037.98原[color_suggestion_picker.js](https://github.com/chromium/chromium/blob/154.0.8037.98/third_party/blink/renderer/core/html/forms/resources/color_suggestion_picker.js)实现候选色及other-color按钮，后者调用原initializeColorPicker。现有适配因list属性直接回退脚本写值；先用现有React输入页临时添加datalist证明实际事件与值，再沿原ColorWell的AX子树选择原按钮并复用既有RGB输入，不写新的控件/颜色解析/点击引擎。alpha/P3是否支持由本机实际Chromium决定，不把属性存在当能力可用。
+
+Product Alignment: natural-language task=设置外观颜色或填写配置表单；reusable chain boundary=原type_text；runtime inputs=目标和值；dynamic task outputs=真实控件/框架值；generic platform capability used=原生颜色输入；replay model calls=0；site/task-specific code added=no。
+
+Reuse Assessment: existing=task_special_input原ColorWell AX/RGB适配；selected=固定Chromium原候选列表/颜色选择器、B-U Element与Page键盘；license/runtime/platform=原BSD、Windows Chrome154；B-A-T-owned=原popup字段/按钮定位；ownership=同target且仅原ColorWell子树；rejected=重写颜色或OS点击引擎不必要；focused validation=候选内/外颜色、原RGB、框架提交和原生事件，资源走现有finally。未验证前不冻结新分支。
+
+input-un_fphry/98nsa5az实际发现Actor回退不只是脚本事件，而是请求#123456/#112233均留黑色、React也错误。原生候选列表修复后input-noyq0n9z六项正确/零脚本；原popup按钮用页面坐标点击未进入RGB的s1su7z2d首败保留，改为同popup原DOM.focus和原Input Enter字符激活，不加OS输入/网页脚本click。Chrome154当前alpha/P3增强未启用，实际序列化分别#123456/#ff0000，不宣称已测宽色域或透明度。
+
+下一处兼容修复复用固定B-U0.13.8的DefaultActionWatchdog._set_value_directly原方法（源码已核）：它已有特殊值、React原setter和事件适配，element_node参数在该版本未使用；Actor仅在原生适配明确不可用且控件可编辑时调用同browser/watchdog/target的原方法，并真实blur/focus提交。探索仍用原分支，不重复调用；原脚本事件如实保留，不能算原生化。验收保护超大range步数、step=any和alpha/P3属性下的当前浏览器值语义，不复制颜色或输入引擎。
+
+最终input-s_lxi7za五项回退值/React/提交/焦点通过，各保留4个脚本事件；正常原生input-wrr9of6k的28项兼容继续零脚本事件。85drp71t/k4g0nj9j首败为值已正确但真实blur未发生、committed为空；同target原Page.press Tab产生实际焦点离开后再恢复，才关闭提交回归。所有本增量owned浏览器关闭/Profile永久删除。没有改采集、判据或测试页构建；临时datalist只在现有验收页本次文档内。新候选定位替换原list拒绝分支，移除验收器临时AX诊断分支，保留原始报告。
+
+## 2026-10-09 D4 原跨上下文判据补校准（实施前）
+
+固定CreepJS10aa6724的worker/index已比较platform/userAgent/hardwareConcurrency/deviceMemory；navigator/index还比较language/languages。已有独立devices入口正调用worker→navigator原函数，但验收只覆盖hardwareConcurrency、GPU方法和屏幕，不能把其余装载等同有效。复用同一入口/构建/一个owned浏览器，只通过临时Page预加载脚本制造各window单侧矛盾；正常原生与属性不可用分列，不新增页面/指纹算法或修改上游。只落规则名称/有效性，不落原始指纹，结束移除测试注入并走原finally。只验证未验原判据，不重复已过屏幕/GPU6分支。
+
+结果device-ibbsdfem：原生正常无lies，五个单侧改写均出现同名Navigator告警，但未保存判据原因，不能区分对象改写和跨上下文比较。随后device-6px58rnw改为先让原原生对象扫描完成，再改变window值、调用同一原probe，并只保存固定原因“does not match worker scope”的命中名；平台/UA/设备内存三项独立比较准确命中，两个语言矛盾均无告警。这关闭了“被其它探针掩盖”的测量歧义，后者仍是未覆盖项。源码worker/index371前明确因Chrome正常切语言例外跳过；navigator/index194–204在两个API存在时提前返回，不改原判据去制造通过。HTTP/JS语言及数组内部一致性是不同判据。首轮device-wzuu9er5为验收器None解码错误，修对象包装后通过；三次窗口/Profile均收尾，未改探针构建/页面/产品注入，原CSP/缺Worker证据复用。
+
+
+## 2026-10-09 D1 QUIC参数形状（实施前）
+
+结果：h3-integrated-k872ytfk在线异常/正常/测量边界与独立抓包通过，20827e94已激活且实际进程摘要一致；H2流程combined-zl8z0j8h通过，0模型/资源收尾确认。d1-quic-shape-boundaries-final.log与d1-quic-shape-typecheck.log通过。四组原始ID/长度序列含2^61+17扩展与tshark一致；129额外参数真实请求200且测量capacity。以下“实施前/尚未激活”描述选型时序，不能覆盖本结果。
+
+固定HAProxy的quic_transport_params_decode已经逐项解出type/len，包括随后忽略的扩展；仅在原解码成功位置保存有界128项ID/长度并导出，不另写QUIC解析。保留原始顺序用于独立抓包核验，不保留参数内容、CID、重置令牌。依据[RFC9000 18.1/18.2](https://datatracker.ietf.org/doc/html/rfc9000#section-18.1)，参数顺序没有协议意义，31N+27是正常GREASE；因此原顺序和GREASE不参与连续性判断。ID集合与初始源CID长度供原CrowdSec distinct规则作软关联，不能单独判bot或认证身份。
+
+Reuse Assessment: fixed=HAProxy3.2.9-1ubuntu2.2原解码/生命周期及CrowdSec原distinct；adapter=有界元数据出口、有效性映射与规则配置；原LGPL/GPL许可/WSL不变、不新增库/进程。已有12项有效参数保持原路径；重复/越界/截断明确invalid/unavailable，不放宽协议。验收=正常Chrome重连/GREASE/换序不误报、同会话混栈实际告警、原始ID/长度与tshark独立一致、128项容量边界。超界只关闭该测量，不阻止原解码和正常业务。
+
+本增量只改独立盾，不改B-A-T网络与任务链；原H3业务作为必要回归。代码/组件通过构建不算检测验收，结果随后写入实施记录。
+
+冻结前复用_c0yc_c3原抓包发现正常冷/暖Chrome的ID集合相差12583，原候选会误报，保存d1-quic-shape-normal-first.json。[QUICHE原定义/序列化](https://github.com/google/quiche/blob/main/quiche/quic/core/crypto/transport_parameters.cc)明确0x3127为可选initial_round_trip_time_us；不把缓存RTT提示有无当网络栈切换。新关联只排除此已证动态项及RFC GREASE、忽略顺序，原始事实仍完整保留；旧12项规则与阈值不变。边界同时保护这一正常变化和未知大ID，当前尚未激活。
+
+## 2026-10-09 D6 原生点击与前后台（按用户最新优先级）
+
+用户说明此前玩游戏并切换前台，随后暂停游戏，要求优先完成焦点测试。不能把这条线索直接归因为用户操作。`combined-4wl6pb5r`同一owned窗口正常/最小化/恢复均收到完整trusted点击；`combined-r2zjqceb`同窗口六次冷挑战导航亦正常。`combined-9jri6mtt`公开动态页12→12、clicks=[]且无加载更多请求；`combined-lskbsztn`仅内存记录原CDP后12→24、坐标/会话正确，press/release约6ms应答。诊断成功仍不是首败修复；未加入点击重试、脚本click或生产抢焦点代码。
+
+`combined-7l9jvyqc`用同一owned Profile的两个窗口，按[Windows GetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getforegroundwindow)实际HWND核前台：前台/完全遮挡/恢复/按下前切走/释放前切走五组均收到完整trusted点击，后台组OS前台始终留在遮挡窗口、未误点遮挡页。完全遮挡时首次move应答5秒，其余约0–16ms；页面document.hasFocus可被CDP输入改变，不能代替Windows前台事实。首轮fg1s6st5直接创建无opener页面被原owner scope拒绝，验收器改走原window.open归属后才完成，产品所有权不放宽。
+
+跨进程补测使用标准库Tk临时窗口，仅当前进程拥有、不接触个人应用。g_v_xnok未建立前台；pxtm3p2y用户回复已点击但观测未见目标前台、最终超时，均不算后台输入失败。SetForegroundWindow返回false符合[官方前台限制](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow)，不等于Codex工具策略拒绝或用户开发授权不足。79q642j5调整对照顺序后实际建立跨进程稳定遮挡：OS前台保持Tk、页面hidden，仍完整trusted点击到原目标，前台和恢复两组亦通过。该次最后两组切换条件未建立，测试注入异常触发上游JS fallback，明确作废；uq_0mrj9尝试仅向本测试PID使用官方AllowSetForegroundWindow仍未建立条件，停止这条尝试。跨进程点击瞬间切换保持未测，不使用AttachThreadInput/全局输入绕过。
+
+oyly6yze只在内存被动记录Windows前台归属和原TaskElement.click起止（10ms采样、不改Input命令、不切焦点）；真实公开动态页12→24，trusted按钮点击及加载接口200/H2。全程Chrome不在前台，说明普通背景状态本身不足以解释9jri6mtt/3isei3ss零事件。所有上述owned窗口/Profile均有关闭与永久删除收据。该结果只关闭普通前后台对照，不冒充历史首败修复，也不把游戏全屏/原始输入条件称已重现；后续停止重复同一焦点实验，追查有因果证据的软件路径。
+
+## 2026-10-09 D3 宿主默认路径与明确策略的边界
+
+正式链路回归`d6-navigation-product-regression.log`首败`capture_access_state_unavailable`：RunnerProcess总是传data/access-policies.json，即便从未创建。此前Python忽略不存在文件掩盖了这一调用契约；修复明确策略丢失后暴露真实兼容回归。修正宿主只在启动时发现默认文件存在才声明它，原runnerEnvironment显式配置仍优先；stat仅ENOENT代表未配置，权限/其它错误不可放行。已声明文件在运行中消失继续原拒绝。新增默认文件从下一Runner生效；已有文件内容仍逐请求按mtime重读，不引入热配置引擎。
+
+Product Alignment沿D3原访问准入：普通网页/账号任务，无策略能运行，有明确策略的故障不能撤销限额，普通0模型、无网站特判。Reuse Assessment：仅用Node原fs.stat区分可选默认路径，复用既有spawn/env与Python准入，不增加库或存储。验收=现有受控Python child保护未配置/默认存在/明确缺失三个宿主传参分支，原真实浏览器缺失拒绝证据继续有效；随后重跑刚失败的冻结产品链路，不重新准备。
+
+## 2026-10-09 D6 Actor导航早于defer脚本（先复现）
+
+QUIC增量后H2业务首轮combined-9eth66wz点击SPA后未提交，原H2字段一致；ax610kwt补诊断后正常，不能叫首败已修。代码核验当前B-U0.13.8 Actor Page.goto只发送Page.navigate即返回，而原BrowserSession._navigate_and_wait已有按target/loaderId过滤的生命周期等待和同文档跳转分支。沿现有admission夹具只延迟defer脚本1.2秒，`d6-deferred-navigation-first.log`实际证明导航返回时按钮已有但handler未挂，单击被丢弃；这是可稳定复现的软件缺口，仍不能反推未保存点击状态的历史首败一定同因。
+
+Reuse Assessment: selected=固定B-U原_navigate_and_wait(wait_until=domcontentloaded)，不新建网络idle/事件订阅/轮询引擎；TaskPage只把既有导航转接同一target的原方法，保留Fetch/CDP/采集/权限；原库没有Actor公开load等待API，局部版本绑定记录于此。DOM就绪超时必须显式失败，不伪称页面已好；DOMContentLoaded只保证defer执行，不代表任意SPA异步业务就绪，后者仍走已有声明后置条件。
+
+Product Alignment: natural-language task=网页采集或表单/预约；reusable chain boundary=原普通导航；runtime inputs=url与既有target；dynamic task outputs=已提交并DOM就绪的页面或明确错误；generic platform capability used=B-U原生命周期；replay model calls=0；site/task-specific code added=no。验收=先复現的延迟脚本+单次原生点击、同文档跳转、原H2表单/SPA/303/API/缓存；不增加点击重试或模型。
+
+## 2026-10-09 D1 QUIC原生传输参数（实施前）
+
+结果：`h3-integrated-_c0yc_c3`首次在线通过，正常Windows B-A-T无TLS/H3/QUIC连续性告警，原quic-go混栈触发新增原CrowdSec quic-continuity；12有效参数与独立tshark一致，17000ms显式超时控制准确。原H3 62位/容量、ALPN首广告与独立JA4同时保留通过，0模型，owned浏览器关闭/Profile永久删除。新候选SHA256 772a9bb722f0c2d6a485af790e2b9894f988a8847a69275c46fa06c245b99386，旧候选在before-quic-params-20261009。`d1-quic-parameter-boundaries.log`缺失/协议回退/整数精度/7个非法边界及合法大声明通过，`d1-quic-params-typecheck.log`通过。此次只增加明确辅助判据，B-A-T保持Chrome原生参数，没有为过测伪造网络。
+
+固定HAProxy3.2.9原quic_conn.tx.params明确是客户端发送、服务端须遵守的参数，rx.params是服务端自己声明，不能混用。复用原quic_transport_params_decode及原H3请求生命周期，导出RFC9000的12个流控/ACK/超时/迁移标量有效值；省略项由原解码器应用RFC默认值，不能描述为原始编码或字段出现顺序。不采集CID/重置令牌内容，不复制解析、重组、指纹评分或挑战。已支持H3 SETTINGS及头序保持不变。
+
+Reuse Assessment: existing=HAProxy3.2.9-1ubuntu2.2固定源码/已验sample-fetch适配与CrowdSec distinct场景；selected=原QUIC解码后元数据→现有日志适配→原CrowdSec连续性辅助告警；license=原LGPL/GPL包与声明保留；runtime=现有WSL，不加进程/库；B-A-T-owned=有限字段出口与有效性映射；reject=单独接另一HTTP3服务器/自研QUIC解码没有必要；validation=真实Chrome正常复用/重连，原quic-go可控数值，缺失/越界，Wireshark独立解码，混栈变化实际告警。合法客户端可改变参数，连续性变化是辅助线索，不单独封禁，不泛化成真人证明。
+
+依据：[RFC9000传输参数定义](https://datatracker.ietf.org/doc/html/rfc9000#section-18.2)、[HAProxy原生QUIC运行接口](https://cdn.haproxy.com/documentation/haproxy-runtime-api/reference/show-quic/)。CLI已有参数但非逐请求同步事件，故仅扩现有sample-fetch，不轮询CLI推断请求归属。当前还未运行验收；扩展参数/原始顺序和真实公网变化不冒充已测。
+
+## 2026-10-09 D7 准备与已加载版本
+
+补齐现有prepare-fixtures.ps1原worker/devices构建调用，纠正README首次prepare→GeoIP→网络候选激活→挑战候选构建/启动/激活顺序；不新增安装器。d7-build-workers.log及d7-build-devices.log构建通过，d7-loaded-builds.json核5服务owner、实际/proc/PID/exe与receipt、原源码/gofmt后补丁及3份HTTPS已服务制品摘要一致。首轮审计误将未gofmt源码直接比较构建摘要、第二次误用HTTP请求TLS-only4185，均是审计入口错误，独立记录first.json，未改服务迎合。此为当前机器可恢复/版本一致性，不冒充新机器从零安装已测。
+
+## 2026-10-09 D3 已声明策略文件消失（实施前）
+
+结果：定点首测d3-missing-policy-first.log复现未抛错，删除原fail-open分支后缺失/载入后消失/恢复不重置额度与原策略校验2项通过。admission-i8nc33yy实际浏览器初次1到达，配置消失后3次尝试/0到达，原capture_access_state_unavailable保留，0模型、closed confirmed/Profile永久删除。浏览器首轮ydk96sq4其实已经拒绝请求，但验收器在失败后重新取session又触发原错误而中止；改为事前保存gate引用，产品未再改，首败保留。
+
+日常共享SW边界复核：[Chrome debugger官方支持域](https://developer.chrome.com/docs/extensions/reference/api/debugger#restricted-domains)不含ServiceWorker，targetInfo的tabId仅定义于page；相关worker附着不授予整个个人Profile的所有权。现有专属browser Fetch已验，日常tab Fetch不能据此宣称覆盖共享worker自主请求。保留未覆盖项，不禁SW、不扩大全Profile拦截、不默改用户浏览器选择；后续需要可验证的逐请求归属能力，或用户明确选择整个受管Profile的运行边界。本次没有这项运行验证，不能关闭D3整包。
+
+实际代码缺口：`access_policy.acquire`把显式BAT_ACCESS_POLICY_FILE的FileNotFoundError当unconfigured，配置丢失后会放行。本次仅替换这一分支，沿原Admission错误拒绝/原PyrateLimiter持久配额，不新建配置或请求引擎。未指定策略仍保持unconfigured，未知origin只有成功读到有效策略后才可认定不受声明配额约束。先用现有Cooldown测试复现，再用现有真实admission入口证明请求未到源站；恢复策略不能重置已消费配额。
+
+Product Alignment: natural-language task=采集网页或检查账号；reusable chain boundary=现有跨任务访问准入；runtime inputs=origin/明确策略；dynamic task outputs=请求或可见失败；generic platform capability used=原Fetch owner/持久配额；replay model calls=0；site/task-specific code added=no。
+
+Reuse Assessment: capability=明确配置不可读时停止准入；existing implementation=access_policy/Admission/PyrateLimiter4.5.0；selected implementation=保留既有组件，仅删除fail-open分支；public surface=Path.stat及原异常路径；license/runtime/platform fit=标准库/既有Windows实现；ownership conflicts=不扩大浏览器权限；focused validation=缺失/缓存后消失/恢复配额/真实到达数。
+
+## 2026-10-09 D2 color原生入口（实施前）
+
+实际产品结果：`input-oyp4a1ng`原B-U探索七类控件全部原生事件，color从4脚本事件→0，值/React/blur提交/焦点正确。Actor连续兼容首败i_rl1iru/w510bfty/ljivtnsi：仅等待/enable均未解决，4wqpm4z2与5hohnt3v证明点击正确且trusted、原popup消费Escape，但AX未挂到ColorWell子树；先用原getPartialAXTree建立owner节点后，`input-l841yl5l`28项通过，含大小写/黑白颜色、两lang属性、原日期清空/闰日/范围精度。不是两种OS语言证明。暂时诊断分支已从测试移除，原报告保留；产品只留原native API适配，未复制输入引擎。当前仅Windows Chrome已验RGB；alpha/P3/datalist/其它平台保留原兼容路径和未验状态。
+
+已在单个owned Chrome154.0.8037.98核验：原ColorWell的AX子树包含浏览器原生颜色popup，DOM.describeNode/DOM.focus可定位其r/g/bValueContainer，不依赖中文标签或坐标。固定Chromium154源码color_picker.js SHA b9fa996218bf4a9a14b36d2ee2a7ea4c501b289f0cd18db2f2b96f5298d7360a（BSD；[源码](https://github.com/chromium/chromium/blob/154.0.8037.98/third_party/blink/renderer/core/html/forms/resources/color_picker.js)）负责全部颜色解析/更新/关闭。Page.press数字不带char所以不输入；原Actor.fill在popup返回Node不属该document；Input.insertText未更新。原Input.dispatchKeyEvent char能进popup：input-qzgbklzt #abcdef及React state正确，3 input/1 change均trusted。前三种失败记录保留，不继续复用错误分支。
+
+Reuse Assessment：复用Chromium原颜色选择器、AX/DOM/CDP公开接口与B-U点击/快捷键；只做hex→原RGB控件绑定和本次popup关闭，无OS全局输入、无第二浏览器控制器，不复制键盘或颜色引擎。缺原生popup/alpha或非sRGB格式保留上游fallback；不把未覆盖平台记通过。
+
+Product Alignment: natural-language task=填写颜色字段或调整页面配色；reusable chain boundary=原输入节点；runtime inputs=目标与颜色值；dynamic task outputs=实际值/框架/提交；generic platform capability used=原Chrome控件与CDP输入；replay model calls=0；site/task-specific code added=no。
+
+## 2026-10-09 D2 键盘/滚动联合校准（先测）
+
+后续整链回归：`product-SaTblJ/resume-proof.json`复用原发布版，在最新访问/网络/行为盾下新建四次正式运行，7/11/13正确、99无资格分支正确失败、11次本次H2一致、普通0模型、四次cleanup confirmed。首轮resume_draft_missing来自验收器假定成功发布后仍有草稿，未启动浏览器；改为直接复跑冻结发布版，不改产品/历史，不重新调用准备模型。准备/试跑/发布沿用原SaTblJ证据；本次不是重新准备。此后color独立28项验证覆盖其影响路径，不无变化重跑整链。
+
+结果：`joint-calibration-s3OgSI`既有真人3段键盘中位300.7/171.2/865.4ms，两原判据均未触发；真实B-A-T Actor/watchdog为46.5/31ms，未触发；原滚轮/键盘滚动未触发，程序跳转触发。输入测量首败`input-rck89see`是夹具无可滚动高度，增加本次运行的高度后`input-nu_h6h3p`可测。仍是单人局部校准，不能叫一般人机分类已完成，也不因局部阴性改B-A-T输入节奏。
+
+在线复用原TS函数、MIT固定源码制品，通过现有collector/telemetry→CrowdSec；只保留最多128个匿名键盘时刻在报文内，持久日志仅判定，不记录字符/按键值；排除长按重复与IME合成键，缺触屏API/缺样本/倒退时钟明确不可用或无效。`combined-w8h0xwyi`完整4183下B-A-T真实输入阴性、8组正常/异常/缺失控制、3个原CrowdSec告警与真实表单提交通过，0模型/Profile永久删除。首轮`combined-lczsjsxh`已过判据但300ms后的URL断言失败，未保存当时页面原因；增加提交前值/有效性与5秒有界等待后通过，不能声称已证明首败根因或产品修复。滚动锚点/自动填充正常反例仍可能触发上游实验线索，不单独封禁；焦点单信号原Kitsune已列dead-end，不新增自造规则。
+
+Reuse Assessment：复用已固定Kitsune f0a22b3的collector/src/behavioral.ts（本地原文件SHA256 238f681da2ce6b6a37a926a9214a269ce7215c84bdae59902165a37ec4c9ac87）公开keystrokeEntropy/keystrokeIntervalMedian/isScrollTeleport，以及原registry 0.15/30ms阈值；不重写统计算法。原规则均experimental/corroborating，滚动锚点/滚动条、浏览器自动填充/IME和键盘自动重复必须作为正常反例，不能直接封禁。用已保存单人三段数据和一个owned B-U会话先测；不把受控慢速轨迹称真人，不把后台或没有鼠标单独当bot。当前B-U Actor原18ms固定间隔、watchdog原输入及原滚轮路径保留，发现具体异常才改。候选无独立人群效度仍归X1。
+
+## 2026-10-09 N06 当前GeoIP数据增量（实施前）
+
+结果：`geo-source-iowd9nh4/current.json`原CrowdSec读库/时区一致与矛盾、IPv4/IPv6、私网/无效地址通过。首轮错误预设公共IPv6解析器为US，实际库记录CA，修正测试假设而未改规则。`d1-geo-validity.log`截止/未来构建/延长到期/重复文件/损坏校准及lab定点tsc通过。部署后`d1-geo-engine-maps.json`证明owned引擎实际映射两份MMDB，五服务ready；到期2026-11-05T01:36:12Z。启动拒绝缺失/损坏/过期，持续进程到期报告stale但不自动热更新，需要维护刷新。公网物理地理、旅行/远程及RTT仍未测。
+
+原固定Hub的geoip-enrich确有公开下载，但现场HEAD显示City/ASN Last-Modified均为2026-02-05，不能在10月冒充最新。选用[DB-IP Lite 2026-10](https://db-ip.com/db/lite.php) Country/ASN月包（CC BY4.0、公开免账户）；HEAD为2026-10-01。已读项目固定geoip2-golang1.13.0的reader.go：DBIP-Country-Lite明确兼容City()、DBIP-ASN-Lite兼容ASN()，以及CrowdSec原GeoIPInit/IPToCountryString/TimezoneCountryMismatch。Country包4MB压缩即可覆盖现有国家/时区判据，不为不存在的城市规则下载60MB City包，不把无坐标记为坐标已测。
+
+Reuse Assessment：复用原CrowdSec/geoip2/maxminddb读取、规则和MMDB元数据，Python标准gzip/curl只负责有界下载和部署，现有生命周期管理维护窗口；不改地理数据库格式或实现IP查找引擎。新制品先落独立候选目录并核build epoch/数据库类型/原函数实际查找，再启用。B-A-T原浏览器环境不改，无模型/账号信息；数据不入Git。报告及使用地理结果的实验页标明DB-IP许可和来源；保存源月份/摘要/实际build epoch/到期，启动与报告区分available/stale/unavailable，不能用下载时间续期。当前公网地理真实性/旅行样本仍需外部对照，不用公共解析器地址代表用户物理位置。
+
+## 2026-10-09 D1 N04 HTTP与页面身份对应（实施前）
+
+实际结果：`combined-jv0lwleg`经完整4183/B-A-T原生Fetch，4字段均clear且无身份告警；按原页面claim发6组明确标注syntheticPayload的控制，品牌换序正常，4单侧矛盾各触发原CrowdSec独立告警，缺API的3个字段保留unavailable；原业务点击成功、0模型、浏览器关闭/Profile永久删除。`d1-identity-boundaries-final.log`两组协议边界通过：RFC引号/逗号、任意品牌、非整数版本正常；格式/类型/超量/缺失、隐私空值不变健康负例。最小类型检查通过。未修改B-A-T的UA/CH来迎合盾，客户端联合造假仍是已证限制。
+
+真实缺口：既有CrowdSec已包含Accept-Language/nav.language和UA/平台等原判据，但HTTP UA及低熵Client Hints与同次页面遥测的对应尚无在线验证。沿用原collector/telemetry及CrowdSec trigger，不添加页面、浏览器控制或综合评分引擎。只将同一请求的HTTP UA、规范化Sec-CH-UA/platform/mobile与浏览器公开值作相等性关联；原始值只在内存，日志只留各字段measured/mismatch/unavailable。此为可伪造客户端线索，不能认证真人。
+
+Reuse Assessment：仓库没有Structured Fields解析器；选择`structured-headers2.0.3`（MIT、无运行依赖、Node>=18/Windows+WSL），npm固定gitHead `1c17b4402eb81e1c85247e881505d0ad83523dc4`，已读原parser.ts/types.ts，复用公开parseList/parseItem；Zod继续负责边界。依赖仅盾工具目录。依据[WICG UA-CH](https://wicg.github.io/ua-client-hints/)，低熵值与高熵授权分开，缺API/头不判bot，品牌顺序不当身份变化。不采用bot-signal2.0.18的整套引擎：实际analysis.ts的版本regex不解析RFC字段，语言精确匹配比现有CrowdSec基础语言规则更激进，附带GeoIP/列表与当前职责重复；没有必要为几个相等性关系引入整套引擎。B-A-T仅适配协议值到原规则，模型调用0，无控制/存储所有权冲突。关闭门：原生B-A-T正常/缺失/错误/单侧矛盾，正常品牌顺序及非Chrome品牌、受限API；原实际CrowdSec告警和输入/业务保留，未通过前不冻结。
+
+## 2026-10-09 D1 首广告ALPN原生出口
+
+H3原始字段增量已验：`h3-integrated-25ygwnnz`正常Chrome重复/复用与GREASE变化无协议告警；混入原quic-go空SETTINGS后，原TLS与新增原CrowdSec h3-continuity均触发；62位ID/值精确保留，257项容量标invalid，原ALPN独立tshark一致。候选SHA256 `d87fa0ec060daef5c26ca9d3fb214537331c92d04eb8298cf1667a79aba5f86d`。普通模型0、配置摘要不变、owned浏览器关闭/Profile永久删除。仅关闭所测SETTINGS/每stream伪头关联，不称所有QUIC传输参数或所有网络盾完成。
+
+首轮测量首败`h3-integrated-9bbwzcvr`：Chrome三请求/两个握手原设置与头序有效，随机GREASE不改变关联；Go设置为missing，未产生新增H3告警。响应阶段候选`yl_oysud`仍失败，推翻“只因HEADERS先到”的初始判断。已定位固定HAProxy的h3_rcv_buf：零长度SETTINGS头经过原校验后，因buf为空直接break，根本不调用payload解析器；quic-go默认发空SETTINGS。候选在原帧校验后记录实际零长度，不伪造缺失默认值、不改协议处理。最终取响应阶段的连接事实，删除重复请求阶段取样；日志上限16384覆盖既定256项62位容量。原TLS混栈仍命中。旧候选及两次首败证据保留。
+
+下一增量：HTTP3原始SETTINGS与每stream伪头顺序。继续复用已固定HAProxy3.2.9原b_quic_dec_int/qpack_decode_fs，不另接代理/协议解析器。原h3c/h3s生命周期保存最多256项62位原值及5种伪头名顺序，sample-fetch输出，无头值/Cookie。保持原协议错误处置。将非GREASE设置/顺序作为额外协议连续性事实交原CrowdSec关联规则；不按单个固定指纹直接认定机器人。成熟候选malivvan/server v1.0.2只有包文档可取得，GitHub源码404且API额度已尽，不凭README选型或引入另一整套服务器。当前未实现/未验，不提前记通过。关闭条件为已知字段控制、原生Chrome正常重复/复用、缺失/容量/HTTP2回退、原关联异常仍有效；QUIC其余参数另列。
+
+验收更新：`tls-fragment-z8ueuwx7`四TCP边界、`h3-direct-saxjmoge`真实B-A-T/混栈异常/首广告不同控制通过；4个QUIC握手独立tshark一致。`h3-integrated-pi6offav`已删除临时第二套HAProxy服务，复用常驻4183通过相同控制：原configureEdge增加本机当前WSL私网TCP/UDP绑定，start在edge尚未运行时重取地址并校验配置，Windows验收只在owned Profile中指定本地解析。原管理/源站仍回环，仅完整盾入口可由Windows直达；原五服务启动成功，配置验前验后摘要相同，Profile永久删除。个人DNS/证书未改；其它QUIC字段未完成。
+
+H3候选排除：已读[Stylobot固定2c494594的Http3FingerprintAtom](https://github.com/scottgal/stylobot/blob/2c4945940a18ec615607a2ac71e0f612e8939242/src/Mostlylucid.BotDetection/Orchestration/Atoms/Http3FingerprintAtom.cs)，AGPL-3.0/.NET，读取外部注入X-QUIC头，内部没有SETTINGS/QPACK采集；主要是运输参数词表、0RTT/迁移加分，缺信任服务时默认信头。不能用它关闭当前首跳原始采集缺口，且额外引入完整.NET检测编排不符合薄适配；暂不引入。H3原始SETTINGS/头序及QUIC其余参数保持具体软件待办，不因候选宣传算覆盖。
+
+真实缺口：TCP preread遇分片会partial，QUIC没有该preread而使用协商结果，首广告与协商不同时JA4不正确。固定HAProxy3.2.9的ssl_sock_advertise_alpn_protos已收到OpenSSL校验的客户端列表，原ssl_capture已有SSL对象生命周期。候选在原capture中保留至多255字节首协议并提供一个sample-fetch；复用原JA4 Lua计算，替换旧preread来源适配，不实现QUIC/TLS解码、加解密或重组。依据[OpenSSL3.5 ALPN回调](https://docs.openssl.org/3.5/man3/SSL_CTX_set_alpn_select_cb/)及已校验Ubuntu源码。原Ubuntu安全补丁/原发行binary保留，选择校验覆盖新recipe。
+
+Reuse Assessment: 成熟原HAProxy/OpenSSL负责TLS/QUIC和ALPN，B-A-T仅导出首广告元数据；无新库/检测引擎。产品不伪造TLS参数。需要TCP首广告不同/缺省/分片及真实H3首广告不同控制，独立tshark对照；然后原异常关联必须仍触发。当前仅设计，不以采集新增报检测通过。
+
+## 2026-10-09 相关SW产品适配验收更新
+
+最终替换：`admission-0a6jp5r5`采用Chromium原browser-target Fetch后，同Profile真实浏览器重启、保留原SW注册，跨重启共2次到达，重启后8请求仅余量1获准。删除RelatedWorkers/OwnedWorkers及其Target回调/Network探测/时机分支。固定公开实现[BrowserDevToolsAgentHost](https://github.com/chromium/chromium/blob/main/content/browser/devtools/browser_devtools_agent_host.cc)本身提供FetchHandler，[URLLoaderFactory原接线](https://github.com/chromium/chromium/blob/main/content/browser/devtools/devtools_instrumentation.cc)对browser Fetch统一处理，不必等SW target创建后再安装。仅已核验专属Profile整体请求采用此入口，日常/账号借用仍限批准页面，不触个人target；原B-U页面/代理认证责任保留。
+
+旧SW方案首败均保留：3qzql4lp为related重启漏口，v_kgkpl0扩大SW监控仍漏；0lh3inww及后续类型/原生target诊断证实目标已附着、Fetch安装完成后后续批次会限流，但首次8次已漏过。此前将其直接归因未附着的解释不成立；原browser Fetch在网络factory建立前接入，消除这条安装时机缺口。新`admission-f6w01b32`页面缓存/302/配额/到期/冷SW/429恢复通过，`admission-e38pbiyz`原407认证通过。响应统一入口还复现了Fetch+Network重复加罚2次（d3-response-owner-first.log）；修复为Fetch持久化、Network保留文档采集/状态，2项定点边界通过。`cooldown-eqxi1U`两个真实Runner、无Retry-After的30秒实际到期恢复通过，到期前源站仅1请求、其它origin正常、0模型，Profile永久删除。
+
+## 2026-10-09 D6 现实场景增量
+
+D3后续结果：专属账号暖SW首败`admission-qj2dwrjv`及仅browser Fetch候选`ho6zip9r`均8/8漏放。固定Chromium原[BrowserDevToolsAgentHost](https://raw.githubusercontent.com/chromium/chromium/main/content/browser/devtools/browser_devtools_agent_host.cc)给FetchHandler的更新callback为空，已运行页面/worker不会自动更换URLLoaderFactory。复用原Target/Fetch接口，对已核验owned专属Profile内现存target临时启用空patterns→原厂factory更新→detach；不重启/注销Worker、不改页面内容、不关闭缓存。该命令不放行任何请求，唯一配额责任仍在browser Fetch。没有新增连接或通用协议引擎。
+
+`admission-myu1fect`证明账号借用保留暖SW、共享余量1/8、429→0→真实到期、账号Fetch与导航每个响应只记1次；首次2vdfk29y揭示只刷新worker而不刷新页面时账号429未被捕获，已覆盖全部现存页面/worker。`admission-it5cw_10`同一浏览器handoff→resume共享配额通过；首败vjio1i2l及n5ikjmol保留，后者揭示B-U TargetScope枚举过滤了worker，使用functools.wraps保留原API，仅已核验专属入口取原native快照，SDK日常页面枚举/原权限过滤不变。`admission-osxgpbkw`原账号缓存/损坏策略/共享预算回归，`admission-nkhsz5hg`原407认证通过。所有Profile永久删除、0模型。日常共享SW仍未覆盖：Chrome扩展的tab级所有权不能推出共享worker仅服务本任务，不能把本方案扩到个人Profile。
+
+Product Alignment:
+- natural-language task: 原浏览器任务在人工/账号交接后继续访问与读取。
+- reusable chain boundary: 原任务链/节点不变；跨控制阶段访问准入保持。
+- runtime inputs: 原目标URL、明确origin策略与持久冷却。
+- dynamic task outputs: 原动态结果及真实访问受限错误。
+- generic platform capability used: 原ManagedWindow/账号借用、原CDP Fetch与持久配额组件。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+实际结果：`combined-ba1bbs5l`最新browser Fetch下原完整HTTPS表单/SPA/303/API/缓存通过，9TLS及9H2有效，正常case无invalid/detected，原缺前置异常仍告警。`combined-kzx3ovko`外站图书两页各20项成功；动态页首轮未增长；Cloudflare专用页实际403、cf-mitigated=challenge与挑战资源，20秒仍未放行，明确未通过。增加网络/原生点击诊断的`combined-64_1nw1e`实际BUTTON trusted点击、Fetch200、12→24成功且无加载错误；没有改产品，首次失败原因尚不能归因。单次诊断成功不算修复首次失败。两者owned资源均关闭、Profile永久删除。
+
+下一独立缺口：专属账号借用在原B-U handoff后仅附着page Fetch，已存在的SW可能继续绕过主动预算。复用[Playwright原new_browser_cdp_session](https://playwright.dev/python/docs/api/class-browser#browser-new-browser-cdp-session)与同一Admission，仍只针对已核验ManagedWindow的专属进程，daily不扩大权限。正常窗口/账号页借用不增加第二个实际浏览器会话。产品网络/输入/采集职责不变；请求与响应统一持久化需去除账号导航/Fetch上的重复remember。先实际暖SW基线，再最小替换和原账号缓存/限流回归。
+
+在最新原生browser Fetch后复核原完整HTTPS业务；另复用同一个ManagedWindow/TaskBrowser验收入口做少量公开页面任务，独立记录真实站点结果。选取[Books to Scrape](https://books.toscrape.com/)原站明示scraping sandbox、[ScrapingCourse](https://www.scrapingcourse.com/)原站公开动态加载及Cloudflare挑战练习，禁止登录/个人数据/验证码自动作答，单次导航和一次加载动作，无循环撞挑战。这些是第三方站点兼容/已观测防护证据，不代表所有商业站点或人工同条件对照。
+
+Reuse Assessment: 保留原B-U Actor、TaskBrowser、ManagedWindow finally和原证据结构；仅在已有combined验收中增加场景选择，不新增浏览器控制器或检测库。来源[Cloudflare公开检测引擎](https://developers.cloudflare.com/bots/concepts/bot-detection-engines/)区分JS/请求/会话/行为；观测server/cf-mitigated/协议与资源路径类别，不能由Cloudflare CDN响应头推断该页启用了Bot Management。外部挑战停留将单独记失败或需人工，不自动求解。
+
+重启反例更新：`admission-3qzql4lp`同Profile保留注册、实际重启后8/8漏放。[Chromium FrameAutoAttacher](https://github.com/chromium/chromium/blob/main/content/browser/devtools/frame_auto_attacher.cc)明确导航发起时可能不附着已有SW，related的页面URL归属与初始about:blank存在时机缺口。替换为原生browser-target子session的setAutoAttach，仅filter service_worker；**范围是本次ManagedWindow可证明拥有的整个专属Profile的SW请求**，持续时间仅B-A-T控制期间。原页面/iframe的B-U root session不改，日常个人Profile不启用；不停止或删除SW。删除related/pages缓存分支而非叠加第二套监控。验收要求原注册保留、实际重启、余量1下8次只1到达；未通过前此项仍缺。
+
+下文SW“API可行性/尚未接入”的阶段状态已被`admission-wbv4yfg5`替代：原ManagedWindow明确标记Profile归属，只在该专属路径启用原生相关SW监控；共享同一原准入器，Request阶段准入、Response阶段沿原remember记录429/503。剩余1次下8请求仅1到达；429后第二次零到达，2.2秒真实到期恢复。日常共享SW不在此所有权中，仍待处理；暖启动/重启尚未验。未新增解析器、浏览器连接或窗口调度。
+
+## 2026-10-09 D5 BotD process 正常缺省校准
+
+后续D4真实扩展证据：admission-fgfrl1lv的任务控制准入与原fpscanner hasCDP阴性通过，账号borrow的损坏策略仍放行。定位原BrowserModel仅向borrow别名转发Overlay事件；Fetch.requestPaused仍发主Playwright session，原driver在无route时直接continue。新增适配只在该tab已经批准的Fetch.enable借用期间指定唯一requestPaused收件方，保留原auth收件方，detach恢复原Fetch配置；不广播导致双continue，不重建CDP或网络引擎。需真实扩展重测及别名释放/原auth/无关tab的定点边界。首轮x8yvl63e是误用要求网关凭据的4189探针入口，修测试使用已有4185和仅owned Profile本地SPKI。
+
+D4修复已由admission-_vzu9yie真实扩展及2项协议边界通过。SW原生可行性：admission-j8ukd77x在同一CDP连接创建仅服务相关SW的browser-target子session，autoAttachRelated绑定当前owned页面，不覆盖原B-U autoAttach；新SW原8/8漏过变为剩余1/8到达。此报告是API可行性，尚非产品接入。下一适配只给可证明由ManagedWindow拥有的专属Profile启用，配额明确聚合该受管Profile中与任务页面相关SW的网络请求；日常个人Profile可能共享SW，不能借此全局暂停/附着，保持该分支未覆盖。人工handoff释放监控。复用原CDP暂停/恢复和原准入库，不删除SW或改网络栈；SW响应429/503的测量与退避也须覆盖。
+
+D3页面/账号/普通Worker/原代理认证、共享状态和取消已增量通过；SW自主请求漏口保留为软件待办（admission-65_bhfwq）。原生Target.autoAttachRelated会取消原setAutoAttach，不能直接覆盖B-U root会话；共享SW可能服务无关个人页面，后续必须在明确所有权下接入。官方依据：[Target协议](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Target.pdl)、[Chromium TargetHandler](https://raw.githubusercontent.com/chromium/chromium/main/content/browser/devtools/protocol/target_handler.cc)。先继续不依赖该接入的D5正常反例缺口。
+
+固定BotD2.0.0 / 66da86e9d9e7206e817a0f7fdbdfa8fe37f3cd47原[source/process](https://github.com/fingerprintjs/BotD/blob/66da86e9d9e7206e817a0f7fdbdfa8fe37f3cd47/src/sources/process.ts)明确将普通页面window.process不存在表示为Undefined；[detectProcess](https://github.com/fingerprintjs/BotD/blob/66da86e9d9e7206e817a0f7fdbdfa8fe37f3cd47/src/detectors/process.ts)仅对renderer/electron阳性。现有适配把正常不存在统一归入partial，导致正常浏览器固定telemetry-invalid，属于测量状态映射错误。最小修复仅将确切的process/Undefined/原错误文本记expectedAbsence，保留原state、原detector和全部18规则；getter抛错/非对象/其它缺失仍invalid。验收须普通缺省、Electron阳性及读取抛错三组真实页面，不能仅改状态后宣称健康。
+
+Reuse Assessment: 复用原BotD公开组件与判据，不改bundle制品/检测阈值；自有适配只解释固定版本的错误状态。无新依赖，无产品浏览器伪装、采集关闭或白名单。新增/替换跟随原collector和probe入口，不另造环境探针。
+
+## 2026-10-09 D3 接入契约与原放行责任
+
+固定B-U0.13.8源码更正：`BrowserSession._setup_proxy_auth`在没有username/password时直接返回；有凭据才注册原authRequired与requestPaused无条件continue回调，SessionManager也只在该条件启用Fetch。不能把它描述为所有会话始终启用，也不能在有代理认证时再注册一个竞争放行器。后续适配优先在现有continueRequest出口统一准入，保留原认证处理；无代理路径只设一个放行责任方。仅作用于本次产品控制的页面/子资源，不在个人浏览器全局启用拦截或暂停所有target。
+
+主动治理候选契约：显式按origin声明限额，跨B-A-T执行/Profile共享计数；没有已声明策略时标为未配置，保留已完成Retry-After退避，不猜网站隐藏配额、不套盾的60/h或240/day。配额计入客户端实际准备放行的HTTP请求尝试，和网关/源站到达数分别报告；重定向、缓存与SW须实际验证覆盖，不能把节点数当请求数。耗尽后不发请求、不自动重试或问模型，交还已有受限访问/恢复语义并保存到期时间，不能无限占着浏览器等待。
+
+Reuse Assessment：复用盾已固定的PyrateLimiter4.5.0 SQLiteBucket、put_decision/leak和filelock3.19.1（归档SHA在artifacts.json，MIT/Unlicense），不自写限流算法/SQL锁。以单一薄适配供客户端和实验配额调用，删除被替换的重复实现。当前Windows产品venv尚无这两包，安装仅在该venv内并加入固定hash runtime-requirements，不改B-U frozen lock。共享算法不是独立到达验证，真实测试须另核原CrowdSec/网关计数。
+
+Product Alignment：资料读取、预约/表单、账号检查共用访问准入；预算输入来自声明的站点策略，普通复跑0模型，不新增网站特判或调度引擎。先完成所有权与最小真实请求校准，再扩大到其它阶段/自主流量；部分可控覆盖不得结算为完整D3。
+
+## 2026-10-09 D2 非文本控件：先复现再适配
+
+`input-6xczwtc9`先在真实React受控组件复现原生探索：date/time/datetime-local/month/week/color/range各4个脚本事件，值及state正确，但模拟blur没有更新React提交状态。`input-vhfbw4ow`只读DOM证据确认Chromium本身拥有日期/时间的语义spinbutton子字段；颜色只有色块，不能将日期方案外推颜色。两次owned浏览器已关闭且Profile永久删除。
+
+Reuse Assessment：固定B-U0.13.8原`_set_value_directly`针对上述类型直接赋值并dispatchEvent；[Playwright1.61固定源码](https://github.com/microsoft/playwright/blob/v1.61.0/packages/injected/src/injectedScript.ts)的fill同样对上述七种类型赋值/合成事件，换一个fill库不能消除此问题。候选复用Chromium已实现的日期字段/范围键盘行为、CDP的DOM.describeNode/DOM.focus及现有B-U Page.press，仅适配标准ISO值到原生字段；不重写键盘、日期选择器或输入引擎。实现前先核实际DOM字段，修改后用值、React state、实际blur提交、事件与焦点共同验证；不以trusted推断真人。颜色/不支持类型保留兼容能力并继续列缺口，不能删除功能换通过。
+
+Product Alignment：日期预约、资料筛选、通用表单等共用输入能力；普通节点输入仍来自任务参数，输出/模型调用/采集与主链不变；site/task-specific code added: no。候选实现仅当前Browser实例hook，不修改安装库源码。
+
+## 2026-10-09 D1 同连接H2采集扩展（已校准子项）
+
+运行结论：固定候选SHA256 `378005719314abb0b939310b937823c836ae6eb0d27d5561998d28181ee9c218`，原发行binary保留；`h2-integrated-z4zmsgkf`验证完整4183入口九组协议、原始16位ID/32位值、WINDOW_UPDATE、分片/每stream头序、独立Hypercorn一致性、缺失/容量及伪造转发头。原CrowdSec仅对混栈正例告警。`combined-hxw_fp77`三项真实B-A-T目录/预约业务通过，原浏览器标记/脚本输入正例仍触发；不是自然语言完整产品验收，后者单独执行。H3完整字段和其余跨层判据仍未关闭。
+
+首败：控制发送器不补DATA流控导致Firefox窗口耗尽超时；空SETTINGS被HAProxy日志表示为“-”。分别修测试客户端流控和显式empty元数据，未改Kitsune判据/阈值；报告`h2-integrated-u0viw72n`、`h2-integrated-bsh_ppvt`保留。构建缺crypt.h/链接变量失配也保留build.log。未来重建命令为`python tools/antibot-lab/prepare-edge-h2.py`，停止owned服务后`lab.ts activate-edge-h2`校验源/适配/binary摘要并选择候选，`lab.ts start`仍走原生命周期；选择不自动标记检测验收。
+
+已核当前edge.ts：4183→4181终止客户端TLS/HTTP2，再由HAProxy重建到4182的连接；4193 Hypercorn是独立入口。把4193直接接在HTTP代理后会得到HAProxy的SETTINGS/伪头顺序，不能称客户端检测。Hypercorn原生事件接口已可独立校准，但将它改为完整代理还需新的转发与PROXY身份适配；已有NGINX候选需额外OpenSSL/NGINX补丁，不优于扩现有入口。
+
+Reuse Assessment：继续HAProxy3.2.9-1ubuntu2.2（GPL-2.0-or-later）原TLS/H2/HPACK/QUIC与代理引擎、原JA4 Lua、固定Kitsune判据及CrowdSec规则。选定候选是对HAProxy原解码结果增加有界只读sample-fetch出口：原始初始SETTINGS及每stream伪头顺序，不实现帧解析/HPACK/代理，不改变协议验证和处置。沿原日志/原h2服务把元数据送原分类器；HAProxy日志不写头值/Cookie/解密密钥。保持原Ubuntu安全补丁和编译功能，不用未打发行版补丁的旧上游替换已安装binary。原二进制保留，候选校验后显式选择；额外成本为固定源码编译，不新增系统代理或产品依赖。
+
+源码依据：[HAProxy固定3.2.9归档](https://www.haproxy.org/download/3.2/src/haproxy-3.2.9.tar.gz)，官方SHA256 e660d141b29019f4d198785b0834cc3e9c96efceeb807c2fff2fc935bd3354c2；Ubuntu对应dsc/debian补丁与现用3.2.9-1ubuntu2.2一致。原mux_h2.c的h2c_handle_settings、hpack_decode_frame返回处及h2c_frt_stream_new已读，前者已有完整帧/16位ID/32位值校验，后者仍保留原伪头顺序。候选只导出元数据，原算法与内存所有权不另造。
+
+focused validation：先真实TLS控制发送已知SETTINGS/伪头，检查16位扩展、分片、同连接后续不同顺序、超量不可测及H1回退；与原Hypercorn独立结果对照，再在完整4183原规则下证明异常进入CrowdSec、正常B-A-T业务通过。通过前不关闭N03/D1；后续H3完整字段仍是独立缺口。
+
+Product Alignment：适用于资料读取和表单任务的同连接网络身份测量；复用现有盾与产品验收，普通复跑0模型；本候选仅盾元数据适配，无产品网站特判、不替换browser-use。
+
+## 2026-10-09 讨论结论：盾必须对齐真实反爬机制
+
+本次仅整理已核资料和已有结果，不新增依赖、候选引擎或运行试验。执行范围/教训见[主计划0节](ANTIBOT_NEXT_SESSION_PLAN_20261008.md)；下文“用户睡眠/关机”的安排是昨晚历史，不能作为当前继续开发的全局阻塞。
+
+当日对话已核对[Cloudflare检测引擎](https://developers.cloudflare.com/bots/concepts/bot-detection-engines/)与[AWS Bot Control官方规则说明](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-bot.html)。前者明确结合请求/浏览器/会话信号、JavaScript与机器学习；后者明确静态请求分析、浏览器检查/指纹、行为、会话token、限流及挑战。这证明这些机制在真实产品中使用，不证明各站启用了相同阈值，也不证明现有开源判据与其专有模型等价。
+
+| 实际机制族 | 当前实现/不足 | 对应开发包 |
+| --- | --- | --- |
+| 网络、请求与浏览器身份一致性 | 已有首跳TLS、独立H2与H3混栈关联；完整入口/协议及跨层字段仍缺 | D1；不能只测JA4字符串或网关回源 |
+| 浏览器环境、自动化与跨上下文信号 | 已有BotD/fpscanner/部分CreepJS与CDP改善；日常扩展、剩余设备/worker/API分支未结清 | D4/D5；探针安装、字段采集不算有效检测 |
+| 行为与序列 | 输入原生化/轨迹、CSRF前置已有结果；三行为候选校准未满足一般分类，键盘/滚动/焦点联合项仍缺 | D2/D3；CSRF和连续曲线不能代替人机分类 |
+| 会话、请求历史、频率与关联 | 原CrowdSec规则/挑战、SQLite配额、短时状态和合成关联已验；全阶段主动访问治理未完 | D3/D4/D5；真实历史/公网数据与软件机制分别结算 |
+| 挑战、验证token与处置 | 原挑战、消费持久化、真人处理后恢复已验；非公开模型、真实issuer及遥测可信边界仍需明确 | D5/D6；人工恢复是产品能力，不把实验验证码强度说成商用等价 |
+
+后续机制覆盖记录必须有：真实产品/公开源码依据、查询日期、具体信号与判据、现有组件、正常/异常/缺失样本和B-A-T路径。优先补共同机制；对Akamai、国内WAF等既有来源按当前缺口增量核验，不因只有两个厂商的资料就报“大多数网站覆盖完成”。真实场景发现本地漏项时回填对应D包；不让现实校验成为绕开本地盾建设的理由。
+
+架构事实：盾为CrowdSec独立服务＋开源组件＋适配/配置，确实包含固定CrowdSec挑战持久消费补丁，见prepare-persistent-engine.py/spent_sqlite.go及实施记录。日常与专属模式的差异需拆为Profile连续性、可见/无头和控制传输；[Chromium数据目录说明](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/user_data_dir.md)确认Profile保存历史/Cookie等，[Chrome debugger说明](https://developer.chrome.com/docs/extensions/reference/api/debugger)确认扩展也可作为调试协议传输。持久专属可以保留正常站点状态，不应把临时冷Profile实验外推成“专属天然更假”。
+
+## 2026-10-09 后续主动访问治理的未决边界
+
+已实现跨阶段/Runner的429/503冷却、明确Retry-After与无期限退避，且原源站请求数证明有效；这是响应后的访问治理。主动配额不能把盾实验的60/h、240/day硬套给所有真实网站，也不能把nodeDelayMs变成“已限真实请求”。准备/复跑/账号检查可以共享既有DiskCache状态；浏览器自主资源、Service Worker和重定向的逐请求准入还没有实现。
+
+再次核固定B-U eb412692的session.py:1838–1957和session_manager.py:436–449：原代理认证会在root、当前和新session启用Fetch，注册requestPaused后无条件continueRequest；另加独立拦截器有多处理器争抢放行和所有权冲突，不能仅新建一个limiter后称接入完成。PyrateLimiter4.5.0原SQLite窗口已经在盾的真实并发/重启/短窗验证，算法不需重写。下一步仍应适配原网络处理链，先明确每站主动策略的来源/范围、静态与自主请求是否消耗、额度耗尽等待还是暂停、跨账号是否合并；这些会改变用户任务行为，当前没有已确认的产品契约。此项是未完成的软件/策略工作，不伪装为开源组件不存在或所有本地工作已完成。
+
+行为模型的三候选原阈值校准均未满足一般真人正常反例；新训练/再校准需要独立参与者与设备样本及允许的误报验收口径。用户睡眠期间不能补真实样本，不复制单人片段扩大分母、不调阈值让B-A-T过。真实公网身份/硬件issuer/跨天仍另列。按本次明确“无法独立作决定也关机”的指令，保存这些具体未决项，不等待用户继续操作或保持跨天作业。
+
+## 2026-10-09 H3 私网直达校准门（实施前）
+
+实施结果：`reports/h3-direct-e9dozewa`实际Windows B-A-T使用h3，原CrowdSec冷挑战后业务/Fetch200；Chrome初始/PSK恢复保持同TLS族，无协议连续性误报。同UA/同实验Cookie的quic-go0.55.0原HTTP3客户端形成第二TLS族，原CrowdSec触发。独立tshark从QUIC Initial解析的3个JA4变体全部与HAProxy一致，无TLS密钥落盘。只结清本地H3跨栈关联子项，不外推H3 SETTINGS/所有QUIC特征或公网；首广告ALPN通用状态仍partial。两次临时WSL私网服务均关闭、捕获正常结束、Profile永久删除，原常驻配置SHA不变。可复现入口`apps/api/tests/antibot-h3.acceptance.py`与薄Go客户端，测试专用DNS/SPKI/QUIC flags不进入产品。
+
+首败`h3-direct-htnah8fi`已实际h3且两种网络族测量正确，但临时HAProxy日志只写报告目录，没有进入原CrowdSec采集路径，故没有告警；这是组合测试接线错误，不是已证检测通过。修复仅令临时服务stdout追加现有logs/tls.jsonl，再以唯一case关联取回，规则/阈值未改。首败normal/mixed/pcap及清理证据保留。
+
+复用现有HAProxy3.2.9的原QUIC/TLS能力及原CrowdSec协议连续性规则；仅临时owned服务把原配置的监听地址改为实际WSL私网IPv4:4195，内部终止4196，不改常驻服务/系统防火墙/WSL网络模式。Chrome独立Profile使用官方`origin-to-force-quic-on`、单host解析及已有SPKI pin；目的在于避开WSL NAT localhost不转UDP的测量障碍，不加入产品启动参数。依据Chromium官方playing-with-quic文档；证书与个人信任不变。正常B-A-T冷挑战/原生Fetch应实际h3并无协议关联误报；随后同实验会话混入固定quic-go0.55.0原http3.Transport（MIT、Linux已构建），期望原transport=q独立桶识别不同TLS族。只消费公开HTTP客户端API，不复制QUIC引擎，不外发Cookie；测试Cookie仅stdin/内存，资源finally核owner后关闭，抓包只4195/40秒/4MB。
+
+Kitsune固定f0a22b3的detection-catalog.md已把quic_grease_vs_ua/quic_pq_keyshare_vs_ua列为retired，原因含其捕获链未充分验证；不能把其README的HTTP3字样当成熟可用判据。本次只校准已有实际跨请求网络族关联，原JA4 QUIC广告ALPN仍partial，不重新启用上述退役规则。
+
+## 2026-10-09 N03 在线校准结果及富文本输入
+
+`reports/combined-_bof1ng_`：9项真实TLS/H2控制（两组一致、两组矛盾、空/未知、16位扩展、分片、复用）和2次实际B-A-T原生请求通过；原CrowdSec仅两个矛盾场景命中。`h2-boundaries-c_zlt20a`容量超限/HTTP1明确unavailable，伪造转发头不改变来源；`h2-reused-order-xwxm4o4r`同连接第二请求改伪头顺序实际触发，避免复用首请求顺序漏报。4193为独立首跳H2层，未与4183首跳TLS合并，未证明HTTP3。
+
+首次`combined-i71d1es7`失败来自测试发送库hyperframe6.1.0 SettingsFrame.serialize_body中的`setting & 0xFF`，16位扩展43981实际发成205，服务端记录正确。仅测试发送器按RFC的uint16/uint32打包，接收库/判据不改；首败日志与清理保留。原Kitsune上游LF文件SHA为6b391de9a21b4de97468edfb8438662ff05793a1d2ab69082e7b273b7ef199ef，旧离线CRLF副本SHA不同但换行归一后相同。离线构建改用h2-hints-offline，避免覆盖在线进程使用的二进制；在线start核摘要、WSL Python>=3.11和实际checkout归属。
+
+富文本沿已有B-U0.13.8输入适配复用Page.press及原填入引擎，不增加依赖。上游Actor清空仅赋this.value，contenteditable真实内容残留；原watchdog清空/commit合成事件。源码为固定eb412692的actor/element.py:886及browser/watchdogs/default_action_watchdog.py:1242、1931。产品仅扩已有STATE空值识别和原生blur/focus的Range保存恢复；编辑器和普通文本框共享能力，无网站特判/模型调用。`input-15nordny`真实首败：Actor替换/清空不正确，脚本事件2/2，watchdog5且未真实blur提交；`input-6turf6sq`替换/追加/清空/探索、React状态/提交/焦点通过且脚本事件0；`input-77olqhzl`原中文、React、数字、多行、空值/追加兼容通过。日期/颜色等非文本控件仍保留原兼容fallback，未伪称原生化。
+
+Product Alignment: natural-language task=编辑富文本与填写普通表单；reusable chain boundary=原输入节点；runtime inputs=目标/文本/clear；dynamic task outputs=实际控件与框架状态；generic platform capability used=已有B-U/CDP按键与焦点；replay model calls=0；site/task-specific code added=no。
+
+## 2026-10-09 N03 在线 H2 最小复用门
+
+原NGINX候选未接入。替代为独立回环4193协议检测入口：Hypercorn0.17.3原TLS/ASGI生命周期、hyper-h2 4.3.0原SETTINGS与RequestReceived事件、hpack4.1.0/hyperframe6.1.0原解码；均MIT，Python>=3.11，WSL当前3.14.4，固定wheel与SHA入制品清单。只适配固定H2Protocol._handle_events事件出口，原处理器照常执行；不复制HTTP/HPACK/代理引擎，不保存解密密钥或头值。Kitsune f0a22b3原SettingsBrowser/Browser判据继续用已校准Go程序；CrowdSec继续拥有告警。
+
+初始SETTINGS记录实际收到的字段，而非remote_settings补全后的默认值；伪头顺序在Hypercorn filter_pseudo_headers之前取得。超出256项、缺失/未知判为不可测；hyper-h2会折叠重复SETTINGS ID，本接口只声称有效初始设置及伪头顺序，不声称保留重复帧原始字节。范围只限独立协议入口，不能冒充现有4183完整盾或HTTP3。来源固定wheel protocol/h2.py、protocol/__init__.py、h2/connection.py；公开代码：https://github.com/pgjones/hypercorn/blob/0.17.3/src/hypercorn/protocol/h2.py 。
+
+预先校准：真实TLS上的Chrome型/Firefox型一致正常、互换伪头矛盾异常、未知/空设置不可测、16位扩展ID不截断、正常分片/连接复用；随后B-A-T真实原生请求。由真实socket提供来源，不信任转发头；原CrowdSec规则正反例和事件有效性分开证明。服务归原systemd生命周期管理，原4183入口不改，不增加产品依赖或模型调用。
+
+## 2026-10-09 B06 前置流程校准（实施前）
+
+Reuse Assessment：现有原生Fetch、CrowdSec观察parser、LAPI与LRUCache11.4.0继续使用；新增仅实验盾依赖csrf-sync4.2.1，ISC、Node14+、原lib/index.js已核验，复用generateToken/isRequestValid及公开状态读写扩展点。固定npm完整性`sha512-+q9tlUSCi/kbwr1NYwn5+MeuNhwxz3wSv1yl42BgIWfIuErZ3HajRwzvZTkfiyIqt1PZT8lQSlffhSYjCneN7g==`，只用原会话令牌验证，不引入Express或自研CSRF引擎。现有挑战票据不承担业务前置步骤；不把CSRF令牌当真人身份证明。来源：https://github.com/Psifi-Solutions/csrf-sync 。
+
+限定新`/case/{id}/flow`合成流程，不改既有catalog/booking验收页。服务器签发同会话令牌、原LRU有界TTL；无令牌/跨会话/错误Origin提交应403并产生原CrowdSec告警；正常导航、SPA、缓存、重定向和持有合法前置状态的直接API应通过。Cookie/令牌不进日志/Git，正常token重复使用遵循原CSRF语义，不伪称一次消费。重启失效明确为状态丢失；模型0次、一个owned会话及finally清理，先正反例后结算。
+
+Product Alignment：查询确认和表单提交都需要保留站点真实前置状态，runtime继续原生浏览器网络；此增量只补盾的公开机制/反例，不给公共产品增加站点规则。
+
+## 2026-10-09 B02 第三模型结果与 N03 候选边界
+
+DELBOT原阈值0.2：`reports/delbot-baFNcb/result.json`公开human44中39可测全部误报，5时钟无效；advanced/moderate各28均报bot；本机1人3段均误报，原B-A-T轨迹报bot。原训练数据仅作管线canary，`delbot-rceIFv`原human6中2识别人/4误报，原bot4中2识别bot/2不可测；不拿训练数据作独立准确率。模型/权重/适配均不调参，候选拒绝接入封禁，整体行为分类仍未完成。
+
+N03继续核验固定NGINX插件的实际解码代码，确认SETTINGS/PRIORITY宽度截断不是文档误读；需同时patch NGINX/OpenSSL并调整入口来源传递。现有HAProxy3.2原dev/h2/h2-tracer.lua只解析frame头且跳过payload，无SETTINGS内容/HPACK解码，不能凭装上tracer宣称已有指纹。TLS keylog+tshark是诊断方案，会新增解密密钥与流量采集，不当作常驻盾替代品。保留原离线校准，在线原始H2缺口不虚结。
+
+## 2026-10-09 V06/S03/S05 联合反例补验
+
+不新增引擎/规则，扩现有两份真实验收脚本的独立入口：`--telemetry-adversarial-only`仅验证客户端同时伪造18 clear与trusted会被形状协议接受，以及跨case/缺失/重复/未知/error/overflow；`--association-only`复用原源站auth-probe、原CrowdSec distinct与8个127/8实际连接来源，证明共享出口/正常迁移反例与跨来源异常关系。原Alert按来源展开导致首次用例数量预期错误，原28事件与12Alert离线复核通过，不重跑碰状态。结果路径在PROGRESS；源码/评分不变，普通客户端遥测缺少可信签发不能被协议有效性包装为防伪。
+
+## 2026-10-09 B02 第三行为模型输入契约复核（候选门）
+
+纠正此前DELBOT整体未试的依据：固定712a00ea994738b680b0b11bb4b518979385d07b的DataMovementMatrix.mayNormalize=false；原dataTraining.ts:120明确以1/1加载原像素。因此原卷积矩阵模型可消费现有像素轨迹，无需捏造screen尺寸；RNN/特征模型仍不能套此结论。固定源包SHA256 e77016a6acb81158879ed0cb0c7073625bba79f063a55e9897c168082ff738ff，LICENSE.md为MIT、npm字段Apache-2.0（都保留，不声称字段一致）。候选只在独立实验runtime使用原@chrisgdt/delbot-mouse1.3.3、原TensorFlow.js4.0.0/24KB原卷积权重及公开TensorFlowModel/Recorder/DataMovementMatrix，0训练、原0.2阈值不变，不复制网络/特征算法。
+
+复用既有公开正式标签500点与真人3段，以及新B-A-T轨迹；输入缺失、时钟逆序/不足先列不可测。预先接受门为原阈值下既有可测human/本机样本无误报、至少一半可测高级bot命中；不调整权重或阈值迎合结果，分母/来源分开。原训练数据不当独立留出，公开数据缺少独立用户/设备分组继续限制泛化。Windows/纯JS CPU，无浏览器、无上传；自有代码只本地加载固定权重、格式适配与记录结果，未验证前不接实时封禁。
+
+## 2026-10-09 B02 鼠标轨迹复用候选（实施前评估）
+
+固定browser-use0.13.8/eb412692的Actor与原生watchdog均直接mouseMoved至终点，随后原按下/释放；现有原生事件修复并没有运动轨迹。候选选择ghost-cursor1.4.2（Xetera/ghost-cursor固定5525a783fcf833a60f1b0746a8f80653ccfee2ba，204次提交；源码src/spoof.ts、math.ts及许可已读），复用公开path(start,end,{useTimestamps:true})，保留原Bezier与时间算法。包声明ISC而根LICENSE为MIT，两者均宽松但原LICENSE须保留；不宣称来源字段一致。只考虑纯路径函数，不用其Puppeteer控制器/随机游走/页面注入，browser-use仍拥有会话、目标、点击及清理。其move实现直接把毫秒时间传CDP、不真实等待，故不复用该控制器；B-A-T适配按时间间隔实际派发原生事件，禁止伪造CDP时间戳。
+
+Product Alignment：表单控件及资料链接等任务的通用指针移动，输入为原浏览器选定的坐标，输出保持原动作结果；0模型，无网站特判。B-A-T仅把固定库路径接入当前受管CDP Input实例，不新增选择器或控制引擎；先独立路径边界/基线测量，再实际Actor与原生探索兼容验收。鼠标按下拖动、未知初始坐标、触屏保持原路径，不暗改拖拽语义；取消必须不发后续点击。
+
+实测首轮：原4次点击均仅1个mousemove；候选`input-tpkyfkn1`目标/计数/原生事件通过，但每次约194个CDP调用需要3.2秒。随后公开moveSpeed=2在短距离因上游逐段四舍五入出现整段0毫秒（`input-3yvv4_rr`仅2次move/1.9ms），拒绝此参数。恢复上游默认时间轴，仅按16ms帧间距选择原采样点、不插值、不改曲线、不假时间；256点/8秒为派发安全上限。原curve相同坐标会产生NaN，在入库前作为无需移动处理。重测实际时长后才冻结。
+
+Reuse Assessment：现有TaskBrowser/TaskElement、cdp-use1.4.5 InputClient实例公开dispatchMouseEvent可适配。Windows复用既有Node进程能力，独立有界路径计算进程只读坐标、不接浏览器、不访问页面、不持久化坐标；先测启动耗时，再冻结。Python移植python_ghost_cursor2021版本无时间轴；HumanCursor1.1.5标准包入口加载Selenium/PyAutoGUI且曲线内部API无时间轴；human-browser-use0.2.1为Alpha并复制大段watchdog，不整套替换B-U。现有motion-attestation1.1.0/Kitsune高级轨迹漏检限制仍保留，不以能生成曲线当盾分类有效或整体穿透通过。
+
+## 2026-10-09 V03 本地人工验证码及原运行恢复（已验证）
+
+实际结果：3组协议边界通过；`bat-human-wait-real-tIFyCm`实际用户在完整HTTPS4183/原PoW后回答图片挑战，原TaskChainRuntime两次未解决等待与之后原run完成通过、0模型。只记录答案判定结果；观察不截图，DOM仅摘要，验证码文本未写证据。实验SPKI仅加到精确owned Profile的测试启动器；跨Windows/WSL的活动SQLite只经原源站报告读取。首次驱动模式/证书/独立WAL读不到新事件的失败见PROGRESS，源码最终不改变产品访问控制。svg-captcha是旧版本小型图片库，不能借此声称抵御现代OCR或商业验证码等价。
+
+Reuse Assessment：现有CrowdSec PoW不等于人工验证码；B-A-T已有401人工暂停/checkpoint/同owner恢复，复用此路径。选择[svg-captcha1.4.0](https://github.com/produck/svg-captcha)公开svgCaptcha(text,options)仅生成图片，npm原包SHA512 /fkkhavXPE57zRRCjNqAP3txRCSncpMx3NnNZL7iEoyAtYwUjPhJxW6FQTQPG5UPEmCrbFoXS10C3YdJlW7PDg==已核对，源码lib/index.js、ch-to-path.js、random.js及MIT许可已读取；内部Math.random不负责答案，适配用Node crypto生成文本。保留原字体/路径引擎，不复制渲染器。Node/纯JS适合Windows+WSL；固定lru-cache11.4.0负责数量/TTL，答案和一次通行会话仅内存、不写日志/Git，输入一次消费、同case/UA绑定。独立小依赖包放既有lab工具，不改变产品依赖或浏览器控制。
+
+Product Alignment：登录/身份检查和任务中的人工验证，共用原暂停/继续合同；系统不读取图像答案、不求解、不代用户输入；正常答案后检查同一run与浏览器恢复、0模型。异常包括错误/缺失/重放/跨会话，正常需真人操作。图片识别强度不等价商业验证码；当前只验交互挑战机制和运行恢复。候选dchest/captcha可用但需额外Go服务，现有Node源站公开API更小；不新建服务管理器或会话平台。页面挂在原检测入口后，保留原规则和业务配额。
+
+## 2026-10-09 B01 数字输入的原生事件补漏
+
+固定B-U eb4126921bea3373f91afc49fb4b59d6eda7fed6的[Actor清空](https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/actor/element.py)及[默认watchdog](https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/browser/watchdogs/default_action_watchdog.py)源码仍有脚本清空/提交分支；现有task_input仅覆盖文本类型。原真实数字框用例追加事件观察，不改页面；`number-input-before.log`证明Actor与原生探索均值正确但存在脚本事件。最小变更把number纳入同一已聚焦原生键盘清空/blur提交，原不支持选择区间由既有try处理；失败仍由原兼容路径处理。
+
+Product Alignment：表单中的数量/预约时长等数字输入，共用已有B-U输入事件；输入数字字符串、输出实际字段状态；普通复跑0模型，无网站分支。
+
+Reuse Assessment：复用既有B-U Page.press/TypeTextEvent、TaskElement和每Browser watchdog的原生清空/提交hook，无新库/输入引擎；Windows既有运行时/会话所有权不变。只扩展已支持的键盘控件类型，日期/颜色/富文本等仍独立验证。focused validation为原Actor/原生探索数字34/56、异常原脚本事件和正常原生事件反例、真实值/焦点与owned资源清理。
+
+## 2026-10-09 B05 无 Retry-After 的跨任务退避
+
+真实结果：缺头场景两个Runner/原生浏览器在30秒内源站仅1次到达，独立origin正常，真实到期恢复，0模型。首次`cooldown-L5Ze58`及timestamp去重候选`cooldown-wSNSn8`到期仍拒绝；诊断确认同requestId在两个CDP会话接收时间不同，改为requestId/loader/URL去重后通过。原明确Retry-After保护等6边界通过，新响应身份边界通过；该测试首版443与无显式port不匹配已纠正。503/429/200原错误归因以服务器明确Retry-After:0通过，区分无头退避场景。各浏览器/Profile清理均确认。
+
+原 `remember` 在429/503缺头或头无效时直接返回；新任务仍可立即访问。最小原实现首败 `cooldown-no-header-baseline.log`：guard未拒绝。复用现有DiskCache5.6.3事务/TTL与urllib3 2.7.0 [Retry公开算法](https://urllib3.readthedocs.io/en/2.7.0/reference/urllib3.util.html)，不再引入限流库。无有效期限时30/60/120秒上限退避，连续失败数保留一小时；有效Retry-After优先且不截短，明确0允许立即继续。活动冷却不被同origin旁路200清除；过期后成功清连续失败。没有主动重试、常驻worker或模型调用，不覆盖浏览器自主请求预算。沿原账号/准备/运行入口验证；源码与真实分母待下述运行证据更新。
+
+Product Alignment：原自然语言浏览器任务与账号维护；可复用边界为既有origin访问准入；输入HTTP响应，输出原访问失败码；使用现有Runner/人工恢复；普通复跑0模型；无网站特判。
+
+Reuse Assessment：existing implementation为access_cooldown；selected为已安装DiskCache5.6.3（Apache-2.0）与urllib3 2.7.0（MIT），复用Cache.transact/TTL及Retry.parse_retry_after/get_backoff_time；B-A-T只存origin哈希、失败次数、状态和截止时间。Windows既有运行时、单浏览器归属不变；不用Retry发网络请求，不复制调度器。PyrateLimiter能做固定配额但不能替代未知站点的响应退避，此处不增加该产品依赖。focused validation：原失败、边界回归、两个实际Runner与真实到期，分别记录。
+
+## 2026-10-09 S06 动态点击的宿主候选读取（实施门）
+
+原`product-JHSWo3`来源已经证明：原生模型没有find_elements，直接点击列表内版本7；缺完整候选读取导致无法编译。不能删collection_selection_read_required，也不重试原模型碰运气。局部方案在原点击前的采集回调复用既有DOM同组关系、record_projection_dom选择器、read_fields_with_proof读取整个同组候选；真实两次读取/节点身份一致后保存宿主事实。原生点击仍只执行一次，不把额外DOM结构交给原生Agent，不重放动作。现有selection_annotation只生成一次纯选择函数，编译为原read-fields/function/结构定位节点；读取失败保留原编译缺口。
+
+Product Alignment：自然语言按当前资料属性选择一项，也适用于列表中的预约/记录选择；可复用边界为已有点击前DOM采集→read-fields→纯函数→结构目标；运行输入为当前页面候选，动态输出为本次目标/原任务结果；0普通复跑模型；无网站/测试答案特判。
+
+Reuse Assessment：已有Browser-Use0.13.8 DOM/actor与固定workflow-use中的record_projection_dom、collection_structure、read_fields_with_proof、selection_annotation、原QuickJS校验和LangGraph；不引入库、不复制选择器/Agent loop/调度器。B-A-T仅适配其宿主候选事实与既有IR。边界为同一主文档、完整<=300候选、原128KB预算、稳定真实读取；iframe/不可证明全集继续缺口。验收先保护原拒绝门及两类DOM布局、变化/缺失反例，再原真实产品准备/试跑/发布/变化复跑；不将底层成功冒充整链成功。
+
+实际`product-czNRud`编译通过，代表复跑在挑战过渡页读到[]、Function失败。补漏继续复用现有requiredPaths及workflow-use declared_checks/verify_declared、Tenacity9.1.2有界等待（30秒/300ms/100次）；选择后点击必需至少一个候选，宿主集合节点声明路径[0]，不把任意允许空集合的读取都改成非空。Runner在已有必需路径检查前等可读事实，不重发导航/点击、不识别或求解验证码、不调用模型。合法永久空集合在上限后失败；正常异步页面/挑战自行完成后继续。先复用保存草稿、以0模型试跑验证，避免重复探索。
+
+## 2026-10-08 E06 账号控制兼容候选：限定实际产品能力
+
+选型实际结果：`account-runtime-7rD1LY`、`account-driver-compat-8cbd4b46`及2026-10-09 `combined-quz4hw9q`通过，故采用限定账号连接的兼容驱动。独立Runtime由阳性变阴性，13来源/65状态、原CSP/存储/焦点，以及当前完整盾冷挑战→动态业务/Fetch和异常告警保留。固定依赖/源码条件修补已经进入setup；临时候选安装移除。首败和未测传输/OS见实施记录，不承诺整个Playwright API等价。
+
+正式适配通过后，复用既有combined用例增加--account-borrow分支，只验本次新连接在冻结HTTPS4183完整入口的冷挑战、动态读取/选择和原生Fetch，以及原webdriver异常仍告警；不重复原三项业务/重启/遥测故障全套。保持全部规则/盾配置，不额外创建测试文件或改测试页；只开一个owned浏览器并finally原生命周期关闭删除。既有专属候选校准和13来源/65状态结果见实施记录。
+
+Reuse Assessment:
+- capability: 账号借用保留原页面、Locator、导航Response、主世界evaluate、Cookie/Storage和原生CDP事件，同时避免重复Runtime订阅。
+- existing implementation in repository: Playwright1.61.0账号连接已实测Runtime阳性；browser-use0.13.8主控制及动作采集保持。
+- mature candidates and pinned versions: Patchright1.63.0，driver f34b86146dd4e6b54eeacb023af0dbfe19ee09db；Windows wheel SHA256 cbeb9c7f552d96ced0922ad2fc4bd5fca817a97fb2eeabc13d1bfadf95efac1a。1.61.0只有driver tag，本次PyPI版本查询404，不将其当已发布Python包。
+- selected implementation: 先在ignored候选目录安装原wheel，仅既有账号Runtime对照替换连接工厂；通过真实样本后才决定产品采用。
+- reused public surface: 原connect_over_cdp(no_defaults=True)、Locator、evaluate(isolated_context=False)、CDPSession；不自行重写定位器/驱动、不修改浏览器启动参数。
+- B-A-T-owned adapter and remaining gap: 账号连接及必要evaluate/TimeoutError兼容；主控制、输入/DOM事件采集和盾探针保留。上一轮直接因Console/initScripts限制排除候选过于宽泛：账号当前不订阅console，且明确禁止initScript；仍须实际证明页面console/CSP/主世界和既有功能没有改变。
+- license/runtime/platform fit: Apache-2.0；Windows x64 wheel，依赖范围兼容已固定pyee13.0.1/greenlet3.5.6；不安装新浏览器。
+- browser/runtime/state ownership conflicts: 仅连接已handoff owner，stop连接后owner必须存活；检测异常控制保持；不对第三方网站/个人Profile实验。
+- replay model calls: 0。
+- rejected candidates and evidence: Rebrowser支持声明仍停在1.52，当前driver打包布局已变；不手工移植补丁。Patchright并非完整Playwright等价物，不承诺其console订阅能力，也不拿README通过列表当结果。
+- focused validation: 复用已冻结Brotector和实际borrow用例，保留Runtime原阳性；候选须阴性且探针ready，后台焦点/Locator/导航/owner清理通过；随后只运行受影响账号HTTP/认证与动作采集兼容检查。
+
+候选首测 `account-runtime-mKXAXU`：Runtime阴性且probe ready/errors0，导航/Locator/owner存活和永久清理通过，但后台焦点反例失败。固定Patchright源码crPagePatch.ts:230–232替换原条件时丢失Playwright的skipDefaultOverrides；仅恢复该条件，不关闭盾/采集。候选coreBundle原SHA34898aeefffcbe4f5b3c02d24cc510362fe401055ee26d40a95db91af5152c8d，单条件修正后38f9f625508e917ddac324d2a78a82c7c6f5aaff92b41ccb6aaa719dce07f886。新增原用例主世界读写和console原方法检查后复核，不能把首测记全绿。
+
+## 2026-10-08 N03 最小H2判据校准（测量前冻结）
+
+Reuse Assessment:
+- capability: 同条客户端HTTP/2连接的SETTINGS族与伪头顺序矛盾。
+- existing implementation in repository: tshark4.6.4真实首段pcap已保留；当前仅采集，未消费独立H2判据。
+- mature candidates and pinned versions: tshark原解析器；Kitsune f0a22b3600a829f7de9d6abb48ff1aaebfb5a69e原h2.go（SHA90969540ab6663ecaed1f92403a0d7941636c976f42b994be3847c3135c1dffa）及原net.h2_settings_vs_order规则。其浏览器族提示不是权威浏览器身份库。
+- selected implementation: 仅固定原H2Fingerprint.SettingsBrowser/Browser公开方法，CLI JSON适配；tshark读取原始协议事实，CrowdSec承接已知族之间不等判据。原结果unknown/缺帧不能记阴性。
+- reused public surface: 原Go公开方法、tshark JSON解码、CrowdSec trigger；不复制H2/HPACK/指纹引擎。
+- B-A-T-owned adapter and remaining gap: 字段转换/完整性/证据归属；先做独立组件/原生规则校准，常驻在线采集接入仍未完成，不能冒充当前组合入口已启用。
+- license/runtime/platform fit: 原MIT/Go标准库；WSL原tshark；不更改主产品库/网络栈。
+- browser/runtime/state ownership conflicts: 复用已有owned报告pcap，仅提取settings/伪头顺序，不打印头值/Cookie/请求正文；不新增浏览器。
+- replay model calls: 0。
+- rejected candidates and evidence: NGINX候选需两层fork且已见字段截断，记录在上一节；整套Kitsune新网关不因一条信号替换已校准入口。
+- focused validation: 原Chrome/Firefox一致合成反例、双向不一致正例、空/未知/H1不可测；同原pcap实际B-A-T普通导航/原生Fetch族一致；原CrowdSec隔离规则检查。无一般误报率/全协议/真实Firefox硬件声明。
+
+## 2026-10-08 N03 追加原始H2观测候选调查
+
+固定phuslu/nginx-ssl-fingerprint e72f932b630717939b508b58e5b4a48ec014adf3（另公开v1.0.5=ea2b5ae）README/许可证及NGINX1.30补丁已保存candidate-review/nginx-h2。原BSD-2-Clause。该方案需要修改NGINX及OpenSSL，不能直接作为当前HAProxy配置启用；其release-1.30.0.patch（SHA ad28a12a44f450ecf575e9d14f237f377a5b353652b97a1c40693b150c452650）将SETTINGS id、stream/dependency截为uint8，设置缓冲仅32字节（最多6项），未提供截断测量状态，不能据此宣称任意H2参数准确。未安装/替换现有入口；不把README或增加组件数当N03完成。原Kitsune完整uint16 SETTINGS与伪头序算法仍是候选，现有tshark保存实测可复用。来源：https://github.com/phuslu/nginx-ssl-fingerprint/tree/e72f932b630717939b508b58e5b4a48ec014adf3 。
+
+V02/B05本次结果、测试驱动首败和配置恢复见实施记录的“后续短测”；实际未使用票据到期检查已通过，账号打开页/存储导航遗漏已修，账号Runtime仍阳性。
+
+## 2026-10-08 B05 账号入口/存储导航冷却补漏（测量前冻结）
+
+源码审计发现CheckPage及原生Fetch已接Retry-After，但account_session.open_page与account_auth.storage_origin仍直接page.goto，跨入口可绕过同origin冷却。复用现有DiskCache/urllib3适配，不新增限速器；计划提取四行公共导航调用，保留原Playwright等待/超时/Response和scope/回滚校验。已有真实本地429服务器测试增加这两条路径到达数，先复现再修；只重跑该必要真实请求测试及受影响账号auth最小回归，不改变账号Runtime仍阳性的结论。
+
+## 2026-10-08 V02 在线票据过期短测（测量前冻结）
+
+复用原keyring公开配置key_rotation_interval=30s（原允许最小值）、max_live_epochs=2；保持PoW/签名/评分、已修持久spent不变。一个owned可见会话：正常新票接受为正控制；第二独立实验host原JS生成的有效提交在CDP传输边界暂停并取消，未到服务器消费，票据仅内存。等待真实65秒后由同UA提交，预期原协议failed/no Cookie；不是伪造时间戳，也不是已用票据重放导致拒绝。finally恢复原签名配置字节及engine、核SHA。此短测证明在线到期分支，不冒充默认15分钟实际窗口或12小时Cookie寿命；禁止长测并行，不动个人Profile。
+
+## 2026-10-08 V02 重启重放首败与持久存储适配门
+
+`replay-restart-53ii718u`：原生正常挑战后同票重放status=failed/no Cookie；真实engine重启后同票status=ok/Set-Cookie，第二次再拒。原Cookie正常反例仍有效。原nonce/票据仅内存，测试Profile已确认关闭并永久删除。此为实际盾缺陷，不能以既有SpentSet单测关闭。
+
+Reuse Assessment:
+- capability: 原挑战的已消费nonce跨重启原子保留。
+- existing implementation in repository: 固定CrowdSec909b5157/gcache0.0.2内存LRU；持久master下重启会丢重放记录；原Config无持久化选项。
+- mature candidates and pinned versions: 现有CrowdSec依赖mattn/go-sqlite3 1.14.32及SQLite原事务/唯一约束；Redis需新增守护进程且当前单实例无必要。
+- selected implementation: 固定上游源码小补丁，增加可选spent_set_db公开配置字段，以SQLite事务、唯一主键、原20分钟TTL承接原checkAndInsert；哈希nonce，无原票据/Cookie。
+- reused public surface: database/sql、原sqlite3驱动、BEGIN IMMEDIATE/唯一约束；上游HMAC/PoW/评分/挑战JS全部保留。
+- B-A-T-owned adapter and remaining gap: 薄持久存储适配与可复现固定源码构建，不复制检测/认证/窗口引擎；上游原内存路径仍保留作对照。
+- license/runtime/platform fit: CrowdSec MIT、go-sqlite3 MIT；现有WSL构建/运行，Windows主产品无依赖变更。
+- browser/runtime/state ownership conflicts: 新DB仅盾owned data目录；原库不覆盖；验证后切换owned engine二进制，不重置历史/配额/secret。
+- replay model calls: 0。
+- rejected candidates and evidence: 无配置后端可启用（固定config.go/spent_set.go）；轮换master会丢正常Cookie且不能实现跨实例一次性，不能当修复；外置代理重写协议职责更大。
+- focused validation: 原SpentSet相关测试+新增双连接/并发唯一消费、重开、真实短TTL、容量/损坏拒绝；新二进制原配置检查；实际原Browser挑战/重启同票拒绝及暖Cookie正常。仅此package和cmd构建，不运行全量测试。断电/多主机仍不外推。
+
+## 2026-10-08 V02 原挑战重启边界（测量前冻结）
+
+固定CrowdSec 909b5157（v1.8.1）原 `pkg/appsec/challenge/spent_set.go` 使用 gcache 内存LRU；`ticket.go`以原keyring时间窗及20分钟上限验证新鲜度；持久master保证重启后签名/Cookie连续，但没有持久spent接口。新增单次本地实测：原生可见浏览器正常完成挑战，原提交只在内存；重启前重放应拒绝，真实engine重启后重放仍应拒绝。保留原HTTP200下协议status/Cookie事实，不把HTTP码当接受。若重启后接受，记盾缺陷并调查原生扩展/成熟存储的最小适配，不宣称V02完成。沿用已有restart ownership/长测互斥与finally清理；不访问第三方、不保存原票据。
+
+账号焦点修复复核：`account-runtime-ZAFwXU`后台hidden=true/focus=false在实际借用前后保持，导航/Locator/owner存活与关闭删除通过，模型0；同一原Brotector仍报告账号Runtime阳性。Playwright默认Runtime.enable不能由no_defaults关闭；Rebrowser公开支持声明最后完整测试1.52.0，当前固定1.61.0不在该证明范围，未改已安装驱动。该项保留未修复。
+
+## 2026-10-08 N05/B04 已定位账号借用的默认环境改写
+
+`account-runtime-Zy1pf3`与`account-runtime-4CO9nN`：同一已校准Brotector探针TaskBrowser阴性/实际Playwright借用阳性，init ready且无错误；Runtime差异未修。后一组额外验证owned后台页原hidden=true/focus=false，连接借用后变为hidden=false/focus=true。公开固定Playwright1.61.0 crPage.ts:515–520无条件启用focus emulation，原no_defaults公开选项能够跳过这项默认覆盖，Runtime.enable仍独立存在于:506。
+
+Reuse Assessment:
+- capability: 账号借用时保持用户页面原生焦点/可见性及默认上下文设置。
+- existing implementation in repository: 已固定playwright==1.61.0；borrow_window使用connect_over_cdp但未传no_defaults。
+- mature candidates and pinned versions: Microsoft Playwright1.61.0公开connect_over_cdp(no_defaults=True)。
+- selected implementation: 只增加该公开参数；保持原页面/Locator/Network/CDP订阅/账号源函数和主B-U事件采集。
+- reused public surface: https://github.com/microsoft/playwright/blob/v1.61.0/packages/playwright-core/src/server/chromium/crPage.ts 与官方BrowserType API。
+- B-A-T-owned adapter and remaining gap: 一处连接参数；不冒充Runtime痕迹已修，不根据阳性禁用采集。
+- license/runtime/platform fit: 原Apache-2.0、现有Windows运行时，不替换依赖。
+- browser/runtime/state ownership conflicts: 同一个handed-off owner，停止借用后owner仍存活；额外后台对照页仅在owned测试进程。
+- replay model calls: 0。
+- rejected candidates and evidence: Patchright v1.61.0原README明确禁用Console API、InitScripts采用路由注入HTML；未证明符合当前功能/采集/CSP不变约束，未安装。Rebrowser补丁与本机1.61驱动布局兼容性未证明，不直接改已安装依赖。
+- focused validation: 同owned后台反例改前/改后焦点与可见性；既有独立Runtime仍应如实为阳性；账号页面导航/Locator读取/owner释放/关闭删除。
+
+
+## 2026-10-08 N05/E06 账号借用连接审计（测量前冻结）
+
+复用已校准Brotector98b3309 Runtime分支与既有holdout fixture，不改探针/页面/阈值。同一owned专属Profile：TaskBrowser原连接打开正常对照文档；handoff后由实际borrow_window/CheckPage打开第二新文档。预登记假设：Playwright的额外连接可能重新启用Runtime。比较的是两条产品控制路径，不将Playwright基线当真人。保留测量有效性、业务读取/导航、停止借用后owner存活与最终清理。只调查已有连接适配，不先替换库/关闭采集/访问个人Profile；普通模型0。
+
+
+## 2026-10-08 后续：持久滚动配额、行为第二候选、收尾边界
+
+- **盾持久配额已上线**：固定PyrateLimiter4.5.0原SQLiteBucket/SlidingWindowLog + filelock3.19.1，业务准入按服务端case+真实来源IP分组，60/滚动小时、240/滚动日，保留所有原CrowdSec漏桶和挑战；拒绝HTTP429/Retry-After并产生原生CrowdSec告警。组件Windows `budget-jwtp89au`、WSL `budget-3tqk3zl7`：第61次拒绝，跨进程继续拒绝，独立范围正常；20并发竞争10余量恰好放10/拒10，坏DB明确error，无内存降级。真实4.15秒到期/更长8秒窗口仍拒；这些不代表真实小时/日运行或断电容灾。
+- **真实HTTP/重启**：`budget-http-4cboa8b1`源站单层校准64请求，主组60成功/2拒，独立IP/独立case各1成功；真实源站Invocation变更后仍拒，原CrowdSec告警存在。没有网关参与此隔离校准，不能当完整盾穿透。生产数据为WSL单OS写，未支持Windows/WSL同时写同一个SQLite。按首次准入计数，失败前的客户端尝试/前置挑战不计入此窗口。
+- **组合业务成功，清理首败保留**：`combined-bfxuff7p`新窗口启用下三项底层业务、34原生事件、12条有效TLS、0普通模型均通过；独立异常仍触发，无B-A-T白名单。清理时close报告confirmed但Profile进程即时仍存，脚本exit1；后来进程自行退出，精确Profile已永久删除，写入`cleanup-first-failure.json`及`profile-deleted-recovery.json`。不能把该运行写成无失败。
+- **矛的最小收尾修复已验**：ManagedWindow在关闭前保留已核验owner的子进程列表并等待；Profile进程未退时保留租约/返回unconfirmed，不覆盖业务成功。7项专属环境/错误边界测试通过；`launch-rgwvj_lf`真实可见窗口、同target/session/input人工交接恢复、关闭确认和Profile删除通过，未重跑三项业务。
+- **第二行为算法仍不足**：原Kitsune f0a22b3的实验性power-law阈值0.05不变，`biomech-r3l6ksow`公开44human中39可测均未触发、5时钟无效；28advanced全部未触发；28moderate中25可测（12触发/13未触发）、3不可测；本机1人3段均未触发。合成恒速曲线命中、直线/空不可测、逆序无效通过。仅局部辅助诊断，不接入生产封禁、不声称一般FPR或高级行为分类完成。DELBOT仍存在许可字段/历史样本screen输入契约未结清；未部署。
+- 首败：维护TS脚本在ignored目录被按CJS处理，尚未执行配置，改用.mts；HTTP校准首次缺管理Origin被403，修测试调用后才完成。原始日志保留。
+
+整体仍进行中：H2/H3独立判据、行为分类、完整跨阶段访问与全产品编译等没有结清；原`product-JHSWo3`的collection_selection_read_required仍失败。跨天仍暂停、未部署云、未提交/推送。
+
+
+## 2026-10-08 专属浏览器收尾首败与最小修复门
+
+`combined-bfxuff7p`三项完整盾业务、34原生事件和TLS测量均通过，但`close`已返回confirmed后即时Profile进程扫描仍为true；脚本exit1。后续扫描无所属Chrome，不额外终止进程，精确Profile永久删除写入recovery，保留首败。
+
+Product Alignment:
+- natural-language task: 既有本地浏览器任务完成后正确结算资源。
+- reusable chain boundary: 不修改链路编译/节点/输出；仅专属进程关闭确认。
+- runtime inputs: 已核验owner/PID/create_time/exe/Profile租约。
+- dynamic task outputs: 保留业务结果；残留子进程时仍是cleanup_required，不误报清理成功。
+- generic platform capability used: 原ManagedWindow所有权和psutil进程等待。
+- replay model calls: 0。
+- site/task-specific code added: no。
+
+Reuse Assessment: 继续复用现有psutil.wait_procs与Chrome Browser.close；先获取已核验owner的子进程列表，等待整个已知树；end在Profile进程仍存在时保留租约并报unconfirmed。无新的浏览器管理引擎，不关闭个人/retained进程。最小验证保护“主进程已退、子进程尚存”和真实owned窗口关闭；不重跑已通过三项业务。
+
+
+## 2026-10-08 B05/S04 持久滚动配额复用门（实施前）
+
+Reuse Assessment:
+- capability: 本地盾业务入口的精确滚动小时/日配额，跨服务进程重启保留；不是把漏桶换名为滚动计数。
+- existing implementation in repository: CrowdSec1.8.1漏桶活动状态仅内存，SQLite保存已产生告警/决策。核固定源码BucketStateFile/BucketStateDumpDir只见声明；不能以配置字段当恢复实现。
+- mature candidates and pinned versions: PyrateLimiter4.5.0（2026-08-30发布）SQLiteBucket；rate-limiter-flexible原SQLite支持现有better-sqlite3但为fixed window，不满足精确滚动窗口。
+- selected implementation: 先校准PyrateLimiter原默认SlidingWindowLog和SQLiteBucket；filelock3.19.1负责跨进程互斥。保持CrowdSec原漏桶/封禁及完整挑战。
+- reused public surface: SQLiteBucket.init_from_file/put_decision/leak/close、Rate/RateItem；SQLite公共PRAGMA synchronous=FULL；不复制窗口算法、数据库SQL或锁。
+- B-A-T-owned adapter and remaining gap: 实验源站按服务端case命名空间+网关确认IP的SHA256选表，业务进入前检查，429/Retry-After与CrowdSec观察字段适配。默认60/滚动小时、240/滚动日；被拒绝请求不再占准入配额。挑战/遥测/静态资源不计，网关既有全量日志保留。不是覆盖所有客户端尝试或公网全站配额。
+- license/runtime/platform fit: Pyrate MIT、filelock Unlicense，均纯Python wheel；Windows/WSL分别做本地状态验证，不增加Docker或系统包。固定wheel直接zipimport，不修改主产品依赖。
+- browser/runtime/state ownership conflicts: 每次检查短进程，SQLite单实例文件锁；hash表名，不存Cookie、URL参数或输入内容。不创建第二个浏览器/Agent。
+- replay model calls: 0。
+- rejected candidates and evidence: 原生CrowdSec未提供当前版本活动桶恢复；rate-limiter-flexible固定窗口不冒充滚动，Redis部署不是本地此增量必需。
+- focused validation: 默认真实小时配置准入60/拒第61、进程重建仍拒、独立key正常；缩短窗口仅验证真实到期/空闲停止后恢复；并发竞争不得超发、坏数据库必须报测量失败。先验证依赖再冻结；真实1h/24h连续窗口与断电容灾未测，仍最后安排。
+
+
+## 2026-10-08 B02 第二候选：先验证迁移有效性
+
+Reuse Assessment:
+- capability: 鼠标曲率/速度关系的辅助诊断，非完整真人分类或新增封禁器。
+- existing implementation in repository: motion-attestation 判别验收失败；现有真人三段/公开正式标注数据可复用，不再开浏览器或要求重采。
+- mature candidates and pinned versions: DELBOT-Mouse 1.3.3/712a00ea994738b680b0b11bb4b518979385d07b；Kitsune f0a22b3600a829f7de9d6abb48ff1aaebfb5a69e（新近项目，成熟度不能从宣传推断）。
+- selected implementation: 暂仅诊断性执行 Kitsune 原 harness/biomech.py；不冻结为生产组件。原 MIT；源码SHA256 b005a549224d803b927948a7889f83fce696ad9fe281758b452ea7fbf1e537bd。
+- reused public surface: 原 extract/power_law；registry 的实验性 bh.power_law_violation 原阈值0.05，保持辅助性质。
+- B-A-T-owned adapter and remaining gap: 仅既有脱敏轨迹转为x/y/t并输出分母；逆序/相同时钟单列无效，不排序补值。原直线/空轨迹为不可测，不当正常真人。
+- license/runtime/platform fit: 原模块MIT/纯Python标准库/Windows3.12；公开数据CC BY-NC-SA仅本地研究。DELBOT根LICENSE与package许可证字段不一致，且既有真人样本未保留原模型要求的screen尺寸，暂不安装/套分。
+- browser/runtime/state ownership conflicts: 无浏览器/账号/服务状态改动；无新模型训练、没有云服务。
+- replay model calls: 0。
+- rejected candidates and evidence: DELBOT当前本地输入契约与许可尚未结清；Kitsune README中的普遍准确性不作为证据，独立原始数据与设备分组仍缺。
+- focused validation: 先冻结原0.05；合成恒速曲线阳性、直线/空不可测、逆序时钟无效，再诊断既有44human/56bot及本机1人3段；不调阈值、不将单人三段当三人。
+
+
+## E02/E03/E05 屏幕、WebGPU及权限短测（实施前）
+
+复用固定CreepJS10aa6724的screen/index.ts、navigator/index.ts与lies/index.ts，保留Screen↔matchMedia、DPR↔resolution、GPU.requestAdapter原生方法完整性原判据。已有Worker真实结果传给Navigator，无新指纹/真假人算法。WebGPU仅requestAdapter读能力，不requestDevice/渲染/录制；权限只query，页面camera/microphone/geolocation策略保持拒绝。输出只含有效性/原判据/权限状态分类，硬件型号与原始指纹不持久化。
+
+预定正常：当前owned可见B-A-T、CDP一致屏幕/DPR缩放（明确浏览器仿真，不冒充换物理显示器）；阳性：screen单侧改值、GPU原方法包装；缺失：gpu/permissions unavailable。CreepJS当前源码没有可靠的WebGL↔WebGPU不同GPU自动判bot规则；多GPU/软件回退不能因字符串不等就判异常，仍为未结清的具体判别子项。只做源码所支持的完整性校准，不以API采集代替这个缺口。
+
+## N01 当前公开来源属性（实施前复用核验）
+
+Reuse Assessment: 复用Tor Project Onionoo v8公开details/exit_addresses（过去24小时实际出口地址，CC0数据），仅下载running Exit的地址字段，不收身份/通信内容；CrowdSec1.8.1原File字符串名单、TimeNow有效期与trigger/leaky规则承担匹配/关联。B-A-T工具只校验JSON/IP/版本/大小/发布日期、固定数据摘要与生成配置，不造信誉库/检测引擎。新客户端按官方协议发送压缩/If-Modified-Since、区分304/错误；名单失效显示unavailable，不称健康阴性。默认24小时是数据质量上限，不是bot阈值；不自动启动常驻更新任务。
+
+候选与依据：原CrowdSec全局信誉需要CAPI/相应数据条件；当前目标先补无需账号的公开Tor来源属性，不能将它称完整信誉。bulkexitlist虽可用，但Onionoo协议明确字段、发布日期与CC0；选后者。来源：[协议和许可](https://metrics.torproject.org/onionoo.html)，固定原组件`pkg/enrichment/dataprovider.go`、`pkg/exprhelpers/helpers.go`的File/TimeNow及原scenario data字段。Windows下载/WSL匹配，不涉及B-A-T浏览器会话/模型/代理改变。
+
+预定验收：当前名单样本命中、同名单成功正常请求仅属性提示而无ban；同来源重复429/503组合异常；非名单/缺失/过期不冒充属性阴性；首测与现场生效分开。匹配样本通过原引擎合成输入验证，不伪造公网IP实际连接；真实入口防伪复用既有证据。未接入前只算候选。
+
+## B05 跨任务访问治理：站点明确Retry-After已完成局部验收
+
+Product Alignment: 资料导航、表单后访问和账号只读检查都需尊重站点429/503冷却；复用原B-U导航/Actor、现有请求与主文档归属检查，不新增模型、调度器或站点特判。输入为真实已授权响应Retry-After；输出为既有外部访问阻断，过期才允许新的用户任务。未收到有效Retry-After不臆造目标站点配额，也不把该子项说成全部流量预算。
+
+Reuse Assessment:
+- capability: 同一origin收到明确冷却后，跨Runner/任务/进程保留截止时间，在新的受控导航或账号Fetch前拒绝重复访问。
+- existing implementation in repository: 当前只停止单轮探索/账号轮询；Runner重建后状态丢失，nodeDelay不覆盖真实请求。
+- mature candidates and pinned versions: rate-limiter-flexible11.2.1（ISC，1bf9eb1c，支持better-sqlite3）适用于宿主配额但Python实际请求路径需要跨语言服务；Bottleneck持久集群需要Redis，当前无必要引入。DiskCache5.6.3（Apache2，纯Python/SQLite，原Cache事务/过期API）直接复用跨进程TTL；不是用缓存重造通用限流器。
+- selected implementation: DiskCache5.6.3通过当前Windows/Python3.12事务/关闭/重开与实际两个Runner验收后冻结；B-A-T只处理站点响应、origin归属和原异常契约。
+- reused public surface: Cache/get/set/transact/expire/close；上游原TTL及并发由库承担。
+- B-A-T-owned adapter and remaining gap: 存origin哈希和截止时间/status，不存URL、Cookie/正文；不调度自动重试。浏览器自主资源/未观测目标/任意页面JS流量不能说已全覆盖。
+- license/runtime/platform fit: 许可/源码固定于https://github.com/grantjenks/python-diskcache/tree/v5.6.3 ，Windows支持与当前实测分开；旧发布版本的维护风险保留，不能只靠README稳定声明。
+- browser/runtime/state ownership conflicts: 默认放自有data/access-state，测试隔离目录；检查只用于产品控制路径，不影响个人手动浏览。不把网页429当成全网封锁。
+- replay model calls: 0。
+- rejected candidates and evidence: 不增加Redis/网络代理/任务调度，不复制通用计时器；暂不冻结任意全站默认分钟/天配额。
+- focused validation: 先证明旧路径在两个运行内发送两次；候选首次一次、另一Runner同站到达前阻断，正常独立站继续，真实到期后恢复。秒数/HTTP日期/无效/负值/正常200及取消分列。
+
+公开依据：[RFC9110 Retry-After](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after)、[DiskCache事务与进程安全API](https://grantjenks.com/docs/diskcache/tutorial.html)、[SQLite限流候选](https://github.com/animir/node-rate-limiter-flexible/wiki/SQLite)。
+
+验证：旧`cooldown-IZRCWm`源站收到2次，首次失败保留；候选`cooldown-I9RYyL`两个真实Runner在20秒期限内仅1次，到期恢复200、不同origin正常、0模型、两个owner关闭/Profile删除。`cooldown-boundaries-first.log`5项通过（日期/秒数、超6小时不缩短、无效值、origin隔离、存储异常不报健康、新准备任务0模型、实际账号Fetch/导航共用冷却）；`document-access-yhwct1`证明无Retry-After的503/429/200仍各1次且可恢复。urllib32.7.0原冻结uv.lock提供解析器；setup检查精确版本，不改上游lock。API类型检查/来源检查通过。普通动作预派发检查已加入；页面自主网络与所有并发请求的全局配额仍未完成。
+
+## E03/E04 Worker跨上下文补测
+
+继续复用固定CreepJS 10aa6724原`src/worker/index.ts`的`spawnWorker/getBestWorkerScope`，原实现比较window/worker的platform、UA、hardwareConcurrency、deviceMemory并报告原生对象差异；明确跳过Chrome正常语言切换。原service/shared/dedicated回退、终止及unregister全部保留。只构建本地探针入口，字段内容留内存，报告只保留可用性/原判据；不运行原主站上传。正常原生、故意window单侧hardwareConcurrency差异、三种worker类型可用性和CSP阻断为预定短测。无新的浏览器控制器/指纹算法或产品注入；真实多GPU/远程设备仍单独未测。
+
+## V06 在线遥测完整性补齐（本地短测）
+
+复用原Zod边界和SQLite原子唯一索引：`page+batch`只认领一次、先验证协议再认领，原上报日志失败仍显式失败，不静默重试；页面UUID不是身份认证。BotD固定18个判据名、版本及measured/partial/error结构一致性必验，空报告不能被记成健康阴性。10秒仍没有环境报告则呈现timeout（测量SLO，不是bot阈值），不封禁正常慢设备。测试预定为并发重复202/400且只有一条实际观测、origin真实重启后重复400、错误版本/空健康400、禁collector从missing变timeout。无新依赖/检测引擎/任务模型，Cookie和输入原文不记录。
+
+## N02/N03 持续入口候选：HAProxy公开JA4扩展（核验中）
+
+ALPN局限不直接豁免：继续采用HAProxy自己的`req.ssl_alpn`在TCP尚未解密时解析ClientHello，以其原生PROXY-v2自定义TLV传入同进程TLS终止入口；原Lua只替换ALPN数据来源的一行，保留原算法/MPL声明/固定上游摘要并记录派生摘要。依据[官方配置接口](https://www.haproxy.com/documentation/haproxy-configuration-manual/3-2r1/)、[3.2源码payload.c](https://github.com/haproxy/haproxy/blob/v3.2.0/src/payload.c)。新内部端口只回环，不解析公网传来的PROXY身份；QUIC无法沿用TCP预读，仍须独立保留partial，不能伪称H3已修。先前`owned-test,http/1.1`实采反例必须修后与tshark首广告值一致。此为复用公开解析/转发扩展，不重写TLS解码。
+
+首测`edge-_jm_tqho`真实Chrome正常重连误报：扩展41（pre_shared_key）由17变18，旧JA4_ab关联假设失效；保存首败，不改触发容量/阈值。协议依据：[RFC8446 4.2.11](https://www.rfc-editor.org/rfc/rfc8446#section-4.2.11)。小适配`continuity.lua`只消费未修改上游`raw`公开输出，规范化该标准恢复扩展、保留版本/全部密码套件/其余扩展/签名算法并哈希；完整原指纹继续记录，TCP/QUIC分组，绝不将此线索升级为单独bot身份。不是减少采集、白名单或全新指纹算法。
+
+独立测量首败：tshark4.6.4在signature_algorithms中保留GREASE，而[JA4规范](https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4.md)要求所有位置忽略GREASE；独立测试保留原值与按公开规范纠正后的值。另上游Lua读取协商ALPN而非首个广告ALPN，所有在线JA4暂显式标`partial-alpn-negotiated`，不让正常样本恰好相等掩盖反例。关联不使用ALPN与原始扩展数量；额外正常ALPN反例必须实采，不冻结完整JA4正确性。
+
+Reuse Assessment:
+- capability: 首个TLS终止点持续产生JA4，并与同一HTTP请求/实验会话关联，避免pcap离线回放才有检测输入。
+- existing implementation in repository: Traefik/CrowdSec与tshark实采回放；Traefik当前扩展点不提供ClientHello给bouncer，无法从回源协议重建。
+- mature candidates and pinned versions: HAProxy 3.2.9-1ubuntu2.2（Ubuntu26.04便携提取，不安装系统服务，SHA256 dea67c09366e9a2197edcc1341031125c0989c345b9f4f62237f6aac153b5a4d）；FriendlyCaptcha ja4-haproxy v1.0.0 / 6abe401466537f896482900969b06c1e302498a0 / Lua SHA256 7ecfa5d8c3e7e535ede667a67826f241d30249f9d703131bbfb13c75449a5f19。
+- selected implementation: 候选尚未冻结；HAProxy ssl_fc采样+未修改原Lua。其21个公开提交、2026-02-12发布、具体源码/测试入口已核对；成熟基础代理不等于附加脚本已自动验收。
+- reused public surface: lua.ja4、原生JSON日志、PROXY v2、systemd、CrowdSec原解析与关联规则。
+- B-A-T-owned adapter and remaining gap: 仅配置新增本地TLS入口、归属/制品校验和日志字段映射；JA4不是机器人身份，异常只复用既定关联告警；H3正常切换需独立分组，不能因协议不同判bot。
+- license/runtime/platform fit: HAProxy包GPL许可随包保留；Lua文件MPL2.0，算法JA4为BSD3，不混淆其它JA4+许可。WSL Ubuntu26.04本机-vv/ldd实际通过，支持Lua/TLS/QUIC，不改Windows信任库。
+- browser/runtime/state ownership conflicts: 保留原Traefik/CrowdSec挑战和主业务。新4183入口→专用4182内部TLS入口；PROXY v2仅接受明确本地代理源地址，是传输源地址认证边界，不是反爬白名单，须验伪造头/来源保留。日志不存Cookie/密钥或请求内容。
+- replay model calls: 0。
+- rejected candidates and evidence: 不自写JA4算法、TLS解码或通用流连接引擎；tshark继续作为独立首段复核。
+- focused validation: 先配置/归属/日志有效性，后原生和混合网络异常+正常变化、实际业务及来源防伪；采集成功不能关闭检测验收。
+
+公开来源：[固定源码](https://github.com/FriendlyCaptcha/ja4-haproxy/tree/6abe401466537f896482900969b06c1e302498a0)、[JA4与JA4+许可](https://github.com/FoxIO-LLC/ja4/blob/main/License%20FAQ.md)。Lua的默认fallback与capture-buffer不足必须显式记测量无效。
+
+## 2026-10-08 19:22 起：先完成本地功能和短测，再安排跨天
+
+会话短测复用固定CrowdSec公开`challenge.cookie_ttl`，在无产品/长测运行时临时设为20秒，通过真实网关/原挑战签发，按真实时钟验证到期前接受、到期后重新挑战，再在finally恢复原配置字节并重启核验。签名/PoW/票据引擎全部复用原组件，不自己签Cookie，不降低评分规则；短TTL比默认更短，测试证据不得写为真实12小时验收。Cookie/配置密钥仅内存，证据只保留配置SHA256、状态和计数。
+
+后续B05短测：`author-access-vj46l28w`使用真实Runner→author_step→B-U Agent.run和本地HTTP503，模型回复仅为固定测试夹具，无外部模型。发现普通runtime已有停止规则未覆盖探索：两个请求、三个模型决策，预先标准为首次明确HTTP失败后一个请求、一个决策。Reuse Assessment：复用原HumanWaitControl.finish_step/on_step_end、Agent.stop和Runner.assert_document_access；只加入B-A-T访问约束适配，不复制Agent循环、不改重试阈值、不生成测试模型。正常200仍应允许两次请求及结束决策，人工等待/恢复保留。Product Alignment：自然语言准备阶段的通用站点访问；输入既有URL，输出原sourceGaps及停止事实；适用于查询与表单任务；不增加复跑模型，不写站点特判。
+
+用户明确要求先结清所有当前可运行功能和短测，服务稳定完善后才讨论云端部署与跨天。已取消两个日级组和12小时Cookie worker，保留小时正反例；不得把等待当作停止开发的理由。
+
+Reuse Assessment:
+- capability: 将已校准的浏览器标记与DOM输入观测接入真实业务入口，而非只离线回放。
+- existing implementation in repository: origin业务页、固定BotD 2.0.0、本地observations日志、CrowdSec parser/scenario。
+- mature candidates and pinned versions: 既定BotD 2.0.0（MIT）与CrowdSec 1.8.1；源码及规则校准来源沿用实施记录。
+- selected implementation: BotD公开load/getDetections/getComponents和CrowdSec原生trigger。
+- reused public surface: monitoring=false本地bundle、既有文件采集与原生规则。
+- B-A-T-owned adapter and remaining gap: 页面事件摘要→Zod校验→本地日志；源站绑定实际IP/场景，客户端报告可伪造，因此只告警，不授予身份或豁免原挑战；统计模型与TLS实时关联仍独立待办。
+- license/runtime/platform fit: 无新增依赖，Windows浏览器+WSL源站。
+- browser/runtime/state ownership conflicts: 不增加浏览器会话，无外发，不持久化输入值/按键/剪贴板/原始指纹；遥测走独立路径，不冒充业务请求数，网关全量仍记录。
+- replay model calls: 0。
+- rejected candidates and evidence: 无需另造评分器/挑战引擎；只消费已校准的成熟规则。
+- focused validation: 原生规则正常/异常/无效输入，以及完整4187入口实际读取/表单/脚本事件阳性；检测阴性必须同时报告组件缺失，不能升级为完整通过。
+
+## 2026-10-08 已授权实施：检测校准与原生浏览器请求
+
+用户已确认新计划。现有 master/e92b1d2 开工，原文档改动保留；[实施证据](ANTIBOT_IMPLEMENTATION_20261008.md)。复用固定 CrowdSec 上游挑战/指纹测试和 `cscli hubtest`，窗口与关联均由原生规则执行。新增 tshark 4.6.4（WSL）观测首个 TLS 终止点，未改系统证书信任。账号读取改用原 owner 页的 Fetch，保留原 MC 签名与返回解析。真实对照显示旧三次 HTTP/1.1 独立连接变为 Chrome HTTP/2 复用；这不是完整反爬验收。当前版本 `state_input_file/state_output_dir` 仅有配置声明，没有找到恢复调用，不能据字段存在接入虚假持久化。
+
+以下“待 review / 不开发”均为上一 session 历史状态，整体范围仍以已确认主计划为准。
+
+后续复用：专属启动直接使用固定B-U `_find_free_port`，B-A-T仅核对psutil监听者归属；本机Chrome实证visible标记改善、headless仍有UA阳性，文档概述不能替代测量。真实Cookie/票据验证直接消费CrowdSec原HTTP协议，不复写签名/PoW/会话引擎。原GeoIPEnrich及TimezoneCountryMismatch使用上游微型MMDB校准，有ASN无City和私有IP保持unavailable，未伪称实时全球数据。详细首次失败、正常反例和边界均在实施记录。
+
+普通任务5xx消费原CDP主文档状态和既有externalFailure transient/blocked，避免网站503被记为成功；真实正常恢复与一次请求分母验证后冻结该小补丁。Cookie寿命采用原12小时配置与真实时钟，单独内存worker仅3次HTTP检查，不自写会话引擎，不持久化Cookie。
+
+本轮继续复用BotD2.0.0本地探针（MIT，关闭monitoring）、固定CrowdSec JS/Go校准与官方GetDecisionsSinceCount历史profile；bouncer默认未封禁缓存60秒的实际处置延迟已经验证并通过配置改善。B-U0.13.8普通文本原生清空与框架提交采用实例级薄适配，源码依据、正常React回归及首败见实施记录；特殊控件仍用上游。motion-attestation与公开行为数据的判别有效性未达到选型门，未调轨迹阈值迎合B-A-T。Web Bot Auth0.2.0官方库（Apache-2.0、自述未经审计）已完成本地签名、到期、authority、nonce等正反例；签名bot身份不等于真人/硬件证明。CreepJS固定原模块已完成篡改/基线/缺失/CSP四类实际检查，不外发指纹。
+
+行为候选新增固定FCaptcha 1.43.0源码审计：其14-persona基准源码明确是脚本CDP、环境归一与合成扰动，不能作为真人群体正常反例；JA4表为空，不能把导出API存在当成有效指纹识别。暂不引入另一套网关或重写评分器。原CrowdSec配置承担可解释关联；需分别核对误报、数据有效性和真实本地行为。
+
+## 2026-10-08 当前范围：公开检测覆盖与下一阶段方案 review
+
+入口：[主计划](ANTIBOT_NEXT_SESSION_PLAN_20261008.md)、[逐项缺口](ANTIBOT_COVERAGE_BACKLOG_20261008.md)、[对抗复审](ANTIBOT_PLAN_REVIEW_20261008.md)。当前仅整理和复审文档；用户 review 确认后另开 session 开发。
+
+范围纠正：盾主动调查并补齐公开可实现机制，不能把“现有探针只命中 CDP”当成停止依据；矛调查所有相关底层路径，实际补丁仍需有效测量和主业务回归。默认通过已有组件配置、公开扩展点、成熟开源库与薄适配补缺；没有现成库不是自动豁免，也不授权重造检测/挑战/调度引擎。
+
+CrowdSec 当前规则实际参与评分与挑战，但逐项校准不完整；TLS/JA4、输入行为模型、跨任务长期频率与完整会话关联仍是缺口。商业资料用于确认公开机制，全球数据/私有模型与本地可实现软件分开结算。已有固定候选保留，下一阶段重新核验具体子项和最小样本后才能冻结新增选型。
+
+本次代码快照 `e92b1d2` 已保存；本 session 未新增产品依赖、未运行浏览器或重新验收效果。以下记录为各历史阶段的证据，不能覆盖上述范围更新。
+
+## 2026-10-08 历史冻结：无 Docker 检测服务及底层控制对照
 
 CrowdSec 1.8.1（909b515…，MIT）、Hub f5cd097…（MIT）、Traefik 3.7.14（MIT）、bouncer v1.8.0-alpha（710e888…，Apache-2.0）通过公开 localplugins 与 AppSec 原生挑战协议组合。便携发行包 SHA256 固定在 tools/antibot-lab/artifacts.json，现有 WSL/systemd 用户服务管理生命周期；没有另写评分/挑战/PoW/规则安装器。候选选择及公开配置源见 [服务实施](ANTIBOT_SERVICE_IMPLEMENTATION_20261008.md)。Alpha 状态保留为兼容风险。
 

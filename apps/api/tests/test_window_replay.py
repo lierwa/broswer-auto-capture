@@ -20,6 +20,9 @@ class RetainedReplay(unittest.TestCase):
         self.profile = Path(self.temporary.name).resolve() / 'profile'
         self.owner = uuid4()
         self.endpoint = 'ws://127.0.0.1:9222/devtools/browser/owned-test'
+        # WHY：这些是仍存活浏览器的CDP夹具，不能因开发机恰好没开Chrome而绕过被测分支。
+        live = patch('browser_use_runner.attached_window.browser_exited', return_value=False)
+        live.start(); self.addCleanup(live.stop)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -35,7 +38,8 @@ class RetainedReplay(unittest.TestCase):
     def test_inspected_missing_account_targets_release_the_native_reservation(self):
         base, lease = self.attached()
         client = SimpleNamespace(send=SimpleNamespace(Target=SimpleNamespace(getTargets=AsyncMock(return_value={
-            'targetInfos': [{'targetId': 'private', 'type': 'page'}]}))))
+            'targetInfos': [{'targetId': 'private', 'type': 'page'}]})),
+            Browser=SimpleNamespace(getVersion=AsyncMock(return_value={'product': 'Chrome/154.0'}))))
         @asynccontextmanager
         async def connected(_endpoint):
             yield client
@@ -61,7 +65,8 @@ class RetainedReplay(unittest.TestCase):
         async def changed():
             window._save(lease.model_copy(update={'ownedTargets': ['changed-target']}))
             return {'targetInfos': []}
-        client = SimpleNamespace(send=SimpleNamespace(Target=SimpleNamespace(getTargets=changed)))
+        client = SimpleNamespace(send=SimpleNamespace(Target=SimpleNamespace(getTargets=changed),
+            Browser=SimpleNamespace(getVersion=AsyncMock(return_value={'product': 'Chrome/154.0'}))))
         @asynccontextmanager
         async def connected(_endpoint):
             yield client
@@ -83,14 +88,16 @@ class RetainedReplay(unittest.TestCase):
             archive_lease(base, lease)
         self.assertTrue(base.exists())
 
-    def test_daily_replay_requires_confirmed_owner_profile_not_ephemeral_relay(self):
+    def test_daily_replay_keeps_independent_owner_receipts_and_rejects_same_owner(self):
         base, lease = self.attached()
-        unknown = AttachedWindow(self.profile, uuid4(), self.endpoint)
-        with self.assertRaisesRegex(ValueError, 'busy'): unknown._reserve()
+        next_owner = uuid4()
+        independent = AttachedWindow(self.profile, next_owner, self.endpoint)
+        current = independent._reserve()
+        self.assertEqual(current.ownerId, next_owner)
+        with self.assertRaisesRegex(ValueError, 'busy'):
+            AttachedWindow(self.profile, next_owner, self.endpoint)._reserve()
         endpoint = self.endpoint.replace('owned-test', 'different')
-        unknown_relay = AttachedWindow(self.profile, uuid4(), endpoint)
-        with self.assertRaisesRegex(ValueError, 'busy'): unknown_relay._reserve()
-        next_window = AttachedWindow(self.profile, uuid4(), endpoint, released_owners=[self.owner])
+        next_window = AttachedWindow(self.profile, uuid4(), endpoint)
         current = next_window._reserve()
         self.assertNotEqual(current.ownerId, lease.ownerId)
         self.assertEqual(current.ownedTargets, [])
@@ -104,12 +111,14 @@ class RetainedReplay(unittest.TestCase):
     def test_managed_rollover_retains_old_owner_and_only_borrows_process(self):
         base = self.profile.parent / 'managed-window-lease.json'
         lease = WindowLease(ownerId=self.owner, leaseId=self.owner, creatorPid=1, profilePath=str(self.profile),
-            status='handoff', targetId='old-target', browserPid=42, cdpPort=9222, browserId='owned-test')
+            status='handoff', targetId='old-target', browserPid=42, cdpPort=9222, browserId='owned-test',
+            browserTempPath=str(self.profile.parent/'bat-chrome-retained'))
         base.write_text(lease.model_dump_json(), encoding='utf8')
         next_window = ManagedWindow(self.profile, uuid4(), released_owners=[self.owner])
         with patch('browser_use_runner.managed_window._owner_process', return_value=object()), patch.object(next_window, '_verify', return_value=(True, None)):
             new = next_window._reserve()
         self.assertTrue(new.retainedProcess); self.assertEqual(new.browserPid, 42)
+        self.assertEqual(new.browserTempPath, lease.browserTempPath)
         self.assertIsNone(new.targetId); self.assertEqual(new.ownedTargets, [])
         old = ManagedWindow(self.profile, self.owner)
         self.assertTrue(old._load().retainedProcess)
@@ -174,8 +183,9 @@ class RetainedReplay(unittest.TestCase):
             asyncio.run(window.verify_closed(self.owner))
         with self.assertRaisesRegex(ValueError, 'create_unconfirmed'):
             asyncio.run(window._end_connected(window._load(), None))
-        next_window = AttachedWindow(self.profile, uuid4(), self.endpoint, released_owners=[self.owner])
-        with self.assertRaisesRegex(ValueError, 'create_unconfirmed'): next_window._reserve()
+        # 未确认目标仍阻止原owner的收尾；新owner不取得旧目标，也不改写旧收据。
+        next_window = AttachedWindow(self.profile, uuid4(), self.endpoint)
+        self.assertEqual(next_window._reserve().ownedTargets, [])
         self.assertEqual(json.loads(base.read_text())['targetCreationPending'], True)
         legacy = json.loads(base.read_text()); del legacy['targetCreationPending']
         base.write_text(json.dumps(legacy), encoding='utf8')

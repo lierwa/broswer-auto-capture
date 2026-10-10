@@ -1,7 +1,157 @@
 [
-  {"name":"crowdsec-release.tgz","url":"https://github.com/crowdsecurity/crowdsec/releases/download/v1.8.1/crowdsec-release.tgz","sha256":"ae64cdab8ee49534d6c36eab4ce40b5478842a4b4abfe83f7796aace569821eb"},
-  {"name":"hub.tar.gz","url":"https://codeload.github.com/crowdsecurity/hub/tar.gz/f5cd0975d0bd69ebad09c5e6992d4f1a1ef594b0","sha256":"c3398fc1a7e914aef03a4cbbd9e07fa2900b5d5ce1cf5e6d8e4a7015f9726905"},
-  {"name":"traefik.tar.gz","url":"https://github.com/traefik/traefik/releases/download/v3.7.14/traefik_v3.7.14_linux_amd64.tar.gz","sha256":"d08641f5de2dd3788097bddab1ce4b29c10a0b788566970db707fa5c94c71f15"},
-  {"name":"bouncer.tar.gz","url":"https://codeload.github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin/tar.gz/710e88808baccb320d7b2b3560397e1474e3e98b","sha256":"a7569f5aaa6bbbda4ff30f569711c864bd2f6064a1f631a537a62c19f5d0eddf"},
-  {"name":"node.tar.xz","url":"https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-x64.tar.xz","sha256":"f52ec50e959d72d5c680d9731420b2661cd2a8070e94c7369b6ddfcd8b7278be"}
+  {
+    "name": "libcrypt-dev_4.5.1-1_amd64.deb",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcrypt/libcrypt-dev_4.5.1-1_amd64.deb",
+    "sha256": "a5d86db4dde3de557a419aa3199e916de30b356717c4c1e8974270fda615c051"
+  },
+  {
+    "name": "haproxy-3.2.9-source.tar.gz",
+    "url": "https://www.haproxy.org/download/3.2/src/haproxy-3.2.9.tar.gz",
+    "sha256": "e660d141b29019f4d198785b0834cc3e9c96efceeb807c2fff2fc935bd3354c2"
+  },
+  {
+    "name": "haproxy_3.2.9-1ubuntu2.2.debian.tar.xz",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/main/h/haproxy/haproxy_3.2.9-1ubuntu2.2.debian.tar.xz",
+    "sha256": "651caf1428a4e2a2a69545ee2b0428a06e481a1b39f0a5d97b59e9072f957af1"
+  },
+  {
+    "name": "libssl-dev_3.5.5-1ubuntu3.7_amd64.deb",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl-dev_3.5.5-1ubuntu3.7_amd64.deb",
+    "sha256": "d1cf6cafb141490b7020e392964b1f901835d60cb88c3a68ef0f95ef5e930de4"
+  },
+  {
+    "name": "liblua5.4-dev_5.4.8-1build1_amd64.deb",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/main/l/lua5.4/liblua5.4-dev_5.4.8-1build1_amd64.deb",
+    "sha256": "24944635d98bfd23a76bb7e45ba72261d38e98b2db401f0717e8590d38edbecd"
+  },
+  {
+    "name": "libpcre2-dev_10.46-1build1_amd64.deb",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/pcre2/libpcre2-dev_10.46-1build1_amd64.deb",
+    "sha256": "203dd2049aebc6e7d674f79e5f377263a1907e156469b496378047a20ecf3e54"
+  },
+  {
+    "name": "haproxy-3.2.9-ubuntu.deb",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/main/h/haproxy/haproxy_3.2.9-1ubuntu2.2_amd64.deb",
+    "sha256": "dea67c09366e9a2197edcc1341031125c0989c345b9f4f62237f6aac153b5a4d"
+  },
+  {
+    "name": "ja4-haproxy-v1.0.0.lua",
+    "url": "https://raw.githubusercontent.com/FriendlyCaptcha/ja4-haproxy/6abe401466537f896482900969b06c1e302498a0/ja4.lua",
+    "sha256": "7ecfa5d8c3e7e535ede667a67826f241d30249f9d703131bbfb13c75449a5f19"
+  },
+  {
+    "name": "ja4-haproxy-v1.0.0-LICENSE",
+    "url": "https://raw.githubusercontent.com/FriendlyCaptcha/ja4-haproxy/6abe401466537f896482900969b06c1e302498a0/LICENSE",
+    "sha256": "ae90b1746c445a4768c4866938495913a591302192611b1197d8d6cad3984b3e"
+  },
+  {
+    "name": "creepjs-10aa6724.tar.gz",
+    "url": "https://codeload.github.com/abrahamjuliot/creepjs/tar.gz/10aa6724cd33a1015db1574211890518cd04f0cc",
+    "sha256": "e6e177d2d8487169a7a0d03674f12c8657fff13ad5616cc092ce7e2d66e476ab"
+  },
+  {
+    "name": "motion-attestation-1.1.0.tgz",
+    "url": "https://registry.npmjs.org/motion-attestation/-/motion-attestation-1.1.0.tgz",
+    "sha256": "68b75c4ce2732fd09467810061d84f2fad0e516fb19fcee37e992d3da44a18ff"
+  },
+  {
+    "name": "crowdsec-source-v1.8.1.tar.gz",
+    "url": "https://codeload.github.com/crowdsecurity/crowdsec/tar.gz/909b5157986a2b2c2163300fdaef5ed01289f7d2",
+    "sha256": "6a9219a2a2706e35b723750d581c697db54d32d1b3995216cc2838329e15f7dc"
+  },
+  {
+    "name": "botd-2.0.0.tgz",
+    "url": "https://registry.npmjs.org/@fingerprintjs/botd/-/botd-2.0.0.tgz",
+    "sha256": "0bd58c59ee27d9bd6e355a2803a76b81bcdb7683b031ac7b6200346ee4a84af7"
+  },
+  {
+    "name": "crowdsec-release.tgz",
+    "url": "https://github.com/crowdsecurity/crowdsec/releases/download/v1.8.1/crowdsec-release.tgz",
+    "sha256": "ae64cdab8ee49534d6c36eab4ce40b5478842a4b4abfe83f7796aace569821eb"
+  },
+  {
+    "name": "hub.tar.gz",
+    "url": "https://codeload.github.com/crowdsecurity/hub/tar.gz/f5cd0975d0bd69ebad09c5e6992d4f1a1ef594b0",
+    "sha256": "c3398fc1a7e914aef03a4cbbd9e07fa2900b5d5ce1cf5e6d8e4a7015f9726905"
+  },
+  {
+    "name": "traefik.tar.gz",
+    "url": "https://github.com/traefik/traefik/releases/download/v3.7.14/traefik_v3.7.14_linux_amd64.tar.gz",
+    "sha256": "d08641f5de2dd3788097bddab1ce4b29c10a0b788566970db707fa5c94c71f15"
+  },
+  {
+    "name": "bouncer.tar.gz",
+    "url": "https://codeload.github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin/tar.gz/710e88808baccb320d7b2b3560397e1474e3e98b",
+    "sha256": "a7569f5aaa6bbbda4ff30f569711c864bd2f6064a1f631a537a62c19f5d0eddf"
+  },
+  {
+    "name": "node.tar.xz",
+    "url": "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-x64.tar.xz",
+    "sha256": "f52ec50e959d72d5c680d9731420b2661cd2a8070e94c7369b6ddfcd8b7278be"
+  },
+  {
+    "name": "pyrate_limiter-4.5.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/64/dc/02f88649feeabf4282c8c194a6f6060ca858041bab1204365b5d8ef8a95e/pyrate_limiter-4.5.0-py3-none-any.whl",
+    "sha256": "e7320a715adf404cb7b2f399e05ceb59cae165275b21f7708eb1b9fd9608e91c"
+  },
+  {
+    "name": "filelock-3.19.1-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/42/14/42b2651a2f46b022ccd948bca9f2d5af0fd8929c4eec235b8d6d844fbe67/filelock-3.19.1-py3-none-any.whl",
+    "sha256": "d38e30481def20772f5baf097c122c3babc4fcdb7e14e57049eb9d88c6dc017d"
+  },
+  {
+    "name": "hypercorn-0.17.3-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/0e/3b/dfa13a8d96aa24e40ea74a975a9906cfdc2ab2f4e3b498862a57052f04eb/hypercorn-0.17.3-py3-none-any.whl",
+    "sha256": "059215dec34537f9d40a69258d323f56344805efb462959e727152b0aa504547"
+  },
+  {
+    "name": "h2-4.3.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/69/b2/119f6e6dcbd96f9069ce9a2665e0146588dc9f88f29549711853645e736a/h2-4.3.0-py3-none-any.whl",
+    "sha256": "c438f029a25f7945c69e0ccf0fb951dc3f73a5f6412981daee861431b70e2bdd"
+  },
+  {
+    "name": "hpack-4.1.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/07/c6/80c95b1b2b94682a72cbdbfb85b81ae2daffa4291fbfa1b1464502ede10d/hpack-4.1.0-py3-none-any.whl",
+    "sha256": "157ac792668d995c657d93111f46b4535ed114f0c9c8d672271bbec7eae1b496"
+  },
+  {
+    "name": "hyperframe-6.1.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/48/30/47d0bf6072f7252e6521f3447ccfa40b421b6824517f82854703d0f5a98b/hyperframe-6.1.0-py3-none-any.whl",
+    "sha256": "b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5"
+  },
+  {
+    "name": "h11-0.16.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl",
+    "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+  },
+  {
+    "name": "priority-2.0.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/5e/5f/82c8074f7e84978129347c2c6ec8b6c59f3584ff1a20bc3c940a3e061790/priority-2.0.0-py3-none-any.whl",
+    "sha256": "6f8eefce5f3ad59baf2c080a664037bb4725cd0a790d53d59ab4059288faf6aa"
+  },
+  {
+    "name": "wsproto-1.2.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/78/58/e860788190eba3bcce367f74d29c4675466ce8dddfba85f7827588416f01/wsproto-1.2.0-py3-none-any.whl",
+    "sha256": "b9acddd652b585d75b20477888c56642fdade28bdfd3579aa24a4d2c037dd736"
+  },
+  {
+    "name": "kitsune-behavior-f0a22b3.ts",
+    "url": "https://raw.githubusercontent.com/datascry/kitsune/f0a22b3600a829f7de9d6abb48ff1aaebfb5a69e/collector/src/behavioral.ts",
+    "sha256": "238f681da2ce6b6a37a926a9214a269ce7215c84bdae59902165a37ec4c9ac87"
+  },
+  {
+    "name": "fcaptcha-inputforensics-56aa2b38.cjs",
+    "url": "https://raw.githubusercontent.com/WebDecoy/FCaptcha/56aa2b38b8a5b7333cc7bf7d179a9e14538b2c5b/server-node/inputforensics.js",
+    "sha256": "28c90a5d442eb3a1db5d7922129c7369fe998ae66b6554a087e0ac68de002d32"
+  },
+  {
+    "name": "fcaptcha-56aa2b38.LICENSE",
+    "url": "https://raw.githubusercontent.com/WebDecoy/FCaptcha/56aa2b38b8a5b7333cc7bf7d179a9e14538b2c5b/LICENSE",
+    "sha256": "8fd7d7668f37bd91b1d70e6a609a4cd7797c3fb1173471dd6b1190a6eb8820a8"
+  },
+  {
+    "name": "kitsune-h2-f0a22b3.go",
+    "url": "https://raw.githubusercontent.com/datascry/kitsune/f0a22b3600a829f7de9d6abb48ff1aaebfb5a69e/edge/internal/fingerprint/h2.go",
+    "sha256": "6b391de9a21b4de97468edfb8438662ff05793a1d2ab69082e7b273b7ef199ef"
+  }
 ]
