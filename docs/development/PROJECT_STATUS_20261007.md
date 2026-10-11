@@ -1,5 +1,17 @@
 # 项目现状核验：主流程、模块与底层基建
 
+> 2026-10-11 当前：用户修后自行完成两次真人检测，服务端均Human/39clear、三项逐字段有效。B-A-T原冻结链正式复跑实际打开7/11/13，未发布99无点击、选择节点失败；普通模型0，本轮6份Profile永久删除、五服务ready。首轮click ACK完整/事件0仍未定因，不能以随后成功宣布修复；原规则/阈值及master旧字节保持。见[正式业务验收](SHIELD_TASK_ACCEPTANCE_20261011.md)和PROGRESS顶部，不关机，下方记录属历史。
+
+> 2026-10-11 最新：原生 compositionend/粘贴上下文不再被错误告警，检测页英文节奏与中文组合隔离；原生 IME 与 B-A-T 同中英文流程 Human/39 clear/模型0，上次实际真人原数据回归 Human/36 clear/3 项中性不适用。原无头 Chrome 原生粘贴同内容仍 Bot，原规则/阈值保留。测试、1357文件保护及两份临时 Profile 永久删除见[最新交付](SHIELD_INPUT_CONTEXT_CLOSEOUT_20261011.md)。用户本次重新明确要求完成后关机，当前关机前五服务 active；关机后运行状态需重新核验，下方“保留运行”是关机前快照。
+
+> 2026-10-11 最新：真人实际无 CDP 中英文/Windows 输入法流程 Human；B-A-T 原普通相同流程 Human/模型0，原无头 Chrome 同流程 Bot/原score500拒绝，原阈值>=75不变。服务端本次验证、失败锁存与严格 *.shield.localhost HTTPS已修；中途窗口/事件验收首败保留，临时诊断收掉。原冻结HTTP业务输出7/模型0通过，12个owned Profile永久删除、原五服务active、master/无关旧字节保护结算见[本轮结算](SHIELD_VERIFIED_FLOW_CLOSEOUT_20261011.md)。下方 IME unknown 是上一阶段历史，不是当前真人结果；其它输入法/人群、外站新复跑和完整TLS业务未测。
+
+> 2026-10-11 最新：已修中文 IME 配对错误及非原生组合事件误判，网站已生效；12 项聚焦、Chrome 中文提交/取消/失焦、B-A-T 同页流程和原五类脚本阳性通过，原规则/阈值未改。用户协调所属窗口后，Windows 系统拼音实际提交中文补验通过，无 flagged/failed，三项键盘 excluded、辅助事件 advisory，整体 unknown；IME 模式恢复，不能冒充全量真人人群验收。12 个临时 Profile 已永久删除，原五个生产服务保留运行；master/旧改动不变。见[IME 修复结算](SHIELD_IME_FIX_CLOSEOUT_20261011.md)和 PROGRESS。
+
+> 2026-10-10 后续状态：暗色 V3 检测盾网站与本机可信 HTTPS 已按用户最新授权完成，当前五个所属服务保留运行，入口 https://localhost:4185/measurement/check；见[网站交付](SHIELD_WEBSITE_V3_CLOSEOUT_20261010.md)与 PROGRESS 顶部。旧“网站暂停/服务全关”不是当前状态；master@dc45be4 与全部既有工作保留，无追加提交。
+
+**2026-10-10 晚间恢复优先入口：** 用户已授权并连续实施盾独立化纠正，当前结果见[纠正与交付结算](SHIELD_INDEPENDENCE_CLOSEOUT_20261010.md)、[PROGRESS](PROGRESS.md)和[ROADMAP](ROADMAP.md)顶部。master@dc45be4 未变，既有改动保留；唯一公共预算、固定制品双侧加载、本机仓库外空实例构建、路径搬迁/恢复及完整TLS冻结业务7/普通模型0通过。首次失败、资源结算与未测单列，不重开原主线/模型实验，不执行历史关机；下文为历史快照。
+
 **2026-10-09 反爬主线当前入口：** 实际checkout为 `master@e92b1d2`，后续产品/实验/文档改动仍未提交。原方案已获确认，用户整理文档后已授权继续开发；整体尚未完成，不能再按历史“尚未恢复开发”暂停。恢复先读[主计划0节](ANTIBOT_NEXT_SESSION_PLAN_20261008.md)、[ROADMAP顶部](ROADMAP.md)、[PROGRESS当前断点](PROGRESS.md)，再查[覆盖矩阵](ANTIBOT_COVERAGE_BACKLOG_20261008.md)和[实施证据](ANTIBOT_IMPLEMENTATION_20261008.md)。下文为各自日期的历史核验，不能代替当前checkout、运行状态或授权；旧关机指令不重放。
 
 **同日后续更新：** 用户授权后，基于 `master@3b8049e` 落地“初态已满足时留存动态选择/导航方法”的限定适配。最小回归、对抗复核、两类本地 headless 正常准备/发布/变化复跑通过；具体失败修正、冻结与清理证据见 [实施记录](TASK_METHOD_COMPLETION_PLAN_20261007.md#10-实施与证据2026-10-07)。Bilibili 原链与真实账号未重新验收，旧发布不自动改写。以下是此前基线核验，不代表后续实现不存在。

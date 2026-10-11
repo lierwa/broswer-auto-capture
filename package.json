@@ -23,7 +23,7 @@
     "packages/*"
   ],
   "scripts": {
-    "antibot:lab": "node --import tsx tools/antibot-lab/lab.ts",
+    "antibot:lab": "npm --prefix tools/antibot-lab run lab --",
     "setup": "node scripts/setup.mjs",
     "setup:check": "node scripts/setup.mjs --check",
     "ai-connect:sync": "node scripts/ai-connect-sync.mjs",

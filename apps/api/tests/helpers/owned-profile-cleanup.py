@@ -2,6 +2,7 @@
 import sys
 import json
 import shutil
+import os
 from pathlib import Path
 from browser_use_runner.managed_window import WindowLease, _owner_process, _profile_process_present
 
@@ -24,7 +25,12 @@ def cleanup_antibot(directory, prefix):
     candidates = [profile / 'default', *profile.glob('runs/*/default')]
     if any(_profile_process_present(p) for p in candidates): raise ValueError('antibot_profile_process_alive')
     count = len(list((profile / 'runs').glob('*')))
-    if profile.exists(): shutil.rmtree(profile)
+    # WHY：Chrome 自有缓存可超过 Windows MAX_PATH；先完成原归属/链接/进程核验，
+    # 再复用标准库的扩展绝对路径，不强制权限、不越过本次 Profile 边界。
+    native = Path('\\\\?\\'+str(profile)) if os.name=='nt' else profile
+    if any(p.is_symlink() or p.is_junction() for p in [native,*native.rglob('*')]):
+        raise ValueError('antibot_profile_link_rejected')
+    if native.exists(): shutil.rmtree(native)
     (directory / f'{prefix}profile-cleanup.json').write_text(json.dumps({
         'permanentlyDeleted': not profile.exists(), 'closed': True, 'profile': str(profile),
         'profileDirectories': count, 'matchingProfileProcesses': 0}, indent=2), encoding='utf8')

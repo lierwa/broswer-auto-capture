@@ -1,5 +1,5 @@
-import worker, { WORKER_TYPE } from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/worker/index'
-import { getLies } from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/lies/index'
+import worker, { WORKER_TYPE } from '@creep/worker/index'
+import { getLies } from '@creep/lies/index'
 
 export async function workerIntegrity() {
   const version = '10aa6724cd33a1015db1574211890518cd04f0cc'

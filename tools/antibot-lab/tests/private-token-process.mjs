@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import { fork } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -8,7 +9,7 @@ import { createPrivateTokenVerifier } from '../private-token-verifier.mjs'
 
 // 仅本地合成协议验收；原票据只走父子IPC，不进入参数、文件或标准输出。
 async function verifyInChild(message) {
-  const base = path.resolve('work/antibot-service')
+  const base = labData
   const directory = path.dirname(message.database)
   assert.equal(path.dirname(directory), path.join(base, 'reports'))
   assert.match(path.basename(directory), /^private-token-binding-[\w-]+$/)

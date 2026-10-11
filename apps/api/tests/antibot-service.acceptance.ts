@@ -25,6 +25,7 @@ const fullTls = process.argv.includes('--full-tls')
 if (fullTls && !dedicated) throw Error('tls_acceptance_requires_owned_profile')
 if (!dedicated && !process.argv.includes("--daily-visible-session")) throw Error("explicit_owned_session_required")
 const root = process.cwd(), admin = "http://127.0.0.1:4188"
+const labData = path.resolve(process.env.BAT_ANTIBOT_DATA ?? path.join(root, 'work/antibot-service'))
 const product = "http://127.0.0.1:4175"
 if (!dedicated) {
   const preflight = await fetch(`${product}/api/browser/daily-chrome`, { headers: { origin: product, "sec-fetch-site": "same-origin" } })
@@ -74,7 +75,7 @@ const api = await createApplication({ root, directory, ai, upstreamBrowserRuntim
 // WHY：只给此验收进程创建的精确Profile信任本地证书；复用既有诊断runner，产品控制/采集均不改。
 const originalStart = RunnerProcess.prototype.startHybrid
 if (fullTls) {
-  const certificate = new X509Certificate(await readFile(path.join(root, 'work/antibot-service/tls/cert.pem')))
+  const certificate = new X509Certificate(await readFile(path.join(labData, 'tls/cert.pem')))
   const pin = createHash('sha256').update(certificate.publicKey.export({ type: 'spki', format: 'der' })).digest('base64')
   RunnerProcess.prototype.startHybrid = function(config) {
     const lifecycle = Reflect.get(this, 'lifecycle')
@@ -196,7 +197,7 @@ try {
   assert.ok(api.taskChain.repository.runs(taskId).every(run => run.modelCalls.length === 0), "ordinary_replay_called_model")
   await save("release.json", release)
   if (fullTls) {
-    const observations = (await readFile(path.join(root, 'work/antibot-service/logs/observations.jsonl'), 'utf8'))
+    const observations = (await readFile(path.join(labData, 'logs/observations.jsonl'), 'utf8'))
       .trim().split('\n').map(line => JSON.parse(line)).filter(row => row.site === item.id && row.at >= stamp)
     const h2 = observations.filter(row => row.category === 'h2-coherence' && row.entry === 'full-shield')
     assert.ok(h2.length > 0 && h2.every(row => row.valid === 'true' && row.outcome === 'consistent'))
@@ -225,7 +226,7 @@ try {
     const python = path.join(root, 'work/upstream-browser-hybrid/.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
     await promisify(execFile)(python, [path.join(root, 'apps/api/tests/helpers/owned-profile-cleanup.py'),
       directory, '--antibot-product', resume ? 'resume-' : ''], { cwd: root, timeout: 30_000,
-      env: { ...process.env, PYTHONPATH: path.join(root, 'apps/api/python') } })
+      env: { ...process.env, PYTHONPATH: [path.join(root,'apps/api/python'),path.join(root,'vendor/workflow-use/workflows')].join(path.delimiter) } })
   } catch {
     await save('profile-cleanup-failure.json', { code: 'owned_profile_cleanup_unconfirmed', businessResultPreserved: true })
     process.exitCode = 1

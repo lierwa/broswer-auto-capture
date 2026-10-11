@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -5,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import path from 'node:path'
 
 // Replay actual first-hop observations into the native rule; no JA4 implementation or score engine here.
-const base = path.resolve('work/antibot-service'), sample = path.resolve(process.argv[2])
+const base = labData, sample = path.resolve(process.argv[2])
 assert.ok(sample.startsWith(base + '/reports/'), 'owned-capture-required')
 const out = path.join(base, 'reports', `transport-rule-${Date.now()}`)
 await mkdir(out)

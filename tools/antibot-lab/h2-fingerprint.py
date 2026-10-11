@@ -4,8 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 
-ROOT = Path.cwd().resolve()
-BASE = ROOT / 'work/antibot-service'
+from lab_paths import ROOT, BASE
 UPSTREAM = BASE / 'upstream/candidate-review/kitsune/edge_internal_fingerprint_h2.go'
 SHA = '90969540ab6663ecaed1f92403a0d7941636c976f42b994be3847c3135c1dffa'
 
@@ -29,7 +28,7 @@ def prepare():
     original = UPSTREAM.read_text()
     assert original.count('package fingerprint') == 1
     (target / 'h2.go').write_text(original.replace('package fingerprint', 'package main'), newline='\n')
-    (target / 'main.go').write_bytes((ROOT / 'tools/antibot-lab/h2-fingerprint.go').read_bytes())
+    (target / 'main.go').write_bytes((ROOT / 'h2-fingerprint.go').read_bytes())
     run('go', 'build', '-o', linux(target / 'h2-hints'), linux(target / 'h2.go'), linux(target / 'main.go'))
     return target / 'h2-hints'
 

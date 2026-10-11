@@ -1,10 +1,11 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile, mkdtemp, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import path from 'node:path'
 
-const base = path.resolve('work/antibot-service')
+const base = labData
 const upstream = path.join(base, 'upstream/candidate-review/kitsune')
 const source = path.join(upstream, 'collector_src_behavioral.ts')
 assert.equal(createHash('sha256').update(await readFile(source)).digest('hex'),

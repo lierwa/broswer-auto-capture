@@ -1,5 +1,140 @@
 # 技术调研与复用结论
 
+## 2026-10-11 当前包：IME 真实键对与三项独立测量
+
+真人Ctrl+Space/Tab首错配最小修复后，用户自行操作两次均Human/39clear，三项逐字段有效，原失败不改写。B-A-T原发布链正式四变体实际输出7/11/13及无合格候选失败、模型0；原盾判据不改。首轮点击ACK完整却事件0仍未定因；不能把后续成功当根因修复。本轮唯一生产适配是复用原SQLite覆盖索引events(case_id,action,id)，消除管理报告同步全表回查导致的健康超时；源码、查询计划和真实业务证据见SHIELD_TASK_ACCEPTANCE_20261011.md与PROGRESS顶部。
+
+Reuse Assessment:
+- capability: 输入法键盘事件适配与原三项时间检测，不新增分类器。
+- existing implementation in repository: 原 collector、Kitsune f0a22b3 两个公开统计函数、FCaptcha 1.43.0/56aa2b38 checkTypingCadence。
+- mature candidates and pinned versions: 保留已校验 SHA 的原组件；UI Events 标准的 KeyboardEvent/CompositionEvent，Windows 原 IME 与现有 owned 验收能力。
+- selected implementation: 原检测函数/原阈值，补 DOM 原生事件配对适配；无新依赖，无模型训练。
+- reused public surface: 原事件 timeStamp/code/keyCode/isComposing、原 OrdinaryCapability/ManagedWindow 与 Windows IME API。
+- B-A-T-owned adapter and remaining gap: 仅采集真实时刻与可核验键对；两字段分别采样，按间隔、熵、完整键对分别校验；缺身份/缺释放不补造，实际异常/时钟倒序不忽略。
+- license/runtime/platform fit: 原许可/组件版本保持；本机 Windows Chrome 实测，不宣称所有输入法都产出足够键盘事件。
+- browser/runtime/state ownership conflicts: 测试只用精确归属的临时 Profile/PID，finally关闭删除；用户窗口不连接CDP、不代输入，服务端原 SQLite 为事实源。
+- replay model calls: 0
+- rejected candidates and evidence: 拒绝“取消所有valid检查/统一刷绿/用composition提交时刻造hold”；原版FCaptcha函数不排除IME，只检查键数、间隔/hold与粘贴门。
+- focused validation: Ctrl+Space回归先失败；真实Windows同流程修前unknown、修后Human/39clear，两个字段分别29/29与28/28真实键对，模型0、DOM/API一致、IME精确恢复；脚本来源仍Bot，错误/重复/无Control/非原生/陈旧Space释放仍invalid，真实快速原规则阳性仍保留。29项聚焦、子包类型检查通过，34份Profile永久删除；真人原失败不改写，首错配片段原时刻回放通过。未重新要求真人手验，未称已完成修后新真人运行，见SHIELD_IME_TIMING_ACCEPTANCE_20261011.md。
+
+原生诊断发现 code 可为空，229 down 配有229 up，并额外出现非229 up。300ms OS按住的实际观测：首个229 down/up间隔287.6ms，后一键315.5ms；不能把额外up当第二次按键，也不能把组合结束时刻当释放。匿名事件时序保存在reports/shield-ime-physical-20261011/native-events-before.json与held-native-events.json；无输入内容/键值落盘。来源：[UI Events组合期间键事件](https://www.w3.org/TR/uievents/#events-compositionevents)、[固定FCaptcha原函数](https://raw.githubusercontent.com/WebDecoy/FCaptcha/56aa2b38b8a5b7333cc7bf7d179a9e14538b2c5b/server-node/inputforensics.js)。Windows按住探针使用官方keybd_event仅用于受控证据，不进入产品控制器。
+
+Ctrl+Space复现同时核验本机ImmGetHotKey(IME_CHOTKEY_IME_NONIME_TOGGLE)：modifiers=49154、virtualKey=32。Windows事件链为Control 229/普通down→compositionend(false)→Control 229/普通up→Space up，无Space down；IME关闭时也能出现普通Control down/up→Space up。原[IME切换标识](https://learn.microsoft.com/en-us/windows/win32/intl/ime-hot-key-identifiers)、[TSF OnKeyTraceDown/Up及Process派发源码](https://raw.githubusercontent.com/chromium/chromium/main/ui/base/ime/win/tsf_text_store.cc)解释该边界；本机实测是行为依据，上游main不冒称本机二进制同版。识别快捷键只影响它自身的非采样上下文，不修改既有真实数值或检测阈值。
+
+## 2026-10-11 原生输入上下文与双语采样纠正
+
+真实缺口：网站把所有 isTrusted=false 的组合/焦点辅助事件额外解释为异常，脱离原 scripted-input 的五类事件判据；单个最近 textarea 的节奏采集又使中文组合抹去先前英文。用户实际无 CDP 原记录与 Chrome 原生 IME 复现 compositionend=false，因此不能据此称“非原生”。
+
+源码依据：[Blink 原生 IME 结束派发](https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/core/editing/ime/input_method_controller.cc) 的 DispatchCompositionEndEvent 调用 DispatchScopedEvent；[EventDispatcher](https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/core/dom/events/event_dispatcher.cc) 与 [ScopedEventQueue](https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/core/dom/events/scoped_event_queue.cc) 直接进入队列派发；[EventTarget](https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/core/dom/events/event_target.cc) 的普通原生 DispatchEvent 才设置 trusted=true。主分支源码用于解释路径，不能当本机二进制逐字同版证明；本机 Chrome 154.0.8037.98 实际原生事件回执另作行为证据。DOM 信任位按原样保留。
+
+Product Alignment:
+- natural-language task: 真人与 B-A-T 在同页完成同样的中英文、滚动与提交，不把正常输入法报异常。
+- reusable chain boundary: 原 OrdinaryCapability 导航、输入、滚动、提交与读取，无新增公共动作。
+- runtime inputs: 既有本次 run/page、同源遥测、原生挑战回执。
+- dynamic task outputs: 同页原报告、原信任位、按规则适用范围得到的状态。
+- generic platform capability used: 原所属浏览器控制与生命周期。
+- replay model calls: 0
+- site/task-specific code added: no (本检测站采样范围只在盾 collector 中，未进入公共 runtime)
+
+Reuse Assessment:
+- capability: 输入事件原规则核验与键盘节奏上下文采集。
+- existing implementation in repository: 原 CrowdSec 1.8.1/scripted-input、既有 collector、Kitsune f0a22b3 与 FCaptcha 1.43.0 固定判据。
+- mature candidates and pinned versions: 保留以上已选组件与版本；Chromium 原生 IME/剪贴板能力用于实测，不引入新库。
+- selected implementation: 原 five-type scripted-input 与原节奏检测器；仅纠正网站额外告警与页面级采样目标。
+- reused public surface: 既有原生 DOM events、原 OrdinaryCapability、原协议与服务端挑战审计。
+- B-A-T-owned adapter and remaining gap: 盾模型按事件类型投影，检测页英文采样隔离；辅助上下文保留而不新增异常，未知类型/丢失/无效仍 Unknown；旧样本无法重建时刻，保持不适用。
+- license/runtime/platform fit: 既有 Apache/MIT 等许可与固定组件不变；Windows Chrome/WSL 同实例验证，无新增运行平台承诺。
+- browser/runtime/state ownership conflicts: 一次可见 owned 会话重复使用；原生粘贴反向使用独立 headless clipboard，不读取/覆盖用户系统剪贴板；server/SQLite 事实源不替换。
+- replay model calls: 0
+- rejected candidates and evidence: 没有重选库；拒绝“改 trust 位/五类规则/阈值/仅无异常即真人”的替代方案，原阳性与验证必要性用现有反向控制保护。
+- focused validation: 原失败先验、18 项聚焦、12 项 HTTP 控制、原生 IME/B-A-T 同双语39 clear、原无头 Chrome 原生粘贴仍 Bot，见[本包结算](SHIELD_INPUT_CONTEXT_CLOSEOUT_20261011.md)。
+
+剪贴板边界：[Chromium HeadlessClipboard](https://raw.githubusercontent.com/chromium/chromium/main/components/headless/clipboard/headless_clipboard.cc) 使用 ClipboardNonBacked，与平台剪贴板独立；本机实测 native Ctrl+V 产生 trusted paste，Windows GetClipboardSequenceNumber 前后不变，正常粘贴未被误判，但原自动化标记/挑战仍拒绝该控制组。输入法或粘贴是正常上下文，既不能单独报 Bot，也不能单独证明操作者身份。
+
+## 2026-10-11 原版服务端验证接入与 IME 公平性
+
+Product Alignment:
+- natural-language task: 同一检测页面由真人与 B-A-T 完成英文、中文、滚动和提交，查看可抓取的真实判定。
+- reusable chain boundary: 既有普通输入/点击/滚动/读取；网站只组合检测原件。
+- runtime inputs: 本次独立 run/page/域名与遥测批次。
+- dynamic task outputs: 同页报告、服务端本次挑战回执及缺失/异常原因。
+- generic platform capability used: 既有浏览器会话与原普通能力。
+- replay model calls: 0
+- site/task-specific code added: no (检测站业务不进入公共 runtime)
+
+Reuse Assessment:
+- capability: 新鲜挑战验证、原规则消费及可审计的单次服务端结论。
+- existing implementation in repository: CrowdSec 1.8.1/909b515、固定 Hub f5cd0975、Traefik 原 bouncer 710e8880、已有 SQLite cases/events 与独立 HTTPS。
+- mature candidates and pinned versions: BotD 2.0.0、fpscanner 1.0.8 原版对照已运行；本次复用当前 CrowdSec 内置固定 fpscanner，不替换库/训练模型。
+- selected implementation: 当前 CrowdSec 1.8.1 完整挑战 + 原 balanced >=75；BotD/CreepJS/身份对照补充原证据，Kitsune/FCaptcha 节奏仅供解释。
+- reused public surface: 原 bouncer challenge 响应、sealed cookie、on_challenge_submit LogAccepted/RejectSubmission、原普通浏览器能力、SQLite 原事务。
+- B-A-T-owned adapter and remaining gap: 独立 run 域名、受保护完成路由、原接受审计投影、服务端报告及中英文完成采集；不复制 PoW/签名/cookie 引擎。
+- license/runtime/platform fit: CrowdSec MIT；Windows 桌面浏览器 + 已有 WSL/Node/systemd；mkcert 1.4.4 复用既有用户 CA，为 *.shield.localhost 签发有效会话域证书。原 *.localhost 顶级通配符不满足严格主机名校验，不能以原信任回执冒称会话域可信。
+- browser/runtime/state ownership conflicts: 检测站不拥有浏览器控制；原 engine/bouncer 验证，原 SQLite 存事实；不记录输入内容/通行 Cookie/完整指纹。
+- replay model calls: 0
+- rejected candidates and evidence: 独立“物理真人认证模型”不属于本次通过问题；原数据集失败保留，不继续围绕 B-A-T 调参。
+- focused validation: 实际无 CDP 真人 Windows 中文输入法及 B-A-T 同一中英文流程均 Human；原标准无头 Chrome 同流程 Bot/原分数500拒绝；原生 IME 取消/提交、旧 Cookie 409、脚本五类事件、伪造/跨会话/丢失/无效/采集失败锁存及重访新 run 已验证。23 项聚焦、子包类型、原冻结业务版本7/模型0和资源结算见 SHIELD_VERIFIED_FLOW_CLOSEOUT_20261011.md。未做其它输入法、独立人群统计或外站新的复跑。
+
+源码依据：[固定 GetOnChallengeSubmitEnv](https://github.com/crowdsecurity/crowdsec/blob/909b5157986a2b2c2163300fdaef5ed01289f7d2/pkg/appsec/waf_helpers.go#L234) 的 RejectSubmission 是 terminal；LogAccepted 只在已经密码验证的提交中可调用。接受审计追加在原 balanced 拒绝分支之后，不改评分或判据；后续保护路由到达仍须原 bouncer 验证本次 cookie。只看阴性遥测或全局统计不能授予 Human。
+
+B-A-T复验首败：底层Page.goto验收前页面hidden=true，出现原BotD窗口阳性/输入事件归属失败；等待非零窗口未解决，已删除。改用原OrdinaryCapability导航及所属页面激活后，verified-flow-46jdo7rl完整同流程Human，原尺寸/焦点组件正常；两个首败目录保留。原[BotD窗口判据](https://raw.githubusercontent.com/fingerprintjs/BotD/v2.0.0/src/detectors/window_size.ts)未改，失败瞬间全部组件未采到，不冒称已完整证明内部时序。匿名采集诊断已移除，公共控制源码/vendor无本轮变化。
+
+## 2026-10-10 至 11 中文 IME 采集适配修正
+
+Reuse Assessment:
+- capability: 原采集器正确分段中文组合输入、区分有效节奏与排除样本、按事件类型公开来源证据。
+- existing implementation in repository: 原 collector/checkReceipt/单页模型；固定 Kitsune f0a22b3 与 FCaptcha 1.43.0 checkTypingCadence。
+- mature candidates and pinned versions: 继续使用这两个原函数/固定 SHA，不新增检测库或自研统计模型；浏览器 Event/KeyboardEvent/CompositionEvent 标准 API。
+- selected implementation: 原函数完全不变；适配层维护当前 textarea 焦点段的排除、按下/释放配对和匿名事件类型计数。
+- reused public surface: 原 keystrokeIntervalMedian/keystrokeEntropy/isScrollTeleport/checkTypingCadence；DOM Event.isTrusted/isComposing、compositionstart/end；验收复用原 ManagedWindow/OrdinaryCapability/Chrome Input.imeSetComposition；Windows 原 IMM 与 WScript.Shell 仅作为 owned 验收夹具。
+- B-A-T-owned adapter and remaining gap: 排除段不继续错误配对；229/Process 前置排除；原始 invalid 不被后来的排除覆盖。keyboard 模型应用范围外显式 excluded，滚动不受影响。公开回执新增 byType；强阳性事件集合与 rules.ts 原 scripted-input 保持一致（input/change/click/keydown/keyup），非原生组合等辅助事件 advisory/unknown，原 CrowdSec 观察行仍完整记录。原引擎已经排除 compositionend；原网站误用了粗粒度 untrusted 总数，本次将投影对齐既有规则，未修改 rules.ts 或引擎配置。
+- license/runtime/platform fit: 原 MIT 固定上游许可、Node 24、Windows Chrome + WSL 服务边界不变；无新依赖。
+- browser/runtime/state ownership conflicts: 仅 owned 临时 Profile，finally 确认关闭再永久删除；不记录文字/候选/按键内容，不操作个人浏览器。Windows 模式记录初值并恢复，不安装输入法或改系统偏好。
+- replay model calls: 0；B-A-T 公共 runtime 无网站特判或新增循环。
+- rejected candidates and evidence: 只改颜色、把 excluded 当 clear、全忽略 untrusted、改阈值/源码都不能保护真实异常。原判据仅适用完整逐键时刻；IME 结束释放 isComposing 可为 false，单一标志无法完成配对。
+- focused validation: IME 提交/取消/失焦/快捷键/长按与倒退时间、不完整、原快速控制；类型证据、旧无类型回执、脚本输入不被组合事件掩盖、原阳性锁存；真实同源 HTTP/单页 JSON 与 B-A-T 普通控制。实际结果见 PROGRESS，Windows OS IME 结果与浏览器 CDP 组合场景分别结算。
+
+依据：[MDN keyup 的 IME 边界](https://developer.mozilla.org/en-US/docs/Web/API/Element/keyup_event#keyup_events_with_ime)、[DOM Event.isTrusted 定义](https://dom.spec.whatwg.org/#dom-event-istrusted)、[Chrome Input 协议](https://chromedevtools.github.io/devtools-protocol/tot/Input/)、[Windows 原 IME 窗口 API](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immgetdefaultimewnd)。原非原生辅助事件仍是可审计线索，不能当真人认证；旧历史回执不改写。
+
+系统补验：用户协调唯一 owned 窗口，确认前台 owner PID 后复用原 OrdinaryCapability 聚焦输入框，原 IMM/WSH 发送公开合成拼音，实际中文提交及组合边界在 check-ime-9cl7gzbs 完整观察。系统输入也出现 compositionend 非原生，五类强输入均原生；原投影正确保留 advisory/unknown，三项键盘 excluded，无 flagged/failed。IME open/conversion 恢复初值、同页 DOM JSON 一致、普通模型 0、默认 TLS，所属 Profile 已永久删除。先前夹具“所有事件必定原生”与焦点错误分别保留，修的是验收前提，不改判据；其他输入法/真人人群未测。
+
+## 2026-10-10 暗色检测网站与真实 localhost 信任
+
+Reuse Assessment:
+- capability: 真实检测结果展示、浏览器输入采样、本机 HTTPS 信任。
+- existing implementation in repository: BotD 2.0.0、CreepJS 10aa6724、UA-CH/structured-headers 2.0.3、Kitsune f0a22b3、FCaptcha 1.43.0、collector/telemetry；旧 openssl 自签叶证书验收依赖 owned SPKI 忽略，不能证明日常浏览器信任。
+- mature candidates and pinned versions: mkcert 1.4.4；正式公网域名使用公开 CA/ACME，localhost 没有可签发的公网域名。
+- selected implementation: mkcert 官方 Windows x64 binary，SHA256 d2660b50a9ed59eada480750561c96abc2ed4c9a38c6a24d93e30e0977631398，摘要由 Microsoft winget 固定 1.4.4 manifest 核对。
+- reused public surface: mkcert -install、-cert-file/-key-file、CAROOT、TRUST_STORES=system；全部原检测器 API/固定原函数及原服务生命周期。
+- B-A-T-owned adapter and remaining gap: 暗色 V3/原创点阵动画、回执结果投影/逐批确认；系统根信任/服务证书路径配置。原规则不改，节奏线索不独立判 Bot。全部自动项有效阴性才展示本次 Human，缺失/排除/失败保留未知。公网域名/部署未提供，不算公网证书验收。
+- license/runtime/platform fit: mkcert BSD-3-Clause，Windows x64；静态页面/ES module 沿用 Node 24 独立服务，不另造检测引擎。
+- browser/runtime/state ownership conflicts: 不使用个人 Profile；CA 私钥只留本机用户 AppData，不进服务数据/Git/发布包。公开 CA 链供本进程使用，不修改 WSL 系统信任库；旧证书备份 ignored，不动预算/业务/challenge 数据。
+- replay model calls: 0；真实 ManagedWindow + OrdinaryCapability 输入/滚动/点击，无模型参与。
+- rejected candidates and evidence: 忽略证书/仅加 https 未建立系统信任；自建 CA 复制成熟能力；报告对照无授权，删除。
+- focused validation: 投影/归属/缺失/未知/锁存/排除/弱行为边界，默认 Chrome TLS，同页 DOM/JSON，自动/交互回执与真实普通控制。结果记 PROGRESS。
+
+依据：[mkcert 1.4.4 README](https://github.com/FiloSottile/mkcert/blob/v1.4.4/README.md)、[Windows ROOT store 源码](https://github.com/FiloSottile/mkcert/blob/v1.4.4/truststore_windows.go)、[winget 1.4.4 摘要](https://github.com/microsoft/winget-pkgs/blob/master/manifests/f/FiloSottile/mkcert/1.4.4/FiloSottile.mkcert.installer.yaml)。
+
+## 2026-10-10 独立化纠正已实施与实际复用
+
+最终实现/证据见[交付结算](SHIELD_INDEPENDENCE_CLOSEOUT_20261010.md)。Reuse Assessment: capability=单一quota实现/独立交付；existing=原quota函数+SQLiteBucket；selected=PyrateLimiter4.5.0/filelock3.19.1，标准build1.2.2.post1/Hatchling1.27.0；public surface=init_from_file/leak/put_decision/close与标准wheel/zipimport；adapter=原函数迁移、双侧参数及来源回执；ownership=各自DB/策略、不新增RPC或browser session；replay model calls=0；rejected=双份适配、导入整个runner、无必要新服务。Windows受管、WSL -I、坏/缺制品、持久/并发/短窗/隔离与空实例/冻结联合已实际验证，原vendor锁和摘要不覆盖新包且未被修改。
+
+标准构建源码/版本依据：[Hatch构建配置](https://hatch.pypa.io/latest/config/build/)、[Hatchling1.27.0元数据](https://pypi.org/pypi/hatchling/1.27.0/json)、[Python3.12 zipimport](https://docs.python.org/3.12/library/zipimport.html)。公共src/制品分别冻结，缺制品的重建必须先核原sourceDigest、再核原wheelSha256，不登记新摘要逃过检查。
+
+真实空实例跨C/D盘暴露原Rollup12.1.2 TypeScript program按cwd漏源。依据固定[tsconfig实现](https://raw.githubusercontent.com/rollup/plugins/typescript-v12.1.2/packages/typescript/src/options/tsconfig.ts)、[插件入口](https://raw.githubusercontent.com/rollup/plugins/typescript-v12.1.2/packages/typescript/src/index.ts)和失败日志，选择公开tsconfig选项、明确files与相对上游include；保留Rollup4.30.1/TS5.7.3/noCheck/原异常探针，不复制编译器。Windows读取cscli内部POSIX链接EACCES时采用WSL原tar并核链接归属，未遇到工具策略拒绝，不换权限或造第二套恢复框架。
+
+固定源归档/实际许可证、维护及Windows/WSL限制沿原artifacts和新增THIRD_PARTY_NOTICES；发布排除敏感runtime。空实例源构建/激活/ready、同版源码搬迁/回退和真实挑战重启通过；不外推其它OS、新机器安装或跨版本存储兼容。原检测组件/模型研究和首败记录继续保留。
+
+## 2026-10-10 晚间独立化复用纠正（仅方案）
+
+[完整方案第 6–8、13 节](SHIELD_INDEPENDENCE_PLAN_20261010.md)记录依赖结构、发布方式与 review。当前未提交 budget.py 虽直接调用原 PyrateLimiter，但重复了 apps/api/python/browser_use_runner/quota.py 的既有结果适配；此前“未重写 SQL/滑窗/锁”为真，不足以证明没有重复代码。拟移原函数为公共 Python 小包，B-A-T 与盾消费同一固定制品，分别使用各自策略和数据库，不新增限速服务或框架。
+
+标准 wheel 复用已有 Hatchling/build 路线；Hatchling 原声明未固定具体版本，实施 S1 须固定并做最小装载验证。WSL Python -I 使用原显式已校验 wheel 加载，不能只加 PYTHONPATH；B-A-T 安装回执增加共享依赖记录，原 vendor 摘要不自动覆盖新包。以上为 reviewed 设计，未构建/安装或运行验收。本轮未重新选检测模型/引擎，原固定源码、分数及失败证据保留。
+
+## 2026-10-10 盾独立包复用与验收
+
+主线提交dc45be4之后实施，范围及证据见[独立化结算](ANTIBOT_STANDALONE_20261010.md)。Reuse Assessment: capability=原盾独立部署；existing=tools/antibot-lab原npm包/固定制品/systemd；selected=原Node/npm、Rollup4.30.1/plugin-typescript12.1.2/TS5.7.3构建探针，运行zod4.1.8及原四依赖，开发TS5.9.2/esbuild0.25.12/React19.1.1取现有锁版本；public surface=原npm安装/Node TS/systemd环境/固定PyrateLimiter4.5.0 SQLiteBucket；adapter=模块自身源码位置、显式数据配置、盾自有薄预算结果映射；无新检测引擎/模型/服务管理器。许可与原固定源不变；Windows+WSL实际平台保留，系统Python只从原哈希wheels加载预算组件。数据/secret/浏览器所有权不混入Git，普通模型0。B-A-T API反向导入和根依赖被移除，原Go校准测试按字节移入盾tests。107文件仓库外副本独立安装/类型检查/6边界通过；WSL预算跨进程持久拒绝；副本真实服务→冻结原业务7/完整TLS/H2/0模型通过，资源关闭/临时副本及Profile永久删除。未从零重建全套上游二进制、跨天或外站，不扩大验收结论。
+
 ## 2026-10-10 B03独立键盘联合判据窄校准
 
 最小在线适配已验：原FCaptcha输入函数与MIT许可按固定URL/SHA登记artifacts；cadence.ts仅做无内容输入形状/有效性与原API适配，均值/方差来自实测时序。原FormAnalyzer会拦截form.submit并按field id/name合并，本项目不复用其整个页面控制器；在现有collector中仅给当前textarea焦点段配对原生时刻，标识仅内存、100键窗口、失焦错误/缺keyup/重复/IME/粘贴保留无效或排除。原整页paste排除在换字段后仍保留。device-1y96mqod六在线控制/业务7与device-73vyfl72容量/恢复边界通过，详见PROGRESS；不把规则的独立正常校准外推为一般行为模型。

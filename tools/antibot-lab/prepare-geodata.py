@@ -9,8 +9,7 @@ import shutil
 import subprocess
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[2]
-BASE = ROOT / 'work/antibot-service'
+from lab_paths import ROOT, BASE
 
 
 def digest(file): return hashlib.sha256(file.read_bytes()).hexdigest()
@@ -58,7 +57,7 @@ def main():
     module = base+'/runtime/crowdsec-909b5157986a2b2c2163300fdaef5ed01289f7d2'
     target = wsl('wslpath', '-a', str(out))
     log = wsl('env', 'GOFLAGS=-mod=readonly', 'go', '-C', module, 'run',
-        checkout+'/tools/antibot-lab/tests/geoip-calibration.go', target, target+'/current.json', '--current')
+        checkout+'/tests/geoip-calibration.go', target, target+'/current.json', '--current')
     (out/'deployment-check.log').write_text(log)
     validated = json.loads((out/'current.json').read_text())
     if (BASE/'data').is_symlink() or (BASE/'data').is_junction(): raise ValueError('geo_data_link')

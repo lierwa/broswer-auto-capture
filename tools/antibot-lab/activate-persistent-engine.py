@@ -6,8 +6,7 @@ import subprocess
 import tempfile
 import time
 
-ROOT = Path.cwd().resolve()
-BASE = ROOT / 'work/antibot-service'
+from lab_paths import ROOT, BASE
 UNIT = 'bat-antibot-engine.service'
 
 
@@ -32,7 +31,7 @@ def stop():
 
 
 def start():
-    result = subprocess.run(['node', '--experimental-strip-types', 'tools/antibot-lab/lab.ts', 'start'],
+    result = subprocess.run(['node', '--experimental-strip-types', 'lab.ts', 'start'],
                             cwd=ROOT, capture_output=True, check=True, timeout=100)
     return result.stdout.decode().strip()
 

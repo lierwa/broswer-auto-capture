@@ -1,4 +1,4 @@
 @echo off
-cd /d "%~dp0..\.."
-call npm run antibot:lab -- start
+cd /d "%~dp0"
+call npm start
 if errorlevel 1 pause

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
-import { cadenceSchema, cadenceObservations } from './cadence.ts'
+import { cadenceSchema, cadenceObservations, combineTiming, downTimingInvalid } from './cadence.ts'
 
 const count = z.number().int().min(0).max(1_000_000)
 export const behaviorSchema = z.object({ keys: z.array(z.number().finite().nonnegative()).max(128),
@@ -26,10 +26,18 @@ export async function behaviorObservations(base: string, data?: z.infer<typeof b
   const cadence = await cadenceObservations(base, data.cadence)
   try {
     const original = await (loaded ??= classifier(base))
-    const median = original.keystrokeIntervalMedian(data.keys), scroll = data.scroll
+    const scroll = data.scroll
     // WHY：只适配固定原函数/阈值；实验性线索可被正常锚点、长按等触发，不授予或撤销身份。
-    return [row('keystroke-interval', median < 0 ? null : median < 30),
-      row('keystroke-entropy', data.keys.length < 4 ? null : original.keystrokeEntropy(data.keys) < .15),
+    // WHY：真实keydown用于间隔/熵，真实完整down/up键对用于hold；两类缺失不能互相冒充。
+    const samples=data.cadence?.samples?.length?data.cadence.samples:[data.cadence]
+    const timing=samples.map(sample=>{
+      const times=sample?.starts ?? data.keys,median=original.keystrokeIntervalMedian(times)
+      const invalid=(sample && downTimingInvalid(sample)) || times.some((t,i)=>i>0 && t<times[i-1]!)
+      const legacyExcluded=sample?.excluded && !sample.starts && !sample.invalid
+      return [invalid?row('keystroke-interval',null,'invalid'):legacyExcluded?row('keystroke-interval',null,'excluded'):row('keystroke-interval',median<0?null:median<30),
+        invalid?row('keystroke-entropy',null,'invalid'):legacyExcluded?row('keystroke-entropy',null,'excluded'):row('keystroke-entropy',times.length<4?null:original.keystrokeEntropy(times)<.15)]
+    })
+    return [combineTiming(timing.map(r=>r[0]!))!,combineTiming(timing.map(r=>r[1]!))!,
       row('scroll-teleport', !scroll.count || scroll.maxTouchPoints === null ? null : original.isScrollTeleport(scroll.maxDelta,
         scroll.wheelCount, scroll.scrollKey, scroll.maxTouchPoints)), ...cadence]
   } catch { return [row('measurement', null, 'error'), ...cadence] }

@@ -1,10 +1,11 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import path from 'node:path'
 
-const base=path.resolve('work/antibot-service'),out=path.join(base,'reports',`event-rules-${Date.now()}`)
+const base=labData,out=path.join(base,'reports',`event-rules-${Date.now()}`)
 await mkdir(out)
 const names=process.argv.slice(2)
 assert.equal(names.length,3)

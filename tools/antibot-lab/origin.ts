@@ -18,6 +18,7 @@ import { captchaGate } from './captcha.ts'
 import { flowFixture } from './flow.ts'
 import { requestedHighEntropyHints } from './identity.ts'
 import { checkRoute } from './check.ts'
+import { ownsCheck,serverReport,verificationRoute } from './verification.ts'
 
 const base = process.cwd()
 const secret = z.object({ bouncer: z.string().length(64) }).parse(JSON.parse(await readFile(`${base}/secrets.json`, "utf8")))
@@ -26,6 +27,9 @@ const stored = z.object({ id: z.uuid(), kind: z.enum(["catalog", "booking"]), va
 const db = new DatabaseSync(`${base}/data/business.sqlite`)
 db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS cases(id TEXT PRIMARY KEY, kind TEXT, variant INTEGER, created TEXT); CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, case_id TEXT, at TEXT, action TEXT, value TEXT)")
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS telemetry_batches ON events(case_id,json_extract(value,'$.page'),json_extract(value,'$.batch')) WHERE action='telemetry-received'")
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS diagnostic_starts ON events(case_id) WHERE action='diagnostic-started'")
+// WHY：报告按case/action回查历史事件；复用SQLite索引，避免同步全表扫描阻塞业务与健康请求。
+db.exec("CREATE INDEX IF NOT EXISTS events_case_action_id ON events(case_id,action,id)")
 function send(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "content-type": typeof body === "string" ? "text/html; charset=utf-8" : "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" })
   res.end(typeof body === "string" ? body : JSON.stringify(body))
@@ -48,11 +52,38 @@ function claimTelemetry(id: string, page: string, batch: string) {
   return db.prepare("INSERT OR IGNORE INTO events(case_id,at,action,value) VALUES(?,?,'telemetry-received',?)")
     .run(id, new Date().toISOString(), JSON.stringify({ page, batch })).changes === 1
 }
-function createCheck() {
-  const id = randomUUID(), page = randomUUID()
-  db.prepare('INSERT INTO cases VALUES(?,?,?,?)').run(id, 'diagnostic', 1, new Date().toISOString())
-  record(id, 'opened', { page })
-  return { id, page }
+function newCheck() {
+  const id=randomUUID(),page=randomUUID()
+  db.prepare('INSERT INTO cases VALUES(?,?,?,?)').run(id,'diagnostic',1,new Date().toISOString())
+  record(id,'opened',{page})
+  return {id,page,url:`https://${id}.shield.localhost:4185/measurement/check`}
+}
+function createCheck(req: IncomingMessage) {
+  const hostId = /^([a-f0-9-]{36})\.shield\.localhost:4185$/.exec(req.headers.host ?? '')?.[1]
+  if (hostId) {
+    const existing=db.prepare("SELECT value FROM events WHERE case_id=? AND action='opened' ORDER BY id LIMIT 1").get(hostId) as {value:string}|undefined
+    if (!existing || !db.prepare("SELECT id FROM cases WHERE id=? AND kind='diagnostic'").get(hostId)) throw Error('check_not_found')
+    const previous=db.prepare("SELECT 1 FROM events WHERE case_id=? AND action IN ('telemetry','verified') LIMIT 1").get(hostId)
+    const claimed=db.prepare("INSERT OR IGNORE INTO events(case_id,at,action,value) VALUES(?,?,'diagnostic-started','{}')")
+      .run(hostId,new Date().toISOString()).changes===1
+    // WHY：刷新/重访旧 URL 要新建 run 与挑战域，不能拿旧流量、旧完成事实冒充当前访问。
+    if(previous || !claimed) return newCheck()
+    return {id:hostId,page:JSON.parse(existing.value).page,verification:'/shield/verify/'+hostId}
+  }
+  return newCheck()
+}
+async function postTelemetry(req: IncomingMessage,res: ServerResponse,id: string) {
+  const diagnostic=!!db.prepare("SELECT id FROM cases WHERE id=? AND kind='diagnostic'").get(id)
+  if (diagnostic && !ownsCheck(req,id)) return send(res,403,{error:'check_owner_required'})
+  const scheme=req.headers['x-forwarded-proto']==='https'?'https':'http'
+  try {
+    const receipt=await ingest(base,req,id,await body(req),(page,batch)=>claimTelemetry(id,page,batch))
+    record(id,'telemetry',receipt);return send(res,202,receipt)
+  } catch {
+    // WHY：已验证访问的真实采集失败必须入原事实库，后续阴性不能覆盖；跨来源请求不能污染记录。
+    if(diagnostic && req.headers.origin===`${scheme}://${req.headers.host}`) record(id,'measurement-failed',{reason:'telemetry_rejected'})
+    return send(res,400,{error:diagnostic?'invalid_telemetry':'invalid_request'})
+  }
 }
 async function flowResponse(req: IncomingMessage, res: ServerResponse, id: string, variant: number, action: string | undefined) {
   const reply = await flowFixture(req, id, action, () => body(req, 1024))
@@ -70,6 +101,14 @@ async function flowResponse(req: IncomingMessage, res: ServerResponse, id: strin
 async function site(req: IncomingMessage, res: ServerResponse) {
   if (req.headers["x-bat-lab-origin"] !== secret.bouncer) return send(res, 403, { error: "gateway_required" })
   const url = new URL(req.url ?? "/", "http://127.0.0.1:4187")
+  const verify = /^\/shield\/verify\/([a-f0-9-]{36})$/.exec(url.pathname)
+  if (verify && db.prepare("SELECT id FROM cases WHERE id=? AND kind='diagnostic'").get(verify[1]!))
+    return verificationRoute(base,req,res,verify[1]!,secret.bouncer,record)
+  const report = /^\/measurement\/check\/report\/([a-f0-9-]{36})$/.exec(url.pathname)
+  if (report) {
+    if (req.method !== 'GET' || !ownsCheck(req,report[1]!)) return send(res,403,{error:'check_owner_required'})
+    return send(res,200,serverReport(db,report[1]!,url.searchParams.get('mode')==='interactive'?'interactive':'automatic'))
+  }
   if (await checkRoute(base, req, res, url.pathname, createCheck)) return
   if (url.pathname.startsWith('/measurement/worker/')) return workerProbe(base, url, res)
   if (['/shield/collector.js', '/measurement/check/collector.js'].includes(url.pathname) && req.method === 'GET') {
@@ -78,9 +117,7 @@ async function site(req: IncomingMessage, res: ServerResponse) {
   }
   const telemetry = /^\/(?:shield|measurement\/check)\/telemetry\/([a-f0-9-]{36})$/.exec(url.pathname)
   if (telemetry && req.method === 'POST' && db.prepare('SELECT id FROM cases WHERE id=?').get(telemetry[1]!)) {
-    const receipt = await ingest(base, req, telemetry[1]!, await body(req), (page, batch) => claimTelemetry(telemetry[1]!, page, batch))
-    record(telemetry[1]!, 'telemetry', receipt)
-    return send(res, 202, receipt)
+    return postTelemetry(req,res,telemetry[1]!)
   }
   if (url.pathname === '/measurement/creep' || url.pathname === '/measurement/creep.js') return creepProbe(base, url, res)
   if (url.pathname === '/measurement/human/collector.js') {

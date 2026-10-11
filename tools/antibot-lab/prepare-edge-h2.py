@@ -6,8 +6,7 @@ import shutil
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]
-BASE = ROOT / 'work/antibot-service'
+from lab_paths import ROOT, BASE
 TARGET = BASE / ('runtime/haproxy-rtt-candidate' if '--candidate' in sys.argv else 'runtime/haproxy-h2')
 SOURCE = TARGET / 'source'
 UPSTREAM_HASH = '4c58b575503e198aa81b900880ea2f1238e65cf6121441c1b86bea3854a71212'
@@ -65,7 +64,7 @@ def patch():
         '\t\tif (!(h2c->flags & H2_CF_IS_BACK) && !h2c->bat_headers && !h2c->bat_window) h2c->bat_window = inc;\n'
         '\t\th2c->mws += inc;')
     file.write_text(text, newline='\n')
-    shutil.copyfile(ROOT / 'tools/antibot-lab/edge-h2-samples.c', SOURCE / 'src/bat_h2_samples.c')
+    shutil.copyfile(ROOT / 'edge-h2-samples.c', SOURCE / 'src/bat_h2_samples.c')
 
 
 def patch_alpn():
@@ -114,7 +113,7 @@ smp_fetch_ssl_fc_protocol_hello_id(''')
         '\t{ "ssl_fc_bat_rtt_valid", smp_fetch_ssl_fc_bat_rtt, 0, NULL, SMP_T_SINT, SMP_USE_L5CLI },\n'
         '\t{ "ssl_fc_bat_alpn",')
     file.write_text(text, newline='\n')
-    shutil.copyfile(ROOT / 'tools/antibot-lab/edge-ssl-rtt.c', SOURCE / 'src/bat_ssl_rtt.c')
+    shutil.copyfile(ROOT / 'edge-ssl-rtt.c', SOURCE / 'src/bat_ssl_rtt.c')
 
 
 def patch_h3():
@@ -137,7 +136,7 @@ def patch_h3():
     text = change(text, '\t\th3_debug_printf(stderr, "%s id: %llu value: %llu\\n",',
         '\t\tbat_h3_setting(h3c, id, value);\n\t\th3_debug_printf(stderr, "%s id: %llu value: %llu\\n",')
     file.write_text(text, newline='\n')
-    shutil.copyfile(ROOT / 'tools/antibot-lab/edge-h3-samples.c', SOURCE / 'src/bat_h3_samples.c')
+    shutil.copyfile(ROOT / 'edge-h3-samples.c', SOURCE / 'src/bat_h3_samples.c')
 
 
 def patch_quic_shape():
@@ -166,7 +165,7 @@ def main():
                              'is-active', '--quiet', 'bat-antibot-edge.service'], cwd=ROOT)
     if active.returncode == 0 and '--candidate' not in sys.argv:
         raise ValueError('stop_owned_edge_before_build')
-    artifacts = json.loads((ROOT / 'tools/antibot-lab/artifacts.json').read_text())
+    artifacts = json.loads((ROOT / 'artifacts.json').read_text())
     names = ('haproxy-3.2.9-source.tar.gz', 'haproxy_3.2.9-1ubuntu2.2.debian.tar.xz',
              'libssl-dev_3.5.5-1ubuntu3.7_amd64.deb', 'liblua5.4-dev_5.4.8-1build1_amd64.deb',
              'libpcre2-dev_10.46-1build1_amd64.deb', 'libcrypt-dev_4.5.1-1_amd64.deb')
@@ -203,9 +202,9 @@ def main():
     run('chmod', '755', linux(binary))
     version = run(linux(binary), '-vv')
     receipt = dict(upstream='3.2.9-1ubuntu2.2', binarySha256=digest(binary),
-                   adapterSha256=digest(ROOT / 'tools/antibot-lab/edge-h2-samples.c'),
-                   h3AdapterSha256=digest(ROOT / 'tools/antibot-lab/edge-h3-samples.c'),
-                   rttAdapterSha256=digest(ROOT / 'tools/antibot-lab/edge-ssl-rtt.c'),
+                   adapterSha256=digest(ROOT / 'edge-h2-samples.c'),
+                   h3AdapterSha256=digest(ROOT / 'edge-h3-samples.c'),
+                   rttAdapterSha256=digest(ROOT / 'edge-ssl-rtt.c'),
                    recipeSha256=digest(Path(__file__)), version=version)
     (TARGET / 'candidate.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps(dict(candidate=str(binary), sha256=receipt['binarySha256'], activated=False)))

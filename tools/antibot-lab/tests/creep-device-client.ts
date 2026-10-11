@@ -1,7 +1,7 @@
-import screen from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/screen/index'
-import navigator from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/navigator/index'
-import worker from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/worker/index'
-import { getLies } from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/lies/index'
+import screen from '@creep/screen/index'
+import navigator from '@creep/navigator/index'
+import worker from '@creep/worker/index'
+import { getLies } from '@creep/lies/index'
 import { probeState } from './probe-deadline'
 
 export async function probe() {

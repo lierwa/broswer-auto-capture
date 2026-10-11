@@ -1,11 +1,10 @@
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 
-export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
-export const directory = path.join(root, "work/antibot-service")
+import { root, directory } from './locations.mjs'
+export { root, directory } from './locations.mjs'
 export const hubCommit = "f5cd0975d0bd69ebad09c5e6992d4f1a1ef594b0"
 export const pluginCommit = "710e88808baccb320d7b2b3560397e1474e3e98b"
 export const pluginModule = "github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"

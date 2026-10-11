@@ -10,9 +10,9 @@ import subprocess
 import sys
 
 BASE = Path(sys.argv[1]).resolve()
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parent
 WHEELS = ('hypercorn-', 'h2-', 'hpack-', 'hyperframe-', 'h11-', 'priority-', 'wsproto-')
-for item in json.loads((ROOT / 'tools/antibot-lab/artifacts.json').read_text()):
+for item in json.loads((ROOT / 'artifacts.json').read_text()):
     if item['name'].startswith(WHEELS):
         source = BASE / 'upstream' / item['name']
         if hashlib.sha256(source.read_bytes()).hexdigest() != item['sha256']:

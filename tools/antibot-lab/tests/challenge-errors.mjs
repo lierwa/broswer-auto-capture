@@ -1,9 +1,10 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const base = path.resolve('work/antibot-service')
+const base = labData
 const out = path.join(base, 'reports', `challenge-errors-${Date.now()}`)
 await mkdir(out)
 const host = `challenge-errors-${Date.now()}.localhost`

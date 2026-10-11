@@ -14,7 +14,9 @@ const highEntropy = z.object({ architecture: textHint.nullable(), bitness: textH
 const highHeaders = { architecture: 'sec-ch-ua-arch', bitness: 'sec-ch-ua-bitness', model: 'sec-ch-ua-model',
   platformVersion: 'sec-ch-ua-platform-version', wow64: 'sec-ch-ua-wow64', fullVersionList: 'sec-ch-ua-full-version-list',
   formFactors: 'sec-ch-ua-form-factors' } as const
-export const requestedHighEntropyHints = Object.values(highHeaders).join(', ')
+// WHY：Accept-CH 的 opt-in token 使用浏览器公开名称；请求端解析仍按 Node 的小写 header 键。
+export const requestedHighEntropyHints = ['Sec-CH-UA-Arch','Sec-CH-UA-Bitness','Sec-CH-UA-Model',
+  'Sec-CH-UA-Platform-Version','Sec-CH-UA-WoW64','Sec-CH-UA-Full-Version-List','Sec-CH-UA-Form-Factors'].join(', ')
 export const identitySchema = z.object({ userAgent: z.string().max(2048).nullable(),
   hints: hints.nullable(), highEntropy: highEntropy.nullable().optional(),
   highEntropyValidity: z.enum(['measured', 'unavailable', 'error', 'timeout']).optional() }).strict()

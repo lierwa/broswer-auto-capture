@@ -2,6 +2,7 @@
 import asyncio
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -12,7 +13,7 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 ROOT = Path.cwd().resolve()
-BASE = ROOT / 'work/antibot-service'
+BASE = Path(os.environ.get('BAT_ANTIBOT_DATA', ROOT / 'work/antibot-service')).resolve()
 sys.path.insert(0, str(ROOT / 'apps/api/python'))
 sys.path.insert(0, str(ROOT / 'apps/api/tests/antibot-m0'))
 from browser import save
@@ -28,6 +29,7 @@ def module(name, filename):
 
 session_test = module('session_control', 'antibot-session.acceptance.py')
 restart_test = module('restart_control', 'antibot-session-restart.acceptance.py')
+restart_test.BASE = BASE
 
 
 async def check(browser, case, out):

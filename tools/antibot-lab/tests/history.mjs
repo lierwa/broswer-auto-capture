@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import { appendFile, readFile, mkdir, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
@@ -5,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import path from 'node:path'
 import net from 'node:net'
 
-const directory = path.join(process.cwd(), 'work/antibot-service')
+const directory = labData
 const windowState = execFileSync('systemctl', ['--user', 'show', 'bat-antibot-window-test.service',
   '--property=ActiveState', '--value'], { encoding: 'utf8' }).trim()
 assert.ok(!['active', 'activating'].includes(windowState), 'live-window-validation-running')

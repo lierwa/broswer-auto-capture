@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createHash } from 'node:crypto'
@@ -18,7 +19,7 @@ test('GeoIP expiration changes only the original dependent filter, retaining eve
 
 // 保护测量有效性：时效取源构建时刻；损坏/缺失不能成为正常负例。MMDB解码另由原Go读库实测。
 test('GeoIP status preserves expiration and rejects corrupt or relabeled data', async () => {
-  const parent = await realpath('work/antibot-service/reports')
+  const parent = await realpath(path.join(labData, 'reports'))
   const base = await mkdtemp(path.join(parent, 'geo-validity-'))
   const built = Date.parse('2026-10-01T01:36:12Z'), expiry = built + 35 * 86400_000
   const files = ['GeoLite2-City.mmdb', 'GeoLite2-ASN.mmdb'] as const

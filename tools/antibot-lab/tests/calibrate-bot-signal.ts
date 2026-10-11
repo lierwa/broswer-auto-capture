@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 // Fixed upstream heuristic transfer; no model fitting, browser or production installation.
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
@@ -6,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const root = process.cwd(), base = path.join(root, 'work/antibot-service')
+const root = process.cwd(), base = labData
 const candidate = path.join(base, 'upstream/candidate-review/bot-signal-5cda0e5')
 const receipt = JSON.parse(await readFile(path.join(candidate, 'source-receipt.json'), 'utf8'))
 assert.equal(receipt.commit, '5cda0e5fb6e39840b66d253321cdee2d9b03e757')

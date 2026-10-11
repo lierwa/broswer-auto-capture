@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bat-request-budget"
+version = "1.0.0"
+description = "B-A-T shared adapter to the pinned PyrateLimiter SQLite budget"
+requires-python = ">=3.11"
+dependencies = ["pyrate-limiter==4.5.0", "filelock==3.19.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bat_request_budget"]

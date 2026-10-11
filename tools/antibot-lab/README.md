@@ -1,5 +1,62 @@
 # 本地独立检测实验
 
+## 检测盾网站（暗色 V3）
+
+在项目根目录执行 `npm --prefix tools/antibot-lab start`，打开 **https://localhost:4185/measurement/check**。每次访问创建新的 `<run>.shield.localhost` 会话，自动检查 34 项并完成原 CrowdSec 挑战。“补充交互检测”在同页分别输入 **Today feels like a good day.** 与 **今天适合出去走走。**，滚动阅读区并提交，增加 5 项行为检查。结论、全部项目和 JSON 同页可读取；无报告对照。`globalThis.__batCheckReport`、`#shield-report` 和 `#report` 的 `data-status/data-verdict/data-run-id` 供自动化读取；同源 `/measurement/check/report/<run>?mode=interactive` 返回服务端版本 3 报告，包含 `verification`、`flow`、`phase`、`verdict` 与原 `signals`。
+
+“真人 · 本次验证通过”必须有本 run 的原版挑战接受审计和受保护请求成功；自动检测还须必要测量完整，交互模式还须中英文输入、滚动和实际提交完整。全阴性不能代替原版验证。原生输入法、粘贴、焦点事件作为正常上下文保留原始计数，不增设异常；Chrome 原生 compositionend 也可能有 isTrusted=false，输入来源只按原 input/change/click/keydown/keyup 判据核验。检测页对中英文逐字段保留真实keydown/up；原生229/code空事件只在顺序唯一时配对，一次附带的第二条释放只消费一次。间隔与熵使用真实keydown时间，hold使用完整真实键对；不因IME整段排除、不跨字段拼接、不猜释放时间。真实无身份/歧义/缺释放保持不足，原FCaptcha全页粘贴门保留。原强阳性、采集失败、丢失、缺失类型与无效数据继续保留；刷新/重访创建新run。报告timing保留可核验数值样本，不含按键身份、输入和剪贴板内容；该结论描述检测结果，不是操作者物理身份认证。
+
+2026-10-11 当前：真实Ctrl+Space/Tab采集错配已修复，原阈值保持；用户修后独立操作两次均Human/39clear，三项逐字段使用真实有效键对，旧失败报告保留。B-A-T原冻结HTTP任务正式四场景实际打开7/11/13、未发布99没有点击，普通模型0；首轮点击缺事件尚未定因，不冒称外站或完整HTTPS业务通过。证据见本仓docs/development/SHIELD_TASK_ACCEPTANCE_20261011.md与SHIELD_IME_TIMING_ACCEPTANCE_20261011.md。
+
+2026-10-11 最新验收：一个所属可见窗口内，B-A-T 原普通中英文流程与 Chrome 原生 IME 中英文流程分别得到 Human/39 clear/0 advisory/模型0，同页 JSON 一致；原标准无头 Chrome 通过原生粘贴完成相同内容时，输入来源正常但仍为 Bot，原挑战拒绝。上次用户无 CDP 实际操作的原数据回归为 Human/36 clear/3 excluded/0 advisory；旧数据没有可重算的英文时刻，三项“不适用”保留，不能冒称新一次真人实测。中文取消、旧通行 Cookie、脚本五类事件、跨会话、丢失/无效/伪造验证及失败锁存仍有反向证据。当前结果、首败和未测见本仓 `docs/development/SHIELD_INPUT_CONTEXT_CLOSEOUT_20261011.md`，上一包记录继续保留。
+
+当前聚焦验收：`node --test tools/antibot-lab/tests/ime-collection.test.ts tools/antibot-lab/tests/check-model.test.ts`，29项通过；`npm --prefix tools/antibot-lab run check`通过。实际Windows双语入口为`tests/verification-windows-ime.acceptance.py --hardware-codes`（可加`--rollover`、`--mixed-mode`或`--control-space`；`--source-control`补脚本反向检查）；模型调用0，真实系统候选词、原生Tab、逐字段完整键对、同页JSON/API与TLS核验，finally关闭并永久删除所属Profile。设置`BAT_RUN_OWNED_CHECK=1`，使用现有受管Python，在集成checkout根目录运行。错误的`ime.acceptance.py`、`verification-native-ime.acceptance.py`、`verification-ime-reverse.acceptance.py`及预设汉字提交分支已删除，历史失败报告保留。原协议/脚本反向入口仍为`tests/verification-http.acceptance.mjs`、`tests/verification-reverse.acceptance.py`，不冒称这些是Windows真人输入。
+
+本机首次信任配置（部署操作，不是访客页面功能）：`npm --prefix tools/antibot-lab run stop` → `npm --prefix tools/antibot-lab run lab -- trust-localhost` → `npm --prefix tools/antibot-lab start`。复用 mkcert 1.4.4，为 localhost、shield.localhost、*.shield.localhost、127.0.0.1、::1 签发证书并安装当前 Windows 用户根信任；`*.localhost` 顶级通配符不能作为真实会话域覆盖，原签发校验已补严格会话主机名检查。后端 HAProxy 保留 verify required；本轮 Chrome 原连接为 secure，不使用证书忽略或 SPKI 例外。CA 私钥只留本机 AppData/BATShield/mkcert-ca，不在服务运行数据或发布包；迁到另一台机器重新建立该机信任。公网需实际域名及正式 CA/ACME。可信根移除或证书到期时重新运行维护命令。
+
+> 2026-10-10 晚间结算：同仓独立服务、共享代码单一来源、运行数据独立。bat-request-budget 1.0.0 的 Windows 受管安装、缺 wheel 固定重建及 WSL -I 装载已验证；页面补原 typing-cadence。本机仓库外空实例构建、源码搬迁/失败恢复/路径回退、真实重启防重放、完整 HTTPS 冻结链业务7/普通模型0通过；首败、资源和未测见本仓 docs/development/SHIELD_INDEPENDENCE_CLOSEOUT_20261010.md。不是干净新电脑OS安装或跨版本数据库升级证明。
+
+交付单位是本包 `release.ts` 生成的标准 tar 发布包，包含锁文件、现有盾源码、固定公共 wheel/来源摘要和许可说明。由唯一公共源码构建的 wheel 属于发布依赖，运行不回读 B-A-T 的 apps/packages、根 node_modules 或受管 Python；B-A-T 只通过 HTTP 访问盾。裸目录缺公共制品时明确拒绝，不自动改用另一份算法。
+
+## 独立入口
+
+从任意目录使用`npm --prefix <盾目录> ci --ignore-scripts --workspaces=false`安装本包锁定依赖，然后使用`npm --prefix <盾目录> start`、`run status`或`stop`。Windows可双击本目录start.cmd。B-A-T根命令`npm run antibot:lab -- start`仅为方便入口，独立包不反向引用它。要求Windows、Node>=24、npm>=11、WSL Ubuntu及原Go/Python构建前提；未新增跨平台支持声明。
+
+默认数据目录是包内`.local/`，包括secret、制品、SQLite、配置和证据，已在本包.gitignore中排除。可复制`local.example.json`为`local.json`设置dataDirectory，或用环境变量`BAT_ANTIBOT_DATA`覆盖；相对路径均相对包目录，空值/损坏配置拒绝。当前开发机local.json显式指向原owned数据，未移动或重建历史/密钥；该机器配置不提交。
+
+新安装沿下列原构建流程执行；维护 Python 脚本从本包配置解析路径。B-A-T 联合验收留在 API 包。已配置实例无需重做 prepare；源码搬迁使用 `relocate` 更新配置和归属，禁止手改部分 JSON 或回滚已消费数据库。
+
+## 发布、空实例安装、搬迁与回滚
+
+维护者在本仓运行 `node scripts/request-budget.mjs build` 冻结构建公共包，再运行 `node tools/antibot-lab/release.ts <发布目录>`。发布旁的 release.json 给出完整文件/归档 SHA256 和共享源码/制品版本；打包禁用 npm 生命周期，不携带 local.json、.local、work、node_modules、密钥或数据库。安装者只需发布包和既有 Windows/Node/npm/Python/WSL Ubuntu/Go/C 工具，无需 B-A-T 源码或进程。
+
+将发布归档解到一个新源码目录；若需独立数据目录，设置 local.json 或 BAT_ANTIBOT_DATA。在 PowerShell 中按顺序执行，`$shieldRoot` 为实际解压的绝对目录：
+
+```powershell
+npm --prefix $shieldRoot ci --ignore-scripts --workspaces=false
+node "$shieldRoot/lab.ts" prepare
+powershell -NoProfile -File "$shieldRoot/tests/prepare-fixtures.ps1"
+node "$shieldRoot/lab.ts" refresh-source-data
+python "$shieldRoot/prepare-geodata.py"
+python "$shieldRoot/prepare-edge-h2.py"
+node "$shieldRoot/lab.ts" activate-edge-h2
+python "$shieldRoot/prepare-persistent-engine.py"
+node "$shieldRoot/lab.ts" trust-localhost
+node "$shieldRoot/lab.ts" start
+python "$shieldRoot/activate-persistent-engine.py"
+node "$shieldRoot/lab.ts" status
+```
+
+构建前检查磁盘/工具和固定源下载可达；可复用经过 artifacts.json SHA 校验的下载归档，不能复制旧 runtime/config/secret/数据库冒充空实例。首次 start 的发行版 CrowdSec 只是激活步骤的中间态；最终必须有 persistent-engine.json、选中候选 SHA 和真实重启防重放证据。缺工具或网络错误留首败，停止依赖步骤。单实例固定服务名/端口；本版不支持公网长期运营或并行多实例。
+
+升级/搬迁：先从当前源码 `lab.ts stop`，确认所属服务/PID 全停；新发布解到另一源码目录，并明确配置为同一数据目录。运行 `node "$nextRoot/lab.ts" relocate "$previousRoot"`，再由新目录 start/status。relocate 拒绝错 owner 或活动服务，备份并更新配置/归属，配置验证失败恢复旧配置。数据库、密钥、历史报告保持原位。需要回滚代码时停止新目录服务，再从旧发布目录执行反向 relocate 后启动；不恢复旧 spent/配额数据库，不撤销已经消费的票据。
+
+公共版本校验：B-A-T 使用 `setup-upstream-browser-runner.mjs --install-request-budget` 定点安装；`--check` 只核现有 vendor 和独立公共源码/已安装包/制品记录，不能登记绕过差异。盾 start 通过 WSL Python `-I` 显式加载校验 wheel，坏/缺制品拒绝启动；两个产品的数据库/策略均由各自调用方持有。
+
+`run test`包含固定Hub源校准，需已完成prepare/fixtures；只验独立配置边界可用`node --test <盾目录>/tests/locations.test.ts`。真实挑战/多进程预算/浏览器联合仍按各验收入口，不用包安装或单测冒充。历史研究脚本保留为证据入口，不在start/fixtures/test中自动运行模型训练或数据集实验。http3-capture.sh为WSL入口，须显式给WSL绝对路径BAT_ANTIBOT_DATA；不读取Windows格式本地配置。
+
+以下为已有能力和校准说明。旧命令示例中的仓库相对路径适用于B-A-T集成checkout；独立部署改为本包绝对路径，数据通过上述配置选择。
+
 `antibot-combined.acceptance.py --account-borrow`只跑实际账号借用连接的当前HTTPS组合检查（冷挑战、动态选择、Fetch、原异常仍告警），不重跑原三项/重启套件。2026-10-09该检查通过；源码/范围/首败见实施记录。
 
 账号借用最新实现使用固定Patchright1.63兼容驱动，browser-use主控制保留。`npm run upstream:setup`安装哈希固定制品并恢复其遗漏的原no_defaults焦点条件；`--check`核修补后SHA。`account-borrow-runtime.acceptance.ts`现为实际产品回归，要求Runtime阴性、原生CSP/主世界/存储和owner正常；旧“账号Runtime仍阳性”为修复前状态。实际Chrome扩展传输及Fetch所有权已由admission-_vzu9yie复核；使用owned临时Profile，其他OS未测。

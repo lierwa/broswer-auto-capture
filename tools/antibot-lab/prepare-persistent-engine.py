@@ -6,8 +6,7 @@ import shutil
 import subprocess
 import tarfile
 
-ROOT = Path.cwd().resolve()
-BASE = ROOT / 'work/antibot-service'
+from lab_paths import ROOT, BASE
 COMMIT = '909b5157986a2b2c2163300fdaef5ed01289f7d2'
 ARCHIVE = BASE / 'upstream/crowdsec-source-v1.8.1.tar.gz'
 TARGET = BASE / 'runtime/crowdsec-persistent'
@@ -57,8 +56,8 @@ def main():
         ('\tif other.MasterSecret != nil {', '\tif other.SpentSetPath != nil { c.SpentSetPath = other.SpentSetPath }\n\tif other.MasterSecret != nil {'),
         ('\tif c.MasterSecret != nil &&', '\tif c.SpentSetPath != nil { opts = append(opts, WithSpentSetPath(*c.SpentSetPath)) }\n\tif c.MasterSecret != nil &&')])
     folder = SOURCE / 'pkg/appsec/challenge'
-    shutil.copyfile(ROOT / 'tools/antibot-lab/spent_sqlite.go', folder / 'spent_sqlite.go')
-    shutil.copyfile(ROOT / 'apps/api/tests/challenge_spent_store_test.go', folder / 'spent_sqlite_test.go')
+    shutil.copyfile(ROOT / 'spent_sqlite.go', folder / 'spent_sqlite.go')
+    shutil.copyfile(ROOT / 'tests/challenge_spent_store_test.go', folder / 'spent_sqlite_test.go')
     location = linux(SOURCE)
     wsl('gofmt', '-w', *[linux(folder / name) for name in ['spent_sqlite.go', 'spent_sqlite_test.go', 'spent_set.go', 'challenge.go', 'config.go']])
     wsl('go', '-C', location, 'test', './pkg/appsec/challenge', '-run', 'Test(PersistentSpent|SpentSet|PoWFixture)', '-count=1')

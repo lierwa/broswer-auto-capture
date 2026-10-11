@@ -4,6 +4,8 @@ import path from "node:path"
 import { z } from "zod"
 import { directory, root, hubCommit, pluginCommit, pluginModule, linuxPath, binaries, wsl } from "./paths.ts"
 import { configure } from "./settings.ts"
+import { sharedBudget } from './shared-budget.ts'
+import { configureVerification } from './verification-config.ts'
 
 async function exists(file: string) { return access(file).then(() => true, () => false) }
 async function artifact(item: { name: string; url: string; sha256: string }) {
@@ -25,9 +27,10 @@ async function extract(archive: string, destination: string) {
   await writeFile(marker, archive)
 }
 export async function prepare() {
+  await sharedBudget()
   await mkdir(path.join(directory, "upstream"), { recursive: true })
   const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string().regex(/^[a-f0-9]{64}$/) }))
-    .parse(JSON.parse(await readFile(path.join(root, "tools/antibot-lab/artifacts.json"), "utf8")))
+    .parse(JSON.parse(await readFile(path.join(root, "artifacts.json"), "utf8")))
   await Promise.all(items.map(artifact))
   await prepareEdgeArtifacts()
   await prepareH2Artifacts()
@@ -57,6 +60,7 @@ export async function prepare() {
   wsl([...cli, "parsers", "remove", "crowdsecurity/whitelists"])
   // WHY：已缓存 Hub 项目不会由 install 补齐数据集；官方 upgrade 会刷新已安装项目的数据。
   wsl([...cli, "hub", "upgrade"])
+  await configureVerification(false)
   const registered = path.join(directory, ".registered")
   if (!await exists(registered)) {
     wsl([...cli, "machines", "add", "bat-antibot-lab", "--auto", "--url", "http://127.0.0.1:7423", "--file", `${base}/config/lab-local-api.yaml`])
@@ -71,8 +75,10 @@ export async function prepare() {
 
 export async function prepareEdgeArtifacts() {
   const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string() }))
-    .parse(JSON.parse(await readFile(path.join(root, 'tools/antibot-lab/artifacts.json'), 'utf8')))
+    .parse(JSON.parse(await readFile(path.join(root, 'artifacts.json'), 'utf8')))
   await Promise.all(items.filter(item => /^(haproxy|ja4-haproxy)-/.test(item.name)).map(artifact))
+  // WHY：空实例尚无runtime父目录；dpkg-deb不会替调用者创建缺失的父级。
+  await mkdir(path.join(directory, 'runtime/haproxy'), { recursive: true })
   wsl(['dpkg-deb', '-x', linuxPath(path.join(directory, 'upstream/haproxy-3.2.9-ubuntu.deb')),
     linuxPath(path.join(directory, 'runtime/haproxy'))], true)
   wsl([binaries(linuxPath(directory)).haproxy, '-vv'], true)
@@ -81,14 +87,14 @@ export async function prepareEdgeArtifacts() {
 export async function prepareH2Artifacts() {
   wsl(['/usr/bin/python3', '-c', 'import sys; assert sys.version_info >= (3, 11), "h2_requires_python_3_11"'], true)
   const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string() }))
-    .parse(JSON.parse(await readFile(path.join(root, 'tools/antibot-lab/artifacts.json'), 'utf8')))
+    .parse(JSON.parse(await readFile(path.join(root, 'artifacts.json'), 'utf8')))
   await Promise.all(items.filter(item => /^(hypercorn|h2|hpack|hyperframe|h11|priority|wsproto|kitsune-h2)-/.test(item.name)).map(artifact))
   const target = path.join(directory, 'runtime/h2-hints')
   await mkdir(target, { recursive: true })
   const source = await readFile(path.join(directory, 'upstream/kitsune-h2-f0a22b3.go'), 'utf8')
   if (source.split('package fingerprint').length !== 2) throw Error('h2_upstream_package_changed')
   await writeFile(path.join(target, 'h2.go'), source.replace('package fingerprint', 'package main'))
-  await cp(path.join(root, 'tools/antibot-lab/h2-fingerprint.go'), path.join(target, 'main.go'))
+  await cp(path.join(root, 'h2-fingerprint.go'), path.join(target, 'main.go'))
   const base = linuxPath(target)
   wsl(['go', 'build', '-o', `${base}/h2-hints`, `${base}/h2.go`, `${base}/main.go`], true)
   await writeFile(path.join(directory, 'h2-online.json'), JSON.stringify({ prepared: true,

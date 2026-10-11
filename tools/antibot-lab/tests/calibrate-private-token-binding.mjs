@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { DatabaseSync } from 'node:sqlite'
@@ -7,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 import { createPrivateTokenVerifier } from '../private-token-verifier.mjs'
 import { verifyInProcess } from './private-token-process.mjs'
 
-const base = path.resolve('work/antibot-service')
+const base = labData
 const require = createRequire(path.join(base, 'runtime/privacy-pass/package.json'))
 const lib = await import(pathToFileURL(require.resolve('@cloudflare/privacypass-ts')).href)
 const { Client, Issuer, Origin, BlindRSAMode, getPublicKeyBytes } = lib.publicVerif

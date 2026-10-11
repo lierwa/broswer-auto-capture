@@ -5,6 +5,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { pinnedCommit, verifyForkSource } from "../vendor/workflow-use/verify-source.mjs"
+import { verifyRequestBudget, verifyInstalledBudget, buildRequestBudget } from './request-budget.mjs'
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const source = path.join(root, "vendor", "workflow-use", "workflows")
@@ -21,7 +22,7 @@ const uvEnvironment = {
 const sourceDigest = await verifyForkSource(root)
 // WHY: 环境直接消费受管 fork 与原始 frozen lock，来源由 vendor 清单校验。
 await mkdir(path.dirname(environment), { recursive: true })
-if (!process.argv.includes("--check") && !process.argv.includes("--record-verified-source")) {
+if (!process.argv.includes("--check") && !process.argv.includes("--record-verified-source") && !process.argv.includes('--install-request-budget')) {
   run(uv, ["python", "install", "3.12"], uvEnvironment)
   const managedPython = run(uv, ["python", "find", "--managed-python", "3.12"], uvEnvironment)
   if (existsSync(environment) && !(await usesManagedPython(managedPython))) {
@@ -34,6 +35,16 @@ if (!process.argv.includes("--check") && !process.argv.includes("--record-verifi
   run(python, ["-m", "pip", "install", "--no-deps", "--require-hashes", "-r", path.join(root, "apps/api/python/runtime-requirements.txt")])
 }
 if (!existsSync(python)) throw new Error("hybrid_python_missing:run_upstream_setup")
+if (!process.argv.includes('--check') && !process.argv.includes('--record-verified-source')
+  && !existsSync(path.join(root, 'tools/antibot-lab/shared/bat_request_budget-1.0.0-py3-none-any.whl'))) {
+  // WHY：干净checkout不提交生成wheel；只按已冻结源码/制品摘要重建，check绝不登记绕过。
+  await buildRequestBudget()
+}
+const sharedBudget = await verifyRequestBudget()
+if (!process.argv.includes('--check') && !process.argv.includes('--record-verified-source')) {
+  run(python, ['-m', 'pip', 'install', '--no-deps', '--no-index', sharedBudget.wheelPath])
+}
+const requestBudget = verifyInstalledBudget(python, sharedBudget)
 if (run(python, ['-c', "import importlib.metadata as m;print(m.version('diskcache'))"]) !== '5.6.3') throw Error('access_state_dependency_mismatch')
 if (run(python, ['-c', "import importlib.metadata as m;print(m.version('pyrate-limiter'))"]) !== '4.5.0') throw Error('access_quota_dependency_mismatch')
 if (run(python, ['-c', "import importlib.metadata as m;print(m.version('filelock'))"]) !== '3.19.1') throw Error('access_quota_lock_dependency_mismatch')
@@ -49,7 +60,7 @@ if (JSON.stringify(versions.python) !== "[3,12]" || versions.browserUse !== "0.1
   || path.resolve(versions.source) !== path.join(source, "workflow_use", "__init__.py")) {
   throw new Error("hybrid_runtime_version_or_source_mismatch")
 }
-const manifest = { mode: "workflow-use-hybrid/v2", commit: pinnedCommit, sourceDigest, versions }
+const manifest = { mode: "workflow-use-hybrid/v2", commit: pinnedCommit, sourceDigest, versions, requestBudget }
 const accountVersions = JSON.parse(run(python, ["-c", "import importlib.metadata as m,json;print(json.dumps({k:m.version(k) for k in ['playwright','pyee','greenlet','xhshow','pycryptodome','tinycss2','webencodings']}))"]))
 for (const [name, version] of Object.entries({ playwright: "1.61.0", pyee: "13.0.1", greenlet: "3.5.6", xhshow: "0.2.0", pycryptodome: "3.23.0", tinycss2: "1.4.0", webencodings: "0.5.1" })) {
   if (accountVersions[name] !== version) throw new Error(`account_runtime_version_mismatch:${name}`)
@@ -59,6 +70,7 @@ if (!process.argv.includes("--check")) await writeFile(manifestPath, JSON.string
 else {
   const recorded = JSON.parse(await readFile(manifestPath, "utf8"))
   if (recorded.sourceDigest !== sourceDigest || recorded.commit !== pinnedCommit) throw new Error("hybrid_installed_source_changed")
+  if (JSON.stringify(recorded.requestBudget) !== JSON.stringify(requestBudget)) throw Error('hybrid_shared_dependency_changed')
 }
 console.log(`workflow-use hybrid v2 ready; source ${sourceDigest}`)
 

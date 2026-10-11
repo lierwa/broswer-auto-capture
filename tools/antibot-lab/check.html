@@ -1,63 +1,59 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>Shield · 真人与机器人检测</title>
-  <link rel="stylesheet" href="/measurement/check/style.css">
-  <script defer src="/measurement/check/app.js"></script>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark"><title>Shield · 真人与机器人检测</title>
+  <link rel="stylesheet" href="/measurement/check/style.css"><script type="module" src="/measurement/check/app.js"></script>
 </head>
-<body>
-  <a class="skip" href="#report">跳到检测报告</a>
-  <header class="masthead wrap">
-    <a class="brand" href="/measurement/check" aria-label="Shield 检测首页"><svg viewBox="0 0 32 36" aria-hidden="true"><path d="M16 2 29 7v10c0 8-8 14-13 17C11 31 3 25 3 17V7Z"/><path d="m10 17 4 4 8-10"/></svg><span>SHIELD<span class="brand-sub">by B-A-T</span></span></a>
-    <nav aria-label="页面导航"><a href="#report">检测报告</a><a href="#interaction">交互测试</a><a href="#scope">检测范围</a></nav>
-    <span class="mode"><i></i> 观察模式</span>
+<body data-verdict="pending">
+  <a class="skip" href="#main">跳到检测</a>
+  <header class="wrap header">
+    <a class="brand" href="#main" aria-label="Shield 检测盾"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 27 8v9c0 6-7 10-11 12C12 27 5 23 5 17V8Z"/><path d="m10 16 4 4 8-9"/></svg><b>SHIELD</b><span>检测盾</span></a>
+    <div class="header-actions"><button id="restart" class="text-button">重新检测 <span aria-hidden="true">↻</span></button><button id="export" class="text-button" disabled>导出报告 <span aria-hidden="true">↓</span></button></div>
   </header>
-  <main class="wrap">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="intro"><p class="eyebrow">HUMAN OR BOT? <span>浏览器检测实验室</span></p>
-        <h1 id="hero-title">你的浏览器，<br>留下了什么<span class="accent">痕迹？</span></h1>
-        <p class="lede">像网站一样观察你的浏览器。检查自动化特征、环境一致性和交互行为，看看每个判断从何而来。</p>
-        <div class="hero-actions"><a class="button primary" href="#interaction">补充交互检测 <span aria-hidden="true">↗</span></a><button class="button quiet" id="restart">重新检测 <span aria-hidden="true">↻</span></button></div>
-        <p class="privacy"><span aria-hidden="true">◇</span> 不读取输入内容、密码或剪贴板 · 无第三方上传</p>
+  <main class="wrap" id="main">
+    <div class="test-types" role="tablist" aria-label="测试类型">
+      <button id="automatic-tab" role="tab" aria-selected="true" aria-controls="interaction-area"><b>自动检测</b><span>打开页面即可检测浏览器环境</span></button>
+      <button id="interaction-tab" role="tab" aria-selected="false" aria-controls="interaction-area"><b>交互检测</b><span>补充输入、滚动与点击行为</span></button>
+    </div>
+
+    <section class="result-stage" id="result-stage" data-state="pending" aria-labelledby="verdict-title">
+      <div class="signal-art" id="signal-art" data-state="pending" aria-hidden="true">
+        <div class="field-glow"></div><div class="signal-orbits"><i></i><i></i><i></i></div><div class="dot-field"><svg viewBox="0 0 208 208" id="dot-grid"></svg><div class="scan-beam"></div></div>
+        <span class="art-caption" id="art-caption">SCANNING</span>
       </div>
-      <section class="verdict" aria-labelledby="verdict-title" data-tone="pending">
-        <div class="panel-top"><span>本次检测</span><span class="live"><i></i><span id="live-label">正在采集</span></span></div>
-        <div class="result-line"><div class="ring" aria-hidden="true"><span id="ring-count">0</span><small>已测信号</small></div><span class="result-mark" id="result-mark" aria-hidden="true">…</span></div>
-        <div class="status-copy" role="status" aria-live="polite"><h2 id="verdict-title">正在观察浏览器</h2><p id="verdict-copy">自动检查即将开始。交互检测将在你操作后补充。</p></div>
-        <div class="metrics"><div><strong id="clear-count">0</strong><span>未命中异常</span></div><div><strong id="flag-count">0</strong><span>可疑信号</span></div><div><strong id="waiting-count">38</strong><span>待测 / 不可用</span></div></div>
-        <p class="panel-note">这里展示检测信号，不把信号数量换算为真人概率。</p>
-      </section>
+      <div class="result-copy" aria-live="polite" aria-atomic="true">
+        <p class="eyebrow" id="result-scope">当前访问 · 自动检测</p>
+        <h1 id="verdict-title">正在识别这次访问</h1>
+        <p class="verdict-reason" id="verdict-reason">无需操作，正在检查浏览器环境。</p>
+        <div class="stage-progress" id="stage-progress" aria-label="检测进度"></div>
+        <div class="result-actions"><button class="primary" id="next-action" disabled>正在检测…</button><span class="result-note" id="result-note"></span></div>
+      </div>
     </section>
 
-    <section id="report" class="report-section" aria-labelledby="report-title">
-      <div class="section-heading"><div><p class="eyebrow">01 / THE EVIDENCE</p><h2 id="report-title">每个判断，都有迹可循</h2></div><button class="button outline" id="download" disabled>导出报告 <span aria-hidden="true">↓</span></button></div>
-      <div class="notice" id="failure" role="alert" hidden></div>
-      <div class="legend"><span><i class="dot clear"></i>未命中</span><span><i class="dot detected"></i>可疑</span><span><i class="dot unavailable"></i>未测 / 不可用</span><span class="report-time" id="report-time">等待测量回执</span></div>
-      <div id="signal-groups"></div>
-      <p class="fine-print">可疑信号是进一步分析的线索。单项命中不直接证明机器人；全部已测项阴性也不等于真人身份认证。</p>
-    </section>
-
-    <section id="interaction" class="interaction" aria-labelledby="interaction-title">
-      <div class="interaction-copy"><p class="eyebrow">02 / A LITTLE INTERACTION</p><h2 id="interaction-title">动动手，<br>让检测更完整。</h2><p>按平时的习惯输入、修改文字，再点击按钮。向下滚动页面，可补充滚动检测。</p><ol><li>输入一句随意的文字</li><li>点击完成，查看反馈</li></ol><p class="fine-print">这里只观察事件来源与时序，不收集文字内容。无需邮箱、密码或真实账号。</p></div>
-      <form id="interaction-form" class="test-pad" autocomplete="off">
-        <div class="pad-header"><span class="pad-tag">交互采样区</span><span id="event-counter">0 个事件</span></div>
-        <label for="sample-text">随意写一句话</label><textarea id="sample-text" rows="4" maxlength="300" placeholder="比如：今天适合出去走走。" aria-describedby="sample-help"></textarea>
-        <p id="sample-help">正常输入即可；少于 4 次按键时，节奏检测会显示样本不足。粘贴和输入法可能没有足够的按键样本。</p>
-        <button class="button primary" type="submit">完成这次交互 <span aria-hidden="true">→</span></button>
-        <p id="interaction-feedback" role="status" aria-live="polite">浏览器检查会自动进行，不必等待填写。</p>
+    <section id="interaction-area" class="interaction-area" hidden aria-labelledby="interaction-title">
+      <div class="interaction-intro"><h2 id="interaction-title">按平时的习惯操作一次</h2><p>输入英文、中文，滚动阅读区，最后提交。</p></div>
+      <form id="interaction-form" autocomplete="off">
+        <div class="interaction-fields">
+          <div><label for="sample-english">英文输入</label><textarea id="sample-english" rows="2" maxlength="300" placeholder="Today feels like a good day."></textarea><label for="sample-text">中文输入</label><textarea id="sample-text" rows="2" maxlength="300" placeholder="今天适合出去走走。"></textarea><p class="sample-feedback" id="keyboard-feedback" role="status">输入 · 等待英文与中文</p><button type="button" id="reset-input" class="text-button" hidden>重新检测 ↻</button></div>
+          <div><label for="reading">阅读区 <span>请滚动这里</span></label><div id="reading" class="reading" tabindex="0" aria-label="滚动阅读区"><p>这段文字用于采集滚动行为。你可以按平时的习惯输入、修改和阅读。</p><p>输入内容不会进入报告，报告只保留检测结果与依据。</p><p>完成后点击提交，本页的判定和报告会一起更新。</p><p>没有取得有效样本的项目会标明原因，不会算作正常。</p></div><p class="sample-feedback" id="scroll-feedback" role="status">滚动 · 等待操作</p></div>
+        </div>
+        <div class="form-actions"><button class="primary" id="submit" type="submit" disabled>提交并更新结果 →</button><span id="submit-help">还需要输入和滚动</span><button type="button" class="text-button" id="skip-interaction">只看自动检测结果</button></div>
       </form>
     </section>
 
-    <section id="scope" class="scope" aria-labelledby="scope-title"><div><p class="eyebrow">03 / KNOW THE BOUNDARY</p><h2 id="scope-title">这次检测包含什么？</h2></div>
-      <div class="scope-columns"><div><h3><span class="dot clear"></span>已接入本页</h3><p>BotD 浏览器特征、CreepJS 页面与 Worker 一致性、HTTP 与浏览器身份一致性，以及输入事件、键盘节奏、滚动线索。</p></div>
-        <div><h3><span class="dot unavailable"></span>本页尚未汇总</h3><p>TLS / HTTP2 / HTTP3 网络指纹、IP 信誉、长期频率、账号与会话关联、强制挑战。部分能力已有独立服务，本次报告不将它们算作通过。</p></div>
-        <div><h3><span class="dot unavailable"></span>这不是通行证明</h3><p>本页使用观察入口，便于查看检测结果。完整防护入口的挑战与处置独立运行；客户端报告可能被篡改。</p></div></div>
-      <details class="data-notice"><summary>数据与检测来源</summary><p>页面仅发送事件类型、可信标记、隐藏状态、时序统计和检测结果；为核对请求一致性，会发送浏览器 UA 与 Client Hints，不包含输入内容。服务端保留本地检测日志（含请求来源 IP 和随机会话标识），导出报告只包含脱敏后的检测结果。</p><p>复用 BotD 2.0.0、固定版本 CreepJS、Kitsune 判据及 CrowdSec 观测通道。键盘 / 滚动统计仅供参考，不是已校准的一般真人分类器。未使用商业站点的私有判定代码。</p></details>
+    <div class="category-summary" id="category-summary" aria-label="分类结果"></div>
+    <section class="report" id="report" data-status="running" aria-labelledby="report-title">
+      <div class="report-heading"><h2 id="report-title">本次检测报告</h2><p id="report-meta">正在生成 · 结果在本页更新</p></div>
+      <p class="report-summary" id="report-summary" role="status"></p>
+      <table class="signal-table"><thead><tr><th scope="col">检测项目</th><th scope="col">结果</th><th scope="col">依据</th></tr></thead><tbody id="report-rows"></tbody></table>
+      <p class="report-footnote">真人表示本次人机检测通过，不代表操作者身份认证。键盘节奏使用实际按下和释放时间，行为线索仅供参考。</p>
+      <details class="raw-details"><summary>结构化报告 · JSON</summary><button class="text-button" id="copy-json">复制报告</button><pre id="raw-report"></pre></details>
+      <script type="application/json" id="shield-report">{"status":"running","verdict":"pending","signals":[]}</script>
     </section>
   </main>
-  <footer class="wrap footer"><span>SHIELD <span class="muted">/ B-A-T</span></span><span>把黑盒判断，变成可读的证据。</span><a href="#hero-title">回到顶部 ↑</a></footer>
-  <noscript><p class="notice wrap">JavaScript 未启用，浏览器检测无法运行。当前没有检测结论。</p></noscript>
+  <footer class="wrap"><span>SHIELD</span><span>本次访问 · 实时检测</span></footer>
+  <dialog id="signal-dialog"><div class="dialog-heading"><h2 id="signal-title"></h2><button id="dialog-close" class="text-button" aria-label="关闭">✕</button></div><div id="signal-detail"></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

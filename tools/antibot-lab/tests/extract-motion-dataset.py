@@ -5,7 +5,8 @@ from pathlib import Path
 import re
 import zipfile
 
-base = Path('work/antibot-service')
+import subprocess
+base = Path(json.loads(subprocess.check_output(['node', str(Path(__file__).resolve().parents[1] / 'locations.mjs')], text=True))['directory'])
 archive = base / 'upstream/web_bot_detection_dataset.zip'
 assert hashlib.sha256(archive.read_bytes()).hexdigest() == '6df794c274120d2503d496ca88dc4fce17d75b3d8d3be55b2c91011a347b239e'
 output = base / 'reports/motion-phase2-labelled-input.jsonl'

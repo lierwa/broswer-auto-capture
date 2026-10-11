@@ -1,13 +1,13 @@
 // 固定研究探针的导出模块；不引入其主站上传/预测入口。输出只有状态，不持久化指纹。
 import { boundedProbe, probeTimeout } from './probe-deadline'
-import canvas from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/canvas/index'
-import webgl from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/webgl/index'
-import audio from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/audio/index'
-import fonts from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/fonts/index'
-import media from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/media/index'
-import { getLies, prototypeLies } from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/lies/index'
-import { getCapturedErrors } from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/errors/index'
-import { getTrash } from '../../../work/antibot-service/runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/trash/index'
+import canvas from '@creep/canvas/index'
+import webgl from '@creep/webgl/index'
+import audio from '@creep/audio/index'
+import fonts from '@creep/fonts/index'
+import media from '@creep/media/index'
+import { getLies, prototypeLies } from '@creep/lies/index'
+import { getCapturedErrors } from '@creep/errors/index'
+import { getTrash } from '@creep/trash/index'
 
 function webglVerdict(value: Record<string, unknown> | undefined, start: number) {
   if (!Array.isArray(value?.pixels) || !Array.isArray(value?.pixels2)) return { validity: 'unavailable', mismatch: null }

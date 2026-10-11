@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.."
-base="$PWD/work/antibot-service"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+base="${BAT_ANTIBOT_DATA:-$PWD/.local}"
+[[ "$base" = /* ]] || { echo "BAT_ANTIBOT_DATA must be an absolute WSL path" >&2; exit 1; }
 out="$base/reports/http3-$(date +%s)"
 mkdir "$out"
 capture_pid=''

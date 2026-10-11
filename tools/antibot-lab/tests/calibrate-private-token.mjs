@@ -1,10 +1,11 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import path from 'node:path'
 
-const base = path.resolve('work/antibot-service')
+const base = labData
 const runtime = path.join(base, 'runtime/privacy-pass')
 const require = createRequire(path.join(runtime, 'package.json'))
 const lib = await import(pathToFileURL(require.resolve('@cloudflare/privacypass-ts')).href)

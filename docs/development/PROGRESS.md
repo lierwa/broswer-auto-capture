@@ -1,5 +1,127 @@
 # 开发进度
 
+## 2026-10-11 当前：真人39项通过，B-A-T正式业务四场景验收完成
+
+用户修后独立操作两次，服务端 63cfda00、aba3de64 均 Human/39 clear，三个节奏指标逐字段有效；完整双语记录英文38/38、中文24/24真实键对，原挑战及保护请求接受、无allowlist。旧真人失败未重写。本次按授权完成B-A-T正式任务复跑：复用 task 061044bb 冻结发布版，独立备份状态后从 run_task 验证真实动态输出与无候选反向；模型0，原盾判据不改。范围为原冻结HTTP业务，不冒称完整HTTPS或外站验收；原五服务与用户窗口保留，不提交/推送/worktree/京东/关机。
+
+FZBYas移除诊断适配，以原正式入口四变体完成：实际打开7/11/13，均completed；只有未发布99时停在选择节点failed、未派发click、无资料打开，原因function_output_invalid，提示可读性仍有缺口。四次原挑战提交200后保护业务OriginStatus200，普通模型0，cleanup confirmed；本轮6份Profile永久删除、进程0，五服务ready，原冻结状态和1358文件无关字节保护通过。首轮8mSWRr动态选择7正确但click ACK完整/事件0失败，首败及原诊断保留；g4UUEj仅窗口诊断版本7通过，before/after均可见，不能宣布首败根因已解决。唯一生产改动是原SQLite事件索引，管理报告健康超时恢复37ms，不改盾规则；子包类型检查通过。详细事实、范围与恢复入口见[正式业务验收](SHIELD_TASK_ACCEPTANCE_20261011.md)，不冒称外站或完整HTTPS业务通过。
+
+用户最新明确授权继续修完整，保留 master 全部旧改动；真人与 B-A-T 同中英文输入法流程，三项分别使用真实有效样本，不改标签/阈值。上一包39 clear只覆盖普通英文+中文原生提交，不覆盖英文也经输入法的场景；用户6aa9b0c5记录在英文5字母/中文0时已有组合事件，三项被整段excluded，不能结算已修好。本包先核原组件/标准与真实事件可配对性，再适配采集；原判据、强阳性、缺样本、无效/传输锁存保持。基线位于reports/shield-ime-physical-20261011，未提交/推送/worktree/京东。当前手验/继续开发优先，不再次关机，不关闭用户窗口。
+
+真人第三次 d52566be 完成双语/滚动/提交仍 unknown，英文34/34、中文33/33完整键对，原挑战/保护请求接受、score0。匿名首错配链确认两字段均在Control操作后出现无对应down的同键up；本机Win32 Ctrl+Space真实复现 cm0anw0d 完全重现该链：Windows IME消费Space down，页面仍收到Space up。先前的Tab跨框分桶缺陷亦有独立Windows复现。修复只在采集器按真实down归属释放，并识别有原生Control佐证、一次消费、未跨焦点/其它键事件的Space快捷键上下文；不补down/hold，不忽略任意孤立up，不修改规则或阈值。
+
+修后B-A-T ofx95jlz同Windows拼音/英文组合/Ctrl+Space/Tab/滚动/普通提交为Human/39clear，英文29/29、中文28/28真实键对，三项逐字段有效，模型0，JSON/API一致，HTTPS secure。随后脚本input仍Bot。真人保存的两个首错配片段按原时刻回放通过，原失败报告未重写；用户随后自行完成两次新真人检测并获Human/39clear，上方为新结果。29项聚焦与子包类型检查通过；错误的IME整段排除夹具、预设汉字夹具/分支已删除。输入法修复包34份所属Profile永久删除、运行进程0、注册临时目录0，输入法模式恢复，五服务保留。master/无关旧字节及原评分/固定源码摘要审计通过；不关机、不再要求真人重输。[输入法记录](SHIELD_IME_TIMING_ACCEPTANCE_20261011.md)及对应validation.json保留，下方完成结论均属历史。
+
+> 2026-10-11 最新运行状态：此前关机命令被系统接受，未把接受回执当断电证明。用户随后要求重新打开自行验证；Windows /a 返回1116（无关机进行中），原 start 已恢复五服务并 ready。Chrome 自动打开命令在创建 PowerShell 前被工具策略拒绝，未重试/换 API 绕过，未连接CDP、替用户输入或创建临时Profile。用户可直接打开 https://localhost:4185/measurement/check?mode=interactive；最新手验指令优先，不再次关机。失败层与实际策略见 reports/shield-input-context-20261011/reopen.json。下方修复与验收结算保留。
+
+## 2026-10-11 最新结算：原生组合事件解释与中英文采样范围已修复
+
+用户指出的 compositionend“非原生辅助/观察线索”解释确实错误：Chrome 原 IME 结束经 scoped queue 派发可保持 isTrusted=false，不等于脚本输入。本包按原 input/change/click/keydown/keyup 判据核验，组合、粘贴、焦点上下文不增设异常，原始计数保留；检测页英文逐键采样与中文组合分开，一般业务默认范围保持原样。18 项聚焦、子包类型/语法、12 项 HTTP 反向控制通过；一个所属可见窗口内，原生 IME 与 B-A-T 同中英文流程均 Human/39 clear/0 advisory/模型0，同页 JSON 一致；原无头 Chrome 原生粘贴输入来源 clear，但仍 Bot/原挑战拒绝。上次用户无 CDP 实际提交原数据回归 Human/36 clear/3 excluded/0 advisory，6 个 compositionend 信任位未改；旧样本不可重算，三项中性“不适用”保留，不冒称新真人操作。
+
+规则配置、原 balanced >=75 与 master@dc45be4 未改，1357 个基线文件按允许范围审计；两份本包临时 Profile 已关闭并永久删除，原五服务关机前 active。首败、来源、证据与未测见[本包结算](SHIELD_INPUT_CONTEXT_CLOSEOUT_20261011.md)。本包没有重跑实体真人、外站或原冻结业务；上一包业务动态输出7/普通模型0证据保留。用户最新明确授权“做完之后关机”，覆盖下方历史“不关机”；只有本包闭环、审计与回执落盘后执行一次系统关机，不强制关闭其它窗口、不提交/推送/worktree/京东。关机命令接受与实际断电分别记录。
+
+## 2026-10-11 服务端原规则验证与中英文公平验收结算
+
+用户已授权直接修好，不再停在选型调研。前轮 IME unknown 只证明采集边界修复，未关闭真人通过问题；下方历史完成记录不覆盖此缺口。master@dc45be4、1348 个现有源码文件摘要和原评分摘要已保存于 `work/antibot-service/reports/shield-verification-20261011/baseline.json`。五个原服务归属已核验，保留数据/secret/上游补丁，不提交/推送/worktree/京东/关机。
+
+执行包：复用 CrowdSec 1.8.1 原挑战及 LogAccepted，独立每次域名/真实服务端回执；中英文共用输入、滚动、提交；IME 节奏不适用不否决已完成验证，强阳性/失败仍保留。实际用户无 CDP 手输中英文后 Human（35 clear/1 advisory/3 excluded）；B-A-T 原普通流程 Human（36 clear/3 excluded、模型0）；原无头 Chrome 同流程 Bot，原分数500被 >=75 拒绝。原评分/判据不改，脚本/跨会话/旧cookie/伪造/丢失/无效/通过后采集失败锁存和重访新run通过。
+
+最终 B-A-T verified-flow-46jdo7rl 成功；中途两次窗口标记/事件归属失败保留，验收脚本后台 Page.goto 改为原普通导航及所属页面激活，不修改公共控制或放宽盾。无作用的窗口恢复等待和临时诊断代码已移除，不再创建验收窗口。旧 *.localhost 错域证书已换为严格匹配的 *.shield.localhost，Chrome原连接 secure、当前用户根信任在。必要原冻结 HTTP 业务动态输出7/模型0通过，首次收尾失败与定点修复另列；不冒称完整TLS业务新验收。12个本轮owned Profile永久删除、对应进程0，原五服务保留active。master/HEAD和无关既有字节保护结算通过。完整证据、首败及未测见[本轮结算](SHIELD_VERIFIED_FLOW_CLOSEOUT_20261011.md)。
+
+## 2026-10-11 中文输入法误判：修复、浏览器/B-A-T 与 Windows 系统拼音补验完成
+
+用户已授权修复采集与误判、补中文 IME 验收并用 B-A-T 完整走一遍；保留 master@dc45be4 全部既有改动，不提交/推送/worktree/京东/关机。基线与源码备份：`work/antibot-service/reports/d10-shield-ime`。
+
+- 真实缺口：最近真人回执 34 自动项 clear，88 事件中仅 compositionend 非原生；原页面将任何非原生事件直接判 Bot。IME 样本先 excluded 后 invalid；已复现 composing keydown 被跳过、结束后的 keyup 触发无配对错误。
+- 最小改动：修复排除段的配对/焦点收尾；逐事件类型投影证据；组合等辅助事件保留观察线索，按原 CrowdSec scripted-input 集合保留 input/change/click/keydown/keyup 阳性；原 BotD/Kitsune/FCaptcha 源码、阈值及 CrowdSec 原观察通道保持不变。
+- 关闭条件：原失败先验；IME 结束/取消/快捷键/失焦与真实无效、脚本输入、锁存控制；中文 IME 浏览器/本机输入场景；B-A-T OrdinaryCapability 同页自动→输入→滚动→提交→JSON；受影响子包检查、服务生效、既有字节保护及 owned 资源结算。
+- 实际结果：12 项聚焦、子包 TS/JS/Python 语法通过；check-ime-oaswb1yk 的 B-A-T 自动→输入→滚动→提交→同页 JSON 得到 39 clear/Human、普通模型 0；随后测试夹具 JSON 布尔解码失败，正常流程结果保留、未无变化重跑。check-ime-eegsf5md 的 Chrome 中文提交/取消/失焦均 excluded/unknown、无测量失败，非原生 compositionend 保持 advisory。check-ime-jj4bg93r 真实同源回执确认五类脚本事件强阳性、原输入事件阳性锁存与 DOM JSON 一致；原 rules.ts/cadence.ts 及两个固定上游 SHA 不变。
+- 系统拼音补验：首次前台阻塞记录保留。用户随后确认切换临时窗口；check-ime-larf_u_p 实际提交中文，夹具“所有组合事件必为原生”断言失败；wqkpbwg9 因输入框无焦点受控停止。只修验收夹具、保留原检测器后，check-ime-9cl7gzbs 核验 owner PID，Windows 拼音真实提交中文、compositionstart/end 各 1、229 键事件 18、结束释放 2；35 clear/1 advisory/3 excluded、0 flagged/failed、unknown，五类强输入均原生，DOM JSON 一致，普通模型 0。IME 模式恢复原值。其它输入法、独立真人人群仍未验；未重跑已通过正常流程。
+- 资源：本包 12 个 owned 浏览器/Profile 均已确认关闭并永久删除，个人浏览器保护；只重载原所属 origin 以加载回执适配，原五个生产服务保留 ready。全部首败与资源详见[IME 修复结算](SHIELD_IME_FIX_CLOSEOUT_20261011.md)和 `reports/d10-shield-ime/validation.json`。分支/HEAD 不变，既有无关文件摘要保护另存；最终系统补验归档另放 releases/shield-ime-windows-20261011。
+
+Product Alignment:
+- natural-language task: 本次访问自动检测与可选交互检测，真人中文输入不被采集错误误判。
+- reusable chain boundary: 既有 OrdinaryCapability 的浏览器检测页输入、滚动、提交与结构化结果读取。
+- runtime inputs: 本地检测页和公开合成文字；不使用私人内容。
+- dynamic task outputs: 同一运行的原判据、测量有效性、事件类型及 JSON 结论。
+- generic platform capability used: 原受管 Chrome/原普通执行器；不新增通用控制或模型循环。
+- replay model calls: 0
+- site/task-specific code added: no (B-A-T 公共 runtime 无新增网站特判)
+
+## 2026-10-10 检测盾暗色 V3 网站完成
+
+实际结果见[网站交付](SHIELD_WEBSITE_V3_CLOSEOUT_20261010.md)。当前入口 https://localhost:4185/measurement/check，原五个所属服务保留运行。暗色单页 Bot/Human/未知、原创点阵动画、34 自动/5 交互、全部结果及 JSON/导出已接真实回执；无对照、无访客 HTTPS 设置。
+
+默认 Chrome 系统根信任、TLS 1.3、原 HAProxy 后端 verify required 链已通过；真实 B-A-T 输入/滚动/提交取得 39 项有效阴性、本次 Human、untrusted=0、普通模型0。WebDriver/脚本阳性、七个键盘状态、探针/采集失败、回执等待/迟到隔离、JSON导出/重测、390px移动端与无页面异常通过。首败及分段验收来源保留，不将 B-A-T 受控样本当真人或完整盾放行。
+
+验收浏览器/Profile 全部关闭/永久删除，生产服务保留；既有无关字节保护摘要在 reports/d10-shield-website。新归档另放 releases/shield-website-v3-20261010，不覆盖原交付。无提交/推送/worktree/关机；未重跑安装/搬迁/全部业务变体，公网与广泛真人误报率/H3新信任未测。
+
+### 本包实施前断点（历史）
+
+最新用户授权覆盖此前“不扩网站”断点：按已讨论的暗色原型完成真实网站。保留 master@dc45be4 全部现有改动；初始 80 条 dirty 状态及文件摘要存于 ignored 的 reports/d10-shield-website/baseline.json。实际五个服务正在运行，维护必须核归属再停启，不采用上一轮 inactive 记录。
+
+本包范围：单页 Bot/Human/未知结论、自动与交互检测、原创点阵动画、同页全部结果及结构化导出、真实回执结算、localhost 可信 HTTPS。删除报告对照；访客流程不出现 HTTPS 配置。复用原 BotD/CreepJS/身份对照/Kitsune/FCaptcha，原评分、挑战、配额、数据库及普通执行器不改。仅验证本次结果不变量、正常证书校验及实际 B-A-T 交互；不做全量测试、模型实验、京东访问、提交、推送或关机。
+
+关闭条件：真实回执驱动结果，缺失/失败不冒充 Human；正例锁存；交互提交等待对应批次回执；报告无需切页可读；默认 Chrome 信任本机 HTTPS；必要 B-A-T 输入/读取模型调用为零；临时资源与既有改动保护证据结算。
+
+## 2026-10-10 盾独立化 S0–S4 纠正与必要验收完成
+
+当前结果入口为[纠正与交付结算](SHIELD_INDEPENDENCE_CLOSEOUT_20261010.md)。用户授权连续实施，原 quota 已移为唯一 bat-request-budget 1.0.0，共享源码/制品/已安装模块各自校验；Windows受管安装、缺wheel按冻结摘要重建、WSL -I、原持久/并发/短窗/坏边界及独立DB均通过。原vendor摘要未改，双方策略/数据库不共享。
+
+本机仓库外空实例仅复用已核下载缓存，完整重新构建探针、HAProxy与CrowdSec固定候选并显式激活；新secret/config/数据库未从旧实例复制。typing-cadence原七状态/导出/锁存及页面原异常/缺失通过。v1→v2实际搬迁、错owner拒绝、configure中途失败恢复、v2→v1回退/ready通过，真实状态文件SHA未倒退。原HTTP挑战真实重启后已消费票据仍拒绝。
+
+product-d10-independent-RK6zpP仅复用冻结发布版/新owned产品副本，完整HTTPS4183动态结果7、普通模型0、3条H2一致；未重新准备/编译，未重跑其余业务变体。所有验收Profile已确认关闭/永久删除；七个所属服务inactive/MainPID=0。59份非敏感证据保留到reports/d10-independent-evidence，临时安装根永久删除以reports/d10-independent-cleanup.json为准，首次超时与修正另留日志。报告数据库/构建日志是保留证据，不称全部work删除。
+
+master@dc45be4和所有无关既有字节保留，最终清单见reports/d10-independence-preservation.json；不提交/推送/worktree/关机/京东/云/跨天/模型实验。发布包与安装/维护说明、首败及未测见最终结算。多实例、公网长期运营、新机器OS、跨版本数据库升级、真实长窗/断电及其它OS均未测。下方是本次实施过程和此前历史。
+
+## 2026-10-10 盾独立化 S0/S1 实施记录
+
+用户已明确授权连续完成 S0–S4；现有 master@dc45be4 和全部 62 项 dirty/untracked 保留，不提交/推送/关机。现场五业务服务、presence 和 window-test 均 inactive/MainPID=0；没有在运行的盾验收。SHA256 基线：ignored reports/d10-independence-start-inventory.json。测试搬迁删除项保持原样。
+
+当前包真实缺口：quota 适配双份、共享制品装载/来源校验缺失。先移原 quota 实现至 packages/request-budget，标准 wheel 两侧消费；源/制品各自核验。受管 build=1.2.2.post1；Hatchling 未安装已留首个只读检查结果，选择官方发布 Hatchling 1.27.0 隔离构建。关闭门：唯一函数体、Windows受管与WSL -I实际加载、持久/并发/坏库/坏scope/坏制品/数据隔离。阶段完成后继续 S2–S4。
+
+Product Alignment: natural-language task=原通用浏览器任务；reusable chain boundary=原发布链/普通执行器；runtime inputs=显式策略和各自数据库；dynamic task outputs=原动态结果；generic platform capability used=共享原持久预算适配；replay model calls=0；site/task-specific code added=no。
+
+Reuse Assessment: capability=单一quota源码及独立发布；existing=原quota.py/盾budget.py；selected=原函数+PyrateLimiter4.5.0/filelock3.19.1 SQLiteBucket，标准build1.2.2.post1/Hatchling1.27.0；public surface=init_from_file/leak/put_decision/close；adapter=参数/结果/标准打包；ownership=各自策略数据库、不新增浏览器/RPC；rejected=双份适配会漂移、整个runner扩大依赖；focused validation=A1–A4及受影响安装/一次冻结联合。构建依据：https://hatch.pypa.io/latest/config/build/ 、https://pypi.org/pypi/hatchling/1.27.0/json ；WSL保持 -I 与显式哈希wheel加载。
+
+### S1 已验证、S3 空实例首败与修复
+
+公共包 bat-request-budget 1.0.0：sourceDigest=8fc614b6fbbd481c3657eb79daab7c75cd66df219e5ca4f8b8c6a4a54a73af20；wheelSHA256=cfc34413d49556d19891b1992252958081768957ce5decf6ef86464ac65a40ca。Windows受管安装/来源check通过；WSL -I两个进程持久拒绝、坏/缺共享wheel拒绝通过。Windows原配额验收通过：真实20进程余量10允许/10拒绝，4.15秒窗口/较长窗口拒绝、坏scope/坏库不放行；公共入口同一函数、两独立DB/同scope互不消耗通过。原declared_policy及explicit_policy_missing两个定点case通过。未测真实小时/日/断电、Windows与WSL不并发写同库。
+
+打包首轮遗漏--ignore-scripts，npm pack触发原prepare生命周期；核确切进程后停止owned PID18200，原command/correction记录reports/d10-release-first-failure.json。修后标准npm文件选择+tar锁文件发布成功，无运行数据。空实例在owned Temp/BAT_SHIELD_INDEPENDENCE_20261010_195405，仅复制31个原固定SHA下载归档（229MB），不复制secret/config/数据库/runtime。第一次prepare暴露runtime父级缺失，第二次暴露发布files遗漏continuity.lua；首败日志分别保留，已最小补mkdir和.lua范围，当前第三次prepare正在原固定Hub准备。
+
+S2只补typing-cadence映射/不可测文案，原判据/阈值不变；实际页面/回执/导出验收等待新实例ready。验收入口仅增加显式BAT_ANTIBOT_DATA定位及既有冻结夹具重建，普通模型0、原链不重编译。下一步fixtures→Tor/Geo→HAProxy/CrowdSec原构建→ready→搬迁/回滚→网页/重启防重放/一次冻结正式联合→收尾，不需再审批。
+### S3 本机空实例安装完成，进入页面/搬迁和联合
+
+owned实例Temp/BAT_SHIELD_INDEPENDENCE_20261010_195405/instance已完成独立npm ci、基础prepare、React与Creep全部探针、Tor/新DB-IP数据、HAProxy候选构建/激活、CrowdSec持久化候选构建/激活和ready。原runtime/config/secret/数据库没有复制；只复用已校验原下载归档和既有OS/构建缓存。本机既有Windows/WSL前提，不是新电脑全OS安装。原发动机首次start仅中间态，最终选中持久候选并核SHA。阶段回执reports/d10-empty-build.json（包含fixtures首败，不把重试成功写成首遍通过）。
+
+跨盘Creep首败：源码C盘/cwd D盘导致插件初始program漏源；filterRoot:false未修好，实际复核固定12.1.2源码后改用数据目录owned-tsconfig，明确files和相对上游include；原noCheck/异常探针和算法保持。base/worker/device构建均通过，日志保留各次错误与最终SHA。源码依据：https://raw.githubusercontent.com/rollup/plugins/typescript-v12.1.2/packages/typescript/src/options/tsconfig.ts 。
+
+搬迁复用configure和systemd，仅增加源owner验证、WSL tar配置备份/恢复。cscli Hub为POSIX内部链接，Windowslstat返回EACCES；因此备份走WSL原工具，并用Path.resolve校验链接在本实例base内，不绕工具策略或改权限。下一门：实际配置中途失败回滚/错owner拒绝/状态摘要不变、新路径启停/反向回滚；S2真实网站与导出七类状态、重启spent、完整TLS冻结正式链单变体7/0普通模型和资源结算。
+## 2026-10-10 晚间历史断点：方案交接，尚未实施纠正
+
+- 最新要求：用户只要完整盾独立化文档和 review，将另开 session 开发。本轮只改文档，没有修改产品代码、配置、依赖或既有测试；未启动服务/浏览器或运行产品验收，未提交、推送、关机。
+- 实际基线：master@dc45be4f07fd2e9c4a425c0d257e8b1aaef8ed80；文档改动前 60 个 Git 状态条目，54 个非 Markdown 条目均保留。之前的独立化改动未提交。
+- 当前依据：[完整方案与 review](SHIELD_INDEPENDENCE_PLAN_20261010.md)。结论为同仓独立服务＋共享通用实现单一来源＋双方独立数据。旧“独立化完成”只代表第一次工程验证。
+- 已确认缺口：盾 budget.py 重复原 API quota.py 约 20 行适配；页面遗漏后端 typing-cadence；空实例安装尚未实证，源码搬迁依赖手工记录。公共模块抽出还需发布包包含依赖、双平台装载与来源校验，不能只改 import。
+- 下一最小动作：新 session 收到开始实施指令后按 S0 核当前资源与 dirty，再按 S1 消重和共享制品双侧加载；S2 漏展示可独立推进。一般行为模型、网站扩展、多实例、公网运营能力继续后置。
+- 原始证据：reports/d10-standalone-receipt.json、product-d10-standalone-e2vgdyra（均在 ignored work/antibot-service）。旧证据使用已有运行数据；本轮没有重验。源码定位、复用来源、验收门和 review 发现均在新方案内。
+- 资源：上次回执为六服务 inactive/PID=0、Profile 和副本永久删除；本轮未现场查询运行状态，不把旧值当新观察。没有新资源需要关闭。
+- 约束：不 worktree、不重开原模型实验、不扩网站、不改盾强度；不京东、不云/跨天、不推送/关机。原一次主线提交授权已使用，后续本地提交按新 session 指令。
+- 文档交付检查：13 个本地链接、16 个现有代码/验收入口有效；54 个既有非 Markdown 项存在性/SHA256 不变，无新增非 Markdown 工作区改动；文档 diff --check 通过。临时新 session 入口为 C:/Users/30553/AppData/Local/Temp/BAT_SHIELD_INDEPENDENCE_HANDOFF_20261010_192957.md，详细方案已含 12 项 review 发现和处理。
+
+## 2026-10-10 历史：第一次独立化工程验证完成
+
+主线已提交`dc45be4f07fd2e9c4a425c0d257e8b1aaef8ed80`，见[主线结算](ANTIBOT_CLOSEOUT_20261010.md)。提交后盾独立化也已实现并验证，见[独立化结算](ANTIBOT_STANDALONE_20261010.md)：本包依赖/配置/数据/启动/测试边界，仓库外107文件副本独立安装/类型检查/6项协议边界，原固定探针重建，两个独立Python进程预算持久化，以及product-d10-standalone-e2vgdyra完整HTTPS/业务7/普通模型0/3条H2均通过。六服务关闭、两个最终Profile及独立副本永久删除，源码归属恢复本仓盾目录，原数据与secret保留。
+
+遵守原一次提交授权，独立化改动留在master工作区供审阅，未追加第二次提交。没有推送、关机、JD访问、跨天/云或新增网站/模型实验。当前没有运行中的验收资源；原矩阵未覆盖/历史缺证事实继续有效，不再视作追加自研研发门槛。下方为逐阶段历史记录。
+
+## 2026-10-10 主线已提交，执行盾独立化
+
+主线本地提交`dc45be4f07fd2e9c4a425c0d257e8b1aaef8ed80`，提交后工作区干净；无推送。下一包仅独立化原tools/antibot-lab，不扩网站/检测模型。真实耦合：依赖根目录zod/tsx，40处脚本/构建依赖仓库路径，盾budget.py反向导入API quota，固定CrowdSec测试在API目录。选择同仓原目录独立包：自有锁/启动/检查/测试，源码相对自身、数据由本地配置或环境指定，默认包内.local；原数据以ignored配置显式引用，保护secret/历史/制品不迁移删除。
+
+Product Alignment: 原浏览器任务与链路不改；原HTTP盾作为外部检测目标；普通模型0，无站点特判。Reuse Assessment: 原npm独立package/固定依赖/Node原生TS/WSL systemd/CrowdSec/PyrateLimiter公开API；不造服务管理器/限流引擎，只解除路径及薄适配依赖。关闭条件：独立依赖安装与定点类型/边界验证、仅复制盾目录后的无B-A-T依赖启动路径验证、真实原服务启动/健康/协议及必要一次业务回归、保留配置/数据/规则/owner和清理证据。主线既有一次提交已完成，独立化成果先保留为后续可审阅改动。
+
 ## 2026-10-10 纠偏后主线验收完成，进入本地提交
 
 [交付结算](ANTIBOT_CLOSEOUT_20261010.md)为当前结果入口。API类型检查、vendor摘要及依赖/驱动检查通过；首次安装回执旧摘要失败保留，按原登记入口更新后check通过。最终product-d10-final-0tyto_qk复用冻结发布链，完整HTTPS/业务7/普通模型0/3条H2一致通过；此前四变体7/11/13与99拒绝直接引用既有证据。Profile关闭且永久删除，6服务inactive/MainPID=0，敏感路径/令牌检查与diff检查通过。没有重开研究实验、京东、跨天、云或关机。按已授权执行一次本地提交，随后处理盾独立化；此提交前记录不虚填commit hash。

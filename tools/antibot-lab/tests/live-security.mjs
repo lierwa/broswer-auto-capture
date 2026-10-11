@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -5,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import path from 'node:path'
 
-const base = path.join(process.cwd(), 'work/antibot-service'), out = path.join(base, 'reports', `security-${Date.now()}`)
+const base = labData, out = path.join(base, 'reports', `security-${Date.now()}`)
 await mkdir(out)
 const { base: linuxBase } = JSON.parse(await readFile(path.join(base, 'prepared.json'), 'utf8'))
 const cli = `${linuxBase}/runtime/crowdsec/crowdsec-v1.8.1/cmd/crowdsec-cli/cscli`

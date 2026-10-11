@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "sourceFiles": {
+    "pyproject.toml": "ab9b0f4a0c7a4311378dfea338332b1fc40b6d1b2fd81dedbafeb68b42db177c",
+    "src/bat_request_budget/__init__.py": "d21f8130ca053ab25071bcaf701e81bdcf23682a7202b72f9186708083a2a526",
+    "src/bat_request_budget/quota.py": "1593197a85e5c01c897e767955a44ed0a8476db827a7709c4427d6244046ac9f"
+  },
+  "sourceDigest": "8fc614b6fbbd481c3657eb79daab7c75cd66df219e5ca4f8b8c6a4a54a73af20",
+  "wheel": "bat_request_budget-1.0.0-py3-none-any.whl",
+  "buildFrontend": "build==1.2.2.post1",
+  "buildBackend": "hatchling==1.27.0",
+  "dependencies": {
+    "pyrate-limiter": "4.5.0",
+    "filelock": "3.19.1"
+  },
+  "wheelSha256": "cfc34413d49556d19891b1992252958081768957ce5decf6ef86464ac65a40ca"
+}

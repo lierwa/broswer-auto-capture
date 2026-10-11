@@ -20,7 +20,7 @@ export async function admitBusiness(base: string, req: IncomingMessage, scope: s
   const { checkout } = z.object({ checkout: z.string() }).parse(JSON.parse(await readFile(`${base}/prepared.json`, 'utf8')))
   let result: z.infer<typeof decision>
   try {
-    const output = await execute('/usr/bin/python3', ['-I', `${checkout}/tools/antibot-lab/budget.py`, base, key],
+    const output = await execute('/usr/bin/python3', ['-I', `${checkout}/budget.py`, base, key],
       { timeout: 5_000, maxBuffer: 4096, windowsHide: true })
     result = decision.parse(JSON.parse(output.stdout))
     if (result.status === 'denied' && result.retryAfter < 1) throw Error('budget_retry_after_missing')

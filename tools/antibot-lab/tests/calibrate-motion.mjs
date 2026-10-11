@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
-import { analyze, classifyScore } from '../../../work/antibot-service/runtime/motion/package/src/analyzer.js'
+import { directory as base } from '../locations.mjs'
+import { pathToFileURL } from 'node:url'
+const { analyze, classifyScore } = await import(pathToFileURL(`${base}/runtime/motion/package/src/analyzer.js`).href)
 
-const base = 'work/antibot-service'
 const source = await readFile(`${base}/runtime/motion/package/src/analyzer.js`)
 assert.equal(createHash('sha256').update(source).digest('hex'), '67a2ae0f578a221499b68dbbbbc5a5e097122ba32715959dd8465f68422012de')
 const input = (await readFile(`${base}/reports/motion-phase2-labelled-input.jsonl`, 'utf8')).trim().split('\n').map(JSON.parse)

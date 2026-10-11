@@ -42,7 +42,7 @@ export const rules = [
   { name: 'bat-lab/persistent-budget', description: 'Persistent rolling business admission quota exceeded', type: 'trigger',
     filter: `${valid} && evt.Meta.category == 'persistent-budget' && evt.Meta.outcome == 'denied'`,
     groupby: field('session'), labels },
-  // WHY：isTrusted=false只证明脚本派发；键盘/粘贴/后台页等正常行为不靠轨迹阈值一票判bot。
+  // WHY：信任位只按下方五类原规则消费；Chrome原IME结束也可为false，粘贴/组合不作为异常。
   { name: 'bat-lab/input-behavior', description: 'Pinned Kitsune experimental timing/scroll clue; never blocks alone', type: 'trigger',
     filter: `${valid} && evt.Meta.category == 'input-behavior' && evt.Meta.outcome == 'detected'`,
     groupby: "evt.Meta.session + '/' + evt.Meta.detector", labels: { ...labels, spoofable: 1, remediation: false } },

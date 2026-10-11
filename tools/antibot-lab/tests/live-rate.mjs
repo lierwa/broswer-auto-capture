@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -5,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import path from 'node:path'
 
-const base = path.join(process.cwd(), 'work/antibot-service')
+const base = labData
 const out = path.join(base, 'reports', `rate-${Date.now()}`)
 await mkdir(out, { recursive: true })
 const normalIp = '127.88.18.2', abnormalIp = '127.88.18.3'

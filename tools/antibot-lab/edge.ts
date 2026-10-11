@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { access, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { directory, binaries, wsl } from './paths.ts'
@@ -6,6 +6,9 @@ import { rttAdapterDigest, rttProxyTlvs, rttDirectives, rttLogFields } from './e
 
 // WHY：原HAProxy/Lua采集ClientHello，原CrowdSec关联；只配置进程与字段，不复制指纹引擎。
 export async function configureEdge(base: string, executable = binaries(base).haproxy, candidate?: unknown) {
+  // WHY：CA 签发的叶证书不能当作自签根；后端仍须验证真实链，不能改 verify none。
+  const trusted = await access(path.join(directory,'tls/rootCA.pem')).then(() => true,() => false)
+  const authority = `${base}/tls/${trusted ? 'rootCA.pem' : 'cert.pem'}`
   const h2Samples = executable.endsWith('/haproxy-h2/haproxy')
   const rttDigest = h2Samples ? await rttAdapterDigest(directory, candidate) : null
   if (rttDigest && rttDigest !== createHash('sha256').update(await readFile(new URL('./edge-ssl-rtt.c', import.meta.url))).digest('hex')) throw Error('edge_rtt_adapter_changed')
@@ -88,7 +91,7 @@ ${h2Samples ? `  http-response set-var(txn.h3_settings) fc.bat_h3_settings
   log-format '{${rttDigest ? rttLogFields + ',' : ''}"at":"%[date,utime(%Y-%m-%dT%H:%M:%SZ)]","source_ip":"%ci","site":"%[var(txn.site)]","session":"%[var(txn.site)]","category":"transport","valid":"%[var(txn.valid)]","ua":"%[var(txn.ua)]","transport":"%[var(txn.ja4),bytes(0,1)]","tls_family":"%[var(txn.continuity)]","ja4":"%[var(txn.ja4)]","ja4_status":"%[var(txn.ja4_status)]","resumed":"%[ssl_fc_is_resumed]","status":"%ST","h2_case":"%[var(txn.h2_case)]","h2_settings":"%[var(txn.h2_settings)]","h2_pseudo":"%[var(txn.h2_pseudo)]","h2_window":"%[var(txn.h2_window)]","h3_settings":"%[var(txn.h3_settings)]","h3_pseudo":"%[var(txn.h3_pseudo)]","quic_params":"%[var(txn.quic_params)]","quic_shape":"%[var(txn.quic_shape)]","alpn":"%[ssl_fc_alpn]"}'
   default_backend full_shield
 backend full_shield
-  server gateway 127.0.0.1:4182 ssl verify required ca-file ${base}/tls/cert.pem sni str(localhost) alpn h2,http/1.1 send-proxy-v2 source 127.0.0.2
+  server gateway 127.0.0.1:4182 ssl verify required ca-file ${authority} sni str(localhost) alpn h2,http/1.1 send-proxy-v2 source 127.0.0.2
 `
   await writeFile(path.join(directory, 'haproxy.cfg'), config)
   await writeFile(path.join(directory, 'logs/tls.jsonl'), '', { flag: 'a' })

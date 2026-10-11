@@ -1,3 +1,4 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createHash } from 'node:crypto'
@@ -7,7 +8,7 @@ import { probeStatus, readProbe, requireProbes } from '../creep.ts'
 
 // 保护实际加载边界：首页就绪不能掩盖缺失、损坏或错版探针；不修改常驻服务的真实制品。
 test('probe readiness requires every pinned, intact bundle and retains invalid assets as unavailable', async () => {
-  const parent = await realpath('work/antibot-service/reports')
+  const parent = await realpath(path.join(labData, 'reports'))
   const base = await mkdtemp(path.join(parent, 'probe-assets-'))
   const names = ['creep-probe', 'creep-worker-client', 'creep-worker-source', 'creep-device-client'] as const
   const bytes = Buffer.from('export const fixture = true;')

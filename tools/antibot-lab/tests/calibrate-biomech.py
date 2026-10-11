@@ -8,7 +8,8 @@ from pathlib import Path
 import sys
 import tempfile
 
-BASE = Path('work/antibot-service')
+import subprocess
+BASE = Path(json.loads(subprocess.check_output(['node', str(Path(__file__).resolve().parents[1] / 'locations.mjs')], text=True))['directory'])
 UPSTREAM = BASE / 'upstream/candidate-review/kitsune'
 SOURCE = UPSTREAM / 'harness_src_kitsune_harness_biomech.py'
 SHA256 = 'b005a549224d803b927948a7889f83fce696ad9fe281758b452ea7fbf1e537bd'

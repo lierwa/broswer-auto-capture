@@ -4,10 +4,10 @@ import { isIP } from 'node:net'
 import { z } from 'zod'
 import { identityObservations, identitySchema } from './identity.ts'
 import { behaviorObservations, behaviorSchema } from './behavior.ts'
-import { checkReceipt } from './check.ts'
+import { checkReceipt, observedEventTypes } from './check.ts'
+import { flowSchema } from './verification.ts'
 
-const event = z.object({ type: z.enum(['input', 'change', 'click', 'keydown', 'keyup', 'compositionend',
-  'paste', 'focus', 'blur', 'visibilitychange']), trusted: z.boolean(), hidden: z.boolean() }).strict()
+const event = z.object({ type: z.enum(observedEventTypes), trusted: z.boolean(), hidden: z.boolean() }).strict()
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9]{0,63}$/)
 const detectors = new Set(['detectAppVersion', 'detectDocumentAttributes', 'detectErrorTrace',
   'detectEvalLengthInconsistency', 'detectFunctionBind', 'detectLanguagesLengthInconsistency',
@@ -41,12 +41,13 @@ const workerIntegrity = z.object({ version: integrityVersion, signals: z.array(w
   .refine(signals => new Set(signals.map(signal => signal.name)).size === 4) }).strict()
 const input = z.object({ version: z.literal(1), page: z.uuid(), batch: z.uuid(), events: z.array(event).max(64),
   environment: environment.optional(), identity: identitySchema.optional(), behavior: behaviorSchema.optional(),
+  flow: flowSchema.optional(),
   integrity: integrity.optional(), workerIntegrity: workerIntegrity.optional(),
   dropped: z.number().int().min(0).max(1_000_000) }).strict()
 
 export async function collector(base: string) {
   const { checkout } = JSON.parse(await readFile(`${base}/prepared.json`, 'utf8')) as { checkout: string }
-  return readFile(`${checkout}/tools/antibot-lab/collector.js`, 'utf8')
+  return readFile(`${checkout}/collector.js`, 'utf8')
 }
 
 export function instrument(html: string, id: string, page: string) {
@@ -96,5 +97,7 @@ export async function ingest(base: string, req: IncomingMessage, id: string, raw
       ? data.workerIntegrity.signals.every(signal => signal.validity === 'measured') ? 'measured'
         : data.workerIntegrity.signals.some(signal => signal.validity === 'error') ? 'error'
           : data.workerIntegrity.signals.some(signal => signal.validity === 'timeout') ? 'timeout' : 'unavailable' : null,
-    page: data.page, batch: data.batch, report: checkReceipt(rows, data.events, data.dropped) }
+    page: data.page, batch: data.batch, flow:data.flow, report: {...checkReceipt(rows, data.events, data.dropped),
+      // 数值样本供同页报告核验，不包含按键身份、输入或剪贴板内容。
+      ...(data.behavior?.cadence?{timing:data.behavior.cadence.samples ?? [data.behavior.cadence]}:{})} }
 }

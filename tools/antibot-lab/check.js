@@ -1,164 +1,129 @@
-/* The report renders original detector outcomes; it is not an identity or probability model. */
-(() => {
-  const $ = selector => document.querySelector(selector);
-  const bot = [
-    ['detectAppVersion','浏览器版本中的自动化标记'], ['detectDocumentAttributes','文档自动化属性'],
-    ['detectErrorTrace','自动化错误栈'], ['detectEvalLengthInconsistency','脚本引擎一致性'],
-    ['detectFunctionBind','原生函数绑定'], ['detectLanguagesLengthInconsistency','语言列表一致性'],
-    ['detectNotificationPermissions','通知权限一致性'], ['detectPluginsArray','插件对象结构'],
-    ['detectPluginsLengthInconsistency','插件数量一致性'], ['detectProcess','运行环境进程标记'],
-    ['detectUserAgent','浏览器标识中的机器人特征'], ['detectWebDriver','WebDriver 自动化标记'],
-    ['detectWebGL','图形渲染器自动化特征'], ['detectWindowExternal','外部自动化对象'],
-    ['detectWindowSize','窗口尺寸特征'], ['detectMimeTypesConsistent','MIME 类型一致性'],
-    ['detectProductSub','浏览器产品标记'], ['detectDistinctiveProperties','已知自动化框架属性'],
-  ];
-  const identity = [['user-agent','User-Agent'], ['brands','浏览器品牌与版本'], ['mobile','移动设备标记'],
-    ['platform','操作系统'], ['architecture','处理器架构'], ['bitness','系统位数'], ['model','设备型号'],
-    ['platformVersion','系统版本'], ['wow64','兼容运行模式'], ['fullVersionList','完整版本列表'], ['formFactors','设备形态']];
-  const groups = [
-    { id:'browser', icon:'01', title:'浏览器自动化特征', description:'BotD · 已知自动化标记与环境特征',
-      signals:bot.map(([name,label]) => ['browser-marker',name,label]) },
-    { id:'integrity', icon:'02', title:'环境一致性', description:'CreepJS · 图形镜像与页面 / Worker 对照',
-      signals:[['browser-marker','creepWebglMirror','WebGL 镜像一致性'],
-        ...[['platform','操作系统'],['userAgent','浏览器标识'],['hardwareConcurrency','处理器并发数'],['deviceMemory','设备内存']]
-          .map(([name,label]) => ['browser-marker','creepWorker.'+name,'Worker '+label])] },
-    { id:'identity', icon:'03', title:'请求身份一致性', description:'HTTP 请求头与浏览器声明的 11 项逐一对照',
-      signals:identity.map(([name,label]) => ['request-identity',name,label]) },
-    { id:'behavior', icon:'04', title:'交互行为', description:'原生事件标记与 Kitsune 时序线索 · 统计项仅供参考',
-      signals:[['input','trusted','输入事件来源'], ['input-behavior','keystroke-interval','按键间隔'],
-        ['input-behavior','keystroke-entropy','按键节奏变化'], ['input-behavior','scroll-teleport','滚动连续性']] },
-  ];
-  const rows = new Map(), values = new Map();
-  let packets = 0, failed = false, timedOut = false, health = null, updated = null, pageId = null;
-  const counts = { events:0, untrusted:0, hidden:0, dropped:0 };
-  function build() {
-    for (const group of groups) {
-      const details = document.createElement('details'); details.className = 'signal-group'; details.id = 'group-'+group.id;
-      details.innerHTML = `<summary><span class="group-icon">${group.icon}</span><div class="group-copy"><h3>${group.title}</h3><p>${group.description}</p></div><span class="group-badge"></span><span class="chevron" aria-hidden="true">+</span></summary><div class="signal-list"></div>`;
-      for (const [category,detector,label] of group.signals) {
-        const row = document.createElement('div'); row.className = 'signal-row';
-        row.innerHTML = `<span class="signal-name">${label}<code>${detector}</code></span><span class="signal-state">等待检测</span>`;
-        details.querySelector('.signal-list').append(row);
-        rows.set(category+':'+detector, row.querySelector('.signal-state'));
-      }
-      $('#signal-groups').append(details);
+import {createMeasurement,acceptReceipt,measurementReport} from './model.js';
+import {render,showSignal,toast} from './view.js';
+import {initArt} from './art.js';
+const $ = selector => document.querySelector(selector);
+const state = createMeasurement();
+const sample = {scrolled:false,lastTop:0,composing:new Set()};
+let submitGeneration = 0;
+let reportRequest = null;
+function refresh() {render(state.report ?? measurementReport(state),state);updateSampling();}
+function failure() {state.failed = true;state.report=null;state.verification={status:'failed'};state.behaviorPhase = 'idle';refresh();}
+async function readReport() {
+  if (state.failed || !state.runId || reportRequest) return reportRequest;
+  const mode=state.mode;
+  reportRequest=(async () => {
+    const response=await fetch('/measurement/check/report/'+state.runId+'?mode='+mode,{credentials:'same-origin',cache:'no-store'});
+    if (!response.ok) throw Error('report_unavailable');
+    const report=await response.json();
+    if (report.schemaVersion!==3 || report.runId!==state.runId || report.pageId!==state.pageId || report.signals?.length!==39) throw Error('report_invalid');
+    if (state.failed || mode!==state.mode) return;
+    state.report=report;state.verification=report.verification;state.flow=report.flow;
+    if (report.scope==='automatic+interactive' && report.flow) state.behaviorPhase='done';
+    refresh();return report;
+  })().finally(() => {reportRequest=null;});
+  return reportRequest;
+}
+function restart(interactive = state.mode === 'interactive') {
+  const url = new URL('https://localhost:4185/measurement/check');url.search = interactive?'?mode=interactive':'';location.replace(url);
+}
+function selectMode(mode) {
+  if (state.mode === mode) return;
+  if (state.behaviorPhase === 'running') {submitGeneration++;state.behaviorPhase = 'idle';}
+  state.mode = mode;state.report=null;refresh();void readReport().catch(failure);
+}
+function updateSampling() {
+  const english=($('#sample-english').value.match(/[A-Za-z]/g)??[]).length>=10;
+  const chinese=($('#sample-text').value.match(/\p{Script=Han}/gu)??[]).length>=4;
+  const keyboard = english && chinese && !sample.composing.size;
+  $('#keyboard-feedback').textContent = `英文 ${english?'✓':'待输入'} · 中文 ${chinese?'✓':'待输入'}`+(sample.composing.size?' · 请完成输入法选字':'');
+  $('#keyboard-feedback').className = 'sample-feedback '+(keyboard?'ready':'');
+  $('#scroll-feedback').textContent = sample.scrolled?'滚动 · 已取得样本':'滚动 · 等待操作';
+  $('#scroll-feedback').className = 'sample-feedback '+(sample.scrolled?'ready':'');
+  $('#reset-input').hidden = !english && !chinese;
+  const automaticPending = (state.report??measurementReport(state)).signals.some(row => row.group < 3 && row.status === 'pending');
+  const busy = state.behaviorPhase === 'running';
+  $('#submit').disabled = !keyboard || !sample.scrolled || automaticPending || busy || state.failed;
+  $('#submit').textContent = busy?'正在检测交互…':'提交并更新结果 →';
+  $('#submit-help').textContent = state.failed?'测量连接失败，请重新检测':automaticPending?'等待自动检测结束':busy?'等待本次交互回执':!keyboard?'请完成英文、中文输入':!sample.scrolled?'请滚动阅读区':'可以提交';
+}
+async function submitInteraction(event) {
+  event.preventDefault();if ($('#submit').disabled) return;
+  const generation = ++submitGeneration;state.behaviorPhase = 'running';refresh();
+  try {
+    const collector = globalThis.__batShieldCollector;
+    if (collector?.page !== state.pageId) throw Error('collector_unavailable');
+    const receipt = await collector.submit();
+    if (generation !== submitGeneration) return;
+    // WHY：提交完成必须对应本页真实批次；动画、其它批次或固定等待时间不能代替确认。
+    if (!receipt || receipt.page !== state.pageId || !state.batches.has(receipt.batch)) throw Error('interaction_receipt_missing');
+    await reportRequest;const report=await readReport();
+    if (!report?.flow) throw Error('interaction_flow_missing');
+    state.behaviorPhase = 'done';refresh();$('#result-stage').scrollIntoView({behavior:'smooth',block:'start'});
+  } catch {if (generation === submitGeneration) failure();}
+}
+document.addEventListener('bat:measurement',event => {if (acceptReceipt(state,event.detail)) void readReport().catch(failure);});
+document.addEventListener('bat:measurement-error',event => {if (event.detail?.page === state.pageId) failure();});
+$('#restart').addEventListener('click',() => restart());
+$('#automatic-tab').addEventListener('click',() => selectMode('automatic'));
+$('#interaction-tab').addEventListener('click',() => selectMode('interactive'));
+document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('keydown',event => {
+  if (!['ArrowLeft','ArrowRight'].includes(event.key)) return;
+  event.preventDefault();const mode = tab.id === 'automatic-tab'?'interactive':'automatic';
+  $(mode === 'interactive'?'#interaction-tab':'#automatic-tab').focus();selectMode(mode);
+}));
+$('#next-action').addEventListener('click',() => {
+  if (state.failed || state.behaviorPhase === 'done') {restart();return;}
+  selectMode('interactive');$('#sample-text').focus({preventScroll:true});$('#interaction-area').scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+// WHY：采样事实由collector独占；UI只表示输入/选字进度，不维护第二份IME排除器。
+for (const field of [$('#sample-english'),$('#sample-text')]) {
+  field.addEventListener('input',updateSampling);
+  field.addEventListener('compositionstart',() => {sample.composing.add(field);updateSampling();});
+  field.addEventListener('compositionend',() => {sample.composing.delete(field);updateSampling();});
+}
+$('#reading').addEventListener('scroll',event => {
+  if ($('#interaction-area').hidden || event.target.scrollTop === sample.lastTop) return;
+  sample.lastTop = event.target.scrollTop;sample.scrolled = true;updateSampling();
+});
+$('#reset-input').addEventListener('click',() => restart(true));
+$('#interaction-form').addEventListener('submit',submitInteraction);
+$('#skip-interaction').addEventListener('click',() => {selectMode('automatic');$('#result-stage').scrollIntoView({behavior:'smooth'});});
+$('#report-rows').addEventListener('click',event => {
+  const item = event.target.closest('[data-detail]');
+  if (item) showSignal((state.report??measurementReport(state)).signals.find(row => row.key === item.dataset.detail));
+});
+$('#dialog-close').addEventListener('click',() => $('#signal-dialog').close());
+$('#export').addEventListener('click',() => {
+  const report = state.report??measurementReport(state),url = URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
+  const link = document.createElement('a');link.href = url;link.download = 'shield-'+report.runId+'.json';link.click();setTimeout(() => URL.revokeObjectURL(url),1000);
+});
+$('#copy-json').addEventListener('click',async () => {
+  try {await navigator.clipboard.writeText($('#shield-report').textContent);toast('报告已复制');}
+  catch {toast('浏览器未允许复制，请使用导出报告');}
+});
+async function start() {
+  initArt();state.mode = new URL(location.href).searchParams.get('mode') === 'interactive'?'interactive':'automatic';refresh();
+  try {
+    const response = await fetch('/measurement/check/session',{method:'POST',credentials:'same-origin'});
+    if (!response.ok) throw Error('session_rejected');
+    const session = await response.json();
+    if (![session.id,session.page].every(value => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value))) throw Error('session_invalid');
+    if (session.url) {
+      const target=new URL(session.url);if(target.hostname!==session.id+'.shield.localhost' || target.port!=='4185' || target.protocol!=='https:') throw Error('session_origin_invalid');
+      if(state.mode==='interactive') target.search='?mode=interactive';location.replace(target);return;
     }
-  }
-  function state(key) {
-    const value = values.get(key);
-    if (value?.valid) return ['detected','mismatch'].includes(value.outcome) ? 'detected' : 'clear';
-    if (value) return 'unavailable';
-    return failed || timedOut ? 'unavailable' : 'pending';
-  }
-  function displaySignal(key) {
-    const current = state(key), value = values.get(key);
-    if (current === 'detected') return key.startsWith('input-behavior') ? '可疑 · 参考线索' : '命中可疑信号';
-    if (current === 'clear') return key === 'input:trusted' ? '已观察事件均为原生' : '未命中异常';
-    if (value?.outcome === 'error' || value?.outcome === 'invalid') return '测量失败';
-    if (key.startsWith('input') && !failed) return '样本不足 / 待交互';
-    return current === 'pending' ? '检测中…' : '不可用 / 未测到';
-  }
-  function updateGroups() {
-    for (const group of groups) {
-      const states = group.signals.map(([category,detector]) => state(category+':'+detector));
-      const measured = states.filter(s => s === 'clear' || s === 'detected').length;
-      const flagged = states.filter(s => s === 'detected').length;
-      const badge = $('#group-'+group.id+' .group-badge');
-      badge.textContent = flagged ? flagged+' 项可疑' : measured+'/'+states.length+' 已测';
-      badge.dataset.tone = flagged ? 'detected' : measured === states.length ? 'clear' : 'pending';
-    }
-    for (const [key,node] of rows) { node.textContent = displaySignal(key); node.dataset.state = state(key); }
-  }
-  function render() {
-    updateGroups();
-    const all = [...rows.keys()].map(key => ({ key, status:state(key), ...values.get(key) }));
-    const clear = all.filter(item => item.status === 'clear').length;
-    const flagged = all.filter(item => item.status === 'detected').length, measured = clear+flagged;
-    const automaticMissing = all.some(item => !item.key.startsWith('input') && item.status === 'unavailable');
-    const incomplete = failed || timedOut || automaticMissing || counts.dropped > 0 || health === 'partial' || health === 'error';
-    const tone = flagged ? 'detected' : incomplete ? 'unavailable' : packets ? 'clear' : 'pending';
-    const title = flagged ? '发现可疑信号' : incomplete ? '部分检测未完成' : packets ? '已测项未发现异常' : '正在观察浏览器';
-    const text = flagged ? `有 ${flagged} 项信号值得关注，展开下方报告查看来源。可疑信号不直接等于机器人。`
-      : incomplete ? '有检测缺失或失败，请查看具体项目。缺失项不会计为通过。'
-      : packets ? '当前已测信号未命中异常。继续交互可补充行为检测，这不代表真人身份认证。'
-      : '自动检查即将开始。交互检测将在你操作后补充。';
-    $('.verdict').dataset.tone = tone; $('#verdict-title').textContent = title; $('#verdict-copy').textContent = text;
-    $('#clear-count').textContent = clear; $('#flag-count').textContent = flagged; $('#waiting-count').textContent = all.length-measured;
-    $('#ring-count').textContent = measured; $('.ring').style.setProperty('--angle',(measured/all.length*360)+'deg');
-    $('#result-mark').textContent = flagged ? '!' : incomplete ? '—' : packets ? '✓' : '…';
-    $('#live-label').textContent = failed ? '采集失败' : packets ? '交互持续更新' : '正在采集';
-    $('#event-counter').textContent = counts.events+' 个事件';
-    if (updated) $('#report-time').textContent = '最近更新 '+new Date(updated).toLocaleTimeString('zh-CN',{hour12:false});
-    $('#download').disabled = !packets && !failed && !timedOut;
-    globalThis.__batCheckReport = { version:1, mode:'observation', updated, status:tone, counts:{clear,flagged,unavailable:all.length-measured},
-      health:{environment:health,transportFailed:failed,timedOut,dropped:counts.dropped}, signals:all,
-      input:{...counts}, excluded:['transport-fingerprint','ip-reputation','long-term-frequency','account-session-association','challenge'],
-      scope:'Signal report only; not human identity, bot probability, or full shield admission.' };
-  }
-  function mergeSignal(signal) {
-    const category = signal.category === 'environment-health' ? 'browser-marker' : signal.category;
-    const key = category+':'+signal.detector;
-    if (!rows.has(key)) return;
-    const old = values.get(key);
-    // WHY：同一页面已经触发的异常不被后续正常批次冲掉；刷新才开始独立检测。
-    if (old?.valid && ['detected','mismatch'].includes(old.outcome)) return;
-    values.set(key, {valid:signal.valid,outcome:signal.outcome});
-  }
-  document.addEventListener('bat:measurement', event => {
-    const receipt = event.detail;
-    if (receipt.page !== pageId || !receipt.report) return;
-    packets++; updated = new Date().toISOString();
-    if (receipt.environment) health = receipt.environment;
-    for (const signal of receipt.report.signals) mergeSignal(signal);
-    if (receipt.environment && receipt.environment !== 'measured') {
-      for (const [name] of bot) {
-        const key = 'browser-marker:'+name, value = values.get(key);
-        if (!value?.valid || value.outcome === 'clear') values.set(key,{valid:false,outcome:receipt.environment});
-      }
-    }
-    for (const key of Object.keys(counts)) counts[key] += receipt.report.input[key];
-    if (counts.events) mergeSignal({ category:'input',detector:'trusted',valid:true,outcome:counts.untrusted ? 'detected' : 'clear' });
-    render();
-  });
-  function failure(message) {
-    failed = true; $('#failure').hidden = false; $('#failure').textContent = message; render();
-  }
-  document.addEventListener('bat:measurement-error', () => failure('检测回执未送达。请检查本地服务后重新检测；本次已测结果保留，未测项目不计为通过。'));
-  $('#restart').addEventListener('click', event => { event.currentTarget.disabled = true; event.currentTarget.textContent = '重新检测中…'; location.reload(); });
-  $('#interaction-form').addEventListener('submit', event => {
-    event.preventDefault();
-    $('#interaction-feedback').textContent = '交互已结束，等待检测回执…';
-    const before = packets;
+    state.runId = session.id;state.pageId = session.page;refresh();
+    const script = document.createElement('script');script.src = '/measurement/check/collector.js';
+    script.dataset.case = session.id;script.dataset.page = session.page;script.dataset.controlled = 'true';
+    script.dataset.endpoint = '/measurement/check/telemetry/'+session.id;script.onerror = failure;document.head.append(script);
+    if (session.verification!=='/shield/verify/'+session.id) throw Error('verification_route_invalid');
+    const frame=document.createElement('iframe');frame.title='本次引擎验证';frame.className='engine-verification';frame.tabIndex=-1;
+    frame.src=session.verification;frame.addEventListener('load',() => void readReport().catch(failure));document.body.append(frame);
+    await readReport();
+    const timer=setInterval(() => void readReport().catch(failure),700);addEventListener('pagehide',() => clearInterval(timer),{once:true});
     setTimeout(() => {
-      const flagged = [...values.entries()].filter(([key,value]) => key.startsWith('input') && value.valid && value.outcome === 'detected').length;
-      $('#interaction-feedback').textContent = failed || packets === before ? '交互回执尚未确认，请查看上方采集状态。'
-        : flagged ? `已收到交互回执，有 ${flagged} 项参考线索命中。请展开「交互行为」查看。`
-        : '已收到交互回执；不足的样本仍会标为待交互。请展开「交互行为」查看。';
-      $('#group-behavior').open = true;
-    }, 1800);
-  });
-  $('#download').addEventListener('click', () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(globalThis.__batCheckReport,null,2)],{type:'application/json'}));
-    const link = document.createElement('a'); link.href = url; link.download = 'shield-report-'+Date.now()+'.json'; link.click();
-    setTimeout(() => URL.revokeObjectURL(url),1000);
-  });
-  async function start() {
-    build(); render();
-    try {
-      const response = await fetch('/measurement/check/session',{method:'POST',credentials:'same-origin'});
-      if (!response.ok) throw Error('session_unavailable');
-      const session = await response.json(); pageId = session.page;
-      const script = document.createElement('script'); script.src = '/measurement/check/collector.js';
-      script.dataset.case = session.id; script.dataset.page = session.page;
-      script.dataset.endpoint = '/measurement/check/telemetry/'+session.id;
-      script.onerror = () => failure('采集脚本无法加载，本次检测不完整。请检查服务后重新检测。');
-      document.body.append(script);
-      setTimeout(() => {
-        const automatic = groups.slice(0,3).flatMap(group => group.signals);
-        timedOut = automatic.some(([category,detector]) => !values.has(category+':'+detector));
-        render();
-      },25000);
-    } catch { failure('无法开始检测。请检查本地检测服务后重新检测，当前没有有效结论。'); }
-  }
-  void start();
-})();
+      if (measurementReport(state).signals.some(row => row.group < 3 && row.status === 'pending')) {state.timedOut = true;refresh();}
+    },25000);
+  } catch {failure();}
+}
+void start();

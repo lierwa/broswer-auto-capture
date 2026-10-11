@@ -16,8 +16,8 @@ test('visitor projection preserves adverse/unavailable signals and strips raw ob
     {category:'browser-marker',detector:'detectWebDriver',valid:true,outcome:'detected'},
     {category:'environment-health',detector:'creepWebglMirror',valid:false,outcome:'error'},
     {category:'request-identity',detector:'platform',valid:true,outcome:'mismatch'},
-  ],input:{events:2,untrusted:1,hidden:1,dropped:3}})
-  assert.deepEqual(checkReceipt([],[],0),{signals:[],input:{events:0,untrusted:0,hidden:0,dropped:0}})
+  ],input:{events:2,untrusted:1,hidden:1,dropped:3,byType:{unknown:{events:2,untrusted:1}}}})
+  assert.deepEqual(checkReceipt([],[],0),{signals:[],input:{events:0,untrusted:0,hidden:0,dropped:0,byType:{}}})
 })
 
 // 防跨站创建/自动GET建档；入口可独立使用，不依赖B-A-T runtime。

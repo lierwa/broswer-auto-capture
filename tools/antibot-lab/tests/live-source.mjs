@@ -1,10 +1,11 @@
+import { directory as labData } from '../locations.mjs'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import path from 'node:path'
 
-const base=path.resolve('work/antibot-service'),out=path.join(base,'reports',`source-${Date.now()}`)
+const base=labData,out=path.join(base,'reports',`source-${Date.now()}`)
 await mkdir(out)
 const ip='127.88.52.2',forged='192.0.2.55'
 function request(port,method,url,headers={},body='') {
