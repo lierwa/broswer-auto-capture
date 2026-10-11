@@ -102,7 +102,7 @@ export function recordSourceResolution(state: InterviewState, value: SourceResol
 
 export function recordUserProvidedSources(state: InterviewState, text: string, revision: number) {
   const seen = new Set<string>()
-  for (const raw of text.match(/https?:\/\/[^\s<>"')`，。；]+/gu) ?? []) {
+  for (const raw of text.match(/https?:\/\/[^\s<>"'“”‘’)`，。；]+/gu) ?? []) {
     let url: URL
     try { url = new URL(raw) } catch { continue }
     const candidate = candidateFromUrl(url)
@@ -194,7 +194,7 @@ function draftEntryUrls(markdown: string) {
 function markdownUrls(markdown: string) {
   // WHY：宿主回填使用 Markdown autolink，尖括号内的 URL 字节必须完整保留；不能把括号路径或查询值当标点剥离。
   // 旧手写草案的裸 URL 仍按原兼容规则读取，不扩大已确认来源授权。
-  return [...markdown.matchAll(/<(https?:\/\/[^<>\s]+)>|https?:\/\/[^\s<>"'`，。；]+/gu)].map((match) => {
+  return [...markdown.matchAll(/<(https?:\/\/[^<>\s]+)>|https?:\/\/[^\s<>"'“”‘’`，。；]+/gu)].map((match) => {
     const raw = match[1] ?? match[0].replace(/[),.;\]，。；）]+$/u, "")
     try { return new URL(raw).href } catch { throw new Error("interview_draft_url_invalid") }
   })

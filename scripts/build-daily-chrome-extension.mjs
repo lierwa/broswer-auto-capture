@@ -17,6 +17,13 @@ try { await access(path.join(candidate, 'SOURCE.json')) } catch (error) {
 }
 const source = JSON.parse(await readFile(path.join(candidate, 'SOURCE.json'), 'utf8'))
 const pin = JSON.parse(await readFile('vendor/daily-chrome-extension/UPSTREAM.json', 'utf8'))
+const backgroundPinPath = path.join(root, 'vendor/daily-chrome-extension', pin.browserSkill.manifest)
+const backgroundPin = JSON.parse(await readFile(backgroundPinPath, 'utf8'))
+assert.equal(backgroundPin.commit, '3f10983c09fcd443c7420830ab984c9d409954bf')
+for (const [file, record] of Object.entries(backgroundPin.files)) {
+  const bytes = await readFile(path.join(path.dirname(backgroundPinPath), file))
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), record.sha256, `browser_skill_source_mismatch:${file}`)
+}
 assert.equal(pin.commit, '8b552173e8d767db29b8baef8f4a1f08cf7f26bf')
 assert.equal(source.commit, pin.commit)
 const original = JSON.parse((await verified('package.json')).toString())
@@ -82,6 +89,7 @@ await mkdir(output, { recursive: true })
 await cp(path.join(stage, 'dist'), output, { recursive: true })
 await copyFile('vendor/daily-chrome-extension/LICENSE', path.join(output, 'LICENSE'))
 await copyFile('vendor/daily-chrome-extension/UPSTREAM.json', path.join(output, 'UPSTREAM.json'))
+await copyFile('vendor/daily-chrome-extension/extension/src/upstream/browser-skill/LICENSE', path.join(output, 'BrowserSkill.LICENSE'))
 await licenses(output)
 console.log('B-A-T unpacked extension: work/daily-chrome-extension/extension')
 

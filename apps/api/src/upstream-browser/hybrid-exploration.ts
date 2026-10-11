@@ -148,9 +148,8 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
       if (result.request.compilerVersion !== (source.sourceProtocol ?? "bat-hybrid/2")) {
         throw new Error("hybrid_source_protocol_mismatch")
       }
-      if (options?.closeAfterResponse && (await runner.close()).status === "unconfirmed") {
-        throw new Error("upstream_runner_cleanup_unconfirmed")
-      }
+      // WHY：先结束 owner，再交付已保存来源供业务判定；清理未确认由外层独立结算，不能遮住来源失败。
+      if (options?.closeAfterResponse) await runner.close()
       diagnostics?.recordTransportBoundary("author_response_accepted")
       return result
     } })

@@ -23,8 +23,8 @@ from .natural_reads import compile_verified_read
 from .natural_repeat import repeat_context, repeat_sample_coverage
 from .natural_selection import bind_selection_function
 from .natural_target_compile import natural_target
-from .navigation import NAVIGATION_ACTIONS, cross_tab_navigation_allowed, navigation_destination_matches
-from .navigation_compile import navigation_postconditions
+from .navigation import NAVIGATION_ACTIONS, cross_tab_navigation_allowed
+from .navigation_compile import navigation_postconditions, navigation_command_postconditions
 from .postconditions import declared_checks
 from .registry import action_effect
 from .summary_compile import compile_verified_summary
@@ -136,9 +136,9 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
     anchored = anchored_navigation_binding(request, action, pre, post, target, prior_segments)
     if anchored is not None and not binding_issues:
         binding, url_fact = anchored
+        # WHY：链接转换后仍只向原生navigate派发来源已证明的URL，不把落地地址当作输入相等条件。
         conditions, readiness_refs = with_consumer_readiness(
-            [{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': url_fact.id,
-              'settle': NATURAL_SETTLE}], url_fact.sourceRefs, consumer_readiness, NATURAL_SETTLE)
+            [], url_fact.sourceRefs, consumer_readiness, NATURAL_SETTLE)
         try:
             declared_checks(conditions, {**action.args, 'url': url_fact.value}, None,
                             allow_unresolved_target=True)
@@ -238,20 +238,7 @@ def natural_postconditions(action, pre, post, target, bindings, consumer=None, *
                     unique_refs([*post.sourceRefs, *context[0].sourceRefs]), [])
         return [], [], [gap('missing_effect_proof', [action.id], 'switch_tab_binding_not_observed')]
     if action.name == 'navigate':
-        if not navigation_destination_matches(action.args.get('url'), post.url):
-            return [], [], [gap('missing_effect_proof', [action.id], 'navigate_url_binding_not_observed', 'collect_evidence')]
-        facts = natural_facts(post, 'natural_postcondition', action.id)
-        matched = [fact for fact in facts if fact.value == {'actionRef': action.id, 'kind': 'url',
-                                                            'bindingArgument': 'url', 'matched': True}]
-        if len(matched) != 1:
-            return [], [], [gap('missing_effect_proof', [action.id],
-                                'navigate_url_binding_not_observed', 'collect_evidence')]
-        context = context_facts(post)
-        clause = context[1] if context is not None else matched[0]
-        conditions, refs = with_consumer_readiness(
-            [{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': clause.id,
-              'settle': NATURAL_SETTLE}], unique_refs([*matched[0].sourceRefs, *clause.sourceRefs]), consumer, NATURAL_SETTLE)
-        return conditions, refs, []
+        return navigation_command_postconditions(action, pre, post, consumer)
     if action.name in NAVIGATION_ACTIONS:
         navigation = navigation_postconditions(action, pre, post, consumer)
         if navigation is not None:

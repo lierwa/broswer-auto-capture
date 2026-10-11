@@ -5,6 +5,9 @@ import inspect
 import json
 import logging
 import os
+import hashlib
+import traceback
+from pathlib import Path
 
 from browser_use_runner.access_cooldown import directory, remember
 from browser_use_runner.access_policy import acquire
@@ -18,6 +21,7 @@ class Admission:
         self.tasks = set()
         self.counts = Counter()
         self.failure = None
+        self.failure_details = None
         self.delegate = None
 
     async def close(self):
@@ -56,6 +60,13 @@ class Admission:
             self.counts[('limited:' if limited else 'error:') + resource] += 1
             if not limited:
                 self.failure = 'capture_access_state_unavailable'
+                # WHY：保留准入首败的固定来源/摘要，不能只留下后续的页面读取失败；不保存请求或异常原文。
+                if self.failure_details is None:
+                    self.failure_details = {'errorType': type(error).__name__,
+                        'errorDigest': hashlib.sha256(str(error).encode()).hexdigest(),
+                        'locations': [{'source': Path(frame.filename).name, 'line': frame.lineno}
+                            for frame in traceback.extract_tb(error.__traceback__)
+                            if Path(frame.filename).name in ('task_access.py', 'access_policy.py', 'access_cooldown.py', 'client.py')]}
                 logger.warning('access_admission_unavailable type=%s', type(error).__name__)
             await self.fail(request, session_id)
 

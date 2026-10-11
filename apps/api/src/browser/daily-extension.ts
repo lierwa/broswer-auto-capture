@@ -1,5 +1,6 @@
 import { readFile, access } from "node:fs/promises"
-import { createHash } from "node:crypto"
+import { createHash, timingSafeEqual } from "node:crypto"
+import type { WebSocket } from "ws"
 import { homedir } from "node:os"
 import path from "node:path"
 import { z } from "zod"
@@ -20,6 +21,8 @@ export class DailyChromeExtension {
   private relay: CDPRelayServer | undefined
   private changing: Promise<unknown> | undefined
   private connecting: Promise<string | undefined> | undefined
+  private backgroundSocket: WebSocket | undefined
+  private awaitingBackground: CDPRelayServer | undefined
   private popupRequest: { url: string; extensionId: string; profileName: string; profileDirectory: string; openPopup: boolean } | null = null
   constructor(private root: string, private directory: string, private assertIdle: () => void,
     private platform = process.platform, private home = homedir(),
@@ -63,7 +66,7 @@ export class DailyChromeExtension {
       name: (await this.profiles()).find(profile => profile.id === record.env!.PROFILE_DIRECTORY)?.name ?? "日常 Chrome" }
   }
 
-  private async extensionIdentity() {
+  async extensionIdentity() {
     const manifest = z.object({ key: z.string().min(1) }).passthrough().parse(JSON.parse(await readFile(
       path.join(this.root, "vendor/daily-chrome-extension/extension/manifest.json"), "utf8")))
     return [...createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest("hex").slice(0, 32)]
@@ -84,12 +87,14 @@ export class DailyChromeExtension {
       throw new DomainError("daily_chrome_profile_missing", "所绑定的 Chrome Profile 已不存在，请重新连接授权。", 409)
     }
     const extensionId = await this.extensionIdentity()
-    return new CDPRelayServer("chrome", await this.executable(), this.dataRoot(), profileDirectory,
+    const relay = new CDPRelayServer("chrome", await this.executable(), this.dataRoot(), profileDirectory,
       { extensionId, ...(token ? { token } : { requestAuthorization: true }),
-        // WHY：已有授权沿 Playwright 原 launcher/握手，不再被工作台中转拦截；首次授权保留明确确认入口。
+        // WHY：已授权连接由扩展后台发起；原launcher仅唤醒Chrome，不再交付连接页。
+        ...(token ? { requestBackground: () => { if (!relay.isConnected()) relay.openPage() } } : {}),
         ...(!token ? { requestPopup: (url: string) => {
           this.popupRequest = { url, extensionId, profileName: profile.name, profileDirectory, openPopup }
         } } : {}) })
+    return relay
   }
 
   private async connect(profileDirectory: string, token: string | undefined, current: () => boolean, openPopup = false) {
@@ -101,6 +106,7 @@ export class DailyChromeExtension {
     this.relay = relay
     try {
       await relay.start()
+      if (token) { this.awaitingBackground = relay; this.acceptWaitingBackground() }
       await relay.establishExtensionConnection("B-A-T")
       return relay.cdpEndpoint()
     } catch (error) {
@@ -112,7 +118,30 @@ export class DailyChromeExtension {
         throw new DomainError("daily_chrome_authorization_rejected", "已拒绝本次授权。需要时可再次点击「授权 Chrome」。", 409)
       }
       throw new DomainError("daily_chrome_extension_not_connected", "扩展未能连接。请确认所选 Chrome 的 B-A-T 扩展已加载并开启「允许连接」，然后重试。", 409)
-    } finally { this.popupRequest = null }
+    } finally { this.popupRequest = null; if (this.awaitingBackground === relay) this.awaitingBackground = undefined }
+  }
+
+  async attachBackground(socket: WebSocket, token: string) {
+    this.assertStable(true)
+    const supplied = tokenSchema.parse(token), record = await this.credentials.get(credentialRef)
+    // WHY：后台只能复用已保存授权；首配/撤销不能通过一条后台消息自动批准。
+    if (record?.type !== "api" || !record.key || record.key.length !== supplied.length
+      || !timingSafeEqual(Buffer.from(record.key), Buffer.from(supplied))) throw new Error("daily_chrome_authorization_required")
+    this.assertStable(true)
+    if (this.backgroundSocket || this.relay?.isConnected()) throw new Error("daily_chrome_connection_busy")
+    this.backgroundSocket = socket
+    const operation = this.endpoint(false)
+    this.acceptWaitingBackground()
+    try { await operation }
+    finally { if (this.backgroundSocket === socket) this.backgroundSocket = undefined }
+  }
+
+  private acceptWaitingBackground() {
+    const socket = this.backgroundSocket, relay = this.awaitingBackground
+    if (!socket || !relay || socket.readyState !== 1) return
+    this.backgroundSocket = undefined
+    relay.acceptBackgroundConnection(socket)
+    socket.send(JSON.stringify({ event: "bat.authorized", payload: { clientName: "B-A-T" } }))
   }
 
   private exclusive<T>(work: (current: () => boolean) => Promise<T>): Promise<T> {

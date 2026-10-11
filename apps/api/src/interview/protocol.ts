@@ -101,7 +101,8 @@ export function createInterviewRepairAuthoring(state: InterviewState, skill: str
     prompt: composeAuthoringPrompt({ protocol, turn, prompt: {
       ...layers,
       stageGuidance: `${layers.stageGuidance}\n\n本次仅修复上一份输出的格式错误。保留用户已明确的要求与原有内容，返回完整修正版。`
-        + "不要搜索、调用工具、增加业务问题或扩大范围；来源只能引用已有证据。必须完整闭合协议标签并补全既定章节。",
+        + "不要搜索、调用工具、增加业务问题或扩大范围；来源只能引用已有证据。必须完整闭合协议标签并补全既定章节。"
+        + "优先按failure中的位置、实际、期望及修正逐项纠正；独立字段行不能用段落中的同义说明代替。保留业务值，返回完整草稿后仍由原校验器验证。",
       currentTurnFacts: { ...layers.currentTurnFacts, failure, rejectedOutput: rejected },
     } }),
   }

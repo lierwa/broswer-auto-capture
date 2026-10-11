@@ -11,6 +11,7 @@ export function authoringFailureCode(error: unknown): string {
   if (error instanceof RuntimeCleanupRequiredError && error.primary.status === "failed") {
     return authoringFailureCode(error.primary.error)
   }
+  if (error instanceof RuntimeCleanupRequiredError) return "upstream_runner_cleanup_unconfirmed"
   const coded = error && typeof error === "object" && "code" in error ? error.code : undefined
   const reason = error && typeof error === "object" && "reason" in error ? error.reason : undefined
   const message = typeof coded === "string" ? `${coded}:${typeof reason === "string" ? reason : ""}`
@@ -24,6 +25,7 @@ export function failureLayer(error: unknown, stage: string): string {
   if (error instanceof RuntimeCleanupRequiredError && error.primary.status === "failed") {
     return failureLayer(error.primary.error, stage)
   }
+  if (error instanceof RuntimeCleanupRequiredError) return "运行资源清理"
   const message = error instanceof Error ? error.message : "unknown"
   if (authoringFailureCode(error).startsWith("account_")) return "账号准备检查"
   if (/^hybrid_existing_browser_/.test(message)) return "日常 Chrome 连接"
@@ -113,11 +115,11 @@ export function authoringFailureMessage(error: unknown): string {
   if (message === "preexecution_entry_unresolved" || message.includes("entryUrls") || message.includes("allowedOrigins")) {
     return "系统没有从已确认需求确定预执行入口；请返回需求对话补充目标来源后重新准备。"
   }
-  if (/upstream_runner_|upstream_protocol_/.test(message)) {
-    return "受管浏览器运行环境未能启动，系统已在页面操作前停止；请先同步并检查固定的 upstream 环境后重新准备。"
-  }
   if (message.includes("hybrid_source_and_cleanup_failed") || message.includes("cleanup")) {
-    return "浏览器任务结束时没有完成安全收尾，系统已停止并且没有发布这条链路；请重新准备。"
+    return "浏览器任务的资源清理尚未确认；已保存的来源和执行结果保留，请核验本次任务所属资源。"
+  }
+  if (/upstream_runner_|upstream_protocol_/.test(message)) {
+    return "受管浏览器进程或通信中断；请查看本次运行的阶段和首次错误。已有执行记录保留。"
   }
   if (/captcha|login|authentication|verification/i.test(message)) {
     return "网站要求登录或人工验证；请在当前选择的浏览器任务窗口中处理账号状态，再继续当前任务。无头环境需先使用同一专属 Profile 的可见窗口完成登录。"

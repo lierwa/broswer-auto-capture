@@ -16,17 +16,22 @@ import { storedStepBuilds } from "./preparation-step-builds.js"
 const INCOMPLETE_AUTHORING = ["failed", "cancelled", "interrupted"]
 
 export class TaskSummaryProjector {
-  private readonly cache = new LRUCache<string, { revision: string; summary: TaskSummary }>({ max: 256 })
+  private readonly cache = new LRUCache<string, { revision: number; summary: TaskSummary }>({ max: 256 })
   constructor(private readonly store: ProductStore, private readonly repository: TaskContractRepository,
     private readonly product: TaskProductService) {}
 
   project(task: TaskSummary): TaskSummary {
-    const key = digestJson(task), revision = this.store.readRevision(), cached = this.cache.get(key)
+    const key = digestJson(task), revision = this.revision(task.id), cached = this.cache.get(key)
     if (revision !== null && cached?.revision === revision) return structuredClone(cached.summary)
     const summary = projectTaskSummary(task, this.store, this.repository, this.product)
-    // WHY：只复用同一提交事实的轻量列表；事务中和投影引发写入时，仍以数据库重新计算为准。
-    if (revision !== null && this.store.readRevision() === revision) this.cache.set(key, { revision, summary: structuredClone(summary) })
+    // WHY：进度写入只改变所属任务；用全库版本会反复解析所有历史大记录，阻塞同线程的浏览器转发。
+    // 复用既有任务序列；事务中或投影引发同任务写入时不缓存，外部提交仍由序列准确失效。
+    if (revision !== null && this.revision(task.id) === revision) this.cache.set(key, { revision, summary: structuredClone(summary) })
     return summary
+  }
+
+  private revision(taskId: string) {
+    return this.store.readRevision() === null ? null : this.repository.workspaceSequence(taskId)
   }
 }
 

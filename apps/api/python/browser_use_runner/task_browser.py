@@ -11,7 +11,8 @@ class TaskBrowser(Browser):
         session = await super().get_or_create_cdp_session(target_id, focus)
         adapt_pointer(session.cdp_client)
         adapt_key_events(session.cdp_client)
-        await attach_access(self, session)
+        # WHY：响应退避复用原异步准入；不能在CDP接收回调同步写磁盘，阻塞Worker恢复/请求放行。
+        await attach_access(self, session, observe_responses=True)
         return session
 
     async def on_NavigateToUrlEvent(self, event):

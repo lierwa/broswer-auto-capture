@@ -4,6 +4,7 @@ import type { JsonValue } from "@browser-capture/contracts"
 import { cleanupReport, RUNNER_CLEANUP_STAGES, RuntimeCleanupRequiredError,
   type RunnerCleanupStage } from "../src/upstream-browser/cleanup.js"
 import { withHybridAuthoring } from "../src/upstream-browser/hybrid-exploration.js"
+import type { HybridSourceResult } from "../src/upstream-browser/hybrid-captured-source.js"
 import { hybridAuthorSourceSchema } from "../src/upstream-browser/hybrid-protocol.js"
 import { naturalSourceFixture } from "./helpers/natural-source.js"
 import type { RunnerProcess } from "../src/upstream-browser/service.js"
@@ -94,10 +95,21 @@ test("unconfirmed final owner close still delivers its captured source", async (
   const saved: unknown[] = []
   await assert.rejects(withHybridAuthoring(h.input, async (session) => session.author(source, {
     closeAfterResponse: true, onSource: (value) => { h.events.push("source"); saved.push(value) },
-  }), h.dependencies), RuntimeCleanupRequiredError)
+  }), h.dependencies), (error: unknown) => error instanceof RuntimeCleanupRequiredError
+    && error.primary.status === "completed" && (error.primary.value as HybridSourceResult).sourceSuccess === true)
   assert.equal(saved.length, 1)
   assert.deepEqual(saved[0], { result: rawResult, forkSourceDigest: hash, modelCalls: [] })
   assert.deepEqual(h.events, ["start", "response", "source", "close", "bridge-close"])
+  assert.equal(h.closeCount, 1)
+})
+
+test("source business failure remains primary when final cleanup is unconfirmed", async () => {
+  const h = harness(false), business = new Error("hybrid_completed_source_required:navigate:1")
+  await assert.rejects(withHybridAuthoring(h.input, async (session) => {
+    await session.author(source, { closeAfterResponse: true })
+    throw business
+  }, h.dependencies), (error: unknown) => error instanceof RuntimeCleanupRequiredError
+    && error.primary.status === "failed" && error.primary.error === business)
   assert.equal(h.closeCount, 1)
 })
 

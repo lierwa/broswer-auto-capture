@@ -1,5 +1,121 @@
 # 开发进度
 
+## 2026-10-12 当前：通用读取修复后冻结新任务完整主流程通过
+
+用户明确获取最终报告属于任务本身；已撤回“多要求报告链接导致失败”的错误归因。修复的是准备阶段相对容器读取与纠错说明，不删输出、不改盾。25 项聚焦通过；真实 Chrome 通用页复现范围错误，同一产品模型一次纠正，普通执行器复读另一页变化数据时模型 0。
+
+1222 代码配置冻结后，新 task c52e7dc3 / 首次需求 b2f1d401 → 首次准备 f30381b5 → 自动样本试跑 3ba4cbd2 → 独立复验 ec938ab1 → 工作台发布 8288a372 V1 → 首次正式复跑 43e68dd4，全部完成。样本/复验/正式运行各一次，模型调用均 0、auditComplete=true、cleanup 首次 confirmed。正式盾 case 4d1efa75 为 Human/39 clear/四 Worker 有效；B-A-T 实际输出含全部 39 项名称及结果、最终结论和本次页面地址，与盾原报告逐项相符。冻结文件集合/字节均无变化，盾入场 SHA 无变化；原 ce595f4a 首败和历史所有失败保留。
+
+连接页依赖已直接复用 BrowserSkill 移除，18 聚焦及无页冷启/重连/首授/暂停实机验证保留。此次辅助 Chrome 13044、旧辅助 26424 和诊断浏览器均已关闭，临时 Profile（含 native temp 1fk4pfdo）和敏感恢复副本已永久删除；用户日常 Chrome 23112/开发服务 15640 保留，connected=true/busy=false。独立未关闭事项：此前诊断启动触发的 Chrome 扩展配置异常中，16 条安装记录已恢复，但 3 个其它商店扩展仍新增损坏禁用标记；不将其写成完全恢复。详见[本轮结算](BAT_BACKGROUND_CONNECTION_AND_MAINFLOW_20261012.md)。未提交/推送/worktree/关机。
+
+
+## 2026-10-12 当前：保留后台连接冻结首败，修通用结果读取纠错
+
+后台连接已复用 BrowserSkill 验证，无连接页冷启/重连通过。冻结 1222 代码配置的新 task ce595f4a / prepare 9d491128 在结果读取阶段失败，0 发布/0 正式复跑；输入滚动及唯一提交完成，盾 Human/39 clear/四 Worker 有效不能代表主流程通过。用户明确最终报告数据本就是任务的一环；此前把失败归于多要求报告链接的解释撤回，不能删除输出或降低完成标准。定位到模型选错容器，以及纠错“只改投影”遗漏容器范围；先用原失败及通用页面定点验证，再重新冻结、全新任务，不改盾。证据 read-scope-07/failure-attribution.json。旧任务资源 cleanup confirmed，辅助 26424 退出，临时 Profile 和敏感恢复副本已永久删除；Chrome 扩展配置事件另有 3 项损坏禁用未解决。
+
+
+## 2026-10-12 当前：后台连接已验证，代码冻结后新建主流程任务
+
+BrowserSkill固定3f10983c连接/重连/保活已接入；首次授权/暂停/撤销保留，18聚焦、扩展构建和实际Chrome首次授权/断线/宿主重启/暂停跨浏览器重启通过。新版0.4.1官方background权限补齐零窗口存活，旧SW缓存经Chrome正式重载，实际产品无页冷启578.7ms成功。全部首败保留。冻结集合见frozen-background-06/freeze.json，此后不得边改边跑。新任务尚未创建，将完整需求→准备→发布→正式复跑，不改盾。验收环境曾重置Chrome安装记录，已恢复16项；3其它商店扩展新增文件损坏禁用标记，未擅自修复或绕过，必须单列交付。所属Workbench辅助26424及敏感恢复临时副本待收尾。
+
+## 2026-10-11 当前：BrowserSkill后台组件已接入，进入实机验证
+
+用户明确授权移除连接页依赖。直接引入BrowserSkill固定3f10983c的WSTransport/heartbeat/keepalive（MIT及来源hash），B-A-T只以旧token验证后台socket后交给原Playwright relay；首配仍popup明确批准，暂停停止后台连接。生产已授权入口不再打开connect.html，Chrome仅无页面唤醒。14项定点通过、扩展构建通过；首轮测试发现dispose后迟到close回调重新wake，已加已销毁准入屏障并保留首败。@types/ws8.18.2补齐已有ws类型。正在验证实际Chrome无tab新增连接/重连及首次授权、暂停；尚未冻结或新建业务任务。证据connection-background-06；不得改盾或覆盖前四次冻结首败。
+
+## 2026-10-11 当前：巡检阻塞已修复验证，连接页依赖尚未移除
+
+第四次冻结新任务80b3f4d5 / 首次准备bef81e57在连接阶段失败，0动作/0准备模型/0发布/0正式复跑；1204代码配置不变，原失败保留。已查实后台每15秒两次全量读取444,623,701字符历史execution，92秒CPU采样约28秒耗在此路径。改用SQLite部分索引和小资源字段投影，3项定点通过；实际原库候选查询1.35ms，跨两轮巡检170次API请求0失败、最长85.8ms。API类型检查仅3项已确认盾基线错误，不改盾。该证据证明周期性阻塞及其修复，不补造原连接失败时不存在的时序。正常开发入口恢复，4173/4175同PID25796。
+
+用户追问连接tab：已确认Playwright建立连接时通过connect.html把临时relay地址交给扩展，之前仅连后关页；BrowserSkill固定3f10983c由扩展后台连接，不需要此页。BrowserSkill RPC与B-U CDP并非同协议，尚未实现页面无关的生产接入，不新造第二套CDP网关，不把研究或诊断复连算修好。继续主线须先解决此入口并验证，再冻结新建任务，不在测试中改码。
+
+本轮辅助Chrome28096已关闭、frozen-fresh-04/workbench-profile已永久删除；空task1770585a核验无turn/job/execution/release/artifact/draft后由产品DELETE删除。资源查询测试临时目录由finally删除；开发inspector随旧宿主退出。历史失败/原报告和诊断证据保留，证据root-cause-05。主流程仍未通过，不提交/推送/worktree/关机。
+
+
+## 2026-10-11 当前：第四次冻结首败保留，修复后台巡检阻塞
+
+新task80b3f4d5 / 首次prepare bef81e57在浏览器连接阶段失败，0动作/0准备模型/0发布/0复跑；1204代码配置运行前后不变。原连接页显示relay握手5秒超时，之后一次连接诊断1528ms成功不覆盖首败。实际API92秒CPU采样约28秒在每15秒资源巡检整表读取/JSON解码：50份历史execution共444,623,701字符，每轮daily/dedicated各读一次，阻塞共享握手线程。此前任务列表缓存修复遗漏此入口。现最小改为SQLite自动维护部分索引、按小资源字段投影、inspect后按ID取最新资源事实；3定点验证通过，API类型检查仅3项已记录盾基线错误。正在重启本轮owned API核验实际耗时，不改盾、不中途启动整流程。连接tab依赖已查实来自Playwright启动通道，BrowserSkill本地为后台直连；尚未移除该依赖，不把连后关页算修好。证据root-cause-05；辅助Chrome28096及空任务1770585a待收尾。
+
+## 2026-10-11 当前：第四次冻结全新任务开始
+
+字段读取纠错已通过4新增、14方法、5引用检查，共23项；2旧根数组测试在修复前原字节同样失败（已隐藏路径/固定预算协议失配）。同一已配置模型一次纠正container-only，原字段映射器接收成功，不新增产品模型循环。受管fork835976b3，1204代码配置冻结。新task80b3f4d5-760d-45bb-96cb-a3f01c99018d正在首次需求对话，后续不得改冻结码；旧taskfb0464a9首败和Bot报告保留。辅助客户端重建PID28096/profile frozen-fresh-04/workbench-profile；旧辅助25596与旧daily22800已退出（开发工具会话重置之后核验），原任务owner已ended。另有本轮UI异步重触发产生的空task1770585a待核验0turn后删除，不能留下验收垃圾。
+
+## 2026-10-11 当前：第三次冻结首败保留，修复字段读取纠错
+
+新 task fb0464a9 / prepare 0d22fe9c 已 failed：原生导航成功、输入滚动和一次提交完成，盾 8f4d6ef7 为 Bot（38 clear、1 输入来源 flagged，四 Worker 有效），清理 confirmed。1202 代码/配置在本次运行前后逐字相同，0 发布/0 正式复跑。工具将 container-only 解释成旧 content 模式但当前合同拒绝，schema_mismatch 未返回字段/路径/改法；模型多次无法纠正，最后 done false。已修仅公开 field 参数并派生准确合同反馈，4 个回归通过，正在验证相关原生读取与真实模型纠错，然后重新冻结、新建任务。原 Bot 不覆盖、不改盾、不重提交求 Human；Workbench 辅助浏览器仍由本轮持有待 finally 清理。
+
+## 2026-10-11 当前：第三次冻结全新任务正在首次准备
+
+三项通用修复已验证，1202 代码/配置文件冻结。新 task fb0464a9-3e02-4e0f-9c0e-8df90e56be6c 从 Workbench 需求对话 d798e183 成功确认，首次 prepare 0d22fe9c-0430-43a7-8281-a81b138b9d29 / owner 63a9fa7b-6e4a-41f3-8ff7-348f9963b11d 正在执行；入口原生导航已成功并在线编译 1/1、缺口 0。尚未完成准备/发布/正式复跑，不改冻结代码或盾。完整诊断与修复证据 root-cause-03，冻结验收 frozen-fresh-03；诊断五临时目录已永久删除，当前仅本次 Workbench headless 客户端和任务所属 daily 窗口需 finally 收尾。
+
+## 2026-10-11 当前：继续定位并修复主流程共因，尚未启动第三次冻结验收
+
+已只读复现任务列表因全库缓存失效反复读取历史 114 MB 执行记录，单次主线程约 3.4 秒；Python 原生七步和完整管道诊断均无页面断连，当前重点为共享宿主线程的重复大读取。开始最小修复：导航健康观察边界、业务/清理错误分离、按单任务序列失效缓存。原首败完整保留，不改盾，不在正式验收中改码。证据 work/bat-shield-mainflow-20261011/root-cause-03；当前诊断临时目录尚待最后核验删除。
+
+## 2026-10-11 当前：新任务首败保留，主流程系统性根因调查完成本轮取证
+
+已查实四层问题：在线 finish 曾读取历史 raw gaps（冻结前已修、7 项聚焦通过）；实例级观察包装误伤原生 navigate 的动作后健康检查（未修）；closeAfterResponse 清理错误遮挡业务来源，内层 catch 导致生命周期 primary=completed，错误前缀再误报启动前失败（未修）；旧任务离线恢复/已发布链复跑没有覆盖全新在线入口。新 task4bef5468 / 首次 prepare ead62058 仍 failed，0 发布/0 正式执行，没到已修 final finish。原盾 case8c2da2f5 pending未提交，四 Worker有效，不能算通过。
+
+原次前端连接失败和原次清理内部慢点仍未唯一证实：原服务端36次report GET均200且3.7–16ms；无客户端失败时序。完成存储/TS编译/Python编译离线诊断，以及通用页、原页面观察、原生输入滚动三种一次性有界诊断，均0模型、不提交检测、不跑完整任务；未复现断连/关闭变慢，不能据此关闭原失败。抓到原页面一次截图等待5.7秒，但不能归因原断连。下步先修已证实调用边界并补安全阶段诊断，验证后重新冻结，再全新任务验收；不凭猜测改盾、网络阈值或反复重跑。
+
+1201代码/配置内容及文件集合不变。原准备/验收所属资源已关闭，临时Profile永久删除；本轮三个诊断owner ended、owned targets经CDP核验消失、三个精确临时目录永久删除，Python/诊断监听0；用户Chrome及工作台服务保留。完整根因、责任、未关闭项和证据见 [主流程根因调查](BAT_MAINFLOW_ROOT_CAUSE_20261011.md)；修复与新首败结算见 [在线收尾结算](BAT_ONLINE_FINISH_REPAIR_CLOSEOUT_20261011.md)。不提交/推送/worktree/关机。
+
+
+## 2026-10-11 当前：在线收尾最小修复验证完成，冻结后新任务验收开始
+
+AuthoringBuild.finish改用已校验保存的final compilation.gaps，不再用raw sourceGaps历史审计否定已合法退休探查；保留final保存与canonicalRequest一致屏障，盾未改。生产只改一处判断；测试夹具对齐当前V3 registry及method receipt，新增真实Python编译→ACK/SQLite→候选的已退休/未解决缺口两反例。修前同码复现，修后在线5+探查2通过。API类型检查剩3项盾既有错误，两个入场git-clean的TS文件以HEAD只读覆盖对照后诊断完全相同，未改盾。1201份代码/配置已在frozen-fresh-02保存SHA256；从需求对话新建task4bef5468-4669-46f4-90d6-9b33cbf7d1ea（首次prepare ead62058-0e3d-4e0b-84a0-667768b84b8a），后续不再编辑代码，不以失败后的补救覆盖首败。上一轮48c3061d失败保留。验证证据finish-repair-02，首次测试夹具协议/格式失败另存。不提交/推送/worktree/关机。
+
+## 2026-10-11 当前：冻结代码的新任务首跑未通过，已定位在线收尾遗漏
+
+本次新task48c3061d从Workbench需求对话开始，1201份代码/配置前后SHA256一致，无改码/改盾/人工重跑。访谈一次内置repair成功；代表探索盾case1171544b为Human/38clear+1节奏线索/四Worker有效，但新准备job7c7b18bc最终failed，未进入验证、发布或正式复跑。根因：最终编译已合法排除两项无消费者探查并gaps=0，AuthoringBuild.finish却仍因原始sourceGaps非空拒绝；此前通用修复漏了在线收尾，不能以旧发布版复跑成功关闭。另记录最终结论字段读到说明文案而非本次状态。新任务cleanup confirmed，所属Chrome25944退出/Profile永久删除，原三空profile/pycache及当日旧空temp清掉，daily connected/not busy。旧5秒回执超时后资源已关闭，内部超时原因仍未唯一证明。本轮不改代码；详见[冻结首跑验收](BAT_FROZEN_FRESH_MAINFLOW_20261011.md)。下方均为历史。
+
+## 2026-10-11 当前：Worker消息阻塞缺陷已修，历史唯一归因仍保留边界
+
+原两次脚本均200，Worker请求有4.8/4.1秒间隔；同期轮询/另一Worker一起停顿。唯一启动诊断未重现旧失败，但真实采样栈发现普通任务页在CDP接收回调同步写退避库。固定4秒慢存储的真实本地Worker前后对照：修前3006ms unavailable，修后145ms measured；复用已有Response准入在线程持久化后放行，仅改task_browser.py和hybrid_main.py两处，不改盾。17项聚焦通过；只复验一次原V1，execution d88b0c49/盾291f48a0为Human、四Worker有效clear、38clear+1按键节奏参考线索、模型0。清理先协议超时、一次owner核验不可用，第三次核验confirmed；首败未抹去，清理逻辑未改。所属诊断窗口和辅助Chrome28408已关闭，Workbench Profile永久删除，daily connected/not busy。两个历史运行当时缺少客户端时序/栈，不能唯一证明也是此锁等待，unknown及未完全定因保留，不能以末次通过关闭。详见[Worker追查](BAT_WORKER_UNAVAILABLE_INVESTIGATION_20261011.md)，下方为历史。未提交/推送/worktree/关机。
+
+## 2026-10-11 当前结算：原B-A-T主流程完成，正式复跑Human/39clear
+
+用户最终明确“计划URL与实际派发一致即可，网站落地URL不要求等于入口”。通用导航修复及无消费者探查gap回收完成，原source离线编译gap0；原task6088126d经Workbench恢复、样本、独立复验、发布V1、普通复跑完成。正式execution1a69f30a、盾case90e00a24为Human/39clear，模型0、cleanup confirmed，原score0、challenge/保护请求接受、非allowlist。样本4e08fe00和复验c4b51d95均因4项Worker unavailable为unknown，保留原结论，不宣称稳定每次通过。10项新增+15项其他生成入口通过，原相关25项中22pass/3项HEAD基线失败；具体见[完整结算](BAT_SHIELD_MAINFLOW_CLOSEOUT_20261011.md)。最终fork0abe91b5，收尾后当前任务编译产物逐字不变。所属验收Chrome26404已关闭/Profile永久删除，daily connected且不busy，用户Chrome和原服务保留；不改盾、不提交/推送/worktree/关机。下方断点均为历史。
+
+## 2026-10-11 当前主线：修复真实阻塞并完成原任务的盾验收
+
+导航修复断点：10项新增针对性检查通过；原25项回归中22个测试通过，3个旧测试失败（含1个error、另2个测试3个失败子项），以HEAD模块内存对照复现完全相同原因：旧read mock漏inherited关键字，未修改既有测试/生产读取去迎合。原fc2aac0e完整source离线编译gap=0，navigate保留原绑定URL且不自动生成落地相等条件；两个无消费者探查的派生读取gap按原同文档/回执证明回收，业务消费者/文档漂移反向拒绝。受管fork摘要fe4a8f79。即将通过原Workbench复用该来源继续产品验证；未发布/正式复跑，不声明盾通过。
+
+用户最新明确导航契约：计划/绑定的URL必须与实际派发参数一致；网站打开后的实际URL不再与入口比较。按此实施通用最小修复，优先于下方暂缓候选方案。复用ActionDispatchAudit的参数摘要一致性、native_action_receipt、原Tools.act及当前运行scope；不放宽URL匹配函数、原站点授权或显式URL条件，不增设落地地址判定，不改盾。Product Alignment: natural-language task=打开资料页或检测页；reusable chain boundary=参数绑定到原生navigate；runtime inputs=计划/上游绑定URL；dynamic task outputs=本次实际页面；generic platform capability used=已有派发回执与运行页面scope；replay model calls=0；site/task-specific code added=no。Reuse Assessment: 已有原生B-U eb412692导航会等待事件回执，B-A-T原ActionDispatchAudit验证propose/Tools.act/history参数摘要；直接消费这些事实并沿用consumer readiness，不复制导航或安全判断。关闭条件：错误参数/失败回执仍拒绝，合法固定/随机子域/路径/同址打开均不要求落地等于输入，真实旧source离线复验，再原任务续测。
+
+用户最新纠偏优先：停止按单个盾样例边跑边加编译分支，先审查公共契约及通用边界。本轮未修改navigation/natural_compile/natural_read_liveness，下面的编译修复仅是尚未实施的候选方向。实际动作仅首次navigate（打开入口）后同页input/input/scroll/click/read，没有后续业务页面跳转；入口自动生成检测子域不应表述成多页业务导航。现有fc2aac0e为failed/compiling，没有新的准备或正式运行在执行。完整来源离线重编译复现相同3项gap，无模型/浏览器调用。原始source保持不变，未发布、未正式复跑，不宣称B-A-T通过盾。
+
+19:20断点：fc2aac0e已完成真实交互并关闭来源浏览器，sourceSuccess=true，但编译失败。盾原报告8bf8dec5为unknown（34clear、4Worker unavailable、1typing-cadence invalid），原挑战接受。准备首次输入期间关闭所属扩展管理页可能干扰桌面焦点，故本次节奏异常不直接归因B-A-T。当前只离线复用完整来源，修复原生成功重定向无法编译及无消费者探查的派生gap未回收；原source不改，正式复跑排除桌面干扰。
+
+Product Alignment: natural-language task=站点登录跳转、动态报告检测等；reusable chain boundary=成功原生导航及无消费者的准备探查；runtime inputs=原URL绑定；dynamic task outputs=实际落地页与当次读取；generic platform capability used=现有Tools.act回执、url_digest变化及读取活性证明；replay model calls=0新增；site/task-specific code added=no。复用已固定B-U原生导航/站点安全检查、现有native_action_receipt/navigation_postconditions和native_dom_lookup_observation，不重写导航/来源授权，不把样本随机URL固化。关闭条件：原保存source离线编译、错误回执/文档身份/被消费读取反向保持，随后原Workbench验证发布复跑。
+
+18:47断点：新版扩展已在用户原日常Chrome中通过自身详情页Reload加载；保存授权自动连接/握手页消失/空闲超过2分钟保持connected已核验。原生安全拒绝优先保留，中文引号网址错误已修，保存的真实repair原文现通过整套访谈校验（0追加模型）。原任务确认v3，唯一入口改到同一盾服务的check.shield.localhost，保持相同检测流程；v2仅补正文不会改变当前入口导出的站点范围，因此未拿v2重跑。job b0083dee导航首败摘要确认capture_access_state_unavailable；添加首个准入异常的脱敏位置/摘要后，job fc2aac0e正在进行一次诊断复现。尚无发布/正式复跑/盾结论，不宣布通过。
+
+用户最新明确授权遇到问题定位根因并最小修复，覆盖下方“其它问题只记录”。主线仍为原 task 6088126d 的需求、准备、验证、发布、普通复跑及盾服务端结论；不改盾，不换任务/模型/日常浏览器，不提交/推送/worktree/京东/关机。
+
+已确认导航确实访问入口：盾三次随机子域的URL摘要与原采集诊断逐一匹配。任务来源遗漏 shield.localhost，而上游 SecurityWatchdog 将越界重定向退回 about:blank，后续采集错误掩盖了来源拒绝；下方“未发出导航”结论撤回。证据 work/bat-shield-mainflow-20261011/mainline-repair-02/scope-root-cause.json。修正原任务来源数据，不在平台放开任意localhost。连接页是先前保留页面20秒保活造成的驻留，并非再次授权；转用Chrome官方WebSocket保活并仅回收本次已成功连接的页面，冷启动最后一页等任务窗口建立再回收。
+
+Product Alignment: natural-language task=盾检测与普通资料浏览等任务；reusable chain boundary=准备来源约束与日常浏览器连接生命周期；runtime inputs=确认来源及已授权连接；dynamic task outputs=真实错误和独立运行；generic platform capability used=原B-U安全事件及Playwright扩展连接；replay model calls=不新增；site/task-specific code added=no。
+
+Reuse Assessment: capability=保留安全拒绝原因/无常驻握手页；existing implementation=B-U0.13.8 SecurityWatchdog、Bubus event_history、SourceObservationScope和固定Playwright 8b552173 relay；selected implementation=沿用这些公开能力及Chrome官方WebSocket每20秒消息保活（https://developer.chrome.com/docs/extensions/how-to/web-platform/websockets）；B-A-T-owned adapter=当前run事件诊断和自身握手页清理；license/runtime/platform fit=原MIT/Apache依赖不变、Chrome116+；ownership=仅本次连接页，不借用个人页或放宽站点；replay model calls=0额外；focused validation=先复现拒绝被掩盖/保活与末页边界，再原Workbench真实续测。
+
+## 2026-10-11 当前授权：修复草稿纠错诊断后继续原测试
+
+18:13结算：诊断已接入原单次repair。保存首败经同配置真实模型修复后，页面交付独立行通过原准备草案解析；后续网址中文右引号被来源提取算入URL而失败，此独立问题只记录、不修。原Workbench重试轮`6de928b9`已succeeded，需求v1确认；原daily准备job `a57d0f75`在三个navigate尝试均observation_refresh_required后failed，4次原生模型调用，未发出导航动作、未完成盾交互。更底层页面变化原因未定，未修浏览器/来源/盾。发布与正式复跑未进入，不能判断盾通过。40/42聚焦通过，2项HEAD协议用例失败另列；定向类型检查通过，API包受盾3项既有类型错误阻塞。验收Chrome关闭/Profile永久删除；探索closed、daily busy=false，B-A-T/盾保留。详见[纠错与续测结算](INTERVIEW_REPAIR_AND_MAINFLOW_20261011.md)，不再无变化重跑。
+
+用户已明确授权只修需求对话纠错机制：校验器明确位置/实际错误/期望格式/改法，验证现有一次修复有效，然后继续task `6088126d`的B-A-T主流程。盾及其它产品问题不改；旧首败及两次模型调用保留。当前master@5ac7f8f，仅前轮记录文档dirty。实现复用现有草案解析器、AI Connect authoring、Pi session和单次repair，不增加调用次数、不自动填业务值或放宽校验。最小验证为原失败输出诊断、缺失/重复/冲突/仍失败边界、相关既有协议测试与API类型检查，随后同保存模型真实修复及原Workbench流程；不运行根级/全量测试。
+
+Product Alignment: natural-language task=网页检测与资料读取等通用任务；reusable chain boundary=需求草案进入准备前的领域校验；runtime inputs=原草稿/来源与对话事实；dynamic task outputs=可确认草案或准确失败原因；generic platform capability used=现有AI Connect authoring及单次repair；replay model calls=不新增；site/task-specific code added=no。
+
+Reuse Assessment: capability=领域校验诊断传递；existing implementation=preparation-draft/authoring-repair/protocol；selected implementation=已固定AI Connect0.3.4-1464cd24、Pi adapter0.1.0-2c522ec8及Zod4.1.8；reused public surface=原authoring结果、现有Pi run和原解析器；B-A-T-owned adapter=仅补充自有草稿语法诊断并传给既有repair，公共协议/Agent loop不复制；license/runtime/platform fit=不新增或替换依赖；ownership=无新增浏览器或数据库机制；focused validation=原首败及修复成功/耗尽/冲突，真实模型与原流程分开结算。
+
+## 2026-10-11 当前执行：从新需求到完整交互检测复跑
+
+本次真实首轮已阻塞并完成只读原因核查：新task `6088126d`在需求对话failed，首调用与产品内置一次修复均已完成，但都把页面交付写成段落，缺少解析器要求的独立`- 页面交付：无需保留`标记；持久化及原解析器复核均为`preparation_draft_browser_delivery_required`。两次模型调用合计20,737 tokens，未人工重试；同任务contracts/jobs/executions/releases/browserRuns均0，准备/发布/复跑/盾检测全部未测，不能称盾拒绝或放行。只记录不改代码。验收Chrome已关闭、唯一所属Profile永久删除；B-A-T和盾保留运行。详细证据见[主流程首败](BAT_SHIELD_MAINFLOW_ACCEPTANCE_20261011.md)。
+
+本轮用户进一步明确：仅对现有 B-A-T 做真实运行验收；主流程问题只保留首败、调查原因并记录，未经新的明确授权不得修改产品代码。阻塞的后续阶段如实记未测，不能绕过流程凑成功，不修改盾判据。用户在方案讨论后明确“那就开始”，恢复执行。
+
+用户明确要求运行 B-A-T 主流程，并确认任务为独立盾网站完整交互检测：打开页面、按要求输入中英文、滚动、提交，再核对服务端报告。当前 checkout 为 master@5ac7f8f、开始时工作区干净；本轮不复用冻结发布链来代替需求与准备。真实缺口是新需求对话→准备/编译/验证→发布→普通复跑的当前证据。复用正式 Workbench、已保存产品模型、原浏览器生命周期和盾报告，不新增检测判据；关闭条件为各阶段真实状态、准备与复跑对应的盾报告、模型审计和所属资源结算。证据目录 work/bat-shield-mainflow-20261011。启动前盾五服务 ready，但 Tor 名单 stale，先按原维护入口刷新；B-A-T 4173/4175 未监听。原首败与历史验收保留，不提交/推送/worktree/京东/关机。
+
 ## 2026-10-11 当前：真人39项通过，B-A-T正式业务四场景验收完成
 
 用户修后独立操作两次，服务端 63cfda00、aba3de64 均 Human/39 clear，三个节奏指标逐字段有效；完整双语记录英文38/38、中文24/24真实键对，原挑战及保护请求接受、无allowlist。旧真人失败未重写。本次按授权完成B-A-T正式任务复跑：复用 task 061044bb 冻结发布版，独立备份状态后从 run_task 验证真实动态输出与无候选反向；模型0，原盾判据不改。范围为原冻结HTTP业务，不冒称完整HTTPS或外站验收；原五服务与用户窗口保留，不提交/推送/worktree/京东/关机。

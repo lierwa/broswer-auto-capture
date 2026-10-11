@@ -3,6 +3,7 @@ import type { InterviewMessagePart, InterviewState } from "@browser-capture/cont
 import type { AIModelProvider, PreparedMainAIModel } from "../ai/model.js"
 import { createInterviewRepairAuthoring, interviewCanonicalMessages, parseInterviewAuthoringOutput } from "./protocol.js"
 import type { InterviewSourceReferences } from "./source-references.js"
+import { DraftValidationError } from "./draft-validation.js"
 
 type RunInput = Parameters<PreparedMainAIModel["run"]>[0]
 type UI = Parameters<typeof createInterviewRepairAuthoring>[2]
@@ -16,7 +17,8 @@ function repairFailure(error: unknown, result: AuthoringTurnResult): {
   const format = /^(?:interview_(?:authoring_invalid|authoring_cardinality_invalid|question_projection_invalid|output_invalid|result_and_completion_required|entry_section_required|entry_required|entry_order_invalid)|preparation_[a-z_]+(?::[^\r\n]+)?)$/u
   if (!format.test(error.message)) return null
   const diagnostics = result.diagnostics.map((item) => `${item.code}: ${item.message}`).join("\n")
-  return { root, reason: `${error.message}\n${diagnostics}`.slice(0, 2_000) }
+  const reason = error instanceof DraftValidationError ? error.repairReason() : error.message
+  return { root, reason: `${reason}\n${diagnostics}`.slice(0, 2_000) }
 }
 
 /** WHY：B-A-T 只编排一次领域准入修复；语法、注册与解析全部复用同一 AI Connect 协议。 */

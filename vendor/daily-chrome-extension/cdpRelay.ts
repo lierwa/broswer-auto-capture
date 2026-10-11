@@ -28,8 +28,7 @@ import { createHash } from 'node:crypto';
  * PWTEST_EXTENSION_CONNECT_TIMEOUT (both used in tests).
  */
 
-import { spawn } from 'child_process';
-import os from 'os';
+import { openChrome } from './chromeLauncher.js';
 
 import { ws, WSServer } from './wsServer.js';
 import { ManualPromise } from './manualPromise.js';
@@ -83,7 +82,8 @@ export class CDPRelayServer {
   private _taskCreationDispatched = false;
 
   constructor(browserChannel: string, executablePath?: string, customUserDataDir?: string, profileDirectory?: string,
-    private options?: { token?: string; extensionId: string; requestAuthorization?: boolean; requestPopup?: (url: string) => void }) {
+    private options?: { token?: string; extensionId: string; requestAuthorization?: boolean; requestPopup?: (url: string) => void;
+      requestBackground?: () => void }) {
     this._browserChannel = browserChannel;
     this._executablePath = executablePath;
     this._customUserDataDir = customUserDataDir;
@@ -152,7 +152,8 @@ export class CDPRelayServer {
 
   async establishExtensionConnection(clientName: string) {
     debugLogger('Establishing extension connection');
-    await this._openConnectPageInBrowser(clientName);
+    if (this.options?.requestBackground) this.options.requestBackground();
+    else await this._openConnectPageInBrowser(clientName);
     debugLogger('Waiting for incoming extension connection');
     // Without a token the user has to approve the connection in the browser, which can take arbitrarily long.
     const deadline = this._token ? monotonicTime() + extensionConnectionTimeout : 0;
@@ -197,31 +198,12 @@ export class CDPRelayServer {
   }
 
   // 原 launcher 的公共薄入口：Chrome Singleton 负责打开/复用指定 Profile；不新建驱动。
-  openPage(href: string): void {
-    const channel = this._browserChannel;
-    const executablePath = this._executablePath;
-    if (!executablePath)
-      throw new Error('daily_chrome_executable_required');
-
-    const args: string[] = [];
-    // The default profile dir is not passed explicitly, the browser resolves it on its own.
-    if (this._customUserDataDir)
-      args.push(`--user-data-dir=${this._customUserDataDir}`);
-    if (this._profileDirectory)
-      args.push(`--profile-directory=${this._profileDirectory}`);
-    if (os.platform() === 'linux' && channel === 'chromium')
-      args.push('--no-sandbox');
-    args.push(href);
-    const child = spawn(executablePath, args, {
-      windowsHide: true,
-      detached: true,
-      shell: false,
-      stdio: 'ignore',
-    });
-    // Chrome 已有实例时启动器会退出；原进程仍由用户拥有。
-    child.on('error', () => {});
-    child.unref();
+  openPage(href?: string): void {
+    openChrome(this._browserChannel, this._executablePath, this._customUserDataDir, this._profileDirectory, href);
   }
+
+  // 宿主已校验扩展Origin和原授权token；同一socket直接进入原协议，不增加CDP网关。
+  acceptBackgroundConnection(socket: WebSocket): void { this._handleExtensionConnection(socket); }
 
   async extensionReady(): Promise<void> {
     await this._extensionConnectionPromise;

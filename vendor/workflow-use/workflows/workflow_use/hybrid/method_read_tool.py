@@ -8,7 +8,7 @@ from pathlib import Path
 from browser_use.agent.views import ActionResult
 from browser_use.browser.session import BrowserSession
 from jsonschema import Draft202012Validator
-from pydantic import Field, PositiveInt, ValidationError, create_model, model_serializer, model_validator
+from pydantic import Field, PositiveInt, create_model, model_serializer, model_validator
 from pydantic.json_schema import SkipJsonSchema
 from typing import Literal
 
@@ -19,10 +19,11 @@ from .natural_reads import NaturalReadFailure, schema_at_path, value_at_path
 from .read import ReadField
 from .read_sampling import ReadSample, sample_read_fields
 from .rendered_field_text import FieldReadError
-from .page_content import CONTENT_SCHEMA, CONTENT_LIMIT, SAFE_CONTENT_FAILURE_CODES, content_schema, content_summary
+from .page_content import CONTENT_SCHEMA, CONTENT_LIMIT, content_schema, content_summary
 from .element_entry import entry_field
 from .entry_selection import EntryObservation, EntrySelection, assert_entry_sample, capture_entry_indices, select_entry_container
 from .content_read_params import ContentReadToolParams
+from .method_read_diagnostics import _safe_read_error
 
 # WHY：字段类型与多值形状只有最终合同一个事实源；复用投影配置，避免默认值经持久化变成模型声明。
 MethodReadField = create_model('MethodReadField', __base__=Contract, **{
@@ -38,12 +39,14 @@ class MethodReadToolParams(Contract):
     outputPath: list[str | int] | None = Field(default=None, max_length=40, description=(
         'A real location in the confirmed output contract.'))
     container: str | None = Field(default=None, min_length=1, max_length=2000, description=(
-        'Reusable CSS selector for records in the current page.'))
+        'Reusable CSS selector for each complete record. Choose an observed common ancestor of all '
+        'its DOM fields, including summary fields outside any nested list or table.'))
     regions: str | None = Field(default=None, min_length=1, max_length=2000)
     regionMode: Literal['selected-regions'] | None = None
     indices: list[PositiveInt] | None = Field(default=None, min_length=1, max_length=300)
     fields: dict[str, MethodReadField] | None = Field(default=None, min_length=1, max_length=100, description=(
-        'Relative DOM field projections. Types and cardinality come from the output contract.'))
+        'DOM projections relative to the selected record container, not the whole page. '
+        'Types and cardinality come from the output contract.'))
     maxItems: int = Field(default=300, ge=1, le=300, description=(
         'Maximum current-page records allowed in one runtime read, not the final collection count.'))
     take: int | None = Field(default=None, ge=1, le=300, description=(
@@ -100,6 +103,7 @@ class EntryReadToolParams(Contract):
         return {key: value for key, value in handler(self).items() if value is not None}
 
 class AuthorMethodReadToolParams(MethodReadToolParams):
+    captureContent: SkipJsonSchema[bool] = Field(default=False, exclude=True)
     # WHY：模型只决定业务选择，300 项技术预算由宿主持有；旧来源的显式预算仍可解析和离线校验。
     maxItems: SkipJsonSchema[Literal[300]] = Field(default=300, exclude=True)
     indices: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
@@ -349,9 +353,12 @@ def register_method_read_tool(tools, *, output_schema, capture_content=False, le
         'A combined query matching some fields does not verify the others. Missing or ambiguous matches '
         'need inspection of that field and scope on the current page, not leaving a valid detail page. '
         'page-url, inherited input and successful readRef reuse need no repeated DOM discovery. '
-        'Provide a CSS record container and relative field projections; types come from the output contract. '
+        'Provide an observed common record container containing all DOM fields and relative field projections; '
+        'a nested list or table may exclude required summary fields. Types come from the output contract. '
         'Fields read visible text by default. Use attribute only for an attribute observed on the page. '
         'After a real navigation, selector=:scope with valueSource=page-url reads the current document URL. '
+        'When the requested source/result is the current document, its address does not require a hyperlink '
+        'inside that document. Inspect and read results where the page actually presents them. '
         'This does not discover target URLs from a list or synthesize any URL. '
         'For object or root array results, use outputPath=[]; the host inherits same-named typed input '
         'fields into each record without page reads. Optional fields may be absent on later records; do not use scalar '
@@ -402,8 +409,8 @@ def register_method_read_tool(tools, *, output_schema, capture_content=False, le
             phase = 'feedback'
             feedback = successful.feedback(params, record, observation=observation)
         except Exception as error:
-            message = _safe_read_error(error, field_names, phase=phase)
-            if message == 'natural_read_output_path_invalid' and output_schema.get('type') == 'array':
+            message = _safe_read_error(error, field_names, phase=phase, output_schema=output_schema, params=params)
+            if str(error) == 'natural_read_output_path_invalid' and output_schema.get('type') == 'array':
                 message += ': ' + ROOT_ARRAY_PATH_GUIDANCE
             return ActionResult(error=message)
         successful.append_verified(record)
@@ -424,76 +431,3 @@ def method_read_model_result(record: MethodReadRecord):
                      'sampled': sample.coverage.sampled},
         'coverageNote': 'Current DOM matches only; this does not prove the full business collection.',
     }
-
-_READ_ERRORS = frozenset({
-    'native_entry_indices_invalid', 'native_entry_selector_unavailable',
-    'native_entry_observation_unavailable', 'native_entry_document_changed',
-    'native_entry_dom_unavailable', 'native_entry_query_failed', 'native_entry_record_scope_unavailable',
-    'content_page_missing', 'content_scope_requires_supported_observation', 'content_byte_limit',
-    'content_image_not_loaded', 'content_image_resource_missing', 'content_image_resource_type_invalid',
-    'content_page_identity_changed', 'content_scope_field_invalid',
-    'natural_read_optional_object_required',
-    'method_read_reference_missing', 'method_read_reference_owner_required',
-    'natural_read_output_path_invalid', 'natural_read_schema_mismatch', 'natural_read_schema_unsupported',
-    'natural_read_page_identity_changed', 'natural_read_container_identity_changed',
-    'natural_read_output_changed', 'read_collection_limit', 'read_sample_limit_invalid',
-    'read_sample_empty_unproven', 'read_sample_method_changed', 'read_sample_document_identity_unavailable',
-    'read_sample_document_changed', 'read_sample_schema_unsupported', 'read_single_object_required',
-    'read_output_schema_mismatch', 'ambiguous_or_missing_read_field', 'read_boolean_invalid',
-    'read_field_not_text', 'read_field_projection_failed', 'read_field_projection_invalid',
-    'read_field_value_limit', 'read_field_native_projection_failed', 'read_container_resolution_failed',
-    'read_input_limit', 'read_number_not_finite', 'read_number_invalid', 'read_text_affix_invalid',
-}) | SAFE_CONTENT_FAILURE_CODES
-
-_READ_ERROR_REASONS = frozenset({
-    'complete_collection_required', 'container_not_resolved', 'exceeded_max_values',
-    'expected_exactly_one_match', 'expected_exactly_one_record', 'invalid_boolean_text', 'invalid_number_text',
-    'invalid_selector', 'projected_output_invalid', 'selected_value_not_text',
-    'text_prefix_mismatch', 'text_suffix_mismatch', 'container_identity_unavailable',
-    'container_mapping_failed', 'field_identity_ambiguous', 'page_identity_changed',
-    'page_unavailable', 'selector_mapping_changed',
-    'image_scheme_http', 'image_scheme_https', 'image_scheme_blob', 'image_scheme_other',
-})
-
-def _safe_read_error(error, field_names, *, phase=None):
-    code = str(error)
-    if code not in _READ_ERRORS:
-        phase_code = {'entry_selection': 'native_entry_selection_failed', 'mapping': 'method_read_mapping_failed',
-                'sample': 'method_read_sample_failed', 'result': 'method_read_result_failed',
-                'feedback': 'method_read_feedback_failed'}.get(phase)
-        return phase_code + ': ' + json.dumps(_safe_failure_detail(error), separators=(',', ':')) \
-            if phase_code else 'bat_read_fields_failed'
-    if not isinstance(error, FieldReadError):
-        if code == 'native_entry_record_scope_unavailable':
-            return code + ': ' + json.dumps(_safe_failure_detail(error), separators=(',', ':'))
-        return code
-    # WHY：模型需要定位失败投影；只返回合同字段和固定原因，禁止拼接异常正文或 selector。
-    detail = {}
-    if isinstance(error.field_name, str) and error.field_name in field_names:
-        detail['field_name'] = error.field_name
-    if type(error.match_count) is int and error.match_count >= 0:
-        detail['match_count'] = error.match_count
-    if isinstance(error.reason, str) and error.reason in _READ_ERROR_REASONS:
-        detail['reason'] = error.reason
-    return code + ': ' + json.dumps(detail, ensure_ascii=False, separators=(',', ':')) if detail else code
-
-def _safe_failure_detail(error):
-    # WHY：宿主错误必须能定位，禁止异常正文、页面值、局部变量或完整路径进入诊断。
-    kinds = {'ValidationError', 'AttributeError', 'KeyError', 'TypeError', 'ValueError', 'RuntimeError', 'TimeoutError'}
-    frames = traceback.extract_tb(error.__traceback__)
-    result = {'type': type(error).__name__ if type(error).__name__ in kinds else 'upstream_error',
-              'frames': [[frame.name, frame.lineno] for frame in frames
-                         if '/hybrid/' in frame.filename.replace('\\', '/')][-4:]}
-    modules = ('method_read_tool', 'entry_selection', 'entry_record_scope', 'record_projection_dom',
-               'read_sampling', 'natural_reads', 'page_content', 'content_region', 'read', 'targets')
-    sources = {Path(module.__file__).resolve(): name for name in modules
-               if (module := sys.modules.get('workflow_use.hybrid.' + name)) is not None}
-    # WHY：标准 traceback 提供调用链，持久化只保留固定模块名/行号，禁止动态路径、异常正文及 locals。
-    result['sources'] = [{'source': sources[Path(frame.filename).resolve()], 'line': frame.lineno}
-                         for frame in frames if Path(frame.filename).resolve() in sources][-4:]
-    if isinstance(error, ValidationError):
-        names = {'kind', 'tabId', 'url', 'selector', 'ordinal', 'text'}
-        result['validation'] = [{'field': '.'.join(str(part) for part in item['loc'] if part in names),
-                                 'type': item['type']} for item in error.errors(include_input=False,
-                                     include_context=False, include_url=False)[:4]]
-    return result

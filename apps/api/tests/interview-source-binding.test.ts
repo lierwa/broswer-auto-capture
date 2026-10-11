@@ -12,7 +12,7 @@ import { InterviewCoordinator } from "../src/interview/coordinator.js"
 import { interviewCanonicalMessages, loadInterviewSkill, parseInterviewOutput } from "../src/interview/protocol.js"
 import { InterviewSourceReferences } from "../src/interview/source-references.js"
 import { createSourceResolutionTools, ReadOnlySourceResolver, assertRequirementReady,
-  projectProvidedDraftSources, preparationEntryFacts } from "../src/interview/source-resolution.js"
+  projectProvidedDraftSources, preparationEntryFacts, recordUserProvidedSources } from "../src/interview/source-resolution.js"
 import { candidateId } from "../src/interview/source-search-evidence.js"
 import { projectRoot } from "./helpers.js"
 import { testSelection } from "./fixtures/ai-model.js"
@@ -44,6 +44,16 @@ const output = (body: string) => ({ assistantText: "已整理草案。", questio
   draft: { title: "查找当前资料", markdown: body, brief: null } })
 const resolver = () => new ReadOnlySourceResolver(async () => new Response(
   `<rss><channel><item><title>资料目录</title><link>${url}</link></item></channel></rss>`))
+
+test("中文引号不是裸网址内容，仍拒绝未提供的来源", () => {
+  const state = structuredClone(emptyInterview)
+  recordUserProvidedSources(state, `访问“${url}”`, 1)
+  assert.equal(state.sourceResolutions[0]?.candidates[0]?.url, url)
+  const body = markdown(`<${url}>`) + `\n来源为“${url}”。`
+  assert.doesNotThrow(() => assertRequirementReady(projectProvidedDraftSources(state, body), body, true))
+  const forged = body + '\n也可以访问“https://unapproved.invalid/”。'
+  assert.throws(() => assertRequirementReady(projectProvidedDraftSources(state, forged), forged, true), /url_unverified/u)
+})
 
 test("来源明确只选一次引用：宿主回填完整参数、首页和来源证据", () => {
   const references = new InterviewSourceReferences(1)
@@ -187,19 +197,26 @@ test("后续合同失败或用户取消不提交来源和草案；保留真实�
 
 // 保护首败恢复：格式错误只修一次，复用原搜索，保留原始事件，下一轮只接续通过校验的输出。
 test("缺闭合标签或必需章节时一次修复，来源不重搜且续聊历史准确", async () => {
-  for (const missing of ["envelope", "entry", "numbering", "bullet"]) {
+  for (const missing of ["envelope", "entry", "numbering", "bullet", "browser-delivery"]) {
     let calls = 0, valid = ""
     await withCoordinator(async (input) => {
       if (++calls === 1) {
         valid = (await referencedDraft(input)).replace(' title="查找资料"', "")
         if (missing === "numbering") return valid.replace("1. [首页]", "2. [首页]")
         if (missing === "bullet") return valid.replace("1. [首页]", "- [首页]")
+        if (missing === "browser-delivery") return valid.replace("- 页面交付：保留现场", "完成后页面交付：保留现场。")
         return missing === "envelope" ? valid.replace("</authoring>", "")
           : valid.replace(/## 试做入口\r?\n1\.[^\n]*\r?\n/u, "")
       }
       assert.equal(calls, 2)
       assert.deepEqual(input.tools, [])
       assert.match(input.activeTask, /本次仅修复/u)
+      if (missing === "browser-delivery") {
+        assert.match(input.activeTask, /位置：结果与完成/u)
+        assert.match(input.activeTask, /独立标记 0 条/u)
+        assert.match(input.activeTask, /不能嵌在段落中/u)
+        assert.match(input.activeTask, /- 页面交付：保留现场/u)
+      }
       return valid
     }, async ({ coordinator, store, taskId, directory }) => {
       coordinator.dispatch(taskId, { type: "message", text: "查找当前资料", expectedRevision: 0, requestId: randomUUID() })
@@ -223,6 +240,26 @@ test("缺闭合标签或必需章节时一次修复，来源不重搜且续聊�
       } finally { await reopened.close() }
     })
   }
+})
+
+test("草稿字段修复仍无效时准确提示，保留首败和两次调用，不提交或默认字段", async () => {
+  let calls = 0, invalid = ""
+  await withCoordinator(async (input) => {
+    if (++calls === 1) invalid = (await referencedDraft(input)).replace("- 页面交付：保留现场", "页面交付：保留现场。")
+    return invalid
+  }, async ({ coordinator, store, taskId }) => {
+    coordinator.dispatch(taskId, { type: "message", text: "读取资料并保留页面", expectedRevision: 0, requestId: randomUUID() })
+    await coordinator.waitForIdle()
+    const state = store.snapshot(taskId), message = state.messages.at(-1)!
+    assert.equal(calls, 2)
+    assert.equal(state.audits.length, 2)
+    assert.equal(state.drafts.length, 0)
+    assert.equal(state.sourceResolutions.length, 0)
+    assert.equal(state.turns.at(-1)?.status, "failed")
+    assert.match(message.text, /“结果与完成”中“页面交付”.*自动修复未成功/u)
+    assert.equal(message.failureCode, "preparation_draft_browser_delivery_required")
+    assert.match(message.authoringRepair!.reason, /独立标记 0 条/u)
+  })
 })
 
 test("修复耗尽或取消不会第三次调用、提交草案或泄漏来源", async () => {

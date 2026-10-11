@@ -39,6 +39,7 @@ type ProtocolResponse = {
 // Allow-listed chrome.* commands the relay may invoke. They are resolved
 // reflectively and the positional params are spread into the call.
 import { closeOwnedTarget } from './closeOwnedTarget';
+import { startHeartbeat, type HeartbeatHandle } from './upstream/browser-skill/heartbeat';
 
 const ALLOWED_CHROME_COMMANDS = new Set([
   'bat.closeOwnedTarget',
@@ -69,6 +70,8 @@ export class RelayConnection {
   private _ownedWindows = new Set<number>();
   private _eventListeners: Array<{ remove: () => void }> = [];
   private _closed = false;
+  private _keepalive?: HeartbeatHandle;
+  private _connectPageId?: number;
 
   onclose?: () => void;
   ontabattached?: (tabId: number) => void;
@@ -90,6 +93,30 @@ export class RelayConnection {
   didInitialize(authorizationToken?: string): void {
     this._sendMessage({ method: 'extension.initialized',
       params: authorizationToken ? [{ token: authorizationToken }] : [] });
+    // WHY：直接复用BrowserSkill保活组件；仅将心跳事件映射为原Playwright协议。
+    this._keepalive ??= startHeartbeat({ send: () => this._sendMessage({ method: 'extension.keepalive', params: [] }),
+      onActiveChange: callback => { callback(true); return () => {}; } });
+  }
+
+  async releaseConnectPage(tabId: number): Promise<void> {
+    this._connectPageId = tabId;
+    await this._closeConnectPage();
+  }
+
+  private async _closeConnectPage(): Promise<void> {
+    const tabId = this._connectPageId;
+    if (tabId === undefined || this._closed) return;
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.url?.split('?')[0] !== chrome.runtime.getURL('connect.html')) {
+        this._connectPageId = undefined;
+        return;
+      }
+      // WHY：冷启动唯一页关闭会退出Chrome；等原operation建好任务窗口后再收尾。
+      if (!(await chrome.tabs.query({})).some(other => other.id !== tabId)) return;
+      await chrome.tabs.remove(tabId);
+      this._connectPageId = undefined;
+    } catch { /* 用户已关页或正在拖动；下一次任务创建时仍可重试，不影响连接。 */ }
   }
 
   close(message: string): void {
@@ -158,6 +185,8 @@ export class RelayConnection {
     if (this._closed)
       return;
     this._closed = true;
+    this._keepalive?.dispose();
+    this._keepalive = undefined;
     for (const l of this._eventListeners)
       l.remove();
     this._eventListeners = [];
@@ -252,6 +281,7 @@ export class RelayConnection {
       this._ownedTabs.add(tab.id);
       this._ownedWindows.add(tab.windowId);
       this._taskWindowId = tab.windowId;
+      await this._closeConnectPage();
       return tab;
     }
     if (message.method.startsWith('chrome.debugger.')) {

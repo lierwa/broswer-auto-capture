@@ -1,5 +1,27 @@
 # 技术调研与复用结论
 
+## 2026-10-11 Worker追查：CDP消息线程中的同步存储
+
+原三次事件和网关时序保存于`work/bat-shield-mainflow-20261011/mainline-repair-02/worker-root-cause/original-comparison.json`。单次启动诊断未复现不可测，但实际栈采到`CDPClient._handle_messages → EventRegistry.handle_event → Runner.record_document_response → DocumentResponses.record → remember → diskcache.Cache.__init__`在消息线程执行同步SQLite。固定cdp-use1.4.5的接收循环逐条await事件handler，因此此处慢写也阻塞Worker attach/resume与Fetch继续消息。旧代码的受控本地Worker用例以4秒慢存储确定性得到3006ms unavailable，未访问盾；不得以此推称已取得两个历史运行当时的锁等待栈。
+
+Product Alignment: natural-language task=打开使用Worker的报表或编辑器；reusable chain boundary=单次任务页面及其响应；runtime inputs=本次CDP响应；dynamic task outputs=原页面状态/Worker结果；generic platform capability used=现有请求及响应准入；replay model calls=0；site/task-specific code added=no。
+
+Reuse Assessment: capability=响应退避持久化不占用CDP接收线程；existing implementation=Admission.decide已支持Response阶段、asyncio.to_thread(remember)、失败关闭及close取消，专属Profile/iframe已使用；selected implementation=同一路径扩到普通任务页，Network回调仅保留原文档状态和挑战标记；reused public surface=[CDP Fetch RequestStage](https://chromedevtools.github.io/devtools-protocol/tot/Fetch/)、现有TaskBrowser/RequestGate；B-A-T-owned gap=原普通页只启用Request，随后Network回调同步补写；license/runtime/platform=原已固定CDP/B-U/cdp-use/磁盘缓存依赖不变，Windows现场验证；ownership=沿已有任务session启用，不扩大个人页面或SW所有权；replay model calls=0；rejected alternative=另造异步队列或单纯await to_thread事件handler仍占用原CDP逐条消息处理，直接跳过持久化又破坏退避，因此复用原Response准入；focused validation=先失败单测、慢存储真实Worker前后对照、持久化早于响应放行、存储失败拒绝、原准入/iframe边界。DiskCache官方也说明重新打开较慢，见[原教程](https://grantjenks.com/docs/diskcache/tutorial.html)，本轮不扩成缓存生命周期重构。
+
+## 2026-10-11 导航参数与落地事实分离
+
+复用B-U0.13.8固定eb412692的Tools.navigate/Tools.act，及已有ActionDispatchAudit参数摘要、natural_bindings来源绑定、native_action_receipt和动作所属页面scope。B-A-T取消新来源与当前生成入口自动添加的“落地URL等于输入”，不放宽URL匹配器、来源授权或显式equals；旧无回执来源维持原准入。受管fork0abe91b5。10项新增及15项其他生成入口检查通过，原source离线编译和完整Workbench发布/普通复跑证据见[结算](BAT_SHIELD_MAINFLOW_CLOSEOUT_20261011.md)。无新依赖、导航框架或额外模型调用；首败与3项既有mock回归失败独立记录。
+
+## 2026-10-11 主流程阻塞与连接页
+
+复用固定B-U 0.13.8 SecurityWatchdog公开BrowserErrorEvent与Bubus event_history；SourceObservationScope仅消费本次scope创建之后的NavigationBlocked/TabCreationBlocked，原站点准入不改。Playwright扩展8b552173的WebSocket与ConnectedTabs继续拥有连接；按[Chrome官方WebSocket生命周期](https://developer.chrome.com/docs/extensions/how-to/web-platform/websockets)每20秒发送空保活消息，连接关闭清除定时器。成功后仅关闭本次握手tab；最后一个Chrome tab延迟到任务自建窗口之后，已被用户导航的tab不关闭。没有重建连接框架或增加重连机制。2项生命周期不变量和既有释放/readiness用例通过，真实原Chrome Reload后保存授权连接与无常驻页保活通过。其余既有测试失败独立记录，不伪称整套通过。
+
+## 2026-10-11 草稿纠错诊断窄修复
+
+复用已固定AI Connect authoring公共解析与现有一次Pi repair；B-A-T自有Markdown领域校验此前只抛错误码，通用authoring不能解释其章节/字段规则。本次只在自有校验处补具体诊断并传入原修复流程，不重写公共解析器、不加模型循环、不改盾。接受门为本次两份真实原输出得到明确诊断、原非法/冲突仍拒绝、修复仍最多一次、真实保存模型能纠正被拒绝草稿并通过原校验；随后继续原产品流程，其它失败单独记录。
+
+实际结算：目标字段经真实单次repair通过原准备草案解析，但同一草案随后暴露中文引号URL校验错误；原正式需求重试成功后，准备阶段另受页面观测一致性阻塞。二者未修，不把字段修复成功扩大为全流程或盾通过。40/42聚焦通过，2项HEAD协议测试基线失败、3项盾类型错误另列，受影响文件定向类型检查通过。见[修复与主流程证据](INTERVIEW_REPAIR_AND_MAINFLOW_20261011.md)。
+
 ## 2026-10-11 当前包：IME 真实键对与三项独立测量
 
 真人Ctrl+Space/Tab首错配最小修复后，用户自行操作两次均Human/39clear，三项逐字段有效，原失败不改写。B-A-T原发布链正式四变体实际输出7/11/13及无合格候选失败、模型0；原盾判据不改。首轮点击ACK完整却事件0仍未定因；不能把后续成功当根因修复。本轮唯一生产适配是复用原SQLite覆盖索引events(case_id,action,id)，消除管理报告同步全表回查导致的健康超时；源码、查询计划和真实业务证据见SHIELD_TASK_ACCEPTANCE_20261011.md与PROGRESS顶部。
@@ -5987,3 +6009,154 @@ Reuse Assessment（检测实验室研究态）:
 固定 fpscanner 源码进一步核验：采集错误与检测规则异常不能直接按 false 结算；CDP 探针修改 Error.prepareStackTrace，独立新文档隔离探针扰动。效果验收新增 G1–G5：有效观测、同条件对照、预登记目标变化、成对重复与独立复核、业务和声明范围。撤回“检测库必须开源因此所有客户端宿主也必须完整开源”的额外假设。
 
 本轮只修订设计文档；组件、浏览器、产品测试与目标平台访问均未运行。
+
+
+## 2026-10-11 在线收尾按最终编译结果最小修复
+
+真实首败task48c3061d：final canonicalRequest与source逐字一致，final compilation.gaps=[]/已保存，raw sourceGaps两项无消费者探查历史错误；AuthoringBuild.finish仍按raw列表非空阻断。
+
+Product Alignment:
+- natural-language task: 表格采集或交互检测完成后产出可复跑链路
+- reusable chain boundary: 同一来源的在线final编译回执到候选链
+- runtime inputs: 已保存final envelope与原始来源
+- dynamic task outputs: 版本化候选链及原始错误审计
+- generic platform capability used: 现有AuthoringBuild/自然编译器/持久化ACK
+- replay model calls: 0
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 判定在线编译是否完成
+- existing implementation in repository: natural_read_liveness.retire_unused_discovery由现有compiler唯一分类有效缺口；AuthorCompilation.finish传入raw gaps后保存final；TS validateHybridResponse/materializeHybridChain/ACK已验证最终缺口、来源及保存
+- mature candidates and pinned versions: 当前受管workflow-use 0.2.11 / bat-hybrid/3及Zod4.1.8，均原仓库实现；不引新库或复制分类器
+- selected implementation: 复用已经验证并保存的final compilation.gaps，原始sourceGaps保留审计
+- reused public surface: AuthoringBuild.accept/finish及原final materialization
+- B-A-T-owned adapter and remaining gap: 仅修宿主收尾读取了错误事实源；保持canonicalRequest一致及必须有final回执
+- license/runtime/platform fit: 沿用现有依赖/许可证及Windows Node/Python进程
+- browser/runtime/state ownership conflicts: 无新增会话/状态机/模型调用，旧来源不改写
+- replay model calls: 0
+- rejected candidates and evidence: 不另写TS探查分类器，避免跨语言复制已由编译器完成的分类
+- focused validation: 原受控在线callback到ACK/SQLite/候选的测试增加已退休raw gap与未解决gap反例；真实旧来源验证finish；类型检查后冻结，新建任务全主流程首次验收
+
+## 2026-10-11 继续根因修复（root-cause-03）
+
+冻结 #2 原首败不改写。完整 Python 7 步诊断、完整管道/宿主编译保存均无页面断连；宿主单步 0.73 秒以内。实际 API /tasks 冷读 3845ms；只读生产 SQLite + 原 TaskSummaryProjector CPU profile 冷读 3924ms、命中 63ms、模拟无关写入导致全局 revision 改变后 3805ms；旧任务 2aaa0674 单次投影 3353–3425ms，最新 execution body 113649995 字符。根本缺口是任务摘要使用全库写版本缓存，进度写入持续使所有历史大结果重读；与 CDP relay 共用 Node 主线程。原首败无客户端 Network.loadingFailed 和 Python 清理子阶段时间，不能伪造原时刻唯一归因，补受控同路径验证。
+
+Product Alignment:
+- natural-language task: 页面检测或资料填写后读取结果
+- reusable chain boundary: 原生导航、准备结果与清理分离、工作台摘要
+- runtime inputs: 已确认站点和输入、单任务持久化序列
+- dynamic task outputs: 实际来源/业务失败及独立清理回执
+- generic platform capability used: ActionDispatchAudit、RuntimeCleanupRequiredError、taskWorkspaceSequences
+- replay model calls: 0 新增
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 导航健康查询边界、独立清理结算、任务局部缓存失效
+- existing implementation in repository: B-U 0.13.8 导航后 get_browser_state_summary；原 ActionDispatchAudit；已用 RuntimeCleanupRequiredError；SQLite workspace sequence triggers；lru-cache
+- mature candidates and pinned versions: 保留锁定的 browser-use 0.13.8 / cdp-use 1.4.5 / SQLite + better-sqlite3 + lru-cache，不替换依赖
+- selected implementation: 复用上述公开实现与项目已有契约
+- reused public surface: 原 Tools.act/Browser summary、既有 cleanup.primary、workspaceSequence
+- B-A-T-owned adapter and remaining gap: 健康查询不冒充供 Agent 使用的观察快照；同任务提交才失效摘要；业务失败穿过独立清理层
+- license/runtime/platform fit: 原依赖和 Windows 运行时不变
+- browser/runtime/state ownership conflicts: 不新建浏览器框架、不修改盾或上游源码
+- replay model calls: 无新增
+- rejected candidates and evidence: 无新库选型；现有能力足够
+- focused validation: 导航健康查询/动作前身份/安全拒绝；清理双失败投影；跨任务缓存与回滚；真实只读大记录 CPU 对照；验证后新冻结任务
+
+## 2026-10-11 第三次冻结首败后的读取反馈修复
+
+首次 prepare 0d22fe9c 以 1202 文件逐字未变结束：导航、输入、滚动、单次提交完成；盾 Bot/38clear+1trusted 命中、全部可测，清理 confirmed 约1.3s。停止根因是 bat_read_fields 的字段模式与原内容采集参数混用：AuthorMethodReadToolParams 仍暴露 captureContent，容器单参会被旧解析器解释为内容采集；当前任务为结构化对象时只报 natural_read_schema_mismatch。错误字段名也只回相同码；原有 field_read_tool 已给 required/allowed，当前 method_read_tool 未复用，模型 5 次读取失败后主动 done(false)。最终链接歧义曾回 match_count=2，证明不是通用 DOM 不可读。
+
+Product Alignment: natural-language task=读取资料字段或检测结果；reusable chain boundary=一个受确认输出路径的 DOM 读取方法；runtime inputs=确认输出schema及现场选出的投影；dynamic task outputs=实际页面字段；generic platform capability used=既有 Pydantic 参数模型、FieldReadError、_read_shape/field_read_contract_fields 与 B-U 原生纠错；replay model calls=0 新增；site/task-specific code added=no。
+
+Reuse Assessment: 不扩建 Agent/读取/校验框架，复用现有 shape 推导和字段匹配校验；隐藏当前字段工具不支持的内部 captureContent 参数，向已有错误回执补充 required/allowed/missing/unknown、字段类型、准确路径和如何重新调用。不给模型代填selector，不降低校验或伪造结果，不新增模型重试循环。最小测试：原同构错误参数在修前反馈缺信息、修后可定位，保留有效映射/引用/旧来源兼容和异常脱敏。验证完成再新冻结任务；第三次首败不恢复成成功。
+
+
+## 2026-10-11 后台资源巡检的全历史同步读取
+
+实测主进程92秒CPU profile：约28.1秒来自browserResourceRecords→Drizzle JSON解码/同步SQLite all，app每15秒分别daily/dedicated调用，合计重复读取50条/444623701字符历史，当前实际待清理候选0。此前只读任务列表cache修复漏掉此定时入口。新首败bef81e57为连接超时，原次没有握手时序，不把后来1.53秒连接成功当根因已关闭。
+
+Product Alignment:
+- natural-language task: 检测任务和资料浏览任务均需稳定连接与清理
+- reusable chain boundary: execution资源生命周期巡检
+- runtime inputs: 已持久化execution清理/交付状态
+- dynamic task outputs: 原输出保持不变
+- generic platform capability used: SQLite部分索引、既有资源命令和Zod字段合同
+- replay model calls: 0新增
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 从持久事实筛选待恢复资源且不读取已结束大历史
+- existing implementation in repository: Drizzle/better-sqlite3，taskExecutions.body唯一权威，recoverRecord原owner核验
+- mature candidates and pinned versions: 仓库现有SQLite/Drizzle锁定版本，不引入组件
+- selected implementation: SQLite原生部分索引派生候选；Drizzle仅提取资源字段
+- reused public surface: CREATE INDEX WHERE / json_extract、select/where、原dispatch/control
+- B-A-T-owned adapter and remaining gap: 资源候选predicate与字段投影；不新增双写状态或定时器
+- license/runtime/platform fit: 现有依赖与Windows运行保持
+- browser/runtime/state ownership conflicts: 原body与owner仍唯一权威；索引自动随写入/事务更新
+- replay model calls: 0
+- rejected candidates and evidence: 单加缓存仍首读444MB且需失效，SQL无索引筛选仍1.33秒扫描，故复用原生部分索引
+- focused validation: 修前反例、筛选/回滚/外部写入/inspect后状态变化、真实历史只读对照、实际服务定时采样
+
+
+## 2026-10-11 连接页依赖移除（实施前边界）
+
+Product Alignment:
+- natural-language task: 任意站点浏览器任务，包括资料阅读和交互检测
+- reusable chain boundary: 日常Chrome授权连接与既有CDP入口，任务链/Agent/窗口owner不变
+- runtime inputs: 所选Profile及已明确授权的token、扩展暂停偏好
+- dynamic task outputs: 真实连接和任务输出
+- generic platform capability used: BrowserSkill后台WSTransport、heartbeat、keepalive；既有Playwright CDP relay
+- replay model calls: 0新增
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 不依赖tab的已授权后台连接、断线重连、MV3唤醒与保活
+- existing implementation in repository: Playwright 8b552173 CDPRelayServer/RelayConnection；PopupBridge首次授权和暂停；ws8.21.3/Fastify5.12.3
+- mature candidates and pinned versions: Tencent/BrowserSkill 3f10983c09fcd443c7420830ab984c9d409954bf transport/ws-transport.ts、lib/heartbeat.ts、lib/keepalive.ts；Chrome公开alarms/WebSocket API
+- selected implementation: 直接引入原WSTransport/heartbeat/keepalive，保留MIT；只调整import路径，types仅摘取通道类型
+- reused public surface: WSTransport.connect/disconnect/onMessage/onConnectionStateChange/webSocketFactory；startHeartbeat；startKeepalive
+- B-A-T-owned adapter and remaining gap: 后台先提交原token到同一工作台origin的固定WS入口，服务验证既有授权后把同一socket交给原Playwright relay；只映射授权和暂停，不复制重连循环/浏览器网关
+- license/runtime/platform fit: MIT TypeScript/MV3，既有Chrome Windows/macOS同实现；新增alarms权限用于原上游唤醒
+- browser/runtime/state ownership conflicts: 一个实际控制socket；首次授权仍沿原popup明确确认；后台不得创建授权或复活被撤销token；连接重建不恢复旧任务或借用个人tab
+- replay model calls: 0
+- rejected candidates and evidence: BrowserSkill ConnectionController自带system.handshake/session RPC，不能直接替换B-U需要的CDP；不重写协议转换器。Playwright connect.html入口依赖tab，保留其控制通道而替换连接交付入口
+- focused validation: 新/错/撤销token拒绝，首次授权等待确认，暂停跨worker重启保持，实际Chrome无tab新增连接/断线重连/宿主重启恢复；随后冻结全新需求到发布和正式复跑
+
+首次失败独立保存，所有受控Profile按owner/PID/绝对路径finally永久清理；不改盾。
+
+## 2026-10-11 无窗口冷启动补充
+
+实际已授权Default在`--no-startup-window`下30秒连接超时，进程已退出（connection-background-06/actual-cold-first.json）；未新建业务任务。Chrome本机154.0.8037.98源码 `BackgroundModeManager` 在扩展加载后释放启动keepalive，只有 `BackgroundApplicationListModel::IsPersistentBackgroundApp` 的background权限持有进程。固定源码：https://github.com/chromium/chromium/blob/154.0.8037.98/chrome/browser/background/extensions/background_application_list_model.cc 。BrowserSkill固定3f10983c的manifest没有此权限，WS组件只覆盖浏览器仍在运行的连接生命周期，不能证明完全退出后的启动。
+
+Reuse Assessment补充：复用Chrome官方background权限和原Playwright无窗口launcher，仅manifest加一项；不用测试保活参数，不加隐藏页面或OS常驻进程。权限会让Chrome最后一个窗口关闭后保持后台，Chrome自身退出/后台设置保持有效；B-A-T首次授权及暂停仍由原popup/storage控制。Product Alignment沿本节之前后台连接项，浏览资料/填报等共同需要，0额外模型/无网站分支。关闭条件：同Profile真实零窗口连接，暂停/断连边界原证据保留，之后冻结新任务。
+
+2026-10-12实机补验：旧已安装SW执行脚本122883字符，不包含bat.authenticate，当前产物134280字符含后台协议；manifest更新不证明SW已重载。通过Chrome官方developerPrivate.reload完成一次开发扩展更新，原token/ON保留。新增background权限0.4.1，实际产品完全退出后578.7ms连接、无窗口，无Inspector依赖。原18聚焦和真实首次授权/暂停/重连/服务重启证据保留。诊断Chrome出现Secure Preferences重置，初始快照已恢复16项、加密键未变；3个其它商店扩展新增Chrome文件损坏标记1024，未绕过校验，独立记录，不算B-A-T测试通过的组成部分。此环境事故唯一底层归因尚未关闭，不继续重复冷启；详见connection-background-06/profile-config-incident.json及profile-recovery-check.json。
+
+
+## 2026-10-12 结果读取范围纠错最小修复
+
+Product Alignment:
+- natural-language task: 完成交互检测并获取最终报告，或读取普通详情页总结与列表。
+- reusable chain boundary: 当前页多字段结果读取方法及原生探索纠错。
+- runtime inputs: 已确认结果合同与真实 DOM。
+- dynamic task outputs: 当前页面的结果文本、列表和实际来源地址。
+- generic platform capability used: 既有 bat_read_fields/ReadSpec、B-U 原生探索与 Zod/Pydantic 合同。
+- replay model calls: 0；不新增模型循环。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 对相对字段的零匹配报告正确范围，指导原生探索修复已有方法。
+- existing implementation in repository: method_read_tool.py、method_read_diagnostics.py、read_sampling.py 和既有 page-url。
+- mature candidates and pinned versions: 既有 B-U 与 workflow-use 固定 fork，版本沿 LOCAL-CHANGES；不用新库。
+- selected implementation: 复用已有 FieldReadError 与宿主合同派生诊断。
+- reused public surface: 原生 action 说明、参数描述与失败 ActionResult。
+- B-A-T-owned adapter and remaining gap: 原反馈只允许改投影，遗漏共同容器是另一错误来源；当前文档 URL 不应要求 DOM 内另有超链接。
+- license/runtime/platform fit: 不变。
+- browser/runtime/state ownership conflicts: 不新增浏览器生命周期或调度器。
+- replay model calls: 0。
+- rejected candidates and evidence: 不自动猜容器、不写盾 selector、不放宽匹配与必填合同、不另造 Agent loop。
+- focused validation: 原首败保留；针对零匹配范围/多匹配/敏感值边界的定点测试，实际工具读取通用页面与真实模型单次纠错，然后重新冻结主流程。
+
+
+2026-10-12 验收结果：范围纠错 25 项聚焦通过，真实模型单次修正后实际 DOM 读取成功，另一页普通复读模型 0。1222 文件冻结的新任务 c52e7dc3 首次需求→准备→样本→独立复验→发布 V1→正式复跑 43e68dd4 全部完成；完整输出含 39 项及本次地址，与盾原报告逐项相符。既有 page-url、ReadSpec 与原生 Agent loop 足够，无新库/网站特判/模型重试循环。原 ce595f4a 首败不覆盖，资源清理见本轮结算。

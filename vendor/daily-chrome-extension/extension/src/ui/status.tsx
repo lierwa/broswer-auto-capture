@@ -30,7 +30,7 @@ function PopupApp() {
   const detail = loading ? '正在读取连接设置…' : !enabled && granted ? '授权仍保留，重新开启即可连接。'
     : popup?.pending?.requiresAuthorization ? '开启一次，之后的任务自动连接。'
     : connected && granted ? '日常 Chrome 已连接工作台。'
-    : offline ? '打开工作台后即可连接。' : enabled && granted ? '运行任务时自动连接，无需再次授权。'
+    : offline ? '工作台服务暂不可用，恢复后自动连接。' : enabled && granted ? '正在后台连接，无需再次授权。'
     : granted ? '开启后即可连接工作台。' : host?.paired ? '开启后复用已保存的授权。' : '请先在工作台点击「授权 Chrome」。';
   const feedback = error || popup?.error;
   const canEnable = Boolean(popup?.pending || granted || host?.paired);

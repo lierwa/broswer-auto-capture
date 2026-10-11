@@ -61,6 +61,11 @@ class ActionDispatchAudit:
         # WHY：来源与复跑复用同一命中核验；Element 只在派发前使用，不写进来源或日志。
         self.entries[self.active]['targetElement'] = element
 
+    def navigation_in_progress(self):
+        entry = self.entries.get(self.active, {})
+        return (entry.get('actionName') == 'navigate' and entry.get('entered') is True
+                and entry.get('identityValid') is True and entry.get('resultReceived') is False)
+
     async def complete(self, result=None):
         if self.active is None:
             return

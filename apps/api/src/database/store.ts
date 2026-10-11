@@ -10,6 +10,7 @@ import { currentDraft, emptyInterview, interviewStateSchema, type InterviewState
 import { taskMetaSchema, type TaskCommand, type TaskMeta, type TaskSummary } from "@browser-capture/contracts/task"
 import { DomainError, conflict } from "../errors.js"
 import { migrate } from "./migrate.js"
+import { ensureExecutionResourceIndex } from "./execution-resource-index.js"
 import { validateState } from "./invariants.js"
 import * as schema from "./schema.js"
 import { parseModelSelection, type ModelSelection } from "@agent-platform/ai-connect/client"
@@ -27,6 +28,7 @@ export class ProductStore {
   private compromised = false
   private constructor(private connection: Database.Database, private release: () => Promise<void>) {
     migrate(connection)
+    ensureExecutionResourceIndex(connection)
     this.db = drizzle(connection, { schema })
     this.workspaceChanges = new WorkspaceChanges(connection)
   }

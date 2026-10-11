@@ -282,8 +282,9 @@ class Runner:
             return
         client = getattr(self.browser, '_cdp_client_root', None)
         gate = getattr(client.send.Fetch, '_bat_access', None) if client else None
-        # WHY：专属browser Fetch已在放响应前持久化；Network仍采集文档状态，不能把同响应加罚两次。
-        self.document_status.record(event, persist_cooldown=not (gate and gate.browser_session))
+        # WHY：原Response准入先在线程中持久化再放行；Network只记文档状态，避免阻塞CDP消息泵及重复加罚。
+        self.document_status.record(event, persist_cooldown=not (gate and (
+            gate.browser_session or _session_id in gate.sessions)))
 
     def assert_document_access(self, url):
         code = self.document_status.error_for(url)

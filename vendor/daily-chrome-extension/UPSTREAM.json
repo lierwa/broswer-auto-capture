@@ -75,7 +75,7 @@
   },
   "modifications": [
     "Notify existing owner-scoped SDK clients with Target.targetInfoChanged when native owned getTargetInfo changes URL/title; preserve target identity and avoid extra attach, polling, or Runtime subscriptions",
-    "Retain the original connect page and its 20-second service-worker keepalive; closing it before an owned task window exists can terminate cold-start Chrome and disconnect the relay",
+    "Use Chrome116+ documented 20-second WebSocket messages for worker keepalive; close only the successful handshake tab, deferring the last Chrome tab until an operation creates its owned window",
     "After relay restart, close only host-authorized persisted target IDs through Chrome debugger.getTargets and tabs.remove; never infer ownership from titles or windows",
     "CDP browser-level Target compatibility; explicit owned targets only",
     "Local ManualPromise import; error reporting omits raw page/credential values",
@@ -91,7 +91,7 @@
     "Require exact extension Origin on the extension WebSocket; retain original token checks and empty initialization for ordinary reconnects",
     "An approved borrowed Fetch session exclusively receives requestPaused while the existing authentication session keeps authRequired; detach/disable restores previous native Fetch configuration, rejects competing owners and rolls back failed restoration",
     "After successful native tabs.remove ACK, reuse original idempotent onTabRemoved before answering closeTarget; preserve failed remove and late-event behavior",
-    "Readiness uses the original BrowserModel auto-attach to the owned bootstrap before reporting connected; no worker heartbeat or reconnection protocol",
+    "Readiness uses the original BrowserModel auto-attach; an approved idle connection may have zero targets; no reconnection protocol",
     "Disconnected original relay permits read-only task closure proof only when target creation was never dispatched; creation with a lost ACK remains unconfirmed",
     "Native Chrome action popup reuses original status.html/React/Vite; workbench forwards an opaque loopback request through Chrome external messaging; original token, pending relay and owned window controller retained",
     "Connection card persists the allow-connection preference in Chrome storage; pause gates both saved-token entry points and closes original groups without removing host credentials; resume uses the existing same-origin Workbench route; shared Radix Themes Switch/Button/Skeleton/Theme and Lucide icons replace custom controls; prefers-color-scheme follows browser appearance independently of Workbench theme; unknown preference renders a Skeleton and the stored value appears before host polling completes"
@@ -108,6 +108,26 @@
     "extension/src/popupBridge.ts",
     "extension/src/popupProtocol.ts",
     "extension/src/ui/popup.css",
-    "extension/src/ui/usePopupState.ts"
+    "extension/src/ui/usePopupState.ts",
+    "extension/src/backgroundConnection.ts",
+    "extension/src/upstream/browser-skill/LICENSE",
+    "extension/src/upstream/browser-skill/ws-transport.ts",
+    "extension/src/upstream/browser-skill/transport.ts",
+    "extension/src/upstream/browser-skill/types.ts",
+    "extension/src/upstream/browser-skill/heartbeat.ts",
+    "extension/src/upstream/browser-skill/keepalive.ts",
+    "extension/src/upstream/browser-skill/UPSTREAM.json"
+  ],
+  "browserSkill": {
+    "commit": "3f10983c09fcd443c7420830ab984c9d409954bf",
+    "manifest": "extension/src/upstream/browser-skill/UPSTREAM.json",
+    "capabilities": [
+      "WSTransport",
+      "startKeepalive",
+      "startHeartbeat"
+    ]
+  },
+  "hostAdapterFiles": [
+    "chromeLauncher.ts"
   ]
 }

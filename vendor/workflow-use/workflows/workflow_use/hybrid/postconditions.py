@@ -184,11 +184,14 @@ def _runtime_read_scope(condition, conditions, args):
 
 def action_result_readiness(action_name, raw):
     """Select one existing ready/transition consumer; never create or erase a postcondition."""
-    if action_name not in {'click', 'send_keys'}:
+    if action_name not in {'click', 'send_keys', 'navigate'}:
         return None
     conditions = [Postcondition.model_validate(item) for item in raw]
     urls = [item for item in conditions if item.kind in {'url', 'url_digest'}]
-    if (not any(item.changed is True for item in urls)
+    # WHY：原生navigate由绑定参数与执行回执负责，不要求落地URL改变或等于入口。
+    # 显式URL条件和旧来源的固定条件不参与当前页面重绑定。
+    if (urls if action_name == 'navigate' else
+            not any(item.changed is True for item in urls)
             or any(item.equals is not None or item.bindingArgument is not None for item in urls)):
         return None
     candidates = [index for index, item in enumerate(conditions)

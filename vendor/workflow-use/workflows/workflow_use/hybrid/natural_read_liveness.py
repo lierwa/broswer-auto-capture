@@ -4,6 +4,7 @@ from .action_dispatch import NOT_DISPATCHED_RULE, not_dispatched_coverage
 from .coverage import native_dom_lookup_observation_coverage, unused_verified_dom_read_coverage
 from .evidence import gap
 from .natural_readiness import consumer_readiness_by_action
+from .native_action_receipt import native_action_receipt
 
 
 def consumed_query_ids(trace, segments):
@@ -44,7 +45,8 @@ def retire_unused_discovery(request, registry, ledger, issues, consumed):
     unresolved = [issue for issue in issues if not (
         issue.code == 'missing_effect_proof' and issue.resolution == 'collect_evidence'
         and len(issue.actionRefs) == 1 and issue.actionRefs[0] in replacements and not issue.clauseRefs
-        and issue.reason in ('find_elements_read_evidence_missing', 'natural_field_read_evidence_missing'))]
+        and issue.reason in ('find_elements_read_evidence_missing', 'natural_field_read_evidence_missing',
+                             'natural_read_output_changed', 'natural_read_container_identity_changed'))]
     return [replacements.get(row.actionRef, row) for row in ledger], unresolved
 
 
@@ -128,6 +130,7 @@ def _required_readiness_queries(trace, segments, ledger, consumed):
 def rebind_consumer_readiness(trace, segments, ledger):
     """Tie delayed effects to the first retained consumer across only proven non-dispatches."""
     actions = {item.id: item for item in trace.actions}
+    observations = {item.id: item for item in trace.observations}
     allowed = {item['id'].removeprefix('s-') for item in segments
                if item.get('operation', {}).get('name') == 'browser.read-fields'}
     harmless = _proven_not_dispatched_ids(trace, ledger)
@@ -149,13 +152,15 @@ def rebind_consumer_readiness(trace, segments, ledger):
             continue
         direct = [item for item in conditions if item.get('consumerRef') is None]
         proven_direct = [item for item in direct if isinstance(item.get('clauseRef'), str)]
-        # WHY：裁掉探查读取后，已有来源 clause 的物理后态仍能独立证明动作；无来源的占位
-        # 条件或仅有 consumer wait 的动作不能借此绕过缺证。
-        if current is None and previous and not proven_direct:
+        producer = actions.get(segment['id'].removeprefix('s-'))
+        pre = observations.get(producer.preObservationRef) if producer else None
+        native_receipt = native_action_receipt(producer, pre) if pre is not None else None
+        # WHY：裁掉探查后，原生成功回执或已有物理后态仍独立有效；无来源占位不能绕过缺证。
+        if current is None and previous and not proven_direct and native_receipt is None:
             issues.append(gap('missing_effect_proof', [segment['id'].removeprefix('s-')],
                               'consumer_readiness_live_read_required', 'collect_evidence'))
         segment['postconditions'] = [*direct, *([current['condition']] if current else [])]
-        if not segment['postconditions']:
+        if not segment['postconditions'] and native_receipt is None:
             unproven.add(segment['id'])
         old = previous_readiness.get(segment['id'].removeprefix('s-'))
         if previous and old is not None and previous[0] == old['condition']:

@@ -3,7 +3,6 @@ from copy import deepcopy
 
 from .evidence import ActionCoverage, gap
 from .method_inspection import InspectedMethod, inspected_method_read, latest_method_read
-from .natural_readiness import NATURAL_SETTLE
 from .natural_repeat_evidence import _assert_same_document
 from .natural_selection import bind_selection_function
 
@@ -91,8 +90,8 @@ def compile_inspected_navigation(request, registry, action, segments, repeat):
             'target': None, 'bindings': [],
             'preconditions': [{'kind': 'source_observation', 'evidenceRef': before.id}],
             'expectedEffect': {'kind': 'navigation'},
-            'postconditions': [{'kind': 'url', 'bindingArgument': 'url', 'clauseRef': facts[0].id,
-                                'settle': NATURAL_SETTLE}], 'outputs': [], 'proofRefs': proof}
+            # WHY：方法只声明派发来源绑定的URL；实际成功由原生导航及强制样本验证负责。
+            'postconditions': [], 'outputs': [], 'proofRefs': proof}
         functions, segment, issues = bind_selection_function(request, action, segments, segment)
         if issues:
             return [], None, issues

@@ -29,6 +29,7 @@ import {
 import type { SourceResolution } from "@browser-capture/contracts/interview"
 import { InterviewSourceReferences } from "./source-references.js"
 import { settleInterviewAuthoring } from "./authoring-repair.js"
+import { DraftValidationError } from "./draft-validation.js"
 
 interface Job {
   taskId: string
@@ -39,6 +40,7 @@ interface Job {
 }
 const modelUnavailable = "model_account_model_unavailable"
 function failureReason(error: unknown) {
+  if (error instanceof DraftValidationError) return error.userMessage()
   if (error instanceof DomainError) return error.message
   // WHY：只消费 AI Connect 的稳定错误码，避免把供应商原文或 cause 变成业务协议。
   if (error instanceof Error) {

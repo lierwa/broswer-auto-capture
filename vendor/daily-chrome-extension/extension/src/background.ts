@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-import { debugLog } from './relayConnection';
+import { debugLog, RelayConnection } from './relayConnection';
 import { PendingConnections, openRelayConnection } from './pendingConnection';
 import { ConnectedTabs, ungroupTabs } from './connectedTabGroup';
 import { PopupBridge } from './popupBridge';
+import { BackgroundConnection } from './backgroundConnection';
 
 type PageMessage = {
   type: 'connectionRequested';
@@ -45,12 +46,16 @@ class PlaywrightExtension {
   // Service worker restarts lose all connection state, so any existing
   // Playwright groups are stale. Connections wait on this before reconciling.
   private _cleanupPromise: Promise<void>;
+  private _background: BackgroundConnection;
 
   constructor() {
     chrome.runtime.onMessage.addListener(this._onMessage.bind(this));
+    this._background = new BackgroundConnection(() => this._connections.size > 0,
+      socket => this._connectOwnedWindow(new RelayConnection(socket), 'B-A-T', undefined));
     new PopupBridge(async (configuration, token) => {
       await this._cleanupPromise;
       if (this._connections.size) throw new Error('当前连接仍在使用，请先断开连接。');
+      this._background.suspend();
       const connection = await openRelayConnection(configuration.mcpRelayUrl);
       await this._connectOwnedWindow(connection, configuration.clientName, token);
     }, () => this._connectionStatus(), () => {
@@ -111,8 +116,7 @@ class PlaywrightExtension {
         throw new Error('Pending client connection closed');
 
       await this._connectOwnedWindow(connection, clientName, authorizationToken);
-      // WHY：保留上游 connect 页及其 20 秒 keepalive；提前删页会停掉保活，冷启动时还会关闭唯一窗口。
-      // 连接页不授予业务 target 权限，任务仍只控制 operation 自己创建的窗口。
+      await connection.releaseConnectPage(selectorTabId);
     } catch (error: any) {
       debugLog('Failed to connect task window');
       throw error;
@@ -127,6 +131,7 @@ class PlaywrightExtension {
       const group = new ConnectedTabs(connection, undefined, clientName, authorizationToken);
       group.onclose = () => {
         this._connections.delete(id);
+        this._background.wake();
       };
       this._connections.set(id, group);
 

@@ -1,0 +1,43 @@
+{
+  "repository": "https://github.com/Tencent/BrowserSkill",
+  "commit": "3f10983c09fcd443c7420830ab984c9d409954bf",
+  "license": "MIT",
+  "files": {
+    "LICENSE": {
+      "source": "LICENSE",
+      "sourceSha256": "45426ad9507fe1b922121f5af6a4669096e721980b4426609a4384da410f5114",
+      "sha256": "45426ad9507fe1b922121f5af6a4669096e721980b4426609a4384da410f5114",
+      "changes": "none"
+    },
+    "ws-transport.ts": {
+      "source": "apps/extension/src/transport/ws-transport.ts",
+      "sourceSha256": "c84e567e4a020c26cd0df07b5cca6c8fbe43f096737c5b0a81051dce8528db80",
+      "sha256": "c84e567e4a020c26cd0df07b5cca6c8fbe43f096737c5b0a81051dce8528db80",
+      "changes": "none"
+    },
+    "transport.ts": {
+      "source": "apps/extension/src/transport/transport.ts",
+      "sourceSha256": "2c1b3c6acdc6beda0e50540f72135764de7a938bd289494447ec45a829a77174",
+      "sha256": "2c1b3c6acdc6beda0e50540f72135764de7a938bd289494447ec45a829a77174",
+      "changes": "none"
+    },
+    "types.ts": {
+      "source": "apps/extension/src/transport/types.ts",
+      "sourceSha256": "b07b83449b60c41916b18b7b21e997b44b410eca6d53300b2a14edd881c1a7f0",
+      "sha256": "804a9394af6de78bae45d4e98a2d69ce3f5350af7d174cc5a6e536404ded546a",
+      "changes": "protocol channel type prefix only"
+    },
+    "heartbeat.ts": {
+      "source": "apps/extension/src/lib/heartbeat.ts",
+      "sourceSha256": "0b9f287cb00995b56271c29ce61156af3e3eb395f9f4f71e72790126f0f8c466",
+      "sha256": "e2a530ece619e2cda8222e325c2c5fcbe7237dac69bb9bfa0945b72d7b3622d0",
+      "changes": "type import paths only"
+    },
+    "keepalive.ts": {
+      "source": "apps/extension/src/lib/keepalive.ts",
+      "sourceSha256": "2f31e47605acf550e8f422827f3b314732125cd820c6b02708fdb8d6d62a1649",
+      "sha256": "3d79044972c383d3a7df11ca1581a1f278b358cbf3ee6a96ad91080e92c05149",
+      "changes": "type import paths only"
+    }
+  }
+}

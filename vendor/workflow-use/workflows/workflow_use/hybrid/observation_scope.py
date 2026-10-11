@@ -4,6 +4,7 @@ import time
 from copy import copy
 
 from .action_identity import history_action_refs, resolve_history_step
+from .action_dispatch import ActionDispatchAudit
 from .dom_evidence import node_tag, node_value
 from .evidence import digest
 from .snapshot_consistency import ObservationUrlChanged
@@ -19,9 +20,10 @@ class LiveDocumentReadError(ValueError):
 class ObservationRefreshRequired(RuntimeError):
     """Withhold an unusable proposal; let the native Agent observe and choose again."""
 
-    def __init__(self, reason='page address changed after observation'):
+    def __init__(self, reason='page address changed after observation', *, action_withheld=True):
         super().__init__('observation_refresh_required: ' + reason
-                         + '; no action was sent. Re-read the current page before choosing a target')
+                         + ('; no action was sent.' if action_withheld else '.')
+                         + ' Re-read the current page before choosing a target')
 
 
 async def live_document_sample(browser, target_id=None):
@@ -95,6 +97,7 @@ class SourceObservationScope:
         self.browser, self.collector, self.callbacks = browser, collector, callbacks
         self.original = browser.get_browser_state_summary
         self.stamps, self.diagnostics = [], []
+        self.initial_security_events = set(getattr(getattr(browser, 'event_bus', None), 'event_history', {}))
         self.installed = False
         self.had_instance_method = 'get_browser_state_summary' in vars(browser)
         self.instance_method = vars(browser).get('get_browser_state_summary')
@@ -137,10 +140,28 @@ class SourceObservationScope:
         return url
 
     async def capture(self, include_screenshot=True, cached=False, include_recent_events=False):
+        audit = getattr(self.collector, 'dispatch_audit', None)
+        if isinstance(audit, ActionDispatchAudit) and audit.navigation_in_progress():
+            # WHY：原生 navigate 在派发后查询页面健康，此时合法重定向仍可能在进行。
+            # 复用原生查询，不把健康读取登记为模型观察，也不让动作前身份守卫改写已经派发的结果。
+            self.reject_navigation_scope()
+            result = await self.original(include_screenshot=include_screenshot, cached=cached,
+                                         include_recent_events=include_recent_events)
+            self.reject_navigation_scope()
+            return result
         return await self._capture(include_screenshot, include_recent_events, allow_transition=False)
 
     async def capture_post(self, include_screenshot=False, cached=False, include_recent_events=False):
         return await self._capture(include_screenshot, include_recent_events, allow_transition=True)
+
+    def reject_navigation_scope(self):
+        # WHY：原生安全watchdog会先记录拒绝再退回空白页；DOM变化不能盖掉真正的越界原因。
+        # 仅消费本次scope后的原生事件，不重写准入判定，也不让旧run拒绝污染新run。
+        events = getattr(getattr(self.browser, 'event_bus', None), 'event_history', {})
+        for key, event in list(events.items()):
+            if key not in self.initial_security_events and getattr(event, 'error_type', None) in (
+                    'NavigationBlocked', 'TabCreationBlocked'):
+                self.callbacks.abort('observation', ValueError('hybrid_navigation_outside_authorized_scope'))
 
     async def _capture(self, include_screenshot, include_recent_events, *, allow_transition):
         before = after = None
@@ -150,6 +171,7 @@ class SourceObservationScope:
         pending = self.collector.pending
         step = pending.get('nativeStep') if allow_transition and isinstance(pending, dict) else None
         session_id = self.browser.id
+        self.reject_navigation_scope()
         try:
             before = await live_document_sample(self.browser)
             phase = 'native_summary'
@@ -157,6 +179,7 @@ class SourceObservationScope:
                                                include_recent_events=include_recent_events))
             phase = 'sample_after'
             after = await live_document_sample(self.browser)
+            self.reject_navigation_scope()
             if (self.browser.id != session_id or not before['stable'] or not after['stable']
                     or sample_identity(before) != sample_identity(after)):
                 outcome = 'changed_during_capture'
@@ -179,6 +202,7 @@ class SourceObservationScope:
             self.stamps = self.stamps[-8:]
             return summary
         except Exception as error:
+            self.reject_navigation_scope()
             refresh = (outcome in ('changed_during_capture', 'snapshot_document_mismatch')
                        and self.browser.id == session_id and _same_owned_tab(before, after)
                        and after['targetId'] == self.browser.agent_focus_target_id)
@@ -190,7 +214,7 @@ class SourceObservationScope:
                 # 动作后沿用 snapshot settle，模型观察交回原生 step 重试，不增设循环。
                 if allow_transition:
                     raise ObservationUrlChanged() from None
-                raise ObservationRefreshRequired('page changed during observation') from None
+                raise ObservationRefreshRequired('page changed during observation', action_withheld=False) from None
             self.callbacks.abort('observation', error)
 
     async def verify_before_action(self, summary, native_step, selector_index=None, action_name=None):
@@ -315,6 +339,9 @@ async def _failure_connection(browser, baseline):
     # WHY：失败时只取受控CDP的计数/同一目标存在性，不记录页面或创建恢复目标。
     result = {'focusPresent': bool(browser.agent_focus_target_id),
               'events': list(getattr(browser, '_bat_target_events', []))[-16:]}
+    gate = getattr(getattr(getattr(getattr(browser, '_cdp_client_root', None), 'send', None), 'Fetch', None), '_bat_access', None)
+    if gate is not None and getattr(gate, 'failure_details', None) is not None:
+        result['admissionFailure'] = gate.failure_details
     try:
         pages = (await asyncio.wait_for(browser._cdp_client_root.send.Target.getTargets(), 1))['targetInfos']
         result['livePageCount'] = sum(page.get('type') == 'page' for page in pages)

@@ -26,6 +26,7 @@ import { BrowserEnvironmentService, mountBrowserEnvironment } from "./browser/en
 import { mountBrowserProfile } from "./browser/profile-routes.js"
 import { DailyChromeExtension } from "./browser/daily-extension.js"
 import { mountDailyChromeExtension } from "./browser/daily-extension-routes.js"
+import { mountDailyChromeBackground } from "./browser/daily-extension-background.js"
 import { AccountRepository } from "./browser/account-repository.js"
 import { AccountIdentities } from "./browser/account-identity.js"
 import { BrowserAccountService } from "./browser/account-service.js"
@@ -109,6 +110,7 @@ export async function createApplication(options: AppOptions) {
   mountDailyChromeExtension(app, dailyChrome, () => {
     deletion.assertWritable(); browserEnvironment.assertStable()
   })
+  const closeDailyBackground = await mountDailyChromeBackground(app, dailyChrome)
   mountBrowserProfile(app, browserProfile, browserEnvironment, () => deletion.assertWritable(), () => {
     if (accounts.isBusy()) throw new DomainError("account_browser_busy", "请先完成账号维护操作。", 409)
     if (browser.owner() || taskChain.isAnyActive()) {
@@ -132,7 +134,7 @@ export async function createApplication(options: AppOptions) {
     let report: { status: string } | undefined
     // WHY：父连接清理异常也不能跳过其它既有资源的退出；失败结论最后保留给服务 owner。
     try { report = await upstream?.close?.() }
-    finally { await browser.close(); await coordinator.close() }
+    finally { await browser.close(); await coordinator.close(); await closeDailyBackground() }
     if (report?.status === "unconfirmed") throw new Error("hybrid_task_connection_cleanup_required")
   })
   app.addHook("onClose", async () => { dailyChrome.close(); ai.close(); await store.close() })

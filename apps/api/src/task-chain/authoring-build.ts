@@ -116,7 +116,10 @@ export class AuthoringBuild {
   }
 
   finish(source: HybridSourceResult) {
-    if (!this.finished || this.finished.canonicalRequest !== source.canonicalRequest || source.sourceGaps.length) {
+    // WHY：原始 sourceGaps 保留探索历史；是否仍阻断链路由已校验并保存的最终编译唯一判定。
+    // 无消费者探查可被编译器合法排除，不能在宿主重新把历史缺口判活；来源匹配和 final 屏障仍保留。
+    if (!this.finished || this.finished.canonicalRequest !== source.canonicalRequest
+      || this.finished.response.compilation.gaps.length) {
       throw new Error("hybrid_online_final_compilation_required")
     }
     return { response: this.finished.response, forkSourceDigest: source.forkSourceDigest, modelCalls: [],

@@ -69,9 +69,9 @@ class OrdinaryCapability:
         checks = declared_checks(postconditions, args, target)
         policy = settle_policy(postconditions)
         await capture_check_baselines(self.browser, checks)
-        prior_tabs = await navigation_tab_ids(self.browser) \
-            if action_name in NAVIGATION_ACTIONS and expects_url_change(postconditions) else None
         consumer_index = action_result_readiness(action_name, postconditions)
+        prior_tabs = await navigation_tab_ids(self.browser) \
+            if consumer_index is not None or action_name in NAVIGATION_ACTIONS and expects_url_change(postconditions) else None
         owner = navigation_action_owner(self.browser, prior_tabs) if consumer_index is not None else None
         prepared = await self.resolve_target(target, action_name=action_name) \
             if action_name in TARGET_ACTIONS | OPTIONAL_TARGET_ACTIONS and target is not None else None

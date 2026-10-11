@@ -23,11 +23,12 @@ import { projectRoot } from "./helpers.js"
 import { projectActivity } from "../src/task-chain/workspace-projection.js"
 import { RequirementClarificationRequired } from "../src/task-chain/authoring-failure.js"
 import { storedStepBuilds } from "../src/task-chain/preparation-step-builds.js"
+import { taskArtifacts } from "../src/database/schema.js"
 
 const schema: ValueSchema = { type: "array", items: { type: "object", properties: {
   title: { type: "string" } }, required: ["title"], additionalProperties: false } }
 
-async function harness(rejectFinal = false) {
+async function harness(rejectFinal = false, discoveryGap?: "retired" | "unresolved") {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-online-compilation-"))
   const store = await ProductStore.open(directory), taskId = store.taskAction({ type: "create", requestId: randomUUID() })
   const repository = new TaskContractRepository(store), { plan, requirement } = structuredClone(extractionFixture)
@@ -50,6 +51,7 @@ async function harness(rejectFinal = false) {
     recompile: async () => { throw new Error("offline_must_not_run") },
     withAuthoring: async (_input, work) => {
       const runner = new RunnerProcess(projectRoot, signal, undefined, {
+        ...(discoveryGap ? { runnerEnvironment: { BAT_TEST_DISCOVERY_GAP_MODE: discoveryGap } } : {}),
         runnerScript: path.join(projectRoot, "apps/api/tests/fixtures/online_compilation_runner.py") })
       try {
         await runner.startCompiler()
@@ -107,6 +109,43 @@ test("完整来源的在线收尾失败归于编译，不覆盖已有前缀或�
     assert.equal(failed.authoring!.stage, "compiling")
     assert.equal(failed.authoring!.failureLayer, "在线节点编译")
     assert.equal(failed.authoring!.build!.phase, "prefix")
+  } finally { await h.close() }
+})
+
+test("最终编译已排除的探查缺口只保留审计，不再阻断在线收尾", async () => {
+  const h = await harness(false, "retired")
+  try {
+    const result = await h.authoring.task(h.job, h.requirement, h.plan, null, h.signal).catch(error => {
+      const rejected = h.store.db.select().from(taskArtifacts).all()
+        .filter(row => row.mediaType.includes("compilation-rejected"))
+        .map(row => (row.body as { reason: string }).reason)
+      const gaps = parseCompilationCheckpoint(h.events.at(-1)!).response.compilation.gaps.map(issue => issue.reason)
+      throw new Error(`${error.message}; rejected=${rejected.join(",")}; gaps=${gaps.join(",")}`, { cause: error })
+    })
+    assert.equal(result.chains.length, 1)
+    const final = parseCompilationCheckpoint(h.events.at(-1)!)
+    assert.equal(final.phase, "final")
+    assert.deepEqual(final.response.compilation.gaps, [])
+    assert.equal(final.response.compilation.coverage.find(row => row.actionRef === "a-0002")?.exclusionRule,
+      "native_dom_lookup_observation/v1")
+    const saved = h.repository.job(h.job.taskId, h.job.id)
+    const exploration = saved.authoring!.exploration as { sources: Array<{ artifact: { artifactId: string } }> }
+    const source = h.repository.artifact(h.job.taskId, exploration.sources[0]!.artifact.artifactId).body as {
+      result: { sourceGaps: Array<{ reason: string }> }
+    }
+    assert.equal(source.result.sourceGaps[0]!.reason, "natural_read_container_identity_changed")
+    assert.deepEqual(h.order, ["prefix", "final", "source", "closed"])
+  } finally { await h.close() }
+})
+
+test("同一探查上未解决的来源错误仍阻断final和候选链", async () => {
+  const h = await harness(false, "unresolved")
+  try {
+    await assert.rejects(h.authoring.task(h.job, h.requirement, h.plan, null, h.signal), /hybrid_compilation_host_rejected/)
+    const final = parseCompilationCheckpoint(h.events.at(-1)!)
+    assert.ok(final.response.compilation.gaps.some(issue => issue.reason === "source_invalid"))
+    assert.equal(h.repository.job(h.job.taskId, h.job.id).status, "failed")
+    assert.equal(h.repository.draft(h.job.taskId), null)
   } finally { await h.close() }
 })
 

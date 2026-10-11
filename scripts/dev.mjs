@@ -50,7 +50,7 @@ export async function launchDevServices({ root, ports, dataDirectory, outputStre
       server: {
         middlewareMode: { server: webServer },
         hmr: { server: webServer },
-        proxy: { "/api": { target: `http://127.0.0.1:${ports.api}`, changeOrigin: false } },
+        proxy: { "/api": { target: `http://127.0.0.1:${ports.api}`, changeOrigin: false, ws: true } },
       },
     })
     webServer.on("request", (request, response) => vite.middlewares(request, response, () => {

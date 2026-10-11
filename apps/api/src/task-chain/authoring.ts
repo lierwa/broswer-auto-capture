@@ -8,6 +8,7 @@ import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/
 import type { AIModelProvider, PreparedAIModel } from "../ai/model.js"
 import { conflict, DomainError } from "../errors.js"
 import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
+import { RuntimeCleanupRequiredError } from "../upstream-browser/cleanup.js"
 import { browserUseTask, naturalRequirementText } from "../upstream-browser/task-request.js"
 import { completedModelInvocations } from "../upstream-browser/workflow-artifact.js"
 import { assertCapturedSourceIdentity, createHybridArtifact, createHybridSourceArtifact,
@@ -215,7 +216,7 @@ export class TaskChainAuthoring {
       allowedOrigins,
       onHumanWait: (wait, resume) => this.waitForHuman(job, wait, resume, signal),
       onProgress: (event) => this.recordProgress(job, event) }, async (session) => {
-      try { for (const step of plan.steps) {
+      for (const step of plan.steps) {
         signal.throwIfAborted()
         job.authoring!.stage = "exploring"; job.authoring!.level = "E0"
         if (!step.resultSpec) throw new Error("plan_result_spec_required")
@@ -250,6 +251,9 @@ export class TaskChainAuthoring {
         assertCapturedSourceIdentity(requirement, plan, step.id, stepInput, result)
         job.authoring!.consumption.explorationToolCalls += result.browserCommands
         this.touch(job)
+        // WHY：原生安全拒绝优先于后续采集/编译缺口，不能在用户界面再退化为普通动作失败。
+        const scopeFailure = result.sourceGaps.find(gap => gap.reason === "hybrid_navigation_outside_authorized_scope")
+        if (scopeFailure) throw new Error(scopeFailure.reason)
         const compilationFailure = result.sourceGaps.find(gap => gap.reason.startsWith("hybrid_compilation_"))
         if (compilationFailure) throw new Error(compilationFailure.reason)
         const ambiguities = result.sourceGaps.filter((gap) => gap.resolution === "confirm_intent")
@@ -267,11 +271,13 @@ export class TaskChainAuthoring {
         if (ambiguities.length) throw new RequirementClarificationRequired(ambiguities)
         sources.push({ step, stepInput, result, compiled: build.finish(result) })
         progression.acceptSource(step.id, stepInput, result)
-      } } catch (error) { explorationError = error }
+      }
       })
       closed = true
     } catch (error) {
-      explorationError = explorationError ? new AggregateError([explorationError, error], "hybrid_source_and_cleanup_failed") : error
+      // WHY：withAuthoring 在资源结算后抛主错误；未确认的清理使用独立类型，不能吞掉业务失败再报成功。
+      closed = !(error instanceof RuntimeCleanupRequiredError)
+      explorationError = error
     }
     for (const reference of sourceArtifacts) reference.closed = closed
     job.authoring.exploration = z.json().parse({ mode: "workflow-use-authoring/v3", sources: sourceArtifacts })

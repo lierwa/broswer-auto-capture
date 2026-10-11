@@ -139,8 +139,10 @@ class InspectedMethodTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([s['id'] for s in compiled.segments], ['s-a-0001', 'selection-a-0002', 's-a-0002'])
         navigation = compiled.segments[-1]
         self.assertEqual(navigation['operation']['actionName'], 'navigate')
-        self.assertEqual(navigation['postconditions'][0]['bindingArgument'], 'url')
-        self.assertNotIn('matched', navigation['postconditions'][0])
+        self.assertEqual(navigation['postconditions'], [])
+        self.assertEqual(navigation['bindings'][0]['argumentPath'], 'url')
+        self.assertEqual(navigation['bindings'][0]['binding'], {
+            'source': 'node', 'nodeId': 'selection-a-0002', 'path': []})
         self.assertEqual(request, original)
         model.ainvoke.assert_awaited_once()
 

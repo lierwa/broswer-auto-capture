@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
   "name": "B-A-T 日常 Chrome",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "连接 B-A-T，仅控制任务创建的窗口；授权可撤销。基于固定微软扩展 0.4.0。",
   "permissions": [
     "debugger",
     "activeTab",
     "tabs",
     "tabGroups",
-    "storage"
+    "storage",
+    "alarms",
+    "background"
   ],
   "host_permissions": [
     "<all_urls>"
