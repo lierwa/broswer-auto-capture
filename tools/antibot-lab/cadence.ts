@@ -31,7 +31,7 @@ export function downTimingInvalid(data:z.infer<typeof sampleSchema>) {
   if(!data.starts)return false // 旧协议不虚构缺少的原始时刻。
   return data.context?.downClockInvalid || data.starts.length!==data.keyCount ||
     data.intervals.length!==Math.max(0,data.keyCount-1) ||
-    data.starts.some((at,i)=>i>0 && (at<data.starts![i-1]! || at-data.starts![i-1]!==data.intervals[i-1]))
+    data.starts.some((at,i)=>i>0 && (at<data.starts![i-1]! || at-data.starts![i-1]! !==data.intervals[i-1]))
 }
 async function observeSample(base:string,data:z.infer<typeof sampleSchema>) {
   const row = (outcome: string, valid = false) => ({ category: 'input-behavior', detector: 'typing-cadence',

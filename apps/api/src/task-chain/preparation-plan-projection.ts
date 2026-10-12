@@ -2,7 +2,7 @@ import {
   CONTRACT_VERSION, taskPlanExecutionIssues, taskPlanSchema, type TaskPlan, type TaskRequirement, type TaskPreparationResearch,
 } from "@browser-capture/contracts"
 import { digestJson, stableUuid } from "@browser-capture/runtime"
-import { browserGrantLimits } from "@browser-capture/browser"
+import { browserGrantLimits } from "@browser-capture/contracts/browser"
 import { parsePreparationDraft } from "../interview/preparation-draft.js"
 import { sourceSupportsEntry } from "../interview/source-resolution.js"
 import { confirmedItemSteps } from "./record-plan.js"

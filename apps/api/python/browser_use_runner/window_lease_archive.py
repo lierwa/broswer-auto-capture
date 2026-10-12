@@ -7,6 +7,13 @@ from uuid import uuid4
 import psutil
 
 
+def record_target_creation(window, pending):
+    # WHY：请求发出但创建回执丢失时沿原租约保留未确认状态，不能伪报清理完成。
+    lease = window._load(window.owner_id)
+    lease.targetCreationPending = pending
+    window._save(lease)
+
+
 def previous_boot(path):
     """OS boot is stronger evidence than a disconnected extension endpoint."""
     return Path(path).stat().st_mtime < psutil.boot_time()

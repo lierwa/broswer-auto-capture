@@ -22,6 +22,20 @@ class Tools:
 
 
 class MethodReadCorrectionTests(unittest.IsolatedAsyncioTestCase):
+    def test_structured_result_feedback_retains_the_exact_host_accepted_method(self):
+        tools = Tools(); records = register_method_read_tool(tools, output_schema=OUTPUT)
+        params = MethodReadToolParams.model_validate({'outputPath': [],
+            'container': '#panel:not([data-state="running"])', 'fields': {
+                'title': {'selector': 'h2'}, 'labels': {'selector': 'li'},
+                'link': {'selector': ':scope', 'valueSource': 'page-url'}}})
+        expanded, mapping = records.resolve(params)
+        record = SimpleNamespace(parameters=expanded, mapping=mapping,
+            sample=SimpleNamespace(output={'title': 'Done', 'labels': ['A'], 'link': 'https://example.test'}))
+        feedback = json.loads(records.feedback(params, record))
+        self.assertEqual(feedback['recordedMethod'], expanded.model_dump(mode='json'))
+        self.assertIn('readinessGuidance', feedback)
+        self.assertNotIn('https://example.test', json.dumps(feedback))
+
     async def failure(self, raw, schema=OUTPUT):
         tools = Tools()
         register_method_read_tool(tools, output_schema=schema)

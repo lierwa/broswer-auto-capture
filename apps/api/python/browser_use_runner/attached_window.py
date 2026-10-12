@@ -20,7 +20,7 @@ from browser_use_runner.target_scope import TargetScope
 from browser_use_runner.startup_diagnostics import startup_causes
 from browser_use_runner.attached_startup_budget import AttachedStartupBudget
 from browser_use_runner.attached_cleanup_targets import targets_to_close, assert_closed_enumeration
-from browser_use_runner.window_lease_archive import owner_path, archived_path, previous_boot, browser_exited
+from browser_use_runner.window_lease_archive import owner_path, archived_path, previous_boot, browser_exited, record_target_creation
 
 
 class AttachedLease(Contract):
@@ -354,7 +354,7 @@ class AttachedWindow:
             self.last_browser = browser
             # WHY：SDK 已连通但尚未枚举目标时建页/验证，整个执行只使用它的原有 CDP 连接。
             self.scope = TargetScope(browser, lease.ownedTargets, self._record_owned, self._prepare_targets,
-                                     prevent_reconnect=True)
+                                     prevent_reconnect=True, on_creation=lambda pending: record_target_creation(self, pending))
             self.scope.install()
             with AttachedStartupBudget(browser, lease.cdpUrl):
                 await browser.start()
@@ -399,7 +399,7 @@ class AttachedWindow:
             self._startup_event(stage, 'completed')
             stage = 'task_target_prepare'
             self._startup_event(stage, 'started')
-            scope.begin_operation([], self._record_owned, self._prepare_targets)
+            scope.begin_operation([], self._record_owned, self._prepare_targets, lambda pending: record_target_creation(self, pending))
             await self._create(lease, browser.cdp_client)
             scope.owned.update(lease.ownedTargets)
             # WHY：autoAttach 可先于 createTarget 回执，先拒绝未知页；保存 owner 后显式再 attach。

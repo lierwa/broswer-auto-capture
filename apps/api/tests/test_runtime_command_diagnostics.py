@@ -1,6 +1,8 @@
 """Protocol failures retain fixed call locations without retrying or leaking messages."""
 import io
 import json
+import asyncio
+import logging
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -8,12 +10,47 @@ from unittest.mock import AsyncMock
 from browser_use_runner.author_request_loop import AuthorRequestLoop
 from browser_use_runner.diagnostic_channel import DiagnosticChannel
 from browser_use_runner.hybrid_main import Runner
-from browser_use_runner.runtime_diagnostics import command_failure
+from browser_use_runner.runtime_diagnostics import command_failure, native_action_failure
 from browser_use_runner.task_pointer import adapt_pointer
+from browser_use.tools.service import Tools
+from browser_use.tools.views import NavigateAction
 from workflow_use.hybrid.target_preparation import verify_event_target
 
 
 class RuntimeCommandDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_native_tools_swallowed_error_preserves_cause_without_message(self):
+        native = TimeoutError('private URL Cookie page body')
+        logger = logging.getLogger('browser_use.diagnostic-test')
+        logger.propagate = True
+        class CompletedEvent:
+            def __await__(self): return asyncio.sleep(0).__await__()
+            async def event_result(self, **_kwargs): return None
+        browser = SimpleNamespace(logger=logger,
+            event_bus=SimpleNamespace(dispatch=lambda _: CompletedEvent()),
+            get_browser_state_summary=AsyncMock(side_effect=native))
+        navigate = Tools().registry.registry.actions['navigate'].function
+        handlers = list(logging.getLogger('browser_use').handlers)
+        with self.assertRaises(RuntimeError) as failure:
+            with native_action_failure():
+                # Exercise the pinned native catch and a child task, not a hand-built diagnostic object.
+                result = await asyncio.wait_for(navigate(params=NavigateAction(url='https://owned.invalid'),
+                    browser_session=browser), timeout=2)
+                self.assertTrue(result.error)
+                raise RuntimeError('ordinary_action_failed')
+        self.assertIs(failure.exception.__cause__, native)
+        self.assertEqual(logging.getLogger('browser_use').handlers, handlers)
+        event = command_failure({'type': 'hybrid_execute', 'actionRef': 'a-0001'}, failure.exception)
+        self.assertEqual(event['causes'][1]['errorKind'], 'timeout_error')
+        self.assertIn('sdk_tools', [location['source'] for location in event['causes'][1]['locations']])
+        self.assertNotIn('private', json.dumps(event))
+        self.assertNotIn('Cookie', json.dumps(event))
+        with self.assertRaises(RuntimeError) as later:
+            with native_action_failure():
+                try: raise ValueError('unrelated private')
+                except ValueError: logger.error('unrelated source')
+                raise RuntimeError('ordinary_action_failed')
+        self.assertIsNone(later.exception.__cause__)
+
     async def test_native_timeout_is_not_redispatched_and_keeps_safe_source_locations(self):
         runner = Runner()
         runner.browser = SimpleNamespace(get_current_page=AsyncMock(return_value=

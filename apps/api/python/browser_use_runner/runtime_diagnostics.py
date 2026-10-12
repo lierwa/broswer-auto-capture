@@ -1,5 +1,9 @@
 """Owner-local fixed traceback metadata; no messages, frame locals or browser calls."""
+import logging
 import re
+import sys
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from browser_use_runner.startup_diagnostics import SOURCE_MODULES, startup_causes, _valid_cause
 
@@ -17,6 +21,38 @@ RUNTIME_MODULES = {**SOURCE_MODULES,
     'browser_use.browser.watchdogs.default_action_watchdog': 'sdk_action_watchdog',
 }
 RUNTIME_SOURCES = frozenset(RUNTIME_MODULES.values())
+
+
+_action_failure = ContextVar('bat_native_action_failure', default=None)
+
+
+class _NativeFailureHandler(logging.Handler):
+    def emit(self, record):
+        scope = _action_failure.get()
+        module = sys.modules.get('browser_use.tools.service')
+        # WHY：原生 Tools 的 except 块先记录错误再转 ActionResult；只取当前异常对象，不格式化/保存日志。
+        if (scope is not None and module is not None and record.pathname == module.__file__
+                and isinstance(error := sys.exception(), Exception)):
+            scope.append(error)
+
+
+@contextmanager
+def native_action_failure():
+    failures, handler = [], _NativeFailureHandler(level=logging.ERROR)
+    logger = logging.getLogger('browser_use')
+    token = _action_failure.set(failures)
+    logger.addHandler(handler)
+    try:
+        yield
+    except Exception as error:
+        # ContextVar 传递到 Tools.act 的 wait_for 子任务；不借用先前动作或其它并行任务的日志。
+        if str(error) == 'ordinary_action_failed' and error.__cause__ is None and failures:
+            error.__cause__ = failures[-1]
+        raise
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+        _action_failure.reset(token)
 
 
 def pointer_counts(browser):

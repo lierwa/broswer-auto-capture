@@ -1,5 +1,55 @@
 # 开发进度
 
+## 2026-10-12 当前断点：部署Review五项修复完成，Mac当地拉取安装验收
+
+实际checkout为本仓master，入场HEAD94fb77d9，保留原BSK移除、旧分支清理和产品修复。五项部署问题均有修复必要且已处理：首次guest父目录、真实Lima实例归属、未安装/未启动stop-vm、下载/解包中断恢复、无需Go的GeoIP刷新。详见[Review及验证](SHIELD_MULTIPLATFORM_REVIEW_20261012.md)。另补Linux构建命令组合与部署shell LF约束，没有改盾检测规则/阈值或B-A-T主流程。
+
+验证：8项TS聚焦、4项Python边界、盾包类型检查通过；自审新homeMissing回归先失败后修复，6项宿主及类型检查复验通过；x64原生校验器空PATH实读当前MMDB通过；验证包c22dbdb2的59项SHA与7项ELF/x64逐项通过。新增Mac构建配方只做语法检查，完整arm64构建和Mac实机未测，不能写成双平台已完成。首个WSL stderr解码夹具失败和homeMissing首败均保留。
+
+本轮stage linux-package-YRJtbx已核对owner并永久删除，公共包与非敏感证据保留；未创建浏览器、未启停既有服务。之前正常产品新任务d246fdb8四次Human/39 clear及所有首次失败继续有效，详见[最终报告](PRODUCT_BROWSER_FINAL_REPORT_20261012.md)。下一步由Mac拉取本次Git代码，按照[Mac安装与验收交接](MAC_INSTALL_VALIDATION_20261012.md)完成当地安装、报告、协议与重启证据；不再以本机SSH是否能连入Mac作为代码交接前提。
+
+## 2026-10-12 当前断点：导航与清理修复已完成新冻结产品验收，Mac仍待实际连接
+
+master@94fb77d9，全部既有dirty work保留，未提交/推送。新冻结1234文件未变；新任务d246fdb8从真实需求对话到prepare24444d38、样本1701af26、变化输入独立复验6f69c976、工作台发布V1 95b2c74b、正式c6e5f305和变化输入正式932ce7ed全部完成。四次普通执行均首次Human/39 clear，完整39项名称、状态、结论和地址与同次盾报告一致；模型0、auditComplete、cleanup首次confirmed、四原lease ended。两次正式同release/38d36719摘要，参数绑定及原生目标值后置检查有效。最后报告case24dfa2f6，见[最终检测报告](PRODUCT_BROWSER_FINAL_REPORT_20261012.md)。原WebDriver错误入口、两个首导航失败、控制页修前失败及取消恢复失败均保留。
+
+资源：所属UI宿主NlDLml进程已关闭、独立Profile永久删除；三个取消诊断原窗口和49832af9原窗口已结束；控制页临时目录已永久删除。正常产品PID24220、个人Chrome23112、原盾实例保留，daily revision55/Default前后一致。既有55 executions/65 jobs/116 contracts/166 artifacts/2 drafts/6 releases前缀字节不变。本轮49832af9在清理恢复后通过UI正常取消，独立于历史保护断言。
+
+剩余外部阻塞：Mac最新只读SSH仍被192.168.101.14:22在认证前关闭，已请求恢复远程登录/可用地址。Apple Silicon原生制品、Lima实际部署与检测、VM及宿主重启验收仍未完成，不能把Windows通过替代双平台交付。正常产品不需要继续无变化重跑；连接恢复后从独立盾方案P0 Mac继续。
+
+## 2026-10-12 当前：真实导航根因已复现并修正，重新冻结验收前
+
+取消恢复补齐并实证：草稿启动owner与正式运行不同，恢复改为核验同task/execution的持久化owner；13项恢复边界+1项真实child取消、API检查通过。正常产品PID24220重载后，49832af9自动恢复原aaec0c70 lease至ended，cleanup confirmed，业务paused和33条既有失败审计保留。所属UI宿主OXmT9L已结束/Profile永久删除。现在重新冻结，创建最终新任务；下方旧PID/待恢复描述为过程记录。
+
+真实产品入口已替代验收脚本自启任务Chrome。修正后两次新任务仍在首navigate出现ordinary_action_failed；原首败均保留。已用同一受管日常Chrome的本地跨域跳转页连续复现：扩展relay把Chrome的`-32602 / Invalid InterceptionId.`对象包装成message字符串，已有精确取消分支无法识别，错误锁存为capture_access_state_unavailable，使后续导航健康读取失败。只恢复CDP原错误结构；真实WS边界、原准入4项、API检查通过；修后6种页面/跳转时序通过且真实4次取消未污染后续请求，旧草稿产品试跑3d38d4c5完成Human/39clear/完整报告/模型0，仍非新冻结最终验收。
+
+诊断取消另查到child退出被误记browser_close not_required，三个本轮窗口已按原owner/退出审计调用既有关闭路径核验结束；最小修正为缺少浏览器关闭证据时进入原cleanup_required，真实child取消测试通过，正在验证UI恢复。详见[根因与纠正记录](PRODUCT_BROWSER_ACCEPTANCE_CORRECTION_20261012.md)。当前产品PID21364、个人Chrome23112保留；所有旧checkout改动保留。Mac/VM/宿主重启仍未验收，不提交、不推送、不关机。
+
+## 2026-10-12 用户纠正：撤回替代浏览器验收结论，修正统一入口中
+
+原 task5c07ca39 所用任务 Chrome 由验收脚本自行启动，`--remote-debugging-port=0` 引入 WebDriver；不能代表产品正常浏览器环境。原 Bot/38 clear/1 flagged 和所有首次失败保留，撤回下方 A3 已验收的交付结论。正在改为真实工作台既有选择/授权/受管窗口，辅助 UI 浏览器单独隔离，禁止临时调参或更改盾求通过。边界、复用评估与后续证据见[入口纠正记录](PRODUCT_BROWSER_ACCEPTANCE_CORRECTION_20261012.md)。Mac与重启未测仍阻止原任务整体交付；不提交、不推送、不关机。
+
+## 2026-10-12 当前：BSK迁移与清理已完成新任务验收，盾Mac实测仍受阻
+
+当前master@94fb77d9c04803ebee608814ee20b09fb545c230，全部入场改动与历史保留，未提交/推送。A1必要旧能力已接同一受管runner，外部BSK/daemon调用移除；A2废弃探索/预执行/轨迹编译闭包删除，共享能力和历史兼容保留。
+
+A3：冻结1229文件与fork清单9ffcd66b，task5c07ca39从新需求到prepare883a37bb、样本4792f288、另一组输入独立复验bd5e21f8、UI发布V1 ecd63ff9、正式af385683与变化输入d85ffdbf全部完成。四次普通执行模型0、auditComplete、cleanup首次confirmed；最终39项名称/结果、结论和地址与同次盾报告一致。两次正式使用同一release/b702e810，变化参数绑定与原生目标值检查通过，冻结期间代码/配置集合及字节未变。真实盾结论Bot/38 clear/1 WebDriver flagged、引擎未完成，如实报告，不为Human重试。访谈入口章节首败和探索2次结构输出失败及既有恢复、此前所有失败均单列保留。完整证据与报告见[BSK执行记录](BSK_REMOVAL_EXECUTION_20261012.md)。
+
+独立盾x64最终包34f1bf9e已完成Windows证书入口、真实H2/H3/RTT、12项HTTP控制、nonce跨engine重启拒绝、64请求配额跨origin重启、systemd异常恢复/重复启动、过期来源/缺制品/外来端口拒绝及数据保留；检测规则和阈值未改。两轮Linux临时安装均已永久删除，最终49 cases/1579 events已通过SQLite backup归档且逻辑摘要一致；所有验收宿主/Profile/配对与缓存、临时证书和public stage已清理。原盾实例与WSL presence恢复，五服务ready，原CA和个人浏览器保留；最终公共tgz作为交付候选保留。原engine库在中途正常恢复运行时产生心跳写入，旧主文件SHA不能当作在线WAL/逐行保护证明，详见[部署记录](SHIELD_DEPLOYMENT_EXECUTION_20261012.md)。
+
+正常工作台已加载最终代码，PID23656（本次快照），日常扩展connected/idle，个人Chrome未关闭；六张历史表两次重载前后行数/内容SHA均一致。所属验收4393/4395宿主已关闭，资源与关闭租约/内容回执分开结算。
+
+剩余：Mac SSH收尾复核仍被192.168.101.14:22关闭；此前详细证据为认证前关闭，已知Tailscale Mac离线，未执行Mac命令。原生arm64构建、Lima实际安装与Mac协议/交互报告、VM和宿主重启均未验收。未关闭共享WSL中的无关shell，未执行Windows重启。必须取得可连接Apple Silicon Mac后继续独立方案P0→P3；若代码变化，重新冻结受影响版本并满足最终新任务验收要求。
+
+用户授权的提交、推送、远程一致性核对和关机仅在全部任务完成后执行；当前条件未满足，均未执行。无需重新询问已给出的提交/推送/关机授权。不创建worktree、不访问京东、不使用Docker。
+
+## 2026-10-12 最新范围：仅完成开发文档，尚未实施清理或双平台部署
+
+用户要求先交详细文档，再去新 session 开发。B-A-T 只做两件事：彻底移除外部 BSK CLI/daemon 及旧执行依赖；删除已被当前 B-U 主线替代的探索/预执行/轨迹编译分支。仍需能力必须接到现有受管运行通道，不能通过禁用旧任务、丢弃历史或改名保留控制器交差。方案：[BSK移除与探索清理](BSK_REMOVAL_AND_EXPLORATION_CLEANUP_PLAN_20261012.md)。本轮已核对装配、旧与新执行入口、共用工具、官方源码和最小验证入口；尚未修改实现或跑测试。
+
+用户随后另加盾双平台部署方案，已确认另一台 Mac 为 Apple Silicon，并要求复用成熟开源运行环境、不自写跨平台管理器。独立方案：[Windows/WSL2与Mac arm64部署](SHIELD_WINDOWS_MAC_DEPLOYMENT_PLAN_20261012.md)。已撤回本轮错误的Docker/Compose推荐：10月8日因Docker不可用、两次启动失败已明确停止该路线。现推荐Windows保留WSL，Mac接入Lima2.2.1的VZ Linux arm64，两端共用Linux服务包与现有systemd、mkcert；只补部署配置、制品和薄入口。已核固定上游源码，先完成arm64构建及TLS/H2/H3/来源与RTT实测再冻结；尚无Mac实测。B-A-T阶段不改盾，盾阶段只改独立部署边界，不混做实现。
+
+本轮开始实核 master@94fb77d9c04803ebee608814ee20b09fb545c230、工作区干净；此后仅新增/更新文档。无代码改动、服务/浏览器/容器创建或启停、依赖安装、证书安装、数据库修改、测试、提交、推送、worktree或关机。下方PID/ready/首败均为历史记录，本轮没有现场核验资源状态。下一 session 重新核验 checkout/dirty work，优先按BSK方案A0→A1→A2→A3；盾按单独P0→P3实施，不恢复旧反爬大范围工作。历史三项其他Chrome扩展损坏禁用仍另案，不擅自修。
+
 ## 2026-10-12 当前：通用读取修复后冻结新任务完整主流程通过
 
 用户明确获取最终报告属于任务本身；已撤回“多要求报告链接导致失败”的错误归因。修复的是准备阶段相对容器读取与纠错说明，不删输出、不改盾。25 项聚焦通过；真实 Chrome 通用页复现范围错误，同一产品模型一次纠正，普通执行器复读另一页变化数据时模型 0。

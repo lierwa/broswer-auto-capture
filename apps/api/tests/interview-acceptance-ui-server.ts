@@ -20,7 +20,7 @@ const service = await createApplication({
   root,
   directory,
   ai,
-  browserExecutor: async () => { throw new Error("interview_acceptance_browser_forbidden") },
+  upstreamBrowserRuntime: { withCapabilities: async () => { throw new Error("interview_acceptance_browser_forbidden") } },
   serveUi: false,
 })
 if (JSON.stringify(service.store.sharedModelSelection(SHARED_AI_SUBJECT)) !== JSON.stringify(expected)) {

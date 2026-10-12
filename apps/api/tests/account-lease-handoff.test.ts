@@ -1,11 +1,13 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { randomUUID } from "node:crypto"
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { directoryFixture } from "./helpers/account-directory-fixture.js"
 import { PythonUpstreamBrowserRuntime } from "../src/upstream-browser/python-runtime.js"
-import { TaskConnection } from "../src/upstream-browser/task-connection.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
-import type { RunnerProcess } from "../src/upstream-browser/service.js"
+import { RunnerProcess } from "../src/upstream-browser/service.js"
 
 // WHY：旧 closed 维护可归档，但许可不能跨 Profile、未知 owner 或正在维护的操作。
 test("历史账号收据的归档许可只包含当前 Profile 的 closed 确定 owner", async () => {
@@ -27,12 +29,14 @@ test("历史账号收据的归档许可只包含当前 Profile 的 closed 确定
 })
 
 // WHY：只暴露宿主当前已确认的维护 owner；必须在账号准备完成后合并，再交原 runner 归档。
-test("复跑实际传给 runner 的 releasedOwners 包含账号准备后释放的维护收据", async () => {
+test("复跑实际传给 runner 的 releasedOwners 包含账号准备后释放的维护收据", async t => {
   const report = cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => ({ stage, status: "confirmed", code: null })), false)
   let prepared = false, captured: Parameters<RunnerProcess["startHybrid"]>[0]["managedWindow"]
-  const connection = new TaskConnection(process.cwd(), () => ({ envBoolean: () => true,
-    startHybrid: async config => { captured = config.managedWindow }, request: async () => null, close: async () => report }))
-  const runtime = new PythonUpstreamBrowserRuntime({ root: process.cwd(), directory: "unused-owned-fixture", subject: {} as never }, connection)
+  t.mock.method(RunnerProcess.prototype, 'startHybrid', async (config: Parameters<RunnerProcess['startHybrid']>[0]) => { captured = config.managedWindow })
+  t.mock.method(RunnerProcess.prototype, 'close', async () => report)
+  const directory = await mkdtemp(path.join(tmpdir(), 'account-lease-handoff-'))
+  t.after(() => rm(directory, { recursive: true }))
+  const runtime = new PythonUpstreamBrowserRuntime({ root: process.cwd(), directory, subject: {} as never })
   const accountOwner = randomUUID(), deliveryOwner = randomUUID(), owner = randomUUID()
   runtime.setAccountPreparation(async () => { prepared = true })
   runtime.setReleasedAccountOwners(async kind => { assert(prepared); assert.equal(kind, "daily"); return [accountOwner, deliveryOwner] })

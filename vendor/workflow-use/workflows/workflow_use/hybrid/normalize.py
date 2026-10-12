@@ -16,6 +16,7 @@ from .evidence import (
     gap,
 )
 from .registry import ActionRegistry, action_effect
+from .content_read_params import ContentReadToolParams
 
 
 class ResultEvidence(Contract):
@@ -79,7 +80,11 @@ def normalize_action(record, index, raw, action_id, ambiguous, registry):
     name, args = populated[0]
     issues = []
     try:
-        registry.validate_action(name, args)
+        validated = registry.validate_action(name, args)
+        parameters = getattr(validated.root, name, None) if name == 'bat_read_fields' else None
+        # WHY：新规范来源须保留原生范围标记；不能让接收端把缺省标记误解成历史 common-ancestor。
+        if isinstance(parameters, ContentReadToolParams):
+            args = parameters.model_dump(mode='json')
     except Exception:
         code = 'unsupported_action' if name not in registry.names else 'invalid_source'
         issues.append(gap(code, [action_id], 'action_not_valid_for_public_schema', 'reject_trace'))

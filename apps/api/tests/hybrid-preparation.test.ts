@@ -85,7 +85,7 @@ test("目标就绪性与 workflow-step/read-fields 属于同一个 hybrid Browse
   assert.throws(() => assertWorkflowRuntimeSupported([{ nodes: [
     { kind: "capability", capability: { name: "browser.workflow-step", version: 2 } },
     { kind: "capability", capability: { name: "browser.unknown", version: 1 } },
-  ] }] as never), /mixed_browser_runtime_unsupported/)
+  ] }] as never), /hybrid_capability_unsupported/)
 })
 
 test("入口消费者的准备前后就绪检查使用本次单项输入，不遗留未解析绑定", () => {

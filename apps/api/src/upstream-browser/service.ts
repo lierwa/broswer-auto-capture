@@ -1,4 +1,3 @@
-import { retireWorkflowV1 } from "./retirement.js"
 import { randomUUID } from "node:crypto"
 import { spawn, type ChildProcess } from "node:child_process"
 import { mkdtemp, realpath, rm, stat } from "node:fs/promises"
@@ -10,8 +9,7 @@ import type { AI, ModelSelection } from "@agent-platform/ai-connect/server"
 import type { JsonValue, ValueSchema } from "@browser-capture/contracts"
 import type { ModelCallReport, TaskChainCapabilities } from "@browser-capture/runtime"
 import type { ModelAudit } from "./model-bridge.js"
-import { runnerAuthorRequestSchema, runnerAuthorResultSchema, runnerCloseRequestSchema,
-  runnerReplayRequestSchema, runnerReplayResultSchema, runnerResponseSchema, runnerStartRequestSchema,
+import { runnerAuthorResultSchema, runnerCloseRequestSchema, runnerResponseSchema,
   type RunnerRequest } from "./protocol.js"
 import { hybridProfileStartRequestSchema, hybridStartRequestSchema, hybridHandoffRequestSchema,
   hybridManagedWindowRequestSchema, hybridManagedWindowResultSchema, hybridWindowLeaseSchema,
@@ -32,13 +30,6 @@ import { dailyChromeConnection, resolveDailyChromeEndpoint } from "./daily-chrom
 import type { BrowserMode } from "@browser-capture/contracts/browser-profile"
 
 export type UpstreamAuthorResult = ReturnType<typeof runnerAuthorResultSchema.parse> & { modelCalls: ModelCallReport[] }
-export type UpstreamReplayResult = ReturnType<typeof runnerReplayResultSchema.parse> & { modelCalls: ModelCallReport[] }
-export interface UpstreamBrowserSession {
-  author(input: { task: string; input: JsonValue; inputSchema: ValueSchema; outputSchema: ValueSchema;
-    workflowInputs: Record<string, string>; artifactKey: string; maxSteps: number }): Promise<UpstreamAuthorResult>
-  replay(input: { definition: JsonValue; inputs: Record<string, string | number | boolean>;
-    outputSchema: ValueSchema; artifactKey: string; onModelCall?(report: ModelCallReport): Promise<void> }): Promise<UpstreamReplayResult>
-}
 export interface UpstreamBrowserRuntime {
   withAccountOperation?<T>(work: () => Promise<T>): Promise<T>
   accountSession?(input: Omit<ReturnType<typeof accountSessionRequestSchema.parse>, "id" | "type" | "profilePath">,
@@ -46,9 +37,8 @@ export interface UpstreamBrowserRuntime {
   close?(): Promise<RunnerCleanupReport>
   sourceDigest?(): Promise<string>
   recompile?(input: Omit<Parameters<typeof recompileHybridSource>[0], "root" | "directory" | "subject">): ReturnType<typeof recompileHybridSource>
-  withSession<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string },
-    work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T>
   withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
+    legacyNodeIds?: Record<string, string[]>;
     sessionPurpose?: "account"; publicRead?: boolean;
     connectionOwnerId?: string; closeAfterOperation?: boolean;
     headless?: boolean; browserMode?: BrowserMode; managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[]; accountMaintenance?: boolean };
@@ -99,10 +89,6 @@ export class RunnerProcess {
     return value === undefined ? fallback : value === "true" || value === "1"
   }
   managedWindowOwner() { return this.managedWindow?.ownerId ?? null }
-
-  async start(config: Omit<ReturnType<typeof runnerStartRequestSchema.parse>, "id" | "type">["config"]) {
-    retireWorkflowV1()
-  }
 
   async startHybrid(config: Omit<ReturnType<typeof hybridStartRequestSchema.parse>["config"], "allowedSites">) {
     const mode = this.lifecycle.browserMode ?? "daily"
@@ -225,14 +211,6 @@ export class RunnerProcess {
     if (this.signal.aborted) abort()
   }
 
-  async author(input: Omit<ReturnType<typeof runnerAuthorRequestSchema.parse>, "id" | "type">) {
-    retireWorkflowV1()
-    throw new Error("legacy_workflow_use_v1_retired")
-  }
-  async replay(input: Omit<ReturnType<typeof runnerReplayRequestSchema.parse>, "id" | "type" | "onModelCall">) {
-    retireWorkflowV1()
-    throw new Error("legacy_workflow_use_v1_retired")
-  }
   close() { return this.cleanup ??= this.performClose() }
 
   private async performClose(): Promise<RunnerCleanupReport> {
@@ -274,7 +252,10 @@ export class RunnerProcess {
       const result = await this.closeProtocol()
       stages.push(...result.stages, result.protocol)
     } else {
-      stages.push(notRequired("capability_close"), notRequired("browser_close"), notRequired("close_protocol"))
+      // WHY：取消/崩溃只证明控制进程退出；受管浏览器属于原 lease，必须交回既有 owner 清理核验。
+      stages.push(notRequired("capability_close"), this.managedWindow
+        ? unconfirmed("browser_close", "cleanup_browser_close_failed") : notRequired("browser_close"),
+      notRequired("close_protocol"))
     }
     child.stdin?.end()
     if (this.signal.aborted && !hasExited(child)) {

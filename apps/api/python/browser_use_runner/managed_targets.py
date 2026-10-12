@@ -2,6 +2,7 @@
 from browser_use_runner.attached_window import _client
 from browser_use_runner.target_scope import TargetScope
 from browser_use.browser.events import LoadStorageStateEvent
+from browser_use_runner.window_lease_archive import record_target_creation
 
 
 async def load_owned_storage(browser, scope):
@@ -44,7 +45,8 @@ class ManagedTargets:
 
     def install(self, browser, lease):
         scope = TargetScope(browser, lease.ownedTargets, self.record, self.prepare, prevent_reconnect=True,
-                            allow_storage_import=browser.browser_profile.storage_state is not None)
+                            allow_storage_import=browser.browser_profile.storage_state is not None,
+                            on_creation=lambda pending: record_target_creation(self.window, pending))
         scope.install()
         object.__setattr__(browser, '_bat_native_range_owner', self.native_range_owner)
         return scope

@@ -1,5 +1,19 @@
 # 本地独立检测实验
 
+## 双宿主部署进度（2026-10-12，尚未最终验收）
+
+Windows 保留 WSL Ubuntu26.04，Apple Silicon Mac 的入口使用固定 Lima2.2.1/VZ/arm64/plain，无 Docker/containerd。两端共用本包 Linux 入口和五个 systemd 用户服务。当前 Windows 新包安装/生命周期/反向合同已有证据；Mac SSH 尚不可用，不能将下列命令视为 Mac 已验收。
+
+最新：五项宿主/维护问题已修，Mac改由当地拉取代码进行实际安装验收。仓库内完整步骤见[Mac安装验收交接](../../docs/development/MAC_INSTALL_VALIDATION_20261012.md)。首次原生包构建配方为`deployment/build-linux.sh`（构建机需要Go/C工具链；运行包不需要）。GeoIP原校验器现随包发布；停服务后用宿主入口`refresh-geodata`刷新，Tor仍用`refresh-source-data`。Mac实例核验实际Lima目录、配置、创建标记和目录身份，未知归属不自动接管。
+
+构建机用原 prepare、固定源码补丁和探针构建准备对应原生架构制品，再运行 `node runtime-release.ts <输出目录>`。发行归档包含源码包、Node、固定服务二进制、Python wheels、公开数据源与摘要；Ubuntu python3/运行库由发行版安装，不要求用户安装 Go/C 编译器。构建/校准专用工具仍留 tests 与 prepare，不在日常启动执行。归档禁止实例数据库、密钥、日志和 CA 私钥；staging 目录由构建方核验归属后清理。
+
+Windows：在已有 WSL Ubuntu 中解开对应 linux-x64 包，运行 `python3 install-linux.py /home/<用户>/bat-shield`；在宿主本包目录用 `node windows-host.ts /home/<用户>/bat-shield trust-localhost` 一次配置可信证书，再用相同入口的 `start`、`status`、`stop`。Windows 必须从宿主入口启动，入口复用原 WSL presence；直接在 Linux 运行的 systemd 服务不会单独维持 WSL 常驻。Linux 目录保存所有实例 SQLite，不放在 Windows 共享盘。
+
+Mac：宿主 Node>=24，执行 `node mac-host.ts setup` 安装固定 Lima并创建专属 `bat-shield` VM；`node mac-host.ts install <linux-arm64.tgz> <归档sha256>` 校验和安装；`node mac-host.ts trust-localhost` 使用该Mac本地 mkcert CA；日常 `start/status/stop/logs`，停止整个专属 VM 使用 `stop-vm`。Lima通过官方静态TCP转发暴露4183/4185/4193；H3使用shieldvz真实私网接口。公开根/叶证书可以交给Linux，宿主CA私钥不复制、不挂载。
+
+启动前检测制品摘要、公开数据新鲜度、实际资源归属与原健康端点。停服务不会删除数据。换版本先停止所属服务、保留数据备份，现有 `relocate` 仍负责源码切换及失败回退；不把重新安装指向已有其他版本目录。卸载程序、删除实例数据、撤销宿主信任和删除VM是独立操作，不执行全局 `wsl --shutdown` 或删除其他Lima实例。当前Mac端升级/重启/网络矩阵待实测。
+
 ## 检测盾网站（暗色 V3）
 
 在项目根目录执行 `npm --prefix tools/antibot-lab start`，打开 **https://localhost:4185/measurement/check**。每次访问创建新的 `<run>.shield.localhost` 会话，自动检查 34 项并完成原 CrowdSec 挑战。“补充交互检测”在同页分别输入 **Today feels like a good day.** 与 **今天适合出去走走。**，滚动阅读区并提交，增加 5 项行为检查。结论、全部项目和 JSON 同页可读取；无报告对照。`globalThis.__batCheckReport`、`#shield-report` 和 `#report` 的 `data-status/data-verdict/data-run-id` 供自动化读取；同源 `/measurement/check/report/<run>?mode=interactive` 返回服务端版本 3 报告，包含 `verification`、`flow`、`phase`、`verdict` 与原 `signals`。

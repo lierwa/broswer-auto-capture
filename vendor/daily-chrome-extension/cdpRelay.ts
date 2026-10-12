@@ -39,6 +39,7 @@ const playwrightExtensionId = ''; // B-A-T 必须显式提供其独立扩展身�
 import { logUnhandledError } from './log.js';
 import { ExtensionProtocolV2 } from './cdpRelayV2.js';
 import { CDPOwnerScopes } from './cdpOwnerScopes.js';
+import { cdpProtocolError } from './cdpProtocolError.js';
 import * as protocol from './protocol.js';
 import { z } from 'zod';
 
@@ -337,7 +338,7 @@ export class CDPRelayServer {
       client?.send(JSON.stringify({
         id,
         ...(sessionId ? { sessionId } : {}),
-        error: { message: (e as Error).message }
+        error: cdpProtocolError(e)
       }));
     }
   }

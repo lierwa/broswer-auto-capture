@@ -11,6 +11,7 @@ from .method_read_tool import MethodReadRecord, MethodReadToolParams, expand_met
 from .natural_reads import VerifiedNaturalRead, schema_at_path, value_at_path
 from .read import ReadSampleCoverage
 from .entry_selection import assert_entry_sample
+from .content_read_params import ContentReadToolParams
 
 
 def verified_method_read(*, records, start, arguments, results, result_ref, action_ref):
@@ -47,6 +48,9 @@ def verified_method_read(*, records, start, arguments, results, result_ref, acti
 
 def _validated_record(record, arguments, records, start):
     try:
+        # WHY：原生内容工具补的宿主默认值也参与证据校验；不能用旧字段工具默认值重新解释同一次调用。
+        if records.capture_content:
+            arguments = ContentReadToolParams.model_validate(arguments).model_dump(mode='json')
         params = MethodReadToolParams.model_validate(bind_root_read_path(arguments, records.output_schema))
         checked = MethodReadRecord.model_validate(record.model_dump(mode='json'))
         expanded, expected = records.resolve(params, before=start, selection=checked.selection)

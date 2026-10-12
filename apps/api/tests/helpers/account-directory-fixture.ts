@@ -13,7 +13,6 @@ export async function directoryFixture(serveUi = false) {
   const windows = new Set<string>(), backups = new Map<string, string>()
   const report = cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => ({ stage, status: "confirmed", code: null })), false)
   const upstream: UpstreamBrowserRuntime = {
-    async withSession() { throw Error("implicit_model_forbidden") },
     async withCapabilities(input, work) {
       state.calls++; windows.add(input.ownerId)
       const result = await work({ capability: async invocation => ({ outcome: "success", output: invocation.node.id === "read"

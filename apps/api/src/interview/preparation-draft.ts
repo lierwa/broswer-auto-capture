@@ -1,6 +1,6 @@
 import { resultSpecSchema, valueSchemaSchema, type ResultSpec, type ValueSchema } from "@browser-capture/contracts"
 import { contentDelivery, executionIntent } from "./content-delivery.js"
-import { businessResultSource, parseBusinessSteps } from "./business-steps.js"
+import { businessResultSource, parseBusinessSteps, validateTaskStepInputs } from "./business-steps.js"
 import { DraftValidationError, draftError, markerError, deliveryLines, resultShapeLines, browserDeliveryLines } from "./draft-validation.js"
 
 type DraftField = { name: string; description: string; schema: ValueSchema; optional: boolean }
@@ -57,7 +57,10 @@ export function parsePreparationDraft(markdown: string) {
 }
 
 function parseDraft(markdown: string) {
-  const inputLines = section(markdown, "运行输入").split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
+  const inputBody = section(markdown, "运行输入").split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
+  // WHY：与结果章节相同，只投影明确的字段列表；说明保留在原草稿，不按语义猜成字段或丢弃业务约束。
+  const declarations = inputBody.filter(line => line.startsWith("-"))
+  const inputLines = declarations.length ? declarations : inputBody
   if (!inputLines.length) throw draftError("preparation_draft_input_required", "运行输入", "输入声明", "章节为空",
     "没有运行输入时独立写“- 无”；有输入时逐行声明已确定的字段。")
   const inputFields = inputLines.length === 1 && inputLines[0] === "- 无" ? [] : fields(inputLines, "运行输入")
@@ -69,6 +72,7 @@ function parseDraft(markdown: string) {
   const resultBody = section(markdown, "结果与完成")
   const lines = resultBody.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
   const steps = parseBusinessSteps(markdown)
+  validateTaskStepInputs(steps, inputSchema)
   const resultSource = steps ? businessResultSource(lines, steps) : undefined
   const delivery = lines.filter((line) => line.startsWith("- 交付："))
   if (delivery.length !== 1 || !deliveryLines.includes(delivery[0]!)) {

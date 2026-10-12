@@ -90,7 +90,7 @@ try {
     root,
     directory,
     ai,
-    browserExecutor: async () => { throw new Error("interview_acceptance_browser_forbidden") },
+    upstreamBrowserRuntime: { withCapabilities: async () => { throw new Error("interview_acceptance_browser_forbidden") } },
   })
   // WHY：只在隔离 SQLite 中复制已核验的非敏感选择；凭据仍由原 managed AI 存储持有，正式设置不被写入。
   service.store.saveSharedModelSelection(SHARED_AI_SUBJECT, expectedSelection)
@@ -119,17 +119,28 @@ try {
 }
 if (artifact.failure || artifact.cases.some((scenario) => scenario.status !== "passed") || !artifact.userStateUnchanged) process.exitCode = 1
 
-async function runScenario(
-  app: NonNullable<typeof service>,
-  base: string,
-  scenario: InterviewAcceptanceCase,
-  previous?: CaseArtifact,
-  maximumCalls?: number,
+async function confirmResumedDraft(app: NonNullable<typeof service>, base: string, taskId: string,
+  scenario: InterviewAcceptanceCase, state: InterviewState,
+  draft: NonNullable<ReturnType<typeof currentDraft>>, result: CaseArtifact): Promise<CaseArtifact> {
+  try {
+    const expected = scenario.finalDraftMustContain ?? scenario.draftMustContain
+    assertExpectedTermsWereSent(state, expected)
+    assertContains(draft, expected)
+    assertAcceptanceDraftQuality(scenario, draft, "final")
+    await confirmDraft(base, taskId, state, draft.version)
+    if (app.store.snapshot(taskId).confirmedVersion !== draft.version) throw new Error("草稿确认版本未持久化")
+    await assertLaterStagesEmpty(base, taskId)
+    return { ...result, status: "passed", confirmedVersion: draft.version, finalDraft: draft }
+  } catch (error) {
+    return { ...result, status: "failed", failure: publicError(error), failureKind: classifyFailure(error) }
+  }
+}
+
+async function runScenario(app: NonNullable<typeof service>, base: string,
+  scenario: InterviewAcceptanceCase, previous?: CaseArtifact, maximumCalls?: number,
 ): Promise<CaseArtifact> {
-  let taskId: string
-  let result: CaseArtifact
-  let input: string
-  let answer: Answer | undefined
+  let taskId: string, result: CaseArtifact
+  let input: string, answer: Answer | undefined
   let resumedCorrection = false
   if (previous) {
     taskId = previous.taskId
@@ -144,18 +155,7 @@ async function runScenario(
         answer = undefined
         resumedCorrection = true
       } else {
-        try {
-          const expected = scenario.finalDraftMustContain ?? scenario.draftMustContain
-          assertExpectedTermsWereSent(state, expected)
-          assertContains(draft, expected)
-          assertAcceptanceDraftQuality(scenario, draft, "final")
-          await confirmDraft(base, taskId, state, draft.version)
-          if (app.store.snapshot(taskId).confirmedVersion !== draft.version) throw new Error("草稿确认版本未持久化")
-          await assertLaterStagesEmpty(base, taskId)
-          return { ...result, status: "passed", confirmedVersion: draft.version, finalDraft: draft }
-        } catch (error) {
-          return { ...result, status: "failed", failure: publicError(error), failureKind: classifyFailure(error) }
-        }
+        return confirmResumedDraft(app, base, taskId, scenario, state, draft, result)
       }
     } else {
       const open = state.unresolved.find((item) => item.status === "open")

@@ -92,8 +92,7 @@ export async function runMinimumProductWorkbenchAcceptance(input: Input) {
   }
 }
 
-export function launchChrome(profile: string) {
-  const executable = process.env.BAT_ACCEPTANCE_BROWSER_EXECUTABLE
+export function launchChrome(profile: string, executable = process.env.BAT_ACCEPTANCE_BROWSER_EXECUTABLE) {
   if (!executable) throw new Error("chrome_executable_missing")
   return spawn(executable, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`,
     "--no-first-run", "--disable-default-apps", "--disable-background-networking", "--window-size=1440,1000", "about:blank"],

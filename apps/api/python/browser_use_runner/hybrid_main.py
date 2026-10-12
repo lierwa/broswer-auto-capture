@@ -25,7 +25,7 @@ from browser_use_runner.output_schema import output_model_for
 from browser_use_runner.hybrid_compile import compile_offline
 from browser_use_runner.popup_resume import PopupResumeAdapter
 from browser_use_runner.diagnostic_channel import DiagnosticChannel
-from browser_use_runner.runtime_diagnostics import pointer_counts, attach_pointer_counts
+from browser_use_runner.runtime_diagnostics import pointer_counts, attach_pointer_counts, native_action_failure
 from browser_use_runner.author_request_loop import AuthorRequestLoop
 from browser_use_runner.compilation_control import CompilationAck, CompilationControl
 from browser_use_runner.site_scope import origin, normalize_allowed_site, allowed_domain_patterns, allowed_url
@@ -41,7 +41,7 @@ from browser_use_runner.window_control import control_window
 from browser_use_runner.hybrid_commands import (
     AllowedSite, StartConfig, ProfileStartConfig, StepCommand, ReadCommand, TargetReadinessCommand,
     ReadScope, COMMAND, Envelope, StartRequest, ProfileStartRequest, ProfileOwnerRequest, ProfileRecoverRequest,
-    ExecuteRequest, ObserveRequest, HandoffRequest, ManagedWindowRequest, AccountSessionRequest, CloseRequest, ReleaseRequest,
+    ExecuteRequest, LegacyRequest, ObserveRequest, HandoffRequest, ManagedWindowRequest, AccountSessionRequest, CloseRequest, ReleaseRequest,
     AuthorModel, AuthorRequest, AuthorResumeRequest, CompileRequest, REQUEST,
 )
 
@@ -125,6 +125,9 @@ class Runner:
                                                  request.ownerId, request.leaseId, request.runner))
         if isinstance(request, ExecuteRequest):
             return await self.execute(request.command.model_dump(), action_ref=request.actionRef)
+        if isinstance(request, LegacyRequest):
+            from browser_use_runner.legacy_capabilities import execute_legacy
+            return await execute_legacy(self, request.command.model_dump(exclude_none=True))
         if isinstance(request, ObserveRequest):
             return await self.observe()
         if isinstance(request, HandoffRequest):
@@ -321,7 +324,8 @@ class Runner:
                 guard(await (await self.browser.get_current_page()).get_url())
             input_before = pointer_counts(self.browser)
             try:
-                output = await self.capability.execute_checked(command.actionName, command.args, command.target, command.postconditions)
+                with native_action_failure():
+                    output = await self.capability.execute_checked(command.actionName, command.args, command.target, command.postconditions)
             except (Exception, asyncio.CancelledError) as error:
                 attach_pointer_counts(error, input_before, pointer_counts(self.browser))
                 if isinstance(error, PostconditionNotMet) and isinstance(action_ref, str):

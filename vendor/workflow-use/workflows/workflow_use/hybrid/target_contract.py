@@ -21,7 +21,11 @@ def validate_target(raw, allow_binding=False):
         _exact_keys(raw, {'strategy', 'value'}, {'scope'})
         _nonempty(raw.get('value'), 'target_query_required')
     elif strategy == 'title':
-        _exact_keys(raw, {'strategy', 'role', 'name'})
+        _exact_keys(raw, {'strategy', 'role', 'name'}, {'occurrence', 'fallbackName'})
+        if 'occurrence' in raw and (type(raw['occurrence']) is not int or not 0 <= raw['occurrence'] <= 99):
+            raise ValueError('invalid_stable_target')
+        if 'fallbackName' in raw:
+            _nonempty(raw['fallbackName'], 'target_name_required')
         _nonempty(raw.get('role'), 'target_role_required')
         _nonempty(raw.get('name'), 'target_name_required')
     elif strategy == 'structure':

@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "files": ["*.ts", "*.py", "*.go", "*.c", "*.js", "*.css", "*.html", "*.json", "*.mjs", "*.mts", "*.cmd", "*.lua", "README.md", "THIRD_PARTY_NOTICES.md", "tests/", "shared/"],
+  "files": ["*.ts", "*.py", "*.go", "*.c", "*.js", "*.css", "*.html", "*.json", "*.mjs", "*.mts", "*.cmd", "*.lua", "README.md", "THIRD_PARTY_NOTICES.md", "tests/", "shared/", "deployment/"],
   "engines": {
     "node": ">=24",
     "npm": ">=11"
@@ -15,9 +15,11 @@
     "stop": "node lab.ts stop",
     "prepare": "node lab.ts prepare",
     "check": "tsc --noEmit",
-    "test": "node --test tests/*.test.ts",
+    "test": "node --experimental-vm-modules --test tests/*.test.ts",
     "fixtures": "powershell -NoProfile -File tests/prepare-fixtures.ps1",
-    "release": "node release.ts"
+    "release": "node release.ts",
+    "release:runtime": "node runtime-release.ts",
+    "mac": "node mac-host.ts"
   },
   "dependencies": {
     "csrf-sync": "4.2.1",

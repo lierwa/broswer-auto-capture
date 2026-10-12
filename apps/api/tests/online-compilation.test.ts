@@ -47,8 +47,7 @@ async function harness(rejectFinal = false, discoveryGap?: "retired" | "unresolv
   repository.saveJob(job)
   const signal = new AbortController().signal, events: CompilationCheckpoint[] = [], order: string[] = []
   let authoring!: TaskChainAuthoring
-  const upstream: UpstreamBrowserRuntime = { withSession: async () => { throw new Error("legacy_unexpected") },
-    recompile: async () => { throw new Error("offline_must_not_run") },
+  const upstream: UpstreamBrowserRuntime = { recompile: async () => { throw new Error("offline_must_not_run") },
     withAuthoring: async (_input, work) => {
       const runner = new RunnerProcess(projectRoot, signal, undefined, {
         ...(discoveryGap ? { runnerEnvironment: { BAT_TEST_DISCOVERY_GAP_MODE: discoveryGap } } : {}),

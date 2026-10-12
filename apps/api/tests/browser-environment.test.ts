@@ -104,8 +104,7 @@ test("实际账号操作保留清理与互斥保护，保存下次偏好不加�
   const directory = await mkdtemp(path.join(tmpdir(), "bat-environment-"))
   const store = await ProductStore.open(directory)
   let release!: (report: typeof confirmed) => void
-  const service = new BrowserEnvironmentService(store, { withSession: async () => { throw new Error("unused") },
-    close: () => new Promise(resolve => { release = resolve }) }, () => {})
+  const service = new BrowserEnvironmentService(store, { close: () => new Promise(resolve => { release = resolve }) }, () => {})
   try {
     const pending = service.exclusive(() => service.disconnectIdle())
     assert.throws(() => service.assertStable(), /浏览器环境正在切换/)
@@ -122,8 +121,7 @@ test("任务占用时可以保存下次偏好，不核验占用、不关闭连�
   const directory = await mkdtemp(path.join(tmpdir(), "bat-environment-"))
   const store = await ProductStore.open(directory)
   let closes = 0, availabilityChecks = 0, disconnects = 0
-  const service = new BrowserEnvironmentService(store, { withSession: async () => { throw new Error("unused") },
-    close: async () => { closes++; return confirmed } }, () => { availabilityChecks++; throw new Error("busy task") },
+  const service = new BrowserEnvironmentService(store, { close: async () => { closes++; return confirmed } }, () => { availabilityChecks++; throw new Error("busy task") },
     async () => { disconnects++ })
   try {
     const execution = store.executionBrowser()
@@ -140,8 +138,7 @@ test("HTTP 同源保存偏好不受活动任务、保留窗口和账号窗口限
   const directory = await mkdtemp(path.join(tmpdir(), "bat-environment-http-"))
   let closes = 0
   const app = await createApplication({ root: process.cwd(), directory,
-    upstreamBrowserRuntime: { withSession: async () => { throw new Error("no browser/model expected") },
-      close: async () => { closes++; return confirmed } } })
+    upstreamBrowserRuntime: { close: async () => { closes++; return confirmed } } })
   const headers = { host: "127.0.0.1:4175", origin: "http://127.0.0.1:4175", "sec-fetch-site": "same-origin" }
   try {
     const refused = await app.app.inject({ method: "PUT", url: "/api/browser-environment",

@@ -1,6 +1,6 @@
 # 浏览器自动化任务链路
 
-B-A-T 把自然语言浏览器任务编译为参数化、版本化、可验证、可复跑的任务链路。用户通过持续需求访谈确认目标、输入、约束和完成标准；任务计划组合所需链路；第一次由 AI Connect 选定的用户模型通过 Pi AgentSession 和 BrowserSkill 完成代表任务，B-A-T 再从真实工具轨迹与字段来源确定性编译链路。样本及换输入验证后由普通执行器复跑；登录或验证码进入可恢复人工等待，只有显式 LLM 节点在复跑中调用模型。
+B-A-T 把自然语言浏览器任务编译为参数化、版本化、可验证、可复跑的任务链路。用户通过 Pi AgentSession 的需求访谈确认目标、输入、约束和完成标准；准备阶段由 AI Connect 选定的用户模型通过受管 Browser-Use 完成代表任务，B-A-T 从真实动作与字段来源在线编译链路。样本及换输入验证后由普通执行器复跑；登录或验证码进入可恢复人工等待，只有显式 LLM 节点在复跑中调用模型。产品执行不依赖外部 bsk/bsk.exe 或 daemon；旧已发布浏览器节点由同一受管通道适配执行。
 
 平台不以京东、数据抓取或任何单一网站和任务类别为边界。网站名称、业务字段和数量属于任务版本的动态数据；公共链路只表达浏览器能力、观察、数据处理、控制流、链路调用、人工等待、模型、检查点、输出和终止。最高设计依据见[自然语言浏览器任务链路架构基准](docs/development/TASK_CHAIN_ARCHITECTURE.md)。
 
@@ -23,7 +23,7 @@ B-A-T 把自然语言浏览器任务编译为参数化、版本化、可验证�
 
 ## 核心验收
 
-- 需求访谈 → 确认需求草稿 → 来源与登录态核验 → 生成任务计划 → 确认并启动 → Pi AgentSession 逐步骤探索 → 轨迹编译 → 样本及换输入验证 → 执行结果 → 复跑/恢复/修复；完整职责、失败回路与 UI 边界见 [产品流程](docs/development/PRODUCT_FLOW.md)。执行依赖不限制视图切换。
+- 需求访谈 → 确认需求草稿 → 来源与登录态核验 → 任务计划 → Browser-Use 逐步骤探索及在线编译 → 样本及独立复验 → 发布 → 正式复跑/恢复/修复；完整职责见[任务链路架构基准](docs/development/TASK_CHAIN_ARCHITECTURE.md)，当前实施与验收状态从 [PROGRESS](docs/development/PROGRESS.md) 进入。
 
 - 自然语言需求能够形成计划、步骤和可执行链路，并保留验证证据。
 - 已固化的普通节点由程序执行；翻页、等待、分支、循环、提取和计数通过程序规则完成。
@@ -39,11 +39,11 @@ B-A-T 把自然语言浏览器任务编译为参数化、版本化、可验证�
 - 编排复用 LangGraph `StateGraph` 作为唯一图执行底座；`TaskChainRuntime` 只把受控 IR、预算、幂等、检查点和审计映射到该引擎。旧 LangGraph 包装原型与 XState 对照已删除，不保留第二套运行器。
 - 链路采用受控版本化节点图，记录已实现的浏览器动作及其参数、定位和数据规则；恢复按任务输入单元和步骤设置安全检查点。
 - 产品模型统一使用 `@agent-platform/ai-connect` 管理的本机账号与项目显式选择；访谈、调研、计划及一次执行内的探索/修复/验证冻结并复用同一选择，未选择或调用失败均明确返回，不自动改选模型或回退旧运行时。
-- 仅当开发主 agent 使用 GPT-6 Astra 时，开发执行子 agent 固定使用 GPT-5.6 Sol high；其他情况保持当前或用户明确选择的模型与 reasoning effort。每项开发任务明确依赖、文件范围、产物和最小验收命令。
+- 开发 agent 的模型与 reasoning effort 遵循当前用户会话和 AGENTS.md，不由项目配置覆盖。
 - 开发期模型规则独立于产品模型选择；产品运行时只读取工作台中已保存的同一项目选择。
 - Git 按验证阶段完成最小检查与显式路径审阅；本地提交和远程推送遵循用户授权。
 
-当前已接入多任务列表、独立访谈保存、共享 Timeline/Composer、本机账号与项目模型选择、通用 task-chain contracts、LangGraph runtime、版本/运行持久化、固定版本授权执行和通用结果投影。上一版 API 手写探索循环与模型直接生成完整 Chain IR 的路径已被否决，新的 Pi AgentSession 探索、类型化轨迹、紧凑注解和确定性编译已通过聚焦离线验证；P6 真实验收进行中，尚不能宣称自然语言编译闭环已完成。旧 capture/workflow 运行路径已删除，旧 SQLite JSON 仅可读取或导出。当前实施入口见[首次探索与链路编译重构](docs/development/TASK_CHAIN_AUTHORING_REDESIGN.md)，整页布局见[工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见[需求对话机制](docs/development/INTERVIEW_UI.md)。
+当前主线使用受管 Browser-Use 探索、来源保存和在线编译，LangGraph 执行不可变链路。旧 Pi 浏览器探索、独立预执行和旧轨迹编译分支已移除；历史数据及仍有消费者的离线来源兼容保留。本次迁移尚在验证，不能把历史主流程通过替代迁移后的验收。现状见 [PROGRESS](docs/development/PROGRESS.md) 与 [BSK移除执行记录](docs/development/BSK_REMOVAL_EXECUTION_20261012.md)，整页布局见[工作台布局](docs/development/WORKBENCH_LAYOUT.md)，访谈机制见[需求对话机制](docs/development/INTERVIEW_UI.md)。
 
 ## 启动本地工作台（F1）
 

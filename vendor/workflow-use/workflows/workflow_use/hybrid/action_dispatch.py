@@ -142,11 +142,15 @@ def bind_tools_act(tools, audit, diagnostic=None, registry_provider=None, settle
                 except BaseException as settle_error:
                     raise settle_error from dispatch_error
                 raise
-            # WHY：原生查询同时返回详情和计数摘要，MessageManager 默认只读摘要。
-            # 仅交付原查询原文一次；不查 DOM、不注入祖先结构，也不改长期摘要。
+            # WHY：状态值/动态候选会被后续方法使用；只给一次详情、长期只留数量会使原值丢失。
+            # 复用原生查询原文与记忆通道，不再查DOM或注入父子结构；页面搜索仍只给一次详情。
             if (isinstance(raw, dict) and set(raw) & {'find_elements', 'search_page'}
                     and not getattr(result, 'error', None) and getattr(result, 'extracted_content', None)):
-                result.include_extracted_content_only_once = True
+                if 'find_elements' in raw:
+                    result.long_term_memory = result.extracted_content
+                    result.include_extracted_content_only_once = False
+                else:
+                    result.include_extracted_content_only_once = True
             if settle_dispatch is not None:
                 await settle_dispatch()
             await audit.complete(result)

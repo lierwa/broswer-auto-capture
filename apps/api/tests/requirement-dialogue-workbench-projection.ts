@@ -25,7 +25,7 @@ let modelCalls = 0, browserCommands = 0
 const forbidModel = async () => { modelCalls += 1; throw new Error("r1_projection_model_forbidden") }
 const service = await createApplication({ root, directory, ai, serveUi: true,
   aiModel: { selection: () => selection, prepare: forbidModel, prepareMain: forbidModel },
-  browserExecutor: async () => { browserCommands += 1; throw new Error("r1_projection_browser_forbidden") },
+  upstreamBrowserRuntime: { withCapabilities: async () => { browserCommands += 1; throw new Error("r1_projection_browser_forbidden") } },
 })
 const base = await service.app.listen({ host: "127.0.0.1", port: 0 })
 const profile = path.join(directory, "projection-chrome")

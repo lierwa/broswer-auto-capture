@@ -60,7 +60,7 @@ const service = await createApplication({
   directory,
   ai,
   serveUi: true,
-  browserExecutor: async () => { browserCommands += 1; throw new Error("r1_workbench_browser_forbidden") },
+  upstreamBrowserRuntime: { withCapabilities: async () => { browserCommands += 1; throw new Error("r1_workbench_browser_forbidden") } },
 })
 service.store.saveSharedModelSelection(SHARED_AI_SUBJECT, selection)
 const base = await service.app.listen({ host: "127.0.0.1", port: 0 })

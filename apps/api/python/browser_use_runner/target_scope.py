@@ -16,10 +16,12 @@ from browser_use_runner.task_access import attach as attach_access, configured a
 class TargetScope:
     _active = None
 
-    def __init__(self, browser, targets, on_owned, prepare_targets=None, *, prevent_reconnect=False, allow_storage_import=False):
+    def __init__(self, browser, targets, on_owned, prepare_targets=None, *, prevent_reconnect=False, allow_storage_import=False,
+                 on_creation=None):
         self.browser = browser
         self.owned = set(targets)
         self.on_owned = on_owned
+        self.on_creation = on_creation or (lambda _pending: None)
         self.prepare_targets = prepare_targets
         self.restorations = []
         self.popup_adapters = []
@@ -27,6 +29,8 @@ class TargetScope:
         self.storage_watchdogs = set()
         self.related_sessions = {}
         self.worker_passthrough = {}
+        self.creating_pages = 0
+        self.pending_page_attaches = []
         self.original_start = None
         self.start_wrapper = None
         self.prevent_reconnect, self.connection_lost = prevent_reconnect, False
@@ -63,9 +67,35 @@ class TargetScope:
             # WHY：只禁止原生恢复补造应急页；任务自身明确的新标签动作继续复用原能力。
             if self.recovering_focus.get():
                 raise ValueError('hybrid_attached_window_target_missing')
-            return await original_create(*args, **kwargs)
+            self.creating_pages += 1
+            try:
+                self.on_creation(True)
+                target_id = await original_create(*args, **kwargs)
+                await self._admit_created_page(target_id)
+                self.on_creation(False)
+                return target_id
+            finally:
+                self.creating_pages -= 1
+                if not self.creating_pages:
+                    self.pending_page_attaches.clear()
 
         self._replace(self.browser, '_cdp_create_new_page', create_page)
+
+    async def _admit_created_page(self, target_id):
+        # WHY：CDP主动创建的标签没有openerId；用本次创建回执登记，不能靠全局枚举认领。
+        # 先持久化归属再交给SDK切换；登记失败仅关闭这个明确属于本次创建的目标。
+        try:
+            self.on_owned(target_id)
+            self.owned.add(target_id)
+            # WHY：autoAttach事件可先于createTarget回执。只重交已被回执证明归属的原事件；
+            # 不再attach、不重放动作、不把同时出现的个人页面交给SDK。
+            pending = [item for item in self.pending_page_attaches if item[2]['targetInfo']['targetId'] == target_id]
+            self.pending_page_attaches = [item for item in self.pending_page_attaches if item not in pending]
+            for manager, original, event in pending:
+                await self._attach_owned(manager, original, event)
+        except BaseException:
+            await self.browser._cdp_client_root.send.Target.closeTarget({'targetId': target_id})
+            raise
 
     def _replace(self, owner, name, replacement):
         original = getattr(owner, name)
@@ -150,6 +180,9 @@ class TargetScope:
 
     async def _attach_owned(self, manager, original, event):
         info = event.get('targetInfo', {})
+        if self.creating_pages and info.get('type') == 'page' and not self.accepts(info):
+            self.pending_page_attaches.append((manager, original, event))
+            return
         sid = event.get('sessionId')
         worker = self.worker_passthrough.get(sid)
         if info.get('type') == 'worker' and worker and worker[0] == info.get('targetId'):
@@ -291,13 +324,14 @@ class TargetScope:
         if self.prevent_reconnect and (self.connection_lost or not self.browser.is_cdp_connected):
             raise ValueError('hybrid_attached_window_connection_lost')
 
-    def begin_operation(self, targets, on_owned, prepare_targets):
+    def begin_operation(self, targets, on_owned, prepare_targets, on_creation=None):
         self.ensure_connection()
         manager = self.browser.session_manager
         if self.owned or manager is None or manager.get_all_target_ids():
             raise ValueError('hybrid_attached_window_connection_cleanup_required')
         self.owned.update(targets)
         self.on_owned, self.prepare_targets = on_owned, prepare_targets
+        self.on_creation = on_creation or (lambda _pending: None)
 
     async def release_operation(self):
         self.ensure_connection()

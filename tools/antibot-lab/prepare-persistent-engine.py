@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tarfile
 
-from lab_paths import ROOT, BASE
+from lab_paths import ROOT, BASE, linux_command, linux_path, linux_architecture, artifacts
 COMMIT = '909b5157986a2b2c2163300fdaef5ed01289f7d2'
 ARCHIVE = BASE / 'upstream/crowdsec-source-v1.8.1.tar.gz'
 TARGET = BASE / 'runtime/crowdsec-persistent'
@@ -14,13 +14,11 @@ SOURCE = TARGET / ('crowdsec-' + COMMIT)
 
 
 def wsl(*args):
-    return subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', *args], check=True, cwd=ROOT)
+    return subprocess.run(linux_command(*args), check=True, cwd=ROOT)
 
 
 def linux(path):
-    result = subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', 'wslpath', '-a', path.as_posix()],
-                            capture_output=True, check=True, cwd=ROOT)
-    return result.stdout.decode().strip()
+    return linux_path(path)
 
 
 def adapt(name, expected, changes):
@@ -35,8 +33,7 @@ def adapt(name, expected, changes):
 
 
 def main():
-    active = subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', 'systemctl', '--user', 'show',
-        'bat-antibot-engine.service', '--property=ExecStart', '--value'], capture_output=True, cwd=ROOT)
+    active = subprocess.run(linux_command('systemctl', '--user', 'show', 'bat-antibot-engine.service', '--property=ExecStart', '--value'), capture_output=True, cwd=ROOT)
     if '/runtime/crowdsec-persistent/crowdsec' in active.stdout.decode():
         raise RuntimeError('stop-owned-engine-before-rebuilding-active-binary')
     assert hashlib.sha256(ARCHIVE.read_bytes()).hexdigest() == '6a9219a2a2706e35b723750d581c697db54d32d1b3995216cc2838329e15f7dc'
@@ -63,7 +60,7 @@ def main():
     wsl('go', '-C', location, 'test', './pkg/appsec/challenge', '-run', 'Test(PersistentSpent|SpentSet|PoWFixture)', '-count=1')
     wsl('go', '-C', location, 'build', '-tags=sqlite_omit_load_extension', '-o', linux(TARGET / 'crowdsec'), './cmd/crowdsec')
     files = ['spent_sqlite.go', 'spent_set.go', 'challenge.go', 'config.go']
-    manifest = dict(upstream=COMMIT, sqliteDriver='github.com/mattn/go-sqlite3@v1.14.32',
+    manifest = dict(architecture=linux_architecture(), upstream=COMMIT, sqliteDriver='github.com/mattn/go-sqlite3@v1.14.32',
         files={name: hashlib.sha256((folder / name).read_bytes()).hexdigest() for name in files},
         binarySha256=hashlib.sha256((TARGET / 'crowdsec').read_bytes()).hexdigest(),
         installed=False, originalBinaryUnchanged=True)

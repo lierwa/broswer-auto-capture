@@ -9,6 +9,7 @@ import { digestJson, stableUuid } from "@browser-capture/runtime"
 import { ProductStore } from "../src/database/store.js"
 import { TaskContractRepository } from "../src/task-chain/repository.js"
 import { TaskChainService } from "../src/task-chain/service.js"
+import { verifyClosedExecutionBrowser } from "../src/task-chain/plan-executor.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
 
 // WHY：队列收尾或用户清理只核验原 owner 一次；再次运行前必须保留旧 execution 的原失败。
@@ -114,13 +115,14 @@ test("终态 pending 重启保留业务结论并进入同次清理，confirmed �
 })
 
 // WHY：保护历史错误 owner 恢复、真正活跃目标释放、未知子进程拒绝，以及人工现场保留四个资源边界。
-for (const branch of ["legacy_startup", "owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "live_child", "refusal", "foreign_owner", "human_wait"] as const)
+for (const branch of ["legacy_startup", "owned_target", "draft_owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "live_child", "refusal", "foreign_owner", "human_wait"] as const)
 test(`cleanup closure: ${branch}`, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-cleanup-closure-")), store = await ProductStore.open(directory)
   try {
     const repository = new TaskContractRepository(store), taskId = store.taskAction({ type: "create", requestId: randomUUID() })
-    const original = saveTerminal(repository, taskId, "failed").execution, owner = stableUuid(original.id, "managed-window")
-    const record = repository.saveExecution({ ...original, release: original.plan, status: "cleanup_required",
+    const original = saveTerminal(repository, taskId, "failed").execution
+    const owner = branch === "draft_owned_target" ? stableUuid(original.id, "browser", "2") : stableUuid(original.id, "managed-window")
+    const record = repository.saveExecution({ ...original, release: branch === "draft_owned_target" ? undefined : original.plan, status: "cleanup_required",
       ...(branch === "legacy_startup" ? { steps: original.steps.map(step => ({ ...step, runIds: [], invocationIds: [] })) } : {}),
       cleanupResume: { status: original.status, reason: original.reason, result: original.result },
       cleanup: { ...original.cleanup, status: "unconfirmed", code: "runtime_cleanup_report_missing", evidenceDigest: "b".repeat(64) },
@@ -148,17 +150,25 @@ test(`cleanup closure: ${branch}`, async () => {
         if (branch === "refusal") throw Error("synthetic_connection_refused")
         if (branch === "inspection_unavailable" && input.action === "verify_closed") throw Error("synthetic_empty_bridge")
         return { report: { status: "confirmed" }, window: { ownerId: owner, leaseId: owner,
-          active: branch === "human_wait" || ["owned_target", "exited_process", "protocol_timeout"].includes(branch) && input.action !== "end",
+          active: branch === "human_wait" || ["owned_target", "draft_owned_target", "exited_process", "protocol_timeout"].includes(branch) && input.action !== "end",
           reason: branch === "human_wait" ? "hybrid_attached_window_handoff_verified" : null } }
       } } }) as TaskChainService
     await service.dispatchAsync(taskId, { type: "cleanup_execution", requestId: randomUUID(), executionId: record.id, expectedSequence: record.sequence })
     const restored = repository.execution(taskId, record.id)
-    const confirmed = ["legacy_startup", "owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "human_wait"].includes(branch)
+    const confirmed = ["legacy_startup", "owned_target", "draft_owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "human_wait"].includes(branch)
     assert.equal(restored.status, confirmed ? "failed" : "cleanup_required")
     assert.deepEqual(confirmed ? restored.result : restored.cleanupResume?.result, original.result)
-    assert.deepEqual(actions, branch === "live_child" || branch === "foreign_owner" ? [] : ["owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "refusal"].includes(branch) ? ["verify_closed", "end"] : ["verify_closed"])
+    assert.deepEqual(actions, branch === "live_child" || branch === "foreign_owner" ? [] : ["owned_target", "draft_owned_target", "exited_process", "protocol_timeout", "inspection_unavailable", "refusal"].includes(branch) ? ["verify_closed", "end"] : ["verify_closed"])
     if (branch === "human_wait") assert.equal(restored.browserHandoff.status, "active")
     if (branch === "legacy_startup") assert.equal(repository.cleanupAudits(taskId, record.id).at(-1)!.ownerId, owner)
+    if (branch === "draft_owned_target") {
+      const audit = repository.cleanupAudits(taskId, record.id).at(-1)!
+      assert.equal(audit.ownerId, owner)
+      for (const invalid of [{ ...audit, taskId: randomUUID() }, { ...audit, executionId: randomUUID() }])
+        assert.equal(await verifyClosedExecutionBrowser(record, invalid, (service as any).upstream, false), false)
+      assert.equal(await verifyClosedExecutionBrowser(record, audit, (service as any).upstream, true), false)
+      assert.equal(actions.length, 2)
+    }
   } finally { await store.close(); await rm(directory, { recursive: true, force: true }) }
 })
 

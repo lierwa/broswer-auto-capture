@@ -8,15 +8,16 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import sys
 
-from lab_paths import ROOT, BASE
+from lab_paths import ROOT, BASE, linux_command, linux_path, linux_architecture, artifacts
 
 
 def digest(file): return hashlib.sha256(file.read_bytes()).hexdigest()
 
 
 def wsl(*args):
-    return subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', *args], cwd=ROOT, capture_output=True, check=True).stdout.decode().strip()
+    return subprocess.run(linux_command(*args), cwd=ROOT, capture_output=True, check=True).stdout.decode().strip()
 
 
 def download(out):
@@ -25,7 +26,7 @@ def download(out):
     for source, target in [('country', 'City'), ('asn', 'ASN')]:
         url = f'https://download.db-ip.com/free/dbip-{source}-lite-{month}.mmdb.gz'
         archive, file = out/(source+'.gz'), out/('GeoLite2-'+target+'.mmdb')
-        subprocess.run(['curl.exe', '--fail', '--location', '--silent', '--show-error', '--max-time', '90',
+        subprocess.run(['curl.exe' if sys.platform == 'win32' else 'curl', '--fail', '--location', '--silent', '--show-error', '--max-time', '90',
             '--max-filesize', '16000000', '--output', str(archive), url], cwd=ROOT, check=True)
         with gzip.open(archive, 'rb') as stream: data = stream.read(64_000_001)
         if len(data) > 64_000_000: raise ValueError('geo_data_capacity')
@@ -34,12 +35,27 @@ def download(out):
     (out/'source.json').write_text(json.dumps(rows, indent=2))
 
 
+def validator_command(target):
+    # WHY: reuse the existing native MMDB checks; deployed maintenance must never invoke Go.
+    executable = BASE/'runtime/geoip-validator/geoip-validator'
+    receipt = json.loads((BASE/'geoip-validator.json').read_text())
+    if executable.is_symlink() or executable.is_junction(): raise ValueError('geo_validator_link')
+    if receipt['binarySha256'] != digest(executable): raise ValueError('geo_validator_changed')
+    if receipt['sourceSha256'] != digest(ROOT/'tests/geoip-calibration.go'): raise ValueError('geo_validator_source_changed')
+    release = BASE/'runtime-release.json'
+    if release.exists():
+        files = json.loads(release.read_text())['files']
+        if files.get('assets/runtime/geoip-validator/geoip-validator') != digest(executable):
+            raise ValueError('geo_validator_release_changed')
+    return [linux_path(executable), target, target+'/current.json', '--current']
+
+
 def main():
     parser = argparse.ArgumentParser(); parser.add_argument('--candidate', type=Path)
     args = parser.parse_args()
-    base = wsl('wslpath', '-a', str(BASE))
+    base = linux_path(BASE)
     owner = json.loads((BASE/'prepared.json').read_text())
-    checkout = wsl('wslpath', '-a', str(ROOT))
+    checkout = linux_path(ROOT)
     if owner['base'] != base or owner['checkout'] != checkout: raise ValueError('lab_owner_changed')
     for unit in ['bat-antibot-engine', 'bat-antibot-window-test']:
         if wsl('systemctl', '--user', 'show', unit+'.service', '--property=ActiveState', '--value') not in ('inactive', 'failed', ''):
@@ -54,10 +70,8 @@ def main():
         file = out/row['file']
         if file.is_symlink() or file.is_junction() or digest(file) != row['sha256'] or file.stat().st_size != row['bytes']:
             raise ValueError('geo_candidate_digest')
-    module = base+'/runtime/crowdsec-909b5157986a2b2c2163300fdaef5ed01289f7d2'
-    target = wsl('wslpath', '-a', str(out))
-    log = wsl('env', 'GOFLAGS=-mod=readonly', 'go', '-C', module, 'run',
-        checkout+'/tests/geoip-calibration.go', target, target+'/current.json', '--current')
+    target = linux_path(out)
+    log = wsl(*validator_command(target))
     (out/'deployment-check.log').write_text(log)
     validated = json.loads((out/'current.json').read_text())
     if (BASE/'data').is_symlink() or (BASE/'data').is_junction(): raise ValueError('geo_data_link')

@@ -35,9 +35,9 @@ def arrivals(case):
         'challengeSubmits': sum(r.get('RequestPath') == '/crowdsec-internal/challenge/submit' for r in scoped)}
 
 
-async def restart_engine(out):
+async def restart_engine(out, *, base=None, status_command=None):
     unit = 'bat-antibot-engine.service'
-    base = json.loads((BASE / 'prepared.json').read_text())['base']
+    base = base or json.loads((BASE / 'prepared.json').read_text())['base']
     assert wsl('systemctl', '--user', 'show', unit, '--property=WorkingDirectory', '--value') == base
     state = subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', 'systemctl', '--user', 'is-active',
         'bat-antibot-window-test.service'], capture_output=True)
@@ -46,7 +46,7 @@ async def restart_engine(out):
     wsl('systemctl', '--user', 'restart', unit)
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
-        result = subprocess.run(['node', '--experimental-strip-types', 'tools/antibot-lab/lab.ts', 'status'],
+        result = subprocess.run(status_command or ['node', '--experimental-strip-types', 'tools/antibot-lab/lab.ts', 'status'],
             cwd=ROOT, capture_output=True)
         if result.returncode == 0 and json.loads(result.stdout.decode())['health']['ready']: break
         await asyncio.sleep(.5)

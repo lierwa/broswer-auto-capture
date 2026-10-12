@@ -1,0 +1,48 @@
+# Lima v2.2.1 / 27bc4c4b101e27994e01e36566a0f2091bbca507, Apache-2.0.
+# Linux runs the existing five systemd units. No container runtime or host home mount.
+minimumLimaVersion: 2.2.1
+vmType: vz
+arch: aarch64
+plain: true
+cpus: 4
+memory: 6GiB
+disk: 40GiB
+mounts: []
+containerd:
+  system: false
+  user: false
+images:
+- location: https://cloud-images.ubuntu.com/releases/resolute/release-20260927/ubuntu-26.04-server-cloudimg-arm64.img
+  arch: aarch64
+  digest: sha256:63a93bd5a8d76e33b15ceb5daa3657bd79be804748051ab178e643b0f5da22e7
+networks:
+- vzNAT: true
+  interface: shieldvz
+param:
+  internal_netplanOptional: "true"
+portForwards:
+- guestPort: 4183
+  proto: tcp
+  hostPort: 4183
+  hostIP: 127.0.0.1
+  static: true
+- guestPort: 4185
+  proto: tcp
+  hostPort: 4185
+  hostIP: 127.0.0.1
+  static: true
+- guestPort: 4193
+  proto: tcp
+  hostPort: 4193
+  hostIP: 127.0.0.1
+  static: true
+# UDP uses the VM's actual VZ private address; no added TLS terminator/proxy.
+provision:
+- mode: system
+  script: |
+    #!/bin/sh
+    set -eu
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends python3 curl ca-certificates openssl liblua5.4-0 libpcre2-8-0 libcrypt1
+    loginctl enable-linger '{{.User}}'

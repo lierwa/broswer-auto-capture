@@ -1,6 +1,5 @@
 import { z } from "zod"
 
-export const browserGrantLimits = { maxCommands: 3850, timeoutMs: 1_440_000 } as const
 
 const cssSelectorSchema = z.string().trim().min(1).max(1000)
   .refine((value) => !/:has-text\s*\(|:text(?:-is)?\s*\(|:visible\b|:contains\s*\(/i.test(value), "unsupported_selector_syntax")
@@ -13,28 +12,6 @@ const id = z.string().min(1).max(120)
 export const sessionIdSchema = z.string().regex(/^[a-z]{4}$/)
 export const humanWaitReasonSchema = z.enum(["login", "captcha", "confirmation", "access"])
 const browserPurposeSchema = z.enum(["exploration", "verification", "replay"])
-export const grantSchema = z.object({
-  taskId: id, runId: z.string().uuid(), requirementVersion: z.number().int().positive(),
-  ownerId: z.string().uuid().optional(),
-  browserInstanceId: z.string().min(1).max(200).optional(),
-  purpose: browserPurposeSchema,
-  allowedOrigins: z.array(z.string().url().refine((value) => {
-    const url = new URL(value)
-    return ["http:", "https:"].includes(url.protocol) && url.origin === value
-  })).max(64),
-  actions: z.array(z.enum(["navigate", "observe", "click", "hover", "fill", "press", "select", "tabs",
-    "tab_open", "tab_select", "tab_close", "upload", "download", "page", "read", "follow", "request_help"])).min(1),
-  maxCommands: z.number().int().min(1).max(browserGrantLimits.maxCommands),
-  timeoutMs: z.number().int().min(1000).max(browserGrantLimits.timeoutMs),
-}).strict()
-export type BrowserGrant = z.infer<typeof grantSchema>
-export type HumanWaitReason = z.infer<typeof humanWaitReasonSchema>
-export type HumanWaitStatus = "waiting" | "completed" | "cancelled" | "timed_out" | "disabled" | "failed"
-export interface BrowserHelpState {
-  id: string; reason: HumanWaitReason; status: HumanWaitStatus; prompt: string;
-  origin: string | null; requestedAt: string; resolvedAt: string | null;
-}
-export type BrowserHelpObserver = (state: BrowserHelpState) => void | Promise<void>
 export const semanticTargetSchema = z.object({ role: z.enum(["link", "button", "textbox", "combobox"]),
   name: z.string().min(1).max(300), fallbackName: z.string().min(4).max(300).optional(),
   occurrence: z.number().int().nonnegative().max(99).optional() }).strict()
@@ -82,20 +59,14 @@ export class BrowserError extends Error {
     super(`浏览器操作未完成：${code}`)
   }
 }
-export interface CommandResult { stdout: string; exitCode: number }
-export type CommandExecutor = (args: readonly string[], signal?: AbortSignal) => Promise<CommandResult>
 export const browserInspectionSchema = z.object({
   sessionId: sessionIdSchema, tabId: tabIdSchema, url: z.string().min(1).max(4000), text: z.string(),
   truncated: z.boolean(), observedAt: z.string().datetime(),
 }).strict()
 export type BrowserInspection = z.infer<typeof browserInspectionSchema>
-export interface BrowserAudit {
-  at: string; taskId: string; runId: string; requirementVersion: number; purpose: BrowserGrant["purpose"];
-  sessionId: string | null; command: string; argsHash: string; phase: "intended" | "completed" | "failed";
-}
 export const ownershipSchema = z.object({
   runId: z.string().uuid(), taskId: id, sessionId: sessionIdSchema.nullable(),
-  requirementVersion: z.number().int().positive(), purpose: grantSchema.shape.purpose,
+  requirementVersion: z.number().int().positive(), purpose: browserPurposeSchema,
   state: z.enum(["opening", "active", "closed", "cleanup_required"]),
 }).strict()
 export type Ownership = z.infer<typeof ownershipSchema>

@@ -1,5 +1,31 @@
 # 开发路线
 
+## 2026-10-12 当前：部署Review修复完成，转Mac当地安装验收
+
+五项确认问题已修；8项TS聚焦、4项Python边界、类型检查、x64空PATH原生校验及59项发行摘要/7项ELF检查通过。B-A-T正常产品A3既有Human/39 clear证据保持；新改动限部署/维护。下一步由Mac拉取同一Git版本，按[安装验收交接](MAC_INSTALL_VALIDATION_20261012.md)实际构建arm64、安装Lima/mkcert并完成报告、协议和重启矩阵。当前不宣布双平台验收完成。
+
+## 2026-10-12 当前：正常产品A3已验收，等待Mac实测
+
+正常入口的新冻结taskd246fdb8已完成需求→准备→试跑/变化输入独立复验→工作台发布→两次同版正式运行；四次Human/39 clear、输出逐项一致、普通模型0、首次清理confirmed，1234文件冻结不变。协议错误字段丢失与草稿清理owner错配已修并取证；旧错误验收与首败不改写。见[最终报告](PRODUCT_BROWSER_FINAL_REPORT_20261012.md)。该阶段Mac SSH仍认证前关闭，P0 arm64/Lima与双平台/VM/宿主重启验收未过；最新Mac交付入口以上节为准。
+
+## 2026-10-12 验收入口纠正优先
+
+撤回下方 A3 完成结论：原临时任务 Chrome 的启动参数不代表产品正常入口。先删除该替代路径、固定验收使用系统既有浏览器选择/授权，再冻结并新建完整任务。原报告和首次失败保留，见[纠正记录](PRODUCT_BROWSER_ACCEPTANCE_CORRECTION_20261012.md)。
+
+## 2026-10-12 执行断点（以此段及PROGRESS顶部为准）
+
+- A1：必要旧能力已接同一受管runner，外部BSK执行和daemon已移除；真实旧任务/授权暂停矩阵通过。
+- A2：旧探索/预执行/轨迹编译闭包已删，共用能力及历史兼容保留。
+- A3：新冻结task5c07ca39已完成需求→准备→样本/变化输入独立复验→UI发布V1→两次同版正式运行。四次39项终态报告一致、普通模型0、cleanup首次confirmed，1229冻结文件与release摘要未变；历史首败及模型原生恢复单列。
+- P0/P1：x64独立Linux最终包34f1bf9e已实装；arm64原生构建及Lima实际Mac尚缺。
+- P2/P3：Windows最终包12HTTP控制、真实H2/H3、systemd异常恢复/重复启动、过期来源/缺失制品/端口冲突及数据保留通过；64请求配额跨origin重启、来源/会话隔离及CrowdSec告警通过。最终包nonce跨engine重启拒绝及warm cookie保留通过；VM/宿主重启和Mac验收仍待完成。
+- 原盾实例/五服务与WSL presence已恢复ready；所属临时安装、浏览器/Profile、配对/缓存、证书与public stage均已永久清理，历史/最终包保留。Mac SSH仍关闭，双平台与VM/宿主重启门未过，不提交、不推送、不关机。
+
+
+> **2026-10-12 当前实施**：已获三项开发及全部验收后提交/推送/关机授权。BSK旧能力接当前受管链路、废弃探索闭包已删除；真实兼容矩阵通过，最终冻结任务未跑。盾Linux共同入口、双架构清单、Lima配置和独立包正在验证；Mac SSH阻塞未测。以[BSK执行记录](BSK_REMOVAL_EXECUTION_20261012.md)、[部署执行记录](SHIELD_DEPLOYMENT_EXECUTION_20261012.md)及PROGRESS为准，下方“仅文档/未实施”属入场历史。
+
+> **2026-10-12 最新开发范围（本轮仅文档）**：先按[BSK移除与探索清理方案](BSK_REMOVAL_AND_EXPLORATION_CLEANUP_PLAN_20261012.md)完成能力承接、外部CLI/daemon移除、废弃探索闭包删除和冻结验证，B-A-T仅这两项；用户随后追加的[盾双平台部署](SHIELD_WINDOWS_MAC_DEPLOYMENT_PLAN_20261012.md)独立实施：Windows保留WSL，Apple Silicon Mac接入Lima，Linux内共用systemd。撤回Docker推荐，不自写跨平台管理器，先过arm64构建与网络测量门。实现均未开始；优先于下方旧主线“下一步”。资源/代码状态以PROGRESS顶部为准。
+
 > **2026-10-12 最新结算**：后台连接无页连接/重连已验证；通用报告读取纠错修复并验证后，冻结 1222 代码配置，全新 task c52e7dc3 从首次需求、准备、样本与独立复验、发布 V1 到首次正式复跑 43e68dd4 全部完成。普通执行模型 0，正式报告 Human/39 clear/四 Worker 有效且 39 项数据完整取得；冻结期无改码/改盾，历史首败保留，临时资源永久清理。Chrome 3 项扩展损坏禁用副作用仍单列未关闭。以[本轮结算](BAT_BACKGROUND_CONNECTION_AND_MAINFLOW_20261012.md)和 PROGRESS 顶部为准，下方为历史。
 
 

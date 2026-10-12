@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { commandSchema } from "@browser-capture/browser"
 import { jsonValueSchema, resultSpecSchema } from "@browser-capture/contracts"
 import { hybridTargetSchema, readSpecificationSchema, targetScopeSchema, requiredReadPathsSchema,
   hybridOrdinaryActionNameSchema } from "./hybrid-schema.js"
@@ -87,6 +88,7 @@ export const hybridBrowserStateSchema = z.object({ sessionId: z.string().min(1),
 export const hybridExecuteResultSchema = z.object({ output: jsonValueSchema, browser: hybridBrowserStateSchema,
   browserCommands: z.number().int().nonnegative(), modelCalls: z.literal(0) }).strict()
 export type HybridRunnerRequest = z.infer<typeof hybridStartRequestSchema> | z.infer<typeof hybridProfileStartRequestSchema>
+  | { id: string; type: "hybrid_legacy"; command: z.infer<typeof commandSchema> }
   | z.infer<typeof accountSessionRequestSchema>
   | z.infer<typeof profileOwnerRequestSchema> | z.infer<typeof profileRecoverRequestSchema>
   | z.infer<typeof hybridExecuteRequestSchema>

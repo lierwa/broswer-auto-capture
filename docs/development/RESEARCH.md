@@ -1,5 +1,39 @@
 # 技术调研与复用结论
 
+## 2026-10-12 部署Review修复复用
+
+Lima2.2.1固定源码确认create --set、list --json中的dir/arch/vmType/param与info.limaHome；实例目录不存在时LimaDir可直接返回路径，因此创建标准home后再做realpath。绑定真实实例配置、唯一创建标记和目录身份，不以同名与旁路记录认领。归档按固定SHA复用和原子替换；停止继续复用Lima/systemd。
+
+GeoIP直接编译既有CrowdSec1.8.1模块内geoip-calibration.go，作为第七个原生制品发行，runtime维护不调用Go；原35天过期门与MMDB检查未变。x64空PATH真实数据控制通过。完整复用评估、固定源码链接、首败及验证见[Review](SHIELD_MULTIPLATFORM_REVIEW_20261012.md)。Mac当地原生构建及实机验收见[交接](MAC_INSTALL_VALIDATION_20261012.md)，当前仍未测。
+
+## 2026-10-12 真实扩展协议与清理归属修复
+
+现有扩展将原生CDP错误对象编码到Error.message，relay再次包装时丢失code。真实跨域fetch取消两次复现-32602/Invalid InterceptionId.无法到达已有精确分类；恢复原code/message/data，不增加错误豁免、不重发动作。该包装在本轮前HEAD即存在。修后六时序通过，其中四次真实取消；真实WS边界测试与既有准入测试通过。取消恢复只补齐同task/execution持久化草稿owner，不重造恢复器；13项边界及真实产品自动关闭原lease通过。完整复用记录见[根因记录](PRODUCT_BROWSER_ACCEPTANCE_CORRECTION_20261012.md)，新冻结真实产品验收见[最终报告](PRODUCT_BROWSER_FINAL_REPORT_20261012.md)。
+
+## 2026-10-12 验收浏览器入口纠正
+
+Chromium [runtime_features.cc](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/content/child/runtime_features.cc#393) 将 `--remote-debugging-port=0` 开启 AutomationControlled，[Navigator::webdriver](https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/core/frame/navigator.cc#L76) 返回 true。当前本仓产品 chromeLauncher 并不注入此参数；错误来自本次另写的任务浏览器验收启动脚本。直接复用正常工作台的 DailyChromeExtension→CDPRelayServer→原 launcher，辅助 UI 客户端独立，不通过另换调试参数或属性覆盖绕开。复用/所有权/真实验收门见[纠正记录](PRODUCT_BROWSER_ACCEPTANCE_CORRECTION_20261012.md)。
+
+## 2026-10-12 冻结任务首败追补：原生参数与隐藏页键盘
+
+原生ContentReadToolParams的宿主默认regionMode必须沿新来源normalize→Python编译→TS代表输出边界保存；旧无标记trace保持历史common-ancestor解释。以同一原生schema规范化，18项Python/17项TS及原失败真实来源离线交接通过，未改原trace。证据见[BSK执行记录](BSK_REMOVAL_EXECUTION_20261012.md)。
+
+普通输入在Chrome154隐藏页面收到63键盘派发却0输入，直连CDP通用页复现。DOM刷新、窗口显示及前台激活无效；一次原生截图后21字符/43输入事件成功。固定[B-U BrowserSession](https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/browser/session.py)的公开take_screenshot直接调用CDP；[Chromium固定源码](https://chromium.googlesource.com/chromium/src/+/a2401fdfbd4c6620a9e513a19671eab8f37df2a5/content/browser/devtools/protocol/page_handler.cc)的CaptureScreenshot显式请求隐藏页产帧。采用隐藏页键盘前一次有界调用，不存图、不交模型、不恢复普通观察截图、不改变输入实现/事件校验。6项边界与通用真实输入通过；这是测得的Chrome环境行为，不声称取得154精确源码或修复全部浏览器背景场景。
+
+## 2026-10-12 实施补充
+
+BSK承接只使用原Native Tools/Actor/TargetResolver与同一runner，外部CLI/session/transport已删除。原生CDP建页回执可能晚于autoAttach，现有归属层仅补本次创建回执对应的早到事件；未确认创建保持cleanup未知。Chrome通过CDP安装的扩展会被其[固定源码的CleanUpCdpInstalledExtensions](https://chromium.googlesource.com/chromium/src/+/993e57a3e1af70dcad63122ef1ea98835cf8a1f2/extensions/browser/extension_prefs.cc)在重启清除；连接夹具重复加载同一扩展并保留storage，不能冒称测试了桌面手动安装持久性。
+
+盾继续原systemd/WSL，Linux入口不再递归调用WSL。Lima2.2.1 Darwin-arm64官方SHA为9e9eacce88f37e185c346bad73aa6136f738d8cdf8c3bb23cd42b071824bc66e，Ubuntu26.04 release-20260927 arm64镜像使用固定模板摘要63a93bd5a8d76e33b15ceb5daa3657bd79be804748051ab178e643b0f5da22e7。[官方SHA清单](https://github.com/lima-vm/lima/releases/download/v2.2.1/SHA256SUMS)、[固定镜像模板](https://github.com/lima-vm/lima/blob/v2.2.1/templates/_images/ubuntu-26.04.yaml)。arm64 Node/Traefik使用官方校验和，Ubuntu arm64 dev包按同版本官方ports字节核验；CrowdSec v1.8.1发行只有amd64，arm64使用同一固定源码原生构建。Mac机器行为仍未验证，不冻结支持结论。
+
+新Linux包第一次在WSL安装/启动ready，随后缺宿主presence而空闲退出，首败保留；复用原presence给Windows薄入口后持续ready。生命周期仍由systemd/Lima负责，无Docker、无新supervisor，检测规则/阈值不改。详见[执行记录](SHIELD_DEPLOYMENT_EXECUTION_20261012.md)。
+
+## 2026-10-12 BSK移除、探索清理与盾双平台：设计核验，未实施
+
+[BSK开发方案](BSK_REMOVAL_AND_EXPLORATION_CLEANUP_PLAN_20261012.md)第2–4节记录实际装配、能力承接和完整Product Alignment/Reuse Assessment。固定BrowserSkill源码说明CLI与daemon同一binary，扩展承担实际浏览器操作；本仓仍有PATH启动bsk的旧执行分支，当前B-U主线并非全部旧合同的自动替代。采用已有browser-use0.13.8/受管runner、Playwright固定relay与内置BrowserSkill传输组件，删除外部执行依赖；不以CLI打包、禁用旧任务或重写控制器替代。旧探索与当前共享工具分开处理，LangGraph/访谈Pi/来源恢复/在线编译保留。
+
+[盾部署方案](SHIELD_WINDOWS_MAC_DEPLOYMENT_PLAN_20261012.md)已撤回本轮错误的Docker推荐：既有[10月8日决定](ANTIBOT_SERVICE_IMPLEMENTATION_20261008.md#2026-10-08-运行环境纠正)明确因无可用Desktop、dockerInference/Secrets Engine两次启动失败停止该路线。本次采用Windows保留WSL、Mac接入Lima VZ Linux arm64的设计，两端共用原Linux五服务、systemd、补丁、共享wheel和mkcert；不自写跨平台supervisor。已核Lima v2.2.1/27bc4c4b101e27994e01e36566a0f2091bbca507的模板、defaults.go、发行资产和Apache-2.0许可：plain禁用containerd和动态转发，可配置静态转发及vzNAT；Lima的WSL2后端仍实验性，不接管现有Windows。Process Compose/mise不提供Linux环境，不另行叠加。具体源码链接、能力界限、arm64构建与网络验证门见方案第2–6节。尚未安装或实跑Lima，Linux镜像/制品摘要及Mac行为待P0/P1，不把上游支持当成盾已通过。
+
 ## 2026-10-11 Worker追查：CDP消息线程中的同步存储
 
 原三次事件和网关时序保存于`work/bat-shield-mainflow-20261011/mainline-repair-02/worker-root-cause/original-comparison.json`。单次启动诊断未复现不可测，但实际栈采到`CDPClient._handle_messages → EventRegistry.handle_event → Runner.record_document_response → DocumentResponses.record → remember → diskcache.Cache.__init__`在消息线程执行同步SQLite。固定cdp-use1.4.5的接收循环逐条await事件handler，因此此处慢写也阻塞Worker attach/resume与Fetch继续消息。旧代码的受控本地Worker用例以4秒慢存储确定性得到3006ms unavailable，未访问盾；不得以此推称已取得两个历史运行当时的锁等待栈。
@@ -6160,3 +6194,34 @@ Reuse Assessment:
 
 
 2026-10-12 验收结果：范围纠错 25 项聚焦通过，真实模型单次修正后实际 DOM 读取成功，另一页普通复读模型 0。1222 文件冻结的新任务 c52e7dc3 首次需求→准备→样本→独立复验→发布 V1→正式复跑 43e68dd4 全部完成；完整输出含 39 项及本次地址，与盾原报告逐项相符。既有 page-url、ReadSpec 与原生 Agent loop 足够，无新库/网站特判/模型重试循环。原 ce595f4a 首败不覆盖，资源清理见本轮结算。
+
+
+### 2026-10-12 终态读取方法与原生CSS纠错
+
+mNBhcZ真实轨迹首败证明：探索期间终态已出现不保证普通复跑终态；`:has-text`不属于浏览器原生CSS，模型改为无条件容器会丢掉等待语义。复用既有ReadSpec/consumer readiness，无新增库/工具/judge。只补通用指导与错误反馈保留状态条件，并覆盖多区域所有分支。readiness-correction-3_rjxq6b：当前产品模型一次生成条件，同一方法0模型读取complete/failed两种终态，相关详情保留，所属窗口关闭。该证据不替代新任务全链路验收。
+
+隐藏页面原生产帧范围后续由input/send_keys扩为click/select_dropdown，scroll在原生动作后、事件采集关闭前经同一B-U公开screenshot刷新；不写截图文件、不调用模型、不重放动作，身份或超时失败即停止。其原因、直接CDP复现、源码版本限制及8项边界见BSK执行记录；盾规则不变。
+
+
+### 2026-10-12 查询精确值与已保存方法的记忆交付
+
+真实原生Agent诊断native-readiness-WwvdpN观察值是data-state=running，后续模型记忆却变成可见文案processing，生成错误排除条件且反复读取后success=false。固定B-U eb412692源码：[Tools.find_elements](https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/tools/service.py#L1340)同时返回详细extracted_content与仅数量long_term_memory；[MessageManager](https://github.com/browser-use/browser-use/blob/eb4126921bea3373f91afc49fb4b59d6eda7fed6/browser_use/agent/message_manager/service.py#L304)默认取long_term_memory，only-once详情下一步即清空。现有适配此前仅把详情交付一次，不足以保留用于后续方法的精确状态。
+
+Reuse Assessment:
+- capability: 准备过程中保留原生查询的精确值和代码已接受的方法参数
+- existing implementation in repository: bind_tools_act与MethodReadRecords.feedback
+- mature candidates and pinned versions: B-U eb412692 ActionResult / MessageManager
+- selected implementation: 原生long_term_memory及原60k单条上限，不新建记忆框架
+- reused public surface: ActionResult.extracted_content / long_term_memory；查询与结果原文不改
+- B-A-T-owned adapter and remaining gap: find_elements原文进入原生长期历史，search_page仍一次详情；已保存read参数回显到原有反馈。长上下文后续压缩仍属原生Agent，不声称无限记忆
+- license/runtime/platform fit: 既有MIT依赖，无新依赖/安装
+- browser/runtime/state ownership conflicts: 无新浏览器、DOM查询、父子结构注入或数据库
+- replay model calls: 0
+- rejected candidates and evidence: 不自建缓存、语义judge或模型循环；已有公开API覆盖
+- focused validation: 3项直接使用原生MessageManager验证跨步精确值保留、搜索一次详情及错误结果不提升；完整原生三状态诊断进行中
+
+## 2026-10-12 最终异步结果方法与输入章节边界证据
+
+新冻结task5c07ca39采用一个共同容器的原生CSS生命周期条件，原始读取与结构化读取共用原ReadSpec/consumer readiness，不新增完成judge、selector解析器、状态机或模型重试。普通样本/独立复验/两次同版正式运行均取得39项终态报告、模型0、首次清理确认；规则仍可能给出Bot，未为通过改变盾。系统指导与工具参数说明补充是必要的生成边界，本次真实结果不证明任意未来模型生成方法必然正确，历次部分输出及原生模型失败继续保留。
+
+输入章节最小修复只按Markdown显式列表投影Schema，原说明仍在确认草稿里；错误显式字段、纯说明无声明和其它结构标记照常拒绝。表单多字段/查询参数均适用，复用原fields及章节语法，未做业务语义猜测。真实首败先复现，6项定点与API类型检查通过。恢复/资源/具体run及来源记录见BSK_REMOVAL_EXECUTION_20261012.md；Mac候选不可用实测证据仍按独立部署门保留。

@@ -1,6 +1,9 @@
 import { z } from "zod"
 import { taskIdSchema } from "./task.js"
 
+// WHY：准备与复跑共用同一通用预算上限，不能依赖已退休的浏览器执行器。
+export const browserGrantLimits = { maxCommands: 3850, timeoutMs: 1_440_000 } as const
+
 const id = z.string().uuid()
 export const humanWaitReasonSchema = z.enum(["login", "captcha", "confirmation", "access"])
 export const humanWaitpointSchema = z.object({

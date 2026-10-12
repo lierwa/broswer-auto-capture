@@ -1,0 +1,37 @@
+[
+  {
+    "name": "libcrypt-dev_4.5.1-1_amd64.deb",
+    "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt-dev_4.5.1-1_arm64.deb",
+    "sha256": "21e20f89843baf60f09807c13d2aa1f7ba0a12992a32bbbf0dd4e1fe301a14a3"
+  },
+  {
+    "name": "libssl-dev_3.5.5-1ubuntu3.7_amd64.deb",
+    "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/o/openssl/libssl-dev_3.5.5-1ubuntu3.7_arm64.deb",
+    "sha256": "4d517155701cce16755e341510f358d16ad8ab7e42df32708d45f5bb2ae0c29e"
+  },
+  {
+    "name": "liblua5.4-dev_5.4.8-1build1_amd64.deb",
+    "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/l/lua5.4/liblua5.4-dev_5.4.8-1build1_arm64.deb",
+    "sha256": "ef00a09182e984309794d00923e9c17bfc1dcca678d683c405bbea75af19ff25"
+  },
+  {
+    "name": "libpcre2-dev_10.46-1build1_amd64.deb",
+    "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/p/pcre2/libpcre2-dev_10.46-1build1_arm64.deb",
+    "sha256": "6ba4038dcd810ef0e15070633a5a2f9213c6ba864a4bde31261883866630f075"
+  },
+  {
+    "name": "haproxy-3.2.9-ubuntu.deb",
+    "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/h/haproxy/haproxy_3.2.9-1ubuntu2.2_arm64.deb",
+    "sha256": "5e8bd19c6fc028245fcfdacb793198b7e29ecf70e74c8a3bccf3fcc794f5171a"
+  },
+  {
+    "name": "node.tar.xz",
+    "url": "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-arm64.tar.xz",
+    "sha256": "5a5b1dc4906e891a655d2f0689db664879724f2d9e63309486fd588172a052bc"
+  },
+  {
+    "name": "traefik.tar.gz",
+    "url": "https://github.com/traefik/traefik/releases/download/v3.7.14/traefik_v3.7.14_linux_arm64.tar.gz",
+    "sha256": "e5a2d0620cecc01dbc3d8da739db0671fdc030ef1c3b2d90d54f3baaa25d85d3"
+  }
+]

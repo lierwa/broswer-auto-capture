@@ -3,11 +3,10 @@ import { existsSync } from "node:fs"
 import { z } from "zod"
 import type { AI } from "@agent-platform/ai-connect/server"
 import type { TaskChainCapabilities } from "@browser-capture/runtime"
-import { RunnerProcess, type UpstreamBrowserRuntime, type UpstreamBrowserSession } from "./service.js"
+import { RunnerProcess, type UpstreamBrowserRuntime } from "./service.js"
 import { withHybridCapabilities } from "./hybrid-runtime.js"
 import { withHybridAuthoring, recompileHybridSource, type HybridAuthorSession } from "./hybrid-exploration.js"
 import { verifyForkSource } from "../../../../vendor/workflow-use/verify-source.mjs"
-import { retireWorkflowV1 } from "./retirement.js"
 import { TaskConnection } from "./task-connection.js"
 import type { BrowserMode } from "@browser-capture/contracts/browser-profile"
 import { accountSessionRequestSchema, executionStorageSchema } from "./hybrid-protocol.js"
@@ -152,9 +151,4 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
     this.runners.add(runner); return runner
   }
 
-  async withSession<T>(_input: Parameters<UpstreamBrowserRuntime["withSession"]>[0],
-    _work: (session: UpstreamBrowserSession) => Promise<T>): Promise<T> {
-    retireWorkflowV1()
-    throw new Error("legacy_workflow_use_v1_retired")
-  }
 }

@@ -24,7 +24,6 @@ async function fixture() {
   const backups = new Map<string, JsonValue>()
   const report = cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => ({ stage, status: "confirmed", code: null })), false)
   const upstream: UpstreamBrowserRuntime = {
-    withSession: async () => { throw Error("implicit_model_forbidden") },
     async withCapabilities(input, work) {
       state.calls++; const value = await work({ capability: async () => ({ outcome: "success", output: null }) })
       input.onHandoff?.("human_wait", { ownerId: input.ownerId, leaseId: input.ownerId, targetDigest: "b".repeat(64), active: true, reason: null }); return value

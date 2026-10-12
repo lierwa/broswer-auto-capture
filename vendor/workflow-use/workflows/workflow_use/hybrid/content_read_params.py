@@ -9,6 +9,11 @@ class ContentReadToolParams(Contract):
     regions: str | None = Field(default=None, min_length=1, max_length=2000,
         description=('CSS selecting the exact observed content regions to save. Only selected regions and their '
                      'descendants are captured. Include requested text/tables and images, not only a gallery. '
+                     'For an asynchronous final result, select ONE observed whole result ancestor and gate it '
+                     'with the observed lifecycle state, using :has(...) for a descendant status if necessary. '
+                     'The selector must match nothing in the observed initial and processing snapshots. '
+                     'Do not combine separately gated regions with commas: CSS OR can capture an early '
+                     'summary while details are unfinished. A result value is not lifecycle completion. '
                      'Omit to capture the current page body. No individual business fields.'))
     regionMode: SkipJsonSchema[Literal['selected-regions']] = 'selected-regions'
     container: SkipJsonSchema[str | None] = Field(default=None, min_length=1, max_length=2000)

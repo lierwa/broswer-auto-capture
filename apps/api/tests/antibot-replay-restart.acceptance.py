@@ -59,7 +59,9 @@ async def check(browser, case, out):
     submit = '/crowdsec-internal/challenge/submit'
     before = session_test.request(target.netloc, submit, ua, body=bodies[0])
     assert before['protocolStatus'] == 'failed' and not before['hasCookie'], before
-    await restart_test.restart_engine(out)
+    install = os.environ.get('BAT_SHIELD_LINUX_INSTALL')
+    await restart_test.restart_engine(out, **(dict(base=install + '/data',
+        status_command=['node', 'tools/antibot-lab/windows-host.ts', install, 'status']) if install else {}))
     after = session_test.request(target.netloc, submit, ua, body=bodies[0])
     second = session_test.request(target.netloc, submit, ua, body=bodies[0])
     warm = session_test.request(target.netloc, target.path + '?restart-control=warm', ua, cookie=cookie)
@@ -74,6 +76,7 @@ async def check(browser, case, out):
 
 async def main():
     out = Path(tempfile.mkdtemp(prefix='replay-restart-', dir=BASE / 'reports')).resolve()
+    os.environ['BAT_ACCESS_STATE_DIR'] = str(out / 'access-state')
     request = Request('http://127.0.0.1:4188/api/cases', data=b'{"kind":"catalog"}',
         headers={'Origin': 'http://127.0.0.1:4188', 'Content-Type': 'application/json'})
     with urlopen(request, timeout=10) as response: case = json.load(response)

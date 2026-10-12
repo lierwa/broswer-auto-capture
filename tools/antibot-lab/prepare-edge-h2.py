@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import sys
 
-from lab_paths import ROOT, BASE
+from lab_paths import ROOT, BASE, linux_command, linux_path, linux_architecture, artifacts
 TARGET = BASE / ('runtime/haproxy-rtt-candidate' if '--candidate' in sys.argv else 'runtime/haproxy-h2')
 SOURCE = TARGET / 'source'
 UPSTREAM_HASH = '4c58b575503e198aa81b900880ea2f1238e65cf6121441c1b86bea3854a71212'
@@ -17,12 +17,11 @@ def digest(file):
 
 
 def linux(file):
-    return subprocess.check_output(['wsl', '-d', 'Ubuntu', '--exec', 'wslpath', '-a', str(file)],
-                                   cwd=ROOT, stderr=subprocess.DEVNULL, text=True).strip()
+    return linux_path(file)
 
 
 def run(*args):
-    result = subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', *map(str, args)],
+    result = subprocess.run(linux_command(*args),
                             cwd=ROOT, capture_output=True)
     with (TARGET / 'build.log').open('ab') as stream:
         stream.write(result.stdout + result.stderr)
@@ -161,20 +160,19 @@ def patch_quic_shape():
 
 def main():
     TARGET.mkdir(parents=True, exist_ok=True)
-    active = subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', 'systemctl', '--user',
-                             'is-active', '--quiet', 'bat-antibot-edge.service'], cwd=ROOT)
+    active = subprocess.run(linux_command('systemctl', '--user', 'is-active', '--quiet', 'bat-antibot-edge.service'), cwd=ROOT)
     if active.returncode == 0 and '--candidate' not in sys.argv:
         raise ValueError('stop_owned_edge_before_build')
-    artifacts = json.loads((ROOT / 'artifacts.json').read_text())
+    items = artifacts()
     names = ('haproxy-3.2.9-source.tar.gz', 'haproxy_3.2.9-1ubuntu2.2.debian.tar.xz',
              'libssl-dev_3.5.5-1ubuntu3.7_amd64.deb', 'liblua5.4-dev_5.4.8-1build1_amd64.deb',
              'libpcre2-dev_10.46-1build1_amd64.deb', 'libcrypt-dev_4.5.1-1_amd64.deb')
-    selected = [item for item in artifacts if item['name'] in names]
+    selected = [item for item in items if item['name'] in names]
     if len(selected) != len(names): raise ValueError('edge_h2_artifacts_missing')
     for item in selected:
         archive = BASE / 'upstream' / item['name']
         if not archive.exists():
-            subprocess.run(['curl.exe', '--fail', '--location', '--silent', '--show-error',
+            subprocess.run(['curl.exe' if sys.platform == 'win32' else 'curl', '--fail', '--location', '--silent', '--show-error',
                             '--output', str(archive), item['url']], cwd=ROOT, check=True)
         if digest(archive) != item['sha256']: raise ValueError('edge_h2_artifact_changed')
     SOURCE.mkdir(parents=True, exist_ok=True)
@@ -194,14 +192,14 @@ def main():
     run('make', '-C', source, '-j4', 'TARGET=linux-glibc', 'USE_OPENSSL=1', 'USE_QUIC=1',
         'USE_LUA=1', 'USE_SLZ=1', 'USE_PROMEX=1', 'USE_PCRE2=1', 'USE_PCRE2_JIT=1',
         'SSL_INC=' + include, 'SSL_LDFLAGS=-l:libssl.so.3 -l:libcrypto.so.3',
-        'ADDINC=-I' + include + '/x86_64-linux-gnu', 'LUA_INC=' + include + '/lua5.4',
+        'ADDINC=-I' + include + ('/aarch64-linux-gnu' if linux_architecture() == 'arm64' else '/x86_64-linux-gnu'), 'LUA_INC=' + include + '/lua5.4',
         'LUA_LIB_NAME=:liblua5.4.so.0', 'PCRE2_INC=' + include,
         'PCRE2_LDFLAGS=-l:libpcre2-8.so.0', 'LIBCRYPT_LDFLAGS=-l:libcrypt.so.1')
     binary = TARGET / 'haproxy'
     shutil.copyfile(SOURCE / 'haproxy', binary)
     run('chmod', '755', linux(binary))
     version = run(linux(binary), '-vv')
-    receipt = dict(upstream='3.2.9-1ubuntu2.2', binarySha256=digest(binary),
+    receipt = dict(architecture=linux_architecture(), upstream='3.2.9-1ubuntu2.2', binarySha256=digest(binary),
                    adapterSha256=digest(ROOT / 'edge-h2-samples.c'),
                    h3AdapterSha256=digest(ROOT / 'edge-h3-samples.c'),
                    rttAdapterSha256=digest(ROOT / 'edge-ssl-rtt.c'),

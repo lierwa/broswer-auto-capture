@@ -155,36 +155,44 @@ test("retained connection ownership is part of the digest and cannot claim child
     false, { ownerId: parent, scope: "task" }))
 })
 
-test("production runtime uses the shared connection for independent operations", async t => {
-  const h = harness(), directory = await mkdtemp(path.join(tmpdir(), "bat-connection-runtime-"))
-  t.after(() => rm(directory, { recursive: true, force: true }))
-  const runtime = new PythonUpstreamBrowserRuntime({ root: process.cwd(), directory,
-    subject: {} as ConstructorParameters<typeof PythonUpstreamBrowserRuntime>[0]["subject"] }, h.connection)
-  const signal = new AbortController().signal
-  const reports: unknown[] = []
+// WHY：当前运行按 execution 拥有 runner；不能恢复旧父任务连接来串行锁住不同运行。
+function independentRunners(t: import('node:test').TestContext) {
+  const starts: { runner: RunnerProcess; config: Parameters<RunnerProcess['startHybrid']>[0] }[] = []
+  const closed = new Set<RunnerProcess>()
+  t.mock.method(RunnerProcess.prototype, 'startHybrid', async function(this: RunnerProcess, config: Parameters<RunnerProcess['startHybrid']>[0]) {
+    starts.push({ runner: this, config })
+  })
+  t.mock.method(RunnerProcess.prototype, 'close', async function(this: RunnerProcess) {
+    assert(!closed.has(this), 'confirmed execution runner must not be closed twice')
+    closed.add(this); return finalReport()
+  })
+  return { starts, closed }
+}
+
+test("production runtime closes each execution-owned runner independently", async t => {
+  const h = independentRunners(t), directory = await mkdtemp(path.join(tmpdir(), "bat-connection-runtime-"))
+  t.after(() => rm(directory, { recursive: true }))
+  const runtime = new PythonUpstreamBrowserRuntime({ root: process.cwd(), directory, subject: {} as never })
+  const reports: Awaited<ReturnType<RunnerProcess['close']>>[] = []
   for (const ownerId of [first, second]) {
-    const result = await runtime.withCapabilities({ ownerId, signal, connectionOwnerId: parent,
-      allowedOrigins: ["https://example.test"], closeAfterOperation: ownerId === second,
-      onCleanup: report => reports.push(report) }, async () => "business-output")
-    assert.equal(result, "business-output")
+    assert.equal(await runtime.withCapabilities({ ownerId, signal: new AbortController().signal,
+      allowedOrigins: ["https://example.test"], onCleanup: report => reports.push(report) }, async () => "business-output"), "business-output")
   }
-  assert.deepEqual(h.counts(), { creates: 1, finalCloses: 1, releases: 1 })
-  assert.equal(reports.length, 2)
-  const starts = h.starts as { managedWindow: { ownerId: string } }[]
-  assert.deepEqual(starts.map(value => value.managedWindow.ownerId), [first, second])
-  const diagnostics = (await readFile(path.join(directory, "source-lifecycle-diagnostics", first + ".jsonl"), "utf8"))
-    .trim().split("\n").map(line => JSON.parse(line) as { phase: string; cleanup?: { retainedConnection?: unknown } })
-  assert.deepEqual(diagnostics.find(value => value.phase === "runtime_outcome")?.cleanup?.retainedConnection,
-    { ownerId: parent, scope: "task" })
+  assert.equal(new Set(h.starts.map(item => item.runner)).size, 2)
+  assert.deepEqual(h.starts.map(item => item.config.managedWindow?.ownerId), [first, second])
+  assert.equal(h.closed.size, 2)
+  assert.ok(reports.every(report => report.retainedConnection === undefined && report.status === 'confirmed'))
+  await runtime.close()
+  const diagnostic = (await readFile(path.join(directory, 'source-lifecycle-diagnostics', first + '.jsonl'), 'utf8'))
+    .trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(diagnostic.find(item => item.phase === 'runtime_outcome').cleanup.retainedConnection, undefined)
 })
 
-// WHY：保护正式宿主→PythonRuntime→TaskConnection 的真实入口；不能只验证 borrow 默认值后漏掉宿主强制 final close。
-test("正式运行入口连续借用同任务连接并分别保存释放审计，服务退出再关闭父连接", async t => {
-  const h = harness(), directory = await mkdtemp(path.join(tmpdir(), "bat-replay-connection-"))
-  const runtime = new PythonUpstreamBrowserRuntime({ root: process.cwd(), directory,
-    subject: {} as ConstructorParameters<typeof PythonUpstreamBrowserRuntime>[0]["subject"] }, h.connection)
-  t.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
-  const host = new TaskRuntimeHost({} as never, { setAuthorizationValidator() {} } as never,
+test("正式运行入口分别保存所属 runner 清理审计且不隐式调用模型", async t => {
+  const h = independentRunners(t), directory = await mkdtemp(path.join(tmpdir(), "bat-replay-connection-"))
+  const runtime = new PythonUpstreamBrowserRuntime({ root: process.cwd(), directory, subject: {} as never })
+  t.after(async () => { await runtime.close(); await rm(directory, { recursive: true }) })
+  const host = new TaskRuntimeHost({} as never,
     { selection() { throw new Error("model_forbidden") } } as never, undefined, runtime)
   const chain = replayChain(), audits: Awaited<ReturnType<RunnerProcess["close"]>>[] = []
   const empty = (): TaskConsumption => ({ transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 })
@@ -192,12 +200,11 @@ test("正式运行入口连续借用同任务连接并分别保存释放审计�
     browserRunId, requirementVersion: 1, purpose: "replay", chains: [chain], input: null,
     signal: new AbortController().signal, budget: chain.budget, consumed: empty(), scopeConsumption: { step: empty() },
     onCleanup: report => { audits.push(report) } }, async () => null)
-  assert.deepEqual(h.counts(), { creates: 1, finalCloses: 0, releases: 2 })
-  assert.deepEqual(audits.map(report => report.retainedConnection), [first, second].map(() => ({ ownerId: parent, scope: "task" })))
-  assert.ok(audits.every(report => report.status === "confirmed" && report.activeResources === false
-    && report.stages.find(stage => stage.stage === "child_exit")?.status === "not_required"))
-  await runtime.close()
-  assert.deepEqual(h.counts(), { creates: 1, finalCloses: 1, releases: 2 })
+  assert.equal(new Set(h.starts.map(item => item.runner)).size, 2)
+  assert.equal(h.closed.size, 2)
+  assert.equal(audits.length, 2)
+  assert.ok(audits.every(report => !report.retainedConnection && report.status === "confirmed" && report.activeResources === false
+    && report.stages.find(stage => stage.stage === "child_exit")?.status === "confirmed"))
 })
 
 function replayChain() {

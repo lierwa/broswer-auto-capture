@@ -2,7 +2,9 @@ import { createHash, randomBytes } from "node:crypto"
 import { cp, mkdir, readFile, writeFile, access } from "node:fs/promises"
 import path from "node:path"
 import { z } from "zod"
-import { directory, root, hubCommit, pluginCommit, pluginModule, linuxPath, binaries, wsl } from "./paths.ts"
+import { directory, root, hubCommit, pluginCommit, pluginModule, linuxPath, linuxArchitecture, binaries, wsl } from "./paths.ts"
+import { artifacts } from './artifacts.ts'
+import { verifyPrebuilt } from './prebuilt.ts'
 import { configure } from "./settings.ts"
 import { sharedBudget } from './shared-budget.ts'
 import { configureVerification } from './verification-config.ts'
@@ -18,28 +20,30 @@ async function artifact(item: { name: string; url: string; sha256: string }) {
   const digest = createHash("sha256").update(await readFile(file)).digest("hex")
   if (digest !== item.sha256) throw Error(`artifact_digest_mismatch: ${item.name}`)
 }
-async function extract(archive: string, destination: string) {
+async function extract(archive: string, destination: string, prebuilt = false) {
   const marker = path.join(destination, ".artifact-ready")
   if (await exists(marker)) return
   await mkdir(destination, { recursive: true })
-  const members = archive === "node.tar.xz" ? ["node-v24.9.0-linux-x64/bin/node", "node-v24.9.0-linux-x64/LICENSE"] : []
+  const members = prebuilt && archive === 'crowdsec-release.tgz' ? ['crowdsec-v1.8.1/config']
+    : archive === "node.tar.xz" ? [`node-v24.9.0-linux-${linuxArchitecture()}/bin/node`, `node-v24.9.0-linux-${linuxArchitecture()}/LICENSE`] : []
   wsl(["tar", "-xf", linuxPath(path.join(directory, "upstream", archive)), "-C", linuxPath(destination), ...members], true)
   await writeFile(marker, archive)
 }
-export async function prepare() {
+export async function prepare(prebuilt = false) {
+  if (prebuilt) await verifyPrebuilt()
   await sharedBudget()
   await mkdir(path.join(directory, "upstream"), { recursive: true })
-  const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string().regex(/^[a-f0-9]{64}$/) }))
-    .parse(JSON.parse(await readFile(path.join(root, "artifacts.json"), "utf8")))
+  const items = await artifacts()
   await Promise.all(items.map(artifact))
-  await prepareEdgeArtifacts()
-  await prepareH2Artifacts()
+  if (!prebuilt) { await prepareEdgeArtifacts(); await prepareH2Artifacts() }
   for (const [archive, folder] of [["crowdsec-release.tgz", "crowdsec"], ["traefik.tar.gz", "traefik"], ["node.tar.xz", "node"], ["hub.tar.gz", "hub"], ["bouncer.tar.gz", "bouncer"], ["botd-2.0.0.tgz", "botd"], ["motion-attestation-1.1.0.tgz", "motion"]]) {
-    await extract(archive!, path.join(directory, "runtime", folder!))
+    if (prebuilt && ['node', 'traefik'].includes(folder!)) continue
+    await extract(archive!, path.join(directory, "runtime", folder!), prebuilt)
   }
   const fingerprint = path.join(directory, 'runtime/crowdsec-909b5157986a2b2c2163300fdaef5ed01289f7d2/pkg/appsec/challenge/js/fpscanner/fpscanner.js')
   if (!await exists(fingerprint)) wsl(['tar', '-xf', linuxPath(path.join(directory, 'upstream/crowdsec-source-v1.8.1.tar.gz')),
     '-C', linuxPath(path.join(directory, 'runtime'))], true)
+  if (!prebuilt) { await nativeCrowdsec(); await prepareGeoValidator() }
   const creep = path.join(directory, 'runtime/creepjs-10aa6724cd33a1015db1574211890518cd04f0cc/src/lies/index.ts')
   if (!await exists(creep)) wsl(['tar', '-xf', linuxPath(path.join(directory, 'upstream/creepjs-10aa6724.tar.gz')),
     '-C', linuxPath(path.join(directory, 'runtime'))], true)
@@ -69,13 +73,12 @@ export async function prepare() {
     await writeFile(registered, new Date().toISOString())
   }
   wsl([bin.crowdsec, "-c", `${base}/config/config.yaml`, "-t"])
-  await writeFile(path.join(directory, "prepared.json"), JSON.stringify({ base, checkout, artifacts: items, at: new Date().toISOString() }, null, 2))
+  await writeFile(path.join(directory, "prepared.json"), JSON.stringify({ base, checkout, architecture: linuxArchitecture(), artifacts: items, at: new Date().toISOString() }, null, 2))
   console.log("Prepared pinned CrowdSec/Hub/Traefik. No Docker or system installation.")
 }
 
 export async function prepareEdgeArtifacts() {
-  const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string() }))
-    .parse(JSON.parse(await readFile(path.join(root, 'artifacts.json'), 'utf8')))
+  const items = await artifacts()
   await Promise.all(items.filter(item => /^(haproxy|ja4-haproxy)-/.test(item.name)).map(artifact))
   // WHY：空实例尚无runtime父目录；dpkg-deb不会替调用者创建缺失的父级。
   await mkdir(path.join(directory, 'runtime/haproxy'), { recursive: true })
@@ -86,8 +89,7 @@ export async function prepareEdgeArtifacts() {
 
 export async function prepareH2Artifacts() {
   wsl(['/usr/bin/python3', '-c', 'import sys; assert sys.version_info >= (3, 11), "h2_requires_python_3_11"'], true)
-  const items = z.array(z.object({ name: z.string(), url: z.url(), sha256: z.string() }))
-    .parse(JSON.parse(await readFile(path.join(root, 'artifacts.json'), 'utf8')))
+  const items = await artifacts()
   await Promise.all(items.filter(item => /^(hypercorn|h2|hpack|hyperframe|h11|priority|wsproto|kitsune-h2)-/.test(item.name)).map(artifact))
   const target = path.join(directory, 'runtime/h2-hints')
   await mkdir(target, { recursive: true })
@@ -99,4 +101,31 @@ export async function prepareH2Artifacts() {
   wsl(['go', 'build', '-o', `${base}/h2-hints`, `${base}/h2.go`, `${base}/main.go`], true)
   await writeFile(path.join(directory, 'h2-online.json'), JSON.stringify({ prepared: true,
     classifierSha256: createHash('sha256').update(await readFile(path.join(target, 'h2-hints'))).digest('hex') }))
+}
+
+export async function prepareGeoValidator() {
+  // WHY：运行实例不装Go；直接编译既有CrowdSec/MMDB校验源码，不复制数据判据或放宽到期门。
+  const target = path.join(directory, 'runtime/geoip-validator'), source = path.join(root, 'tests/geoip-calibration.go')
+  await mkdir(target, { recursive: true })
+  const executable = path.join(target, 'geoip-validator')
+  wsl(['go', '-C', linuxPath(path.join(directory, 'runtime/crowdsec-909b5157986a2b2c2163300fdaef5ed01289f7d2')),
+    'build', '-mod=readonly', '-trimpath', '-tags=sqlite_omit_load_extension', '-o', linuxPath(executable), linuxPath(source)], true)
+  await writeFile(path.join(directory, 'geoip-validator.json'), JSON.stringify({ architecture: linuxArchitecture(),
+    sourceSha256: createHash('sha256').update(await readFile(source)).digest('hex'),
+    binarySha256: createHash('sha256').update(await readFile(executable)).digest('hex') }, null, 2))
+}
+
+async function nativeCrowdsec() {
+  if (linuxArchitecture() !== 'arm64') return
+  // WHY：上游 v1.8.1 release 只有 amd64；arm64 用同一固定源码原生构建 engine/cscli，禁止模拟。
+  const base = linuxPath(directory), source = `${base}/runtime/crowdsec-909b5157986a2b2c2163300fdaef5ed01289f7d2`
+  const release = `${base}/runtime/crowdsec/crowdsec-v1.8.1/cmd`
+  for (const [target, entry] of [[`${release}/crowdsec/crowdsec`, './cmd/crowdsec'], [`${release}/crowdsec-cli/cscli`, './cmd/crowdsec-cli']]) {
+    wsl(['go', '-C', source, 'build', '-tags=sqlite_omit_load_extension', '-o', target!, entry!], true)
+  }
+  await writeFile(path.join(directory, 'crowdsec-native.json'), JSON.stringify({ architecture: 'arm64',
+    upstream: '909b5157986a2b2c2163300fdaef5ed01289f7d2',
+    binaries: Object.fromEntries(await Promise.all(['crowdsec/crowdsec-v1.8.1/cmd/crowdsec/crowdsec',
+      'crowdsec/crowdsec-v1.8.1/cmd/crowdsec-cli/cscli'].map(async file => [file,
+      createHash('sha256').update(await readFile(path.join(directory, 'runtime', file))).digest('hex')]))) }, null, 2))
 }

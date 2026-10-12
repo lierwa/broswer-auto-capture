@@ -43,7 +43,7 @@ function extensionFixture(manager: DailyChromeExtension) {
 
 async function application(directory: string) {
   return createApplication({ root: process.cwd(), directory,
-    upstreamBrowserRuntime: { withSession: async () => { throw new Error("no browser or model expected") } } })
+    upstreamBrowserRuntime: { } })
 }
 
 test("first authorization ignores retained task leases; reject then allow preserves global state", async () => {

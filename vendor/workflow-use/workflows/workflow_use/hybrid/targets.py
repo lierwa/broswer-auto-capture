@@ -307,16 +307,23 @@ class TargetResolver:
                 if _node_value(node, 'xpath') == xpath and _current_target(node, target_id)]
 
     def _title_matches(self, target, mapping, target_id):
-        matches = []
+        candidates = []
         for index, node in mapping.items():
             ax = _node_value(node, 'ax_node')
             if ax is None or not _current_target(node, target_id):
                 continue
             role, name = _node_value(ax, 'role'), _node_value(ax, 'name')
-            if role == target['role'] and name == target['name'] and _node_value(node, 'is_visible') is not False:
-                matches.append(ResolvedTarget(None, node, int(index), _node_value(node, 'target_id'),
-                                              _node_value(node, 'frame_id')))
+            if role == target['role'] and _node_value(node, 'is_visible') is not False:
+                candidates.append((name, ResolvedTarget(None, node, int(index), _node_value(node, 'target_id'),
+                                                      _node_value(node, 'frame_id'))))
+        matches = [node for name, node in candidates if name == target['name']]
+        # WHY：旧发布目标明确提供的 fallback/occurrence 才可使用，缺省仍严格唯一。
+        if not matches and target.get('fallbackName'):
+            matches = [node for name, node in candidates if isinstance(name, str) and target['fallbackName'] in name]
+        if 'occurrence' in target:
+            return matches[target['occurrence']:target['occurrence'] + 1]
         return matches
+
 
 
 async def _element_backend(element):

@@ -24,7 +24,7 @@ import { executionDetail } from "./execution-detail.js"
 import { projectExecutionResult } from "./execution-result.js"
 import { ExecutionPacingController } from "./execution-pacing.js"
 import { recoverExecutionResources } from "./resource-recovery.js"
-import { TaskPlanExecutor, verifyClosedExecutionBrowser, exitedOwnedRunner } from "./plan-executor.js"
+import { TaskPlanExecutor, verifyClosedExecutionBrowser, exitedOwnedRunner, executionBrowserOwner } from "./plan-executor.js"
 import { readStartupFailure } from "../upstream-browser/source-lifecycle-diagnostics.js"
 import { recordPlanValidation } from "./plan-validation.js"
 import { TaskPreparationCoordinator } from "./preparation.js"
@@ -57,7 +57,7 @@ export class TaskChainService {
     this.repository = new TaskContractRepository(store)
     this.product = new TaskProductService(store, this.repository)
     this.summaries = new TaskSummaryProjector(store, this.repository, this.product)
-    this.host = new TaskRuntimeHost(this.repository, browser, ai, capabilityFactory, upstream)
+    this.host = new TaskRuntimeHost(this.repository, ai, capabilityFactory, upstream)
     this.authoring = new TaskChainAuthoring(this.repository, ai, upstream)
     this.executor = new TaskPlanExecutor(store, this.repository, this.host)
     this.preparation = new TaskPreparationCoordinator(store, this.repository, this.authoring,
@@ -378,7 +378,7 @@ export class TaskChainService {
     const browserClosed = releasedWindow === "closed"
     const confirmed = pending.cleanupResume !== null && (runnerReleased || Boolean(releasedWindow))
     const code = confirmed ? null : "cleanup_owner_verification_unavailable"
-    const facts = { executionId: record.id, ownerId: browserClosed ? stableUuid(record.id, "managed-window")
+    const facts = { executionId: record.id, ownerId: browserClosed ? executionBrowserOwner(record, prior)!
       : prior?.ownerId ?? record.browserHandoff.ownerId ?? stableUuid(record.id, "managed-window"),
       attempt: pending.cleanup.attempt, status: confirmed ? "confirmed" as const : "unconfirmed" as const,
       code, activeResources: confirmed ? false : null, stages: confirmed

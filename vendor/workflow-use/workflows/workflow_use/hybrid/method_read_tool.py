@@ -23,7 +23,7 @@ from .page_content import CONTENT_SCHEMA, CONTENT_LIMIT, content_schema, content
 from .element_entry import entry_field
 from .entry_selection import EntryObservation, EntrySelection, assert_entry_sample, capture_entry_indices, select_entry_container
 from .content_read_params import ContentReadToolParams
-from .method_read_diagnostics import _safe_read_error
+from .method_read_diagnostics import CONTENT_READINESS_GUIDANCE, _safe_read_error
 
 # WHY：字段类型与多值形状只有最终合同一个事实源；复用投影配置，避免默认值经持久化变成模型声明。
 MethodReadField = create_model('MethodReadField', __base__=Contract, **{
@@ -40,7 +40,10 @@ class MethodReadToolParams(Contract):
         'A real location in the confirmed output contract.'))
     container: str | None = Field(default=None, min_length=1, max_length=2000, description=(
         'Reusable CSS selector for each complete record. Choose an observed common ancestor of all '
-        'its DOM fields, including summary fields outside any nested list or table.'))
+        'its DOM fields, including summary fields outside any nested list or table. '
+        'For asynchronous final data, gate this ONE ancestor by its observed lifecycle state (or :has '
+        'for a descendant status); it must match nothing in observed initial/processing snapshots. '
+        'Do not OR separately gated regions with commas or treat early outcome values as completion.'))
     regions: str | None = Field(default=None, min_length=1, max_length=2000)
     regionMode: Literal['selected-regions'] | None = None
     indices: list[PositiveInt] | None = Field(default=None, min_length=1, max_length=300)
@@ -200,9 +203,11 @@ class MethodReadRecords:
         return record.parameters.model_copy(deep=True), record.mapping.model_copy(deep=True)
 
     def feedback(self, params, record, *, observation=None):
+        method = {'recordedMethod': record.parameters.model_dump(mode='json'),
+                  'readinessGuidance': CONTENT_READINESS_GUIDANCE}
         if any(field.contentSource for field in record.mapping.specification.fields.values()):
             # WHY：完整采集仅证明所选区域的字节，不能替模型断言选对了业务范围。
-            return json.dumps({'contentScopeGuidance': (
+            return json.dumps({**method, 'contentScopeGuidance': (
                 'coverage.complete verifies capture of the selected region only, not that its scope satisfies the task. '
                 'Review textPreview and current page evidence against the confirmed requirement. '
                 'Include all requested related text, tables and images in one reusable region; '
@@ -224,7 +229,7 @@ class MethodReadRecords:
                          'destinationOrigin': preview.destination_origin}
                         for preview in observation.previews if preview.backend in backends] \
                 if isinstance(observation, EntryObservation) else []
-            return json.dumps({'sourceMethodGuidance': (
+            return json.dumps({**method, 'sourceMethodGuidance': (
                 f'The DOM reading method is verified for {record.sample.coverage.total} selected current-DOM entries. '
                 'This technical proof does not establish that they are the intended business entries. '
                 'Review the native entry previews and current page evidence; clickable controls may lead to unrelated workflows. '
@@ -238,8 +243,8 @@ class MethodReadRecords:
                 'This does not declare the full task or all detail content completed.'), 'entryPreviews': previews},
                 ensure_ascii=False, separators=(',', ':'))
         if not isinstance(value_at_path(record.sample.output, record.mapping.readPath), list):
-            return None
-        value = {'repeatGuidance': (
+            return json.dumps(method)
+        value = {**method, 'repeatGuidance': (
             'If the task repeats this collection, establish a complete continuation query after this read. '
             'For click, the queried control must be enabled and visible, including its ancestors. '
             'For scroll, the query is a condition, not a click target: an observed end marker may be hidden while '

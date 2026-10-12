@@ -13,9 +13,16 @@ import { executionCleanupAuditSchema, RuntimeCleanupRequiredError, RUNNER_CLEANU
   type ExecutionCleanupAudit, type RunnerCleanupReport } from "../upstream-browser/cleanup.js"
 import { UpstreamProtocolError, type UpstreamBrowserRuntime } from "../upstream-browser/service.js"
 
+export function executionBrowserOwner(record: TaskExecution, prior: ExecutionCleanupAudit | undefined) {
+  if (record.release) return stableUuid(record.id, "managed-window")
+  // WHY：草稿每次试跑有独立 owner；仅使用同任务、同 execution 的服务端清理审计，不能从当前 sequence 猜测。
+  return prior?.taskId === record.taskId && prior.executionId === record.id ? prior.ownerId : null
+}
+
 export function exitedOwnedRunner(record: TaskExecution, prior: ExecutionCleanupAudit | undefined) {
   // WHY：close ACK/自然退出超时不是进程仍活跃；已确认的进程树终止同样证明原控制器已退出。
-  return prior?.ownerId === stableUuid(record.id, "managed-window") && prior.stages.length === RUNNER_CLEANUP_STAGES.length
+  return prior?.taskId === record.taskId && prior.executionId === record.id
+    && prior.ownerId === executionBrowserOwner(record, prior) && prior.stages.length === RUNNER_CLEANUP_STAGES.length
     && RUNNER_CLEANUP_STAGES.every(name => prior.stages.some(stage => stage.stage === name
       && (["browser_close", "close_protocol", "child_exit"].includes(name) || stage.status !== "unconfirmed")))
     && prior.stages.some(stage => ["child_exit", "process_tree"].includes(stage.stage) && stage.status === "confirmed")
@@ -23,8 +30,10 @@ export function exitedOwnedRunner(record: TaskExecution, prior: ExecutionCleanup
 
 export async function verifyClosedExecutionBrowser(record: TaskExecution, prior: ExecutionCleanupAudit | undefined,
   upstream: UpstreamBrowserRuntime, controllerActive: boolean) {
-  const ownerId = stableUuid(record.id, "managed-window"), exited = exitedOwnedRunner(record, prior)
-  const missingStartup = prior?.source === "owner_verification" && prior.stages.length === 0
+  const ownerId = executionBrowserOwner(record, prior), exited = exitedOwnedRunner(record, prior)
+  if (!ownerId) return false
+  const missingStartup = prior?.taskId === record.taskId && prior.executionId === record.id
+    && prior.source === "owner_verification" && prior.stages.length === 0
     && [ownerId, stableUuid(record.id, "cleanup-owner")].includes(prior.ownerId) && Boolean(record.release)
     && record.steps.every(step => step.runIds.length === 0) && record.browserHandoff.ownerId === ownerId
     && record.browserHandoff.leaseId === ownerId && !record.browserHandoff.purpose && !record.browserHandoff.targetDigest

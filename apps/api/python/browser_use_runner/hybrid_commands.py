@@ -9,6 +9,7 @@ from workflow_use.hybrid.request import CompilationRequest, NaturalCompilationRe
 from workflow_use.hybrid.invokes import VerifiedChild
 from browser_use_runner.profile_owner import RunnerOwnership
 from browser_use_runner.compilation_control import CompilationAck
+from browser_use_runner.legacy_commands import LegacyCommand
 
 
 class AllowedSite(Contract):
@@ -150,6 +151,11 @@ class ExecuteRequest(Envelope):
     command: StepCommand | ReadCommand | TargetReadinessCommand
 
 
+class LegacyRequest(Envelope):
+    type: Literal['hybrid_legacy']
+    command: LegacyCommand
+
+
 class ObserveRequest(Envelope):
     type: Literal['hybrid_observe']
 
@@ -227,4 +233,4 @@ class AnnotateRequest(CompileRequest):
     model: AuthorModel
 
 
-REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | AccountSessionRequest | CloseRequest | ReleaseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest | AnnotateRequest, Field(discriminator='type')])
+REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | LegacyRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | AccountSessionRequest | CloseRequest | ReleaseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest | AnnotateRequest, Field(discriminator='type')])

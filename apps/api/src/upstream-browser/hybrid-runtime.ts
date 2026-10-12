@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto"
+import { legacyCapabilities, legacyRequest } from "./legacy-capabilities.js"
+import { BrowserError } from "@browser-capture/browser"
 import { resolveContentReceipts } from "./content-receipts.js"
 import { BROWSER_CONTEXT_OUTPUT, browserContextOutputSchema } from "./hybrid-browser-context.js"
 import { elementEntrySchema } from "./element-entry-contract.js"
@@ -67,6 +69,7 @@ type HybridRunner = Pick<RunnerProcess, "close" | "envBoolean" | "request" | "st
   & Partial<Pick<RunnerProcess, "handoff">>
 
 type HybridCapabilitiesInput = { root: string; directory: string; ownerId: string;
+  legacyNodeIds?: Record<string, string[]>;
   profilePath?: string;
   signal: AbortSignal; allowedOrigins: string[]; canRestoreByNavigation?: boolean; headless?: boolean;
   managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[]; accountMaintenance?: boolean };
@@ -107,67 +110,23 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
       return hybridBrowserStateSchema.parse(await runner.request(
         hybridObserveRequestSchema.parse({ id: randomUUID(), type: "hybrid_observe" })))
     }
-    const value = await work({ browserCommandCount: () => commands,
-      async capability(this: TaskChainCapabilities, invocation) {
-        let missingTargetOutcome = false
-        try {
-          return await withinHybridSignal(invocation.signal, owner, async () => {
-            if (invocation.node.capability.name === "browser.wait-for-human") {
-              if (invocation.node.capability.version !== 1 || !invocation.node.human
-                || invocation.node.effect !== "read") throw new Error("hybrid_human_wait_contract_invalid")
-              z.object({}).strict().parse(invocation.config)
-              z.object({}).strict().parse(invocation.input)
-              // WHY：显式人工请求只交还原现场；用户操作和恢复仍归现有检查点，不另建等待器。
-              return { outcome: "human_required" as const, reason: invocation.node.human.prompt,
-                browser: await observe(this) }
-            }
-            const config = z.record(z.string(), z.unknown()).parse(invocation.config)
-            const contextOutput = config[BROWSER_CONTEXT_OUTPUT] === true
-            if (contextOutput && (invocation.node.capability.name !== "browser.workflow-step"
-              || !isDeepStrictEqual(invocation.node.outputContract.schema, browserContextOutputSchema))) {
-              throw new Error("hybrid_browser_context_output_contract_invalid")
-            }
-            missingTargetOutcome = config.missingTargetOutcome === true
-            const scoped = await runtimeScope.commandConfig(invocation.node.capability.name, config, () => observe(this), invocation.node.id)
-            invocation.signal.throwIfAborted()
-            const command = hybridCommandSchema.parse({ ...invocation.node.capability,
-              ...(invocation.node.capability.name === "browser.read-fields"
-                && (("specification" in scoped ? scoped.specification : undefined) as { inheritFields?: string[] } | undefined)?.inheritFields?.length
-                ? { inherited: invocation.input.record } : {}),
-              ...(invocation.node.capability.name === "browser.workflow-step"
-                ? materializeHybridWorkflowCommand(scoped, invocation.input)
-                : invocation.node.capability.name === "browser.target-readiness"
-                  ? materializeTargetReadinessCommand(scoped, invocation.input)
-                  : invocation.node.capability.name === "browser.read-fields"
-                    ? materializeReadCommand(scoped, invocation.input) : scoped) })
-            // One admitted provider command; errors after dispatch still consume the attempted action budget.
-            admit(this)
-            const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({
-              id: randomUUID(), type: "hybrid_execute", actionRef: invocation.node.id, command })))
-            invocation.signal.throwIfAborted()
-            runtimeScope.succeed(invocation.node.id, result.browser)
-            const output = await resolveContentReceipts(result.output, config,
-              input.profilePath ?? path.join(input.directory, "browser-profile", "default"), input.ownerId)
-            return { outcome: "success", output: contextOutput ? { url: result.browser.url, tabId: result.browser.tabId }
-              : hybridCapabilityOutput(invocation.node.outputContract, output),
-              browser: result.browser }
-          })
-        } catch (error) {
-          if (error instanceof Error && error.message === "hybrid_runtime_scope_page_changed") {
-            diagnostics?.recordScopeMismatch(error.cause)
-          }
-          runtimeScope.clear()
-          const browser = await observe(this).catch(() => null)
-          const external = hybridExternalFailure(error, browser)
-          if (external) return external
-          if (missingTargetOutcome && error instanceof Error
-            && error.message === "hybrid_runner_failed:RuntimeError:ordinary_target_missing") {
-            return { outcome: "missing", output: null, reason: "ordinary_target_missing" }
-          }
+    const legacy = legacyCapabilities({ inspect: observe, request: (command, signal, capabilities) =>
+      withinHybridSignal(signal, owner, async () => {
+        runtimeScope.clear()
+        admit(capabilities)
+        try { return await runner.request(legacyRequest(command)) }
+        catch (error) {
+          if (signal.aborted) throw new BrowserError("cancelled")
           throw error
         }
-      },
+      }) })
+    const value = await work({ ...legacy, browserCommandCount: () => commands,
+      capability: managedCapability({ input, owner, runner, runtimeScope, diagnostics, legacy, observe, admit }),
       verifyResume(this: TaskChainCapabilities, checkpoint, signal) {
+        const legacyIds = input.legacyNodeIds?.[checkpoint.binding.chain.id]
+        if (legacyIds?.includes(checkpoint.resumeWhen ? checkpoint.cursor : checkpoint.browserNodeId ?? checkpoint.cursor)) {
+          return legacy.verifyResume!.call(this, checkpoint, signal)
+        }
         return withinHybridSignal(signal, owner, () => verifyHybridResume(checkpoint,
           { input, runner, runtimeScope, capabilities: this, observe, admit }))
       },
@@ -175,6 +134,78 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
     primary = { status: "completed", value }
   } catch (error) { primary = { status: "failed", error } }
   return finishHybridRunner(input, runner, diagnostics, primary)
+}
+
+function managedCapability(context: {
+  input: HybridCapabilitiesInput; owner: AbortController; runner: HybridRunner;
+  runtimeScope: HybridRuntimeScopeState; diagnostics: ReturnType<typeof SourceLifecycleDiagnostics.open>;
+  legacy: TaskChainCapabilities; observe: (capabilities: TaskChainCapabilities) => Promise<z.infer<typeof hybridBrowserStateSchema>>;
+  admit: (capabilities: TaskChainCapabilities) => void;
+}): NonNullable<TaskChainCapabilities["capability"]> {
+  const { input, owner, runner, runtimeScope, diagnostics, legacy, observe, admit } = context
+  return async function(this: TaskChainCapabilities, invocation) {
+  if (invocation.node.capability.name === "browser.perform") {
+    runtimeScope.clear()
+    return legacy.capability!.call(this, invocation)
+  }
+  let missingTargetOutcome = false
+  try {
+    return await withinHybridSignal(invocation.signal, owner, async () => {
+      if (invocation.node.capability.name === "browser.wait-for-human") {
+        if (invocation.node.capability.version !== 1 || !invocation.node.human
+          || invocation.node.effect !== "read") throw new Error("hybrid_human_wait_contract_invalid")
+        z.object({}).strict().parse(invocation.config)
+        z.object({}).strict().parse(invocation.input)
+        // WHY：显式人工请求只交还原现场；用户操作和恢复仍归现有检查点，不另建等待器。
+        return { outcome: "human_required" as const, reason: invocation.node.human.prompt,
+          browser: await observe(this) }
+      }
+      const config = z.record(z.string(), z.unknown()).parse(invocation.config)
+      const contextOutput = config[BROWSER_CONTEXT_OUTPUT] === true
+      if (contextOutput && (invocation.node.capability.name !== "browser.workflow-step"
+        || !isDeepStrictEqual(invocation.node.outputContract.schema, browserContextOutputSchema))) {
+        throw new Error("hybrid_browser_context_output_contract_invalid")
+      }
+      missingTargetOutcome = config.missingTargetOutcome === true
+      const scoped = await runtimeScope.commandConfig(invocation.node.capability.name, config, () => observe(this), invocation.node.id)
+      invocation.signal.throwIfAborted()
+      const command = hybridCommandSchema.parse({ ...invocation.node.capability,
+        ...(invocation.node.capability.name === "browser.read-fields"
+          && (("specification" in scoped ? scoped.specification : undefined) as { inheritFields?: string[] } | undefined)?.inheritFields?.length
+          ? { inherited: invocation.input.record } : {}),
+        ...(invocation.node.capability.name === "browser.workflow-step"
+          ? materializeHybridWorkflowCommand(scoped, invocation.input)
+          : invocation.node.capability.name === "browser.target-readiness"
+            ? materializeTargetReadinessCommand(scoped, invocation.input)
+            : invocation.node.capability.name === "browser.read-fields"
+              ? materializeReadCommand(scoped, invocation.input) : scoped) })
+      // One admitted provider command; errors after dispatch still consume the attempted action budget.
+      admit(this)
+      const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({
+        id: randomUUID(), type: "hybrid_execute", actionRef: invocation.node.id, command })))
+      invocation.signal.throwIfAborted()
+      runtimeScope.succeed(invocation.node.id, result.browser)
+      const output = await resolveContentReceipts(result.output, config,
+        input.profilePath ?? path.join(input.directory, "browser-profile", "default"), input.ownerId)
+      return { outcome: "success", output: contextOutput ? { url: result.browser.url, tabId: result.browser.tabId }
+        : hybridCapabilityOutput(invocation.node.outputContract, output),
+        browser: result.browser }
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === "hybrid_runtime_scope_page_changed") {
+      diagnostics?.recordScopeMismatch(error.cause)
+    }
+    runtimeScope.clear()
+    const browser = await observe(this).catch(() => null)
+    const external = hybridExternalFailure(error, browser)
+    if (external) return external
+    if (missingTargetOutcome && error instanceof Error
+      && error.message === "hybrid_runner_failed:RuntimeError:ordinary_target_missing") {
+      return { outcome: "missing", output: null, reason: "ordinary_target_missing" }
+    }
+    throw error
+  }
+  }
 }
 
 async function finishHybridRunner<T>(input: HybridCapabilitiesInput, runner: HybridRunner,

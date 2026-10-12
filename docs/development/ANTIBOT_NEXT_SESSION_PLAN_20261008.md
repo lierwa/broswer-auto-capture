@@ -1,5 +1,9 @@
 # 反爬下一阶段：检测覆盖、B-A-T 改造与交付计划
 
+> **2026-10-12 当前实施优先入口**：用户已授权三项开发与完整验收后的提交、推送、核远程及关机。BSK迁移/旧探索清理已完成当前冻结新任务及同版变化输入验收；Windows最终盾包有定点实测，Mac连接、原生arm64与双平台验收未完成。先读[PROGRESS顶部](PROGRESS.md)、[BSK执行记录](BSK_REMOVAL_EXECUTION_20261012.md)和[部署执行记录](SHIELD_DEPLOYMENT_EXECUTION_20261012.md)。下方“仅文档/尚未实施/已完成”均为各自历史时点，不能覆盖当前交付门；当前不得提交、推送或关机。
+
+> **2026-10-12 最新用户范围覆盖下方旧计划**：本轮仅整理开发文档；下一阶段B-A-T仅[移除外部BSK和清理废弃探索](BSK_REMOVAL_AND_EXPLORATION_CLEANUP_PLAN_20261012.md)。用户另要求[盾Windows/WSL2与Apple Silicon Mac双平台部署方案](SHIELD_WINDOWS_MAC_DEPLOYMENT_PLAN_20261012.md)，作为独立部署包推进：Windows保留WSL，Mac接入Lima，共用Linux/systemd，撤回Docker推荐，不自写跨平台管理器、不重开检测算法主线。实现均未开始，当前断点见PROGRESS顶部；不得据旧“唯一范围/下一步/关机”扩大任务。
+
 > **2026-10-12 最新结算**：后台连接无页连接/重连已验证；通用报告读取纠错修复并验证后，冻结 1222 代码配置，全新 task c52e7dc3 从首次需求、准备、样本与独立复验、发布 V1 到首次正式复跑 43e68dd4 全部完成。普通执行模型 0，正式报告 Human/39 clear/四 Worker 有效且 39 项数据完整取得；冻结期无改码/改盾，历史首败保留，临时资源永久清理。Chrome 3 项扩展损坏禁用副作用仍单列未关闭。以[本轮结算](BAT_BACKGROUND_CONNECTION_AND_MAINFLOW_20261012.md)和 PROGRESS 顶部为准，下方为历史。
 
 

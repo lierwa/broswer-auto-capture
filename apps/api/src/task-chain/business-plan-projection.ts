@@ -1,6 +1,6 @@
 import type { ResultSpec, TaskPlanStep, ValueBinding, ValueSchema } from "@browser-capture/contracts"
 import { stableUuid } from "@browser-capture/runtime"
-import type { DraftBusinessStep } from "../interview/business-steps.js"
+import { taskInputSchemaAtPath, type DraftBusinessStep } from "../interview/business-steps.js"
 import { contentDelivery } from "../interview/content-delivery.js"
 import { entryItemGoal, sourceEntryStep, recordEntry, recordKey } from "./record-plan.js"
 import { planningEnvelope } from "./preparation-plan-projection.js"
@@ -15,7 +15,7 @@ export function projectBusinessPlanSteps(base: TaskPlanStep, draft: Draft): Task
     const id = `step-${index + 1}`, sourceId = definition.input.kind === "step" ? `step-${definition.input.step}` : undefined
     const binding: ValueBinding = sourceId ? { source: "node", nodeId: sourceId, path: [] }
       : { source: "input", path: definition.input.kind === "task" ? definition.input.path : [] }
-    const input = sourceId ? outputs.get(sourceId) : atPath(draft.inputSchema, binding.path)
+    const input = sourceId ? outputs.get(sourceId) : taskInputSchemaAtPath(draft.inputSchema, binding.path)
     if (!input) throw Error("preparation_step_input_path_missing")
     // WHY：最终交付上限不缩小前置处理范围；其他步骤只有宿主技术预算。
     const each = definition.execution === "逐项执行"
@@ -64,11 +64,6 @@ function stepOutput(step: DraftBusinessStep, draft: Draft, each: boolean): { sch
   return { schema, spec }
 }
 
-function atPath(schema: ValueSchema, path: (string | number)[]): ValueSchema | undefined {
-  let current: ValueSchema | undefined = schema
-  for (const key of path) current = current?.type === "object" && typeof key === "string" ? current.properties[key] : undefined
-  return current
-}
 function isEntry(schema: ValueSchema) {
   return schema.type === "object" && Object.hasOwn(schema.properties, recordEntry) && Object.hasOwn(schema.properties, recordKey)
 }

@@ -109,8 +109,7 @@ test("old execution lease remains actionable while interview restarts and cleanu
   const directory = await mkdtemp(path.join(tmpdir(), "bat-handoff-history-"))
   const report = cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({ stage, status: "confirmed" as const,
     code: null })), false)
-  const upstream: UpstreamBrowserRuntime = { withSession: async () => { throw new Error("unavailable") },
-    managedWindowAction: async ({ ownerId, leaseId }) => ({ window: { leaseId, ownerId,
+  const upstream: UpstreamBrowserRuntime = { managedWindowAction: async ({ ownerId, leaseId }) => ({ window: { leaseId, ownerId,
       targetDigest: null, active: false, reason: null }, report }) }
   const api = await createApplication({ root: projectRoot, directory, upstreamBrowserRuntime: upstream,
     aiModel: testAIModel(async function* () { yield { type: "turn_succeeded", outputText: "" } }) })
@@ -138,8 +137,7 @@ test("old execution lease remains actionable while interview restarts and cleanu
 
 test("foreground denial returns readable error without changing completed delivery", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-handoff-focus-error-"))
-  const upstream: UpstreamBrowserRuntime = { withSession: async () => { throw new Error("unavailable") },
-    managedWindowAction: async () => {
+  const upstream: UpstreamBrowserRuntime = { managedWindowAction: async () => {
       throw new UpstreamProtocolError("hybrid_runner_failed", "ValueError:hybrid_managed_window_foreground_denied")
     } }
   const api = await createApplication({ root: projectRoot, directory, upstreamBrowserRuntime: upstream,

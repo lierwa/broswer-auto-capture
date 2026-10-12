@@ -1,4 +1,6 @@
 import { z } from "zod"
+import type { ValueSchema } from "@browser-capture/contracts"
+import { draftError } from "./draft-validation.js"
 
 const stepSchema = z.object({
   title: z.string().trim().min(1).max(200), goal: z.string().trim().min(1).max(10_000),
@@ -10,6 +12,23 @@ const stepSchema = z.object({
   output: z.enum(["完成状态", "入口集合", "页面内容", "最终结果"]),
 })
 export type DraftBusinessStep = z.infer<typeof stepSchema>
+
+// WHY：复用原计划投影的路径规则，在访谈成稿时拒绝不能投影的输入，不等浏览器准备才暴露错误。
+export function taskInputSchemaAtPath(schema: ValueSchema, path: (string | number)[]): ValueSchema | undefined {
+  let current: ValueSchema | undefined = schema
+  for (const key of path) current = current?.type === "object" && typeof key === "string" ? current.properties[key] : undefined
+  return current
+}
+
+export function validateTaskStepInputs(steps: DraftBusinessStep[] | undefined, schema: ValueSchema) {
+  for (const [index, step] of (steps ?? []).entries()) {
+    if (step.input.kind !== "task" || taskInputSchemaAtPath(schema, step.input.path)) continue
+    throw draftError("preparation_step_input_path_missing", "任务步骤", `步骤 ${index + 1} 的输入`,
+      `任务输入.${step.input.path.join(".")}`,
+      "任务输入，或任务输入.一个已声明字段；字段路径必须在运行输入中真实存在。",
+      "多个运行输入字段共同用于一步时，写“- 输入：任务输入”传入完整对象；不要并列拼接多个路径。保留已确认字段和业务目标。")
+  }
+}
 
 /** WHY：只解析同版草案明确声明的步骤，不按网站、关键词或结果数组替模型拆任务。 */
 export function parseBusinessSteps(markdown: string): DraftBusinessStep[] | undefined {

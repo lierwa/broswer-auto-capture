@@ -15,7 +15,7 @@ import { assertCapturedSourceIdentity, createHybridArtifact, createHybridSourceA
   hybridArtifactMediaType, hybridSourceMediaType } from "../upstream-browser/hybrid-artifact.js"
 import type { HybridAuthoringProgress, HybridSourceResult } from "../upstream-browser/hybrid-exploration.js"
 import { hybridNaturalRequestSchema } from "../upstream-browser/hybrid-schema.js"
-import { collectOrigins } from "./exploration-browser-support.js"
+import { collectOrigins } from "./task-value-utils.js"
 import type { TaskContractRepository } from "./repository.js"
 import { projectPreparationPlan } from "./preparation-plan-projection.js"
 import { reusableHybridSources } from "./hybrid-source-reuse.js"

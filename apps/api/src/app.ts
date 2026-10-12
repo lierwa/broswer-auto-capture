@@ -14,11 +14,10 @@ import { InterviewCoordinator } from "./interview/coordinator.js"
 import { loadInterviewSkill } from "./interview/protocol.js"
 import { DomainError } from "./errors.js"
 import { BrowserService } from "./browser/service.js"
-import { BrowserError, bskExecutor, type CommandExecutor } from "@browser-capture/browser"
+import { BrowserError } from "@browser-capture/browser"
 import { createAIModelProvider, requireAgentSessionSelection, type AIModelProvider } from "./ai/model.js"
 import { TaskChainService } from "./task-chain/service.js"
 import type { RuntimeCapabilityFactory } from "./task-chain/runtime-host.js"
-import { OriginAccessGate } from "./browser/origin-access-gate.js"
 import { BrowserProfileService } from "./browser/profile-service.js"
 import { PythonUpstreamBrowserRuntime, type UpstreamBrowserRuntime } from "./upstream-browser/service.js"
 import { TaskDeletionService } from "./task-deletion.js"
@@ -36,8 +35,8 @@ import { accountAvailability } from "./browser/account-availability.js"
 
 export const SHARED_AI_SUBJECT = "browser-capture-local-user"
 export interface AppOptions { root: string; directory: string; ai?: AI; aiModel?: AIModelProvider;
-  taskChainCapabilities?: RuntimeCapabilityFactory; browserExecutor?: CommandExecutor; serveUi?: boolean;
-  originAccessGate?: OriginAccessGate; upstreamBrowserRuntime?: UpstreamBrowserRuntime;
+  taskChainCapabilities?: RuntimeCapabilityFactory; serveUi?: boolean;
+  upstreamBrowserRuntime?: UpstreamBrowserRuntime;
   developmentIdentity?: { pid: number; root: string; stop?: () => void } }
 export async function createApplication(options: AppOptions) {
   const store = await ProductStore.open(options.directory)
@@ -55,8 +54,7 @@ export async function createApplication(options: AppOptions) {
   })
   const coordinator = new InterviewCoordinator(store, aiModel, loadInterviewSkill(options.root))
   let browser: BrowserService
-  try { browser = new BrowserService(store, options.directory, options.browserExecutor ?? bskExecutor(options.root),
-    options.originAccessGate ?? (options.browserExecutor ? undefined : new OriginAccessGate(store))) }
+  try { browser = new BrowserService(store, options.directory) }
   catch (error) { ai.close(); await store.close(); throw error }
   let taskChain: TaskChainService
   const dailyChrome = new DailyChromeExtension(options.root, options.directory,
@@ -68,7 +66,7 @@ export async function createApplication(options: AppOptions) {
       dailyChromeInspectionEndpoint: ownerId => dailyChrome.endpoint(false, ownerId, false) })
     taskChain = new TaskChainService(store, browser, aiModel, upstream, options.taskChainCapabilities, options.directory)
   }
-  catch (error) { await browser.close(); await coordinator.close(); ai.close(); await store.close(); throw error }
+  catch (error) { await coordinator.close(); ai.close(); await store.close(); throw error }
   const browserProfile = new BrowserProfileService(options.root, options.directory)
   const accountRepository = new AccountRepository(store)
   const accountAccess = accountAvailability(store, taskChain, browser, browserProfile)
@@ -88,23 +86,7 @@ export async function createApplication(options: AppOptions) {
     () => { dailyChrome.assertStable(); assertBrowserIdle(browser, taskChain, store, browserProfile) },
     () => dailyChrome.disconnect())
   const app = Fastify({ logger: false, bodyLimit: 100_000, requestTimeout: 15_000 })
-  app.addHook("onRequest", async (request, reply) => {
-    const host = request.headers.host ?? ""
-    if (!/^(127\.0\.0\.1|localhost):\d+$/.test(host) || (request.headers.origin && request.headers.origin !== `http://${host}`)) {
-      return reply.code(403).send({ error: "仅允许本机同源访问。", code: "forbidden_origin" })
-    }
-    // WHY：账号与模型调用会使用本机凭据；浏览器必须提供同源 Fetch Metadata，不能沿用允许无 Origin 的 CLI 读取边界。
-    if (sensitiveAIPath(request.method, request.url) && request.headers["sec-fetch-site"] !== "same-origin") {
-      return reply.code(403).send({ error: "模型账号仅允许由当前工作台访问。", code: "forbidden_ai_origin" })
-    }
-    reply.header("Cache-Control", "no-store").header("X-Content-Type-Options", "nosniff")
-  })
-  app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof DomainError) return reply.code(error.status).send({ error: error.message, code: error.code })
-    if (error instanceof BrowserError) return reply.code(409).send({ error: "浏览器操作未完成，请读取当前状态。", code: error.code })
-    const status = publicStatus(error)
-    return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
-  })
+  mountLocalRequestGuards(app)
   mountBrowserEnvironment(app, browserEnvironment, () => deletion.assertWritable())
   mountBrowserAccounts(app, accounts, () => deletion.assertWritable())
   mountDailyChromeExtension(app, dailyChrome, () => {
@@ -134,7 +116,7 @@ export async function createApplication(options: AppOptions) {
     let report: { status: string } | undefined
     // WHY：父连接清理异常也不能跳过其它既有资源的退出；失败结论最后保留给服务 owner。
     try { report = await upstream?.close?.() }
-    finally { await browser.close(); await coordinator.close(); await closeDailyBackground() }
+    finally { await coordinator.close(); await closeDailyBackground() }
     if (report?.status === "unconfirmed") throw new Error("hybrid_task_connection_cleanup_required")
   })
   app.addHook("onClose", async () => { dailyChrome.close(); ai.close(); await store.close() })
@@ -147,6 +129,25 @@ export async function createApplication(options: AppOptions) {
     await app.ready()
     return { app, coordinator, store, browser, browserProfile, browserEnvironment, dailyChrome, taskChain, accounts }
   } catch (error) { await app.close(); throw error }
+}
+function mountLocalRequestGuards(app: FastifyInstance) {
+  app.addHook("onRequest", async (request, reply) => {
+    const host = request.headers.host ?? ""
+    if (!/^(127\.0\.0\.1|localhost):\d+$/.test(host) || (request.headers.origin && request.headers.origin !== `http://${host}`)) {
+      return reply.code(403).send({ error: "仅允许本机同源访问。", code: "forbidden_origin" })
+    }
+    // WHY：账号与模型调用会使用本机凭据；浏览器必须提供同源 Fetch Metadata，不能沿用允许无 Origin 的 CLI 读取边界。
+    if (sensitiveAIPath(request.method, request.url) && request.headers["sec-fetch-site"] !== "same-origin") {
+      return reply.code(403).send({ error: "模型账号仅允许由当前工作台访问。", code: "forbidden_ai_origin" })
+    }
+    reply.header("Cache-Control", "no-store").header("X-Content-Type-Options", "nosniff")
+  })
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof DomainError) return reply.code(error.status).send({ error: error.message, code: error.code })
+    if (error instanceof BrowserError) return reply.code(409).send({ error: "浏览器操作未完成，请读取当前状态。", code: error.code })
+    const status = publicStatus(error)
+    return reply.code(status).send({ error: status < 500 ? "请求无效，请读取最新状态后重试。" : "本地服务未完成操作，请检查服务后恢复。", code: status < 500 ? "invalid_request" : "internal_error" })
+  })
 }
 function assertBrowserIdle(browser: BrowserService, taskChain: TaskChainService, store: ProductStore,
   profile: BrowserProfileService) {

@@ -1,3 +1,4 @@
+import { saveLegacyBrowserOwner, appendLegacyBrowserAudit } from "./helpers/legacy-browser-history.js"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { createHash, randomUUID } from "node:crypto"
@@ -106,11 +107,11 @@ test("正式删除只移除目标任务、可证明的旧操作与 Pi/Browser �
   await piBinding(directory, other, otherPiFile)
   const journal = new BrowserJournal(path.join(directory, "browser"))
   await mkdir(path.join(directory, "browser"), { recursive: true })
-  await journal.save({ runId, taskId: target, sessionId: null, requirementVersion: 1, purpose: "verification", state: "closed" })
-  await journal.audit({ at: new Date().toISOString(), taskId: target, runId, requirementVersion: 1,
+  await saveLegacyBrowserOwner(directory, { runId, taskId: target, sessionId: null, requirementVersion: 1, purpose: "verification", state: "closed" })
+  await appendLegacyBrowserAudit(directory, { at: new Date().toISOString(), taskId: target, runId, requirementVersion: 1,
     purpose: "verification", sessionId: null, command: "observe", argsHash: "fixture", phase: "completed" })
   const otherRun = randomUUID()
-  await journal.audit({ at: new Date().toISOString(), taskId: other, runId: otherRun, requirementVersion: 1,
+  await appendLegacyBrowserAudit(directory, { at: new Date().toISOString(), taskId: other, runId: otherRun, requirementVersion: 1,
     purpose: "verification", sessionId: null, command: "observe", argsHash: "fixture", phase: "completed" })
   const command = { id: target, expectedUpdatedAt: store.task(target).updatedAt, confirm: true }
   assert.equal((await app.inject({ method: "DELETE", url: "/api/tasks", headers, payload: { id: target } })).statusCode, 400)
@@ -154,11 +155,11 @@ test("活动 owner 拒绝删除；Pi 文件失败恢复 binding，随后可重�
   const runId = randomUUID(), journal = new BrowserJournal(path.join(directory, "browser"))
   await mkdir(path.join(directory, "browser"), { recursive: true })
   const command = { id: target, expectedUpdatedAt: store.task(target).updatedAt, confirm: true }
-  await journal.save({ runId, taskId: target, sessionId: null, requirementVersion: 1, purpose: "verification", state: "cleanup_required" })
+  await saveLegacyBrowserOwner(directory, { runId, taskId: target, sessionId: null, requirementVersion: 1, purpose: "verification", state: "cleanup_required" })
   const blocked = await app.inject({ method: "DELETE", url: "/api/tasks", headers, payload: command })
   assert.equal(blocked.statusCode, 409)
   assert.equal(store.task(target).id, target)
-  await journal.save({ runId, taskId: target, sessionId: null, requirementVersion: 1, purpose: "verification", state: "closed" })
+  await saveLegacyBrowserOwner(directory, { runId, taskId: target, sessionId: null, requirementVersion: 1, purpose: "verification", state: "closed" })
   const session = path.join(directory, "pi-agent-session", "sessions", stableId(agentId), "directory-as-session")
   await mkdir(session, { recursive: true })
   await piBinding(directory, target, session)

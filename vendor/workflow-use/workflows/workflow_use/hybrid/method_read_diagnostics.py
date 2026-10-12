@@ -9,6 +9,23 @@ from .natural_reads import schema_at_path
 from .rendered_field_text import FieldReadError
 from .page_content import SAFE_CONTENT_FAILURE_CODES
 
+# WHY：纠正 CSS 语法不能丢掉业务终态条件；普通复跑只执行保留下来的选择器，不重放探索耗时。
+CONTENT_READINESS_GUIDANCE = (
+    'Read containers/regions use browser-native CSS, not Playwright selectors: :has-text() and text= are unsupported. '
+    'For a final asynchronous result, inspect observed state attributes/classes with find_elements and '
+    'encode its readiness in the region selector. Preserve that condition when correcting invalid syntax; '
+    'do not fix a failed final-result read by dropping its completion condition. '
+    'Exclude observed initial and processing states instead of restricting the read to this sample outcome. '
+    'Observe state attributes before submission and immediately afterward; a finished sample alone does '
+    'not show which states to wait through. Acceptance/rejection is result data, not a readiness condition. '
+    'Check the proposed selector against your observed processing snapshot: it must match nothing there. '
+    'An outcome/summary may appear before details finish. Use one observed lifecycle condition, not '
+    'nonempty or nonpending result data. CSS comma lists are OR, not AND: use a common ancestor gated '
+    'by that lifecycle condition (including :has(...) if needed), or the SAME gate on every branch. '
+    'A successful capture proves current bytes only, not a reusable final-result method. '
+    'Correct the method with existing tools if needed, without repeating completed submissions. '
+    'If no executable readiness condition can be observed, report the missing method.')
+
 _READ_ERRORS = frozenset({
     'native_entry_indices_invalid', 'native_entry_selector_unavailable',
     'native_entry_observation_unavailable', 'native_entry_document_changed',
@@ -86,6 +103,8 @@ def _safe_failure_detail(error):
 def _safe_read_error(error, field_names, *, phase=None, output_schema=None, params=None):
     message = _base_read_error(error, field_names, phase=phase)
     code = str(error)
+    if params is not None and params.captureContent and phase == 'sample':
+        return message + '\n' + json.dumps({'contentReadCorrection': CONTENT_READINESS_GUIDANCE})
     if output_schema is None or params is None or code not in {
             'natural_read_schema_mismatch', 'natural_read_output_path_invalid',
             'ambiguous_or_missing_read_field'}:

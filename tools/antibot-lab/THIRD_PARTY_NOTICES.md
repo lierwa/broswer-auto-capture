@@ -13,3 +13,10 @@
 - FCaptcha / Kitsune 仅使用已选固定窄函数，保留下载文件中的上游声明；其来源与摘要见 artifacts.json。
 
 本版针对既有 Windows + WSL Ubuntu 的本地单实例运行。各组件完整许可文本应随原归档保留；上游版本升级必须重新核对，不以此摘要覆盖原许可。
+
+## Deployment host tools (2026-10-12)
+
+- Lima 2.2.1, commit 27bc4c4b101e27994e01e36566a0f2091bbca507, Apache-2.0. Official CLI/YAML only; no source modifications. https://github.com/lima-vm/lima/tree/v2.2.1
+- mkcert 1.4.4, BSD-3-Clause. Official Windows-amd64 and Darwin-arm64 releases; host-local CA, no CA private key in Linux packages. https://github.com/FiloSottile/mkcert/tree/v1.4.4
+- Ubuntu 26.04 provides systemd/Python and native runtime libraries through its signed package repositories. Lima image is pinned in deployment/lima.yaml; runtime archive includes the existing pure-Python wheels.
+- Native arm64 materials use the same upstream versions and patches as amd64, as recorded in artifacts-arm64.json. Mac runtime acceptance remains pending; dependency support alone is not a product acceptance claim.

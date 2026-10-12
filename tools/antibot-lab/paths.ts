@@ -10,12 +10,25 @@ export const pluginCommit = "710e88808baccb320d7b2b3560397e1474e3e98b"
 export const pluginModule = "github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
 export const units = ["bat-antibot-engine", "bat-antibot-origin", "bat-antibot-gateway", "bat-antibot-edge", "bat-antibot-h2"]
 export function linuxPath(value: string) {
+  if (process.platform === 'linux') return path.resolve(value)
+  if (process.platform !== 'win32') throw Error('run_shield_inside_linux_guest')
   return execFileSync("wsl", ["-d", "Ubuntu", "--exec", "wslpath", "-a", value.replaceAll("\\", "/")], { cwd: root, encoding: "utf8" }).trim()
 }
 export function wsl(args: string[], quiet = false) {
-  return execFileSync("wsl", ["-d", "Ubuntu", "--exec", ...args], {
+  if (!args.length) throw Error('linux_command_required')
+  if (!['linux', 'win32'].includes(process.platform)) throw Error('run_shield_inside_linux_guest')
+  // WHY：Linux 直接复用系统工具；Windows 仅保留原 WSL 转交，不添加进程管理层。
+  return execFileSync(process.platform === 'linux' ? args[0]! : 'wsl',
+    process.platform === 'linux' ? args.slice(1) : ["-d", "Ubuntu", "--exec", ...args], {
     cwd: root, encoding: "utf8", stdio: quiet ? "pipe" : "inherit", timeout: 120_000,
   })
+}
+let architecture: 'x64' | 'arm64' | undefined
+export function linuxArchitecture() {
+  if (architecture) return architecture
+  const machine = wsl(['uname', '-m'], true).trim()
+  if (machine !== 'x86_64' && machine !== 'aarch64') throw Error('unsupported_linux_architecture')
+  return architecture = machine === 'x86_64' ? 'x64' : 'arm64'
 }
 export function binaries(base: string) {
   const runtime = `${base}/runtime`
@@ -33,7 +46,7 @@ export function binaries(base: string) {
     crowdsec: persistent ? `${runtime}/crowdsec-persistent/crowdsec` : `${runtime}/crowdsec/crowdsec-v1.8.1/cmd/crowdsec/crowdsec`,
     cscli: `${runtime}/crowdsec/crowdsec-v1.8.1/cmd/crowdsec-cli/cscli`,
     traefik: `${runtime}/traefik/traefik`,
-    node: `${runtime}/node/node-v24.9.0-linux-x64/bin/node`,
+    node: `${runtime}/node/node-v24.9.0-linux-${linuxArchitecture()}/bin/node`,
     haproxy: edge ? `${runtime}/haproxy-h2/haproxy` : `${runtime}/haproxy/usr/sbin/haproxy`,
   }
 }

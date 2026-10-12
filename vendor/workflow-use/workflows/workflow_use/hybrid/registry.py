@@ -5,6 +5,7 @@ from jsonschema import Draft202012Validator
 from pydantic import BaseModel, PrivateAttr
 
 from .evidence import Contract, digest
+from .content_read_params import ContentReadToolParams
 
 
 class ActionRegistry(Contract):
@@ -42,11 +43,17 @@ class ActionRegistry(Contract):
             parameters = MethodReadToolParams.model_validate(args)
             result = self._action_model.model_validate({name: {key: value for key, value in args.items() if key != 'maxItems'}})
             return result.model_copy(update={'root': result.root.model_copy(update={name: parameters})})
-        self._validator.validate({name: args})
         result = self._action_model.model_validate({name: args})
+        parameters = getattr(result.root, name, None) if name == 'bat_read_fields' else None
+        content = isinstance(parameters, ContentReadToolParams)
+        # WHY：regionMode 是原生工具写入来源的 Literal 宿主标记，不是模型的可选业务参数。
+        # 仅同一个原生参数类型可携带；普通字段/旧注册表仍按其原公开 schema 验证。
+        public_args = {key: value for key, value in args.items() if key != 'regionMode'} if content else args
+        self._validator.validate({name: public_args})
+        expected = parameters.model_dump(mode='json', exclude_unset=True) if content else args
         # WHY：TS 的 JSON number 会把 4.0 序列化为 4；复用 JSON Schema 的值语义，
         # 不把合法数值规范化误判为改参，字符串/布尔和真实改值仍必须拒绝。
-        if not Draft202012Validator({'const': {name: args}}).is_valid(
+        if not Draft202012Validator({'const': {name: expected}}).is_valid(
                 result.model_dump(mode='json', exclude_unset=True)):
             raise ValueError('action_arguments_changed_by_validation')
         return result

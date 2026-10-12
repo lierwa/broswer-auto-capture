@@ -100,7 +100,7 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
     if action.name not in registry.names or action.effect != action_effect(action.name):
         return None, None, [gap('unsupported_action', [action.id], 'unregistered_or_mismatched_action', 'reject_trace')]
     try:
-        registry.validate_action(action.name, action.args)
+        native_action = registry.validate_action(action.name, action.args)
     except Exception:
         return None, None, [gap('invalid_source', [action.id], 'invalid_action_arguments', 'reject_trace')]
     if action.status != 'succeeded' or action.resultRef is None:
@@ -118,6 +118,9 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
         return None, None, [gap('unsupported_capability', [action.id],
             'native_extract_requires_observation_and_explicit_semantic_node', 'add_capability')]
     if action.name in ('bat_read_fields', 'find_elements'):
+        # WHY：复用精确来源注册表的默认参数；原始 trace 不改写，内容/字段工具也不互换默认语义。
+        if action.name == 'bat_read_fields':
+            action = action.model_copy(update={'args': native_action.model_dump(mode='json')[action.name]})
         return compile_verified_read(request, action, pre, post, output_schema, prior_paths)
     if action.name == 'bat_scroll_to':
         return compile_target_scroll(request, action, pre, post)

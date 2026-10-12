@@ -52,9 +52,8 @@ test("认证未处理仍等待；SQLite 重建后恢复同 execution/run/owner�
       // 固定计划/需求是测试输入；运行与 execution 始终使用真实 repository 和 SQLite。
       repository.plan = () => fixture.plan; repository.chain = () => fixture.chain
       repository.requirement = () => fixture.requirement
-      const upstream: UpstreamBrowserRuntime = { withSession: async () => { throw new Error("model_forbidden") },
-        withCapabilities: (input, work) => withHybridCapabilities({ ...input, root, directory, createRunner: () => runner }, work) }
-      const host = new TaskRuntimeHost(repository, { setAuthorizationValidator() {} } as never,
+      const upstream: UpstreamBrowserRuntime = { withCapabilities: (input, work) => withHybridCapabilities({ ...input, root, directory, createRunner: () => runner }, work) }
+      const host = new TaskRuntimeHost(repository,
         { selection() { throw new Error("model_forbidden") } } as never, undefined, upstream)
       const state = { snapshot: () => ({ active: false, confirmedVersion: 1 }),
         releasedBrowserWindowOwners: () => [] } as unknown as ProductStore

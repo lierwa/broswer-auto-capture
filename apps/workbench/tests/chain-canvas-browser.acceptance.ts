@@ -21,7 +21,7 @@ const root = process.cwd(), directory = await mkdtemp(path.join(tmpdir(), "bat-c
 let modelCalls = 0, productBrowserCalls = 0
 const application = await createApplication({ root, directory, serveUi: true,
   aiModel: testAIModel(async function* () { modelCalls++; throw new Error("ui_must_not_call_model") }),
-  browserExecutor: async () => { productBrowserCalls++; throw new Error("ui_must_not_start_product_browser") } })
+  upstreamBrowserRuntime: { withCapabilities: async () => { productBrowserCalls++; throw new Error("ui_must_not_start_product_browser") } } })
 const repository = application.taskChain.repository
 let browser: Cdp | undefined, page: Cdp | undefined, chrome: ReturnType<typeof launchChrome> | undefined
 let base = "", phase = "seed"

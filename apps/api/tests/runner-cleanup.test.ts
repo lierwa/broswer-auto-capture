@@ -52,7 +52,7 @@ test("optional default access policy stays unset while declared policies reach t
 
 test("真实 Python/browser child 正常 close，重复 close 等待同一份 confirmed report", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-runner-cleanup-real-"))
-  const runner = new RunnerProcess(projectRoot, new AbortController().signal)
+  const runner = new RunnerProcess(projectRoot, new AbortController().signal, undefined, { browserMode: "dedicated-headless" })
   try {
     await runner.startHybrid({ headless: true, profilePath: path.join(directory, "profile"),
       allowedOrigins: ["https://example.com"] })

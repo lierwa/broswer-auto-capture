@@ -34,9 +34,8 @@ test("显式浏览器显示模式覆盖环境默认值，旧调用仍使用环�
   }
 })
 
-test("没有 hybrid Browser-Use 的链路在接单前拒绝 headless", () => {
-  assert.throws(() => assertExecutionBrowserSupported([], true),
-    (error: unknown) => error instanceof Error && "code" in error && error.code === "headless_runtime_unsupported")
+test("纯数据链也可选择 headless，不再受旧后端限制", () => {
+  assert.doesNotThrow(() => assertExecutionBrowserSupported([], true))
   assert.doesNotThrow(() => assertExecutionBrowserSupported([], false))
 })
 
@@ -137,15 +136,14 @@ async function execute(options: { limit: number; ledgerLimit?: number; nested?: 
   const saved = new Map<string, TaskRun>(), requests: string[] = [], wireRequests: Array<{ type: string; actionRef?: string }> = [], errors: string[] = []
   let consumption = empty()
   const runner = controlledRunner(requests, options.failRead, wireRequests)
-  const upstream: UpstreamBrowserRuntime = { withSession: async () => { throw new Error("model_session_forbidden") },
-    withCapabilities: (input, work) => withHybridCapabilities({ ...input, root, directory: tmpdir(), createRunner: () => runner },
+  const upstream: UpstreamBrowserRuntime = { withCapabilities: (input, work) => withHybridCapabilities({ ...input, root, directory: tmpdir(), createRunner: () => runner },
       (base) => work({ ...base, async capability(invocation) {
         try { return await base.capability!.call(this, invocation) }
         catch (error) { errors.push(error instanceof Error ? error.message : String(error)); throw error }
       } })) }
   const repository = { chain: () => child, runs: () => [...saved.values()],
     saveRun: (run: TaskRun) => { saved.set(run.binding.runId, structuredClone(run)); return run } }
-  const host = new TaskRuntimeHost(repository as never, { setAuthorizationValidator() {} } as never,
+  const host = new TaskRuntimeHost(repository as never,
     { selection() { throw new Error("model_forbidden") } } as never, undefined, upstream)
   const request: TaskRunRequest = { contractVersion: CONTRACT_VERSION, requestId: randomUUID(), mode: "sample", input: null,
     binding: { taskId, authorizationId: randomUUID(), invocationId: randomUUID(), runId: randomUUID(), plan: chain.plan,

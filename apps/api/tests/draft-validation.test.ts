@@ -25,6 +25,37 @@ function rejected(markdown: string) {
   catch (error) { assert.ok(error instanceof DraftValidationError); return error }
 }
 
+// 保护真实成稿边界：说明文字不应成为伪字段，错误的显式声明仍必须阻止接受。
+test("输入字段声明与说明段落分开投影，错误字段仍拒绝", () => {
+  const declarations = "- 名称（文本）：本次输入\n- 数量（整数）：本次数量"
+  const prose = "\n\n两项输入可在每次运行时修改；修改输入后仍运行同一份已发布链路。"
+  const markdown = draft.replace("- 无", declarations + prose)
+  assert.deepEqual(parsePreparationDraft(markdown).inputSchema,
+    parsePreparationDraft(draft.replace("- 无", declarations)).inputSchema)
+  assert.equal(rejected(markdown.replace("- 数量（整数）", "- 数量（记录列表）")).message,
+    "preparation_draft_field_invalid")
+  assert.equal(rejected(draft.replace("- 无", prose)).message, "preparation_draft_field_invalid")
+  assert.deepEqual(parsePreparationDraft(draft.replace("- 无", "- 无" + prose)).inputSchema, { type: "null" })
+})
+
+test("步骤输入在接受草稿前必须引用实际声明字段，多个字段使用任务输入", () => {
+  const fields = draft.replace("- 无", "- 英文（文本）：运行时输入\n- 中文（文本）：运行时输入")
+  const error = rejected(fields.replace("- 输入：任务输入", "- 输入：任务输入.英文、任务输入.中文"))
+  assert.equal(error.message, "preparation_step_input_path_missing")
+  assert.equal(error.diagnostic.section, "任务步骤")
+  assert.match(error.repairReason(), /多个.*任务输入/)
+  assert.equal(parsePreparationDraft(fields).inputSchema.type, "object")
+  assert.deepEqual(parsePreparationDraft(fields).steps?.[0]?.input, { kind: "task", path: [] })
+})
+
+test("字段名含标点时按已声明名称精确核对，不用分词猜多个输入", () => {
+  const fields = draft.replace("- 无", "- 甲、乙（文本）：完整名称")
+  assert.deepEqual(parsePreparationDraft(fields.replace("- 输入：任务输入", "- 输入：任务输入.甲、乙")).steps?.[0]?.input,
+    { kind: "task", path: ["甲、乙"] })
+  assert.equal(rejected(fields.replace("- 输入：任务输入", "- 输入：任务输入.未声明")).message,
+    "preparation_step_input_path_missing")
+})
+
 // 保护真实首败：两种段落写法都被拒绝，诊断必须解释独立行的区别，不能从词句推断业务值。
 test("真实首败两种段落写法得到位置、实际内容、允许格式与具体修正", () => {
   for (const prose of ["完成后返回实际结果。页面交付无需保留。", "完成后返回实际结果。页面交付：无需保留。继续按原要求处理。"] ) {

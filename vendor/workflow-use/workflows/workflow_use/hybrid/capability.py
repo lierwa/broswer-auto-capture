@@ -154,6 +154,8 @@ class OrdinaryCapability:
             from .context_bindings import native_switch_parameters
             parameters = await native_switch_parameters(self.browser, parameters)
         action = self.registry.validate_action(action_name, parameters)
+        if action_name != 'scroll':
+            await self._prepare_native_frame(action_name, prepared)
         # WHY: 复用 Tools.act 的浏览器动作、超时和错误语义；普通节点没有模型或文件系统句柄。
         if prepared is not None and action_name in EVENT_HIT_ACTIONS:
             intended = {'targetId': prepared.target_id, 'frameId': prepared.frame_id,
@@ -281,6 +283,9 @@ class OrdinaryCapability:
         capture = None
         try:
             result = await dispatch()
+            if action_name == 'scroll':
+                # WHY：隐藏页的原生滚轮处理依赖产帧；在结束采集前结算，不重派滚动。
+                await self._prepare_native_frame(action_name)
         except BaseException as error:
             failure = error
         try:
@@ -291,6 +296,29 @@ class OrdinaryCapability:
         if failure is not None:
             raise attach_event_capture(failure, capture)
         return result, capture
+
+    async def _prepare_native_frame(self, action_name, prepared=None):
+        if action_name not in {'input', 'send_keys', 'click', 'select_dropdown', 'scroll'}:
+            return
+        page = await self.browser.get_current_page()
+        if page is None:
+            raise ValueError('page_unavailable')
+        if await page.evaluate('() => document.visibilityState') != 'hidden':
+            return
+        target_id = await self.targets.assert_scope(
+            None, prepared.target_id if prepared is not None else None)
+        document_id = await current_document_id(self.browser, page=page)
+        if prepared is not None and document_id != prepared.document_id:
+            raise ValueError('target_document_changed')
+        # WHY：隐藏页可能尚无可接收原生键鼠输入的渲染帧；DOM/前台请求不能保证产帧。
+        # 复用 B-U eb412692 take_screenshot；Chromium a2401fdf PageHandler::CaptureScreenshot
+        # 以 IncrementCapturerCount(stay_hidden=true, stay_awake=true) 请求隐藏页产帧。
+        # 只在键鼠派发前/滚轮后等待一次，图像不落盘/不进模型；超时不重试动作。
+        async with asyncio.timeout(5):
+            await self.browser.take_screenshot(full_page=False)
+        await self.targets.assert_scope(None, target_id)
+        if await current_document_id(self.browser) != document_id:
+            raise ValueError('target_document_changed')
 
     async def _act(self, action, dialog_policy=None):
         return await self._with_dialog_bridge(

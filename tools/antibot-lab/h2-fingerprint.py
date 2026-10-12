@@ -4,19 +4,19 @@ import json
 from pathlib import Path
 import subprocess
 
-from lab_paths import ROOT, BASE
+from lab_paths import ROOT, BASE, linux_command, linux_path, linux_architecture, artifacts
 UPSTREAM = BASE / 'upstream/candidate-review/kitsune/edge_internal_fingerprint_h2.go'
 SHA = '90969540ab6663ecaed1f92403a0d7941636c976f42b994be3847c3135c1dffa'
 
 
 def run(*args, data=None):
-    result = subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', *args], input=data,
+    result = subprocess.run(linux_command(*args), input=data,
                             capture_output=True, check=True, cwd=ROOT)
     return result.stdout
 
 
 def linux(path):
-    return run('wslpath', '-a', path.as_posix()).decode().strip()
+    return linux_path(path)
 
 
 def prepare():

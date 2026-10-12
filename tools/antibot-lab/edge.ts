@@ -3,6 +3,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { directory, binaries, wsl } from './paths.ts'
 import { rttAdapterDigest, rttProxyTlvs, rttDirectives, rttLogFields } from './edge-rtt.ts'
+import { privateLinuxAddress } from './linux-network.ts'
 
 // WHY：原HAProxy/Lua采集ClientHello，原CrowdSec关联；只配置进程与字段，不复制指纹引擎。
 export async function configureEdge(base: string, executable = binaries(base).haproxy, candidate?: unknown) {
@@ -12,11 +13,13 @@ export async function configureEdge(base: string, executable = binaries(base).ha
   const h2Samples = executable.endsWith('/haproxy-h2/haproxy')
   const rttDigest = h2Samples ? await rttAdapterDigest(directory, candidate) : null
   if (rttDigest && rttDigest !== createHash('sha256').update(await readFile(new URL('./edge-ssl-rtt.c', import.meta.url))).digest('hex')) throw Error('edge_rtt_adapter_changed')
-  // WHY：Windows localhost转发不承载UDP；只额外绑定当前WSL私网地址，原管理入口仍回环。
-  const privateV4 = wsl(['hostname', '-I'], true).trim().split(/\s+/)
-    .find(value => /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(value)
-      && value.split('.').length === 4 && value.split('.').every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255))
-  if (!privateV4) throw Error('owned_wsl_private_ipv4_unavailable')
+  // WHY：宿主的 localhost TCP 转发不替代 H3/UDP；绑定当前 Linux 私网接口。
+  const privateV4 = privateLinuxAddress()
+  if (trusted) {
+    const receipt = JSON.parse(await readFile(path.join(directory, 'tls/trusted.json'), 'utf8'))
+    // WHY：新部署的私网地址证书失配须重新签发，不能换了 VM 地址却沿用过期身份。
+    if (receipt.privateAddress && receipt.privateAddress !== privateV4) throw Error('refresh_owned_private_address_certificate')
+  }
   const certificate = Buffer.concat([await readFile(path.join(directory, 'tls/cert.pem')),
     await readFile(path.join(directory, 'tls/key.pem'))])
   await writeFile(path.join(directory, 'tls/edge.pem'), certificate, { mode: 0o600 })
@@ -97,5 +100,5 @@ backend full_shield
   await writeFile(path.join(directory, 'logs/tls.jsonl'), '', { flag: 'a' })
   wsl([executable, '-c', '-f', `${base}/haproxy.cfg`], true)
   await writeFile(path.join(directory, 'edge-endpoint.json'), JSON.stringify({ address: privateV4, port: 4183,
-    scope: 'wsl-private-full-shield', personalDnsChanged: false }))
+    scope: process.env.BAT_SHIELD_PRIVATE_INTERFACE ? 'lima-vznat-full-shield' : 'wsl-private-full-shield', personalDnsChanged: false }))
 }

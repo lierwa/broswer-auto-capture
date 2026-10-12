@@ -10,7 +10,7 @@ if (process.env.BAT_RUN_BROWSER_SETTINGS_UI !== "1") throw Error("explicit_ui_ac
 const root = process.cwd(), directory = path.join(root, "work", "browser-settings-ui-" + Date.now())
 await mkdir(directory, { recursive: true })
 const api = await createApplication({ root, directory: path.join(directory, "data"), serveUi: false,
-  upstreamBrowserRuntime: { async withSession() { throw Error("no_product_browser_or_model_calls") } } })
+  upstreamBrowserRuntime: { } })
 api.dailyChrome.profiles = async () => [{ id: "Default", name: "测试 Chrome" }]
 let vite: ViteDevServer | undefined, browser: Cdp | undefined, page: Cdp | undefined, chrome: ReturnType<typeof launchChrome> | undefined
 const proof: Record<string, unknown> = { mode: "isolated Windows UI with persisted browser settings; run commands captured only", steps: [] }

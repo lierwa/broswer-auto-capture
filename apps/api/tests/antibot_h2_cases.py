@@ -39,7 +39,9 @@ def exact(stream, length):
 
 
 def request(settings, order, case, fragmented=False, repeat=1, headers=(), port=4193, window=0):
-    context = ssl.create_default_context(cafile=str(BASE / 'tls/cert.pem'))
+    # WHY：mkcert 叶证书不是信任根；旧自签夹具仍可直接信任其证书。
+    authority = BASE / 'tls/rootCA.pem'
+    context = ssl.create_default_context(cafile=str(authority if authority.exists() else BASE / 'tls/cert.pem'))
     context.set_alpn_protocols(['h2'])
     result = []
     with socket.create_connection(('127.0.0.1', port), timeout=5) as connection:

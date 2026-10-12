@@ -6,12 +6,12 @@ import subprocess
 import tempfile
 import time
 
-from lab_paths import ROOT, BASE
+from lab_paths import ROOT, BASE, linux_command, linux_path, linux_architecture, artifacts
 UNIT = 'bat-antibot-engine.service'
 
 
 def wsl(*args, check=True):
-    result = subprocess.run(['wsl', '-d', 'Ubuntu', '--exec', *args], cwd=ROOT,
+    result = subprocess.run(linux_command(*args), cwd=ROOT,
                             capture_output=True, check=check)
     return result.stdout.decode().strip()
 

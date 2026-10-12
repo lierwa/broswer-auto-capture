@@ -5,13 +5,15 @@ import type {
   ChainNode, JsonValue, NodeCapabilityResult, ResumeVerificationResult, TaskChain, TaskCheckpoint,
 } from "@browser-capture/contracts"
 import { browserOperationSchema, requiredLegacyNodeOutcomes } from "@browser-capture/contracts"
-import { BrowserError, browserGrantLimits, type BrowserCommand, type BrowserGrant, type BrowserInspection } from "./contracts.js"
+import { BrowserError, type BrowserCommand, type BrowserInspection } from "./contracts.js"
+import { browserGrantLimits } from "@browser-capture/contracts/browser"
 import { pageSchema } from "./page.js"
 
 export interface TaskChainBrowserPort {
   command(command: unknown, signal?: AbortSignal): Promise<string | null>
   commandWithTimeout?(command: unknown, signal: AbortSignal, timeoutMs: number): Promise<string | null>
   state(): BrowserInspection | null
+  summary?(): TaskCheckpoint["browser"]
 }
 export interface BrowserAdapterInvocation {
   node: Extract<ChainNode, { kind: "browser" }>
@@ -158,8 +160,9 @@ export class TaskChainBrowserAdapter {
       if (observed.outcome !== "success" || !observed.browser) {
         return { ok: false, reason: observed.reason ?? `resume_observe_${observed.outcome}` }
       }
-      const unchanged = checkpoint.browser?.observationDigest === observed.browser.observationDigest
-      return { ok: checkpoint.resumeWhen !== null || unchanged, browser: observed.browser,
+      const summary = this.session.summary?.() ?? observed.browser
+      const unchanged = checkpoint.browser?.observationDigest === summary.observationDigest
+      return { ok: checkpoint.resumeWhen !== null || unchanged, browser: summary,
         ...(observed.output === undefined ? {} : { observation: observed.output }),
         ...(!checkpoint.resumeWhen && !unchanged ? { reason: "browser_observation_changed" } : {}) }
     } catch (error) {
@@ -384,8 +387,8 @@ function helpReason(reason: Extract<ChainNode, { kind: "human" }>["reason"]): Ex
   return "confirmation"
 }
 
-export function taskChainBrowserActions(chain: TaskChain): BrowserGrant["actions"] {
-  const actions = new Set<BrowserGrant["actions"][number]>()
+export function taskChainBrowserActions(chain: TaskChain): BrowserCommand["type"][] {
+  const actions = new Set<BrowserCommand["type"]>()
   for (const node of chain.nodes) {
     if (node.kind === "capability" && node.capability.name === "browser.perform") {
       const parsed = browserCapabilityConfigSchema.safeParse(node.config)

@@ -1,5 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises"
-import { spawn } from "node:child_process"
+import { ensureWslPresence } from './wsl-presence.ts'
+import { existsSync } from 'node:fs'
+import { verifyPrebuilt } from './prebuilt.ts'
 import path from "node:path"
 import net from "node:net"
 import https from "node:https"
@@ -55,6 +57,7 @@ async function readiness() {
 async function start() {
   const { base, checkout } = await prepared()
   if (base !== linuxPath(directory) || checkout !== linuxPath(root)) throw Error('lab_owner_changed')
+  if (existsSync(path.join(directory, 'runtime-release.json'))) await verifyPrebuilt(directory, undefined, true)
   await configureTls(base)
   const dependency = await sharedBudget()
   const loaded = z.object({ status: z.literal('ready'), sourceDigest: z.string(), wheelSha256: z.string() })
@@ -100,13 +103,7 @@ async function start() {
       "--property", "TimeoutStopSec=20", "--property", "MemoryMax=1G",
       ...(unit === 'bat-antibot-edge' ? ['--property', `StandardOutput=append:${base}/logs/tls.jsonl`] : []), ...commands[i]!])
   }
-  if (!active("bat-antibot-presence")) {
-    // WHY：WSL 的 systemd 服务自身不保证发行版常驻；一个可审计等待客户端维持其生命周期。
-    const child = spawn("wsl", ["-d", "Ubuntu", "--exec", "systemd-run", "--user", "--wait", "--collect",
-      "--unit", "bat-antibot-presence", "--property", `WorkingDirectory=${base}`, "/usr/bin/sleep", "infinity"],
-    { cwd: root, windowsHide: true, detached: true, stdio: "ignore" })
-    child.unref()
-  }
+  ensureWslPresence(base)
   const deadline = Date.now() + 60_000
   while (true) {
     try { console.log(JSON.stringify(await readiness())); break }
@@ -121,7 +118,7 @@ async function main() {
     return
   }
   // WHY：长窗口验收依赖真实连续时间；不能让常规维护静默重置仍在运行的活动桶。
-  if (["prepare", "prepare-edge", "activate-edge-h2", "configure", "trust-localhost", "refresh-source-data", "stop"].includes(command) && active("bat-antibot-window-test")) {
+  if (["prepare", "prepare-edge", "activate-edge-h2", "configure", "trust-localhost", "refresh-source-data", "refresh-geodata", "stop"].includes(command) && active("bat-antibot-window-test")) {
     throw Error("live_window_validation_running")
   }
   if (command === 'trust-localhost') {
@@ -153,6 +150,7 @@ async function main() {
     console.log(JSON.stringify({ selectedForCalibration: true, detectionAccepted: false }))
     return
   }
+  if (command === 'refresh-geodata') return wsl(['/usr/bin/python3', linuxPath(path.join(root, 'prepare-geodata.py'))])
   if (command === 'refresh-source-data') {
     if (active('bat-antibot-engine')) throw Error('stop_engine_before_refreshing_source_data')
     await refreshSource(directory)
@@ -171,9 +169,9 @@ async function main() {
     wsl([binaries(base).crowdsec, "-c", `${base}/config/config.yaml`, "-t"])
     return
   }
-  if (command === "prepare") {
+  if (command === "prepare" || command === 'initialize') {
     if (units.some(active)) throw Error("stop_lab_before_preparing")
-    return prepare()
+    return prepare(command === 'initialize')
   }
   if (command === 'prepare-edge') {
     if (units.some(active)) throw Error('stop_lab_before_preparing')
@@ -211,6 +209,6 @@ async function main() {
     const { base } = await prepared()
     return wsl([binaries(base).cscli, "-c", `${base}/config/config.yaml`, ...(command === "metrics" ? ["metrics", "show", "appsec"] : ["alerts", "list", "-o", "json"])])
   }
-  throw Error("usage: lab.ts prepare|prepare-edge|activate-edge-h2|prepare-h2|configure|trust-localhost|refresh-source-data|start|status|stop|metrics|alerts")
+  throw Error("usage: lab.ts prepare|prepare-edge|activate-edge-h2|prepare-h2|configure|trust-localhost|refresh-source-data|refresh-geodata|start|status|stop|metrics|alerts")
 }
 await main().catch(error => { console.error(error instanceof Error ? error.message : "lab_failed"); process.exitCode = 1 })
