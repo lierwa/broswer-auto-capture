@@ -3,6 +3,7 @@ import { artifactReferenceSchema, budgetSchema, contractVersionSchema, entityVer
 import { completionConditionSchema, valueBindingSchema, valuePathSchema, type ValueBinding } from "./binding.js"
 import { invocationModeSchema, predicateBindings } from "./node.js"
 import { requirementReferenceSchema } from "./requirement.js"
+import { navigationScopeSchema } from "./navigation-scope.js"
 import { parseTaskValue, taskDataContractSchema, valueSchemaSchema, type TaskDataContract, type ValueSchema } from "./value.js"
 
 const taskPlanBatchAggregateSchema = z.object({
@@ -101,6 +102,7 @@ export const taskPlanSchema = z.object({
   requirement: requirementReferenceSchema, summary: textSchema,
   // WHY：入口由需求和规划确定，不是用户每次复跑填写的业务输入；optional 只用于读取旧计划。
   entryUrls: taskPlanEntryUrlsSchema.optional(),
+  navigationScope: navigationScopeSchema.optional(),
   // WHY：交付活页面与数据结果独立；旧计划缺失时只能表示无交付约定，不能倒推为已留窗。
   browserHandoff: z.enum(["keep_open", "close"]).optional(),
   inputContract: taskDataContractSchema, outputContract: taskDataContractSchema,

@@ -18,17 +18,21 @@ import type { RunnerCleanupReport } from "../upstream-browser/cleanup.js"
 import { hybridWindowLeaseSchema } from "../upstream-browser/hybrid-protocol.js"
 import type { TaskContractRepository } from "./repository.js"
 import { TaskBudgetLedger, type BudgetSnapshot } from "./budget-ledger.js"
-import { collectOrigins, valueJsonSchema } from "./task-value-utils.js"
+import { valueJsonSchema } from "./task-value-utils.js"
 
 export type RuntimeCapabilityFactory = (input: Readonly<{
   taskId: string; authorizationId: string; purpose: "sample" | "verification" | "replay";
 }>) => TaskChainCapabilities | Promise<TaskChainCapabilities>
+
+import { planNavigationPolicy } from "./navigation-scope.js"
+import type { TaskPlan } from "@browser-capture/contracts"
 
 type RuntimeGroup = Readonly<{
   taskId: string; authorizationId: string; browserRunId: string; requirementVersion: number;
   purpose: "sample" | "verification" | "replay"; chains: TaskChain[]; input: JsonValue; signal: AbortSignal;
   budget: TaskBudget; consumed: TaskConsumption; scopeConsumption: Readonly<Record<string, TaskConsumption>>;
   scopeBudgets?: Readonly<Record<string, TaskBudget>>;
+  navigationPlan?: Pick<TaskPlan, "entryUrls" | "navigationScope">;
   onConsumption?: (scopeId: string, snapshot: BudgetSnapshot) => void;
   onCleanup?: (report: RunnerCleanupReport) => void;
   managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] };
@@ -79,7 +83,7 @@ export class TaskRuntimeHost {
           || node.kind === "capability" && node.capability.name === "browser.perform").map(node => node.id)])),
         // WHY：正式运行只释放本 operation；同任务父连接由已有取消、交付和服务退出边界关闭。
         connectionOwnerId: input.taskId,
-        allowedOrigins: collectOrigins([input.input, ...closure]), canRestoreByNavigation,
+        ...planNavigationPolicy(input.navigationPlan ?? {}), canRestoreByNavigation,
         // WHY：由已核验的不可变 invoke 闭包证明只读；请求/自然语言不能声明免身份检查。
         publicRead: closure.every(chain => chain.nodes.every(node => node.kind === "capability"
           ? node.capability.name === "browser.workflow-step"

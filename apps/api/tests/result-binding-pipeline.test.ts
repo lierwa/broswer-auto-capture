@@ -53,7 +53,7 @@ test("execution 步骤的 exists(null output) 由成功终点投影为执行回�
   assert.equal(run.status, "completed", run.outcome?.reason)
 })
 
-test("execution 动态列表按当次完整读取计数选择最后一项且验证播放", async () => {
+test("execution 不能用未声明的结果计数伪造动态选择方法", () => {
   const base = hybridFixture("navigation"), plan = hybridPlan(base), step = plan.steps[0]!
   const url = "https://fixture.invalid/items", urlDigest = canonicalDigest(url)
   const itemSchema = { type: "object" as const, properties: { text: { type: "string" as const } },
@@ -149,29 +149,9 @@ test("execution 动态列表按当次完整读取计数选择最后一项且验�
     sourcePayloads: [canonical(requirementBody), canonical(planBody), canonical(traceBody),
       canonical(step.inputContract.schema), canonical([])] }
 
-  const chain = materializeHybridChain({ response, request, plan, step, version: 1, model: "fixture" })
-  const click = chain.nodes.find((node) => node.id === "s-a-0002")
-  assert.ok(click?.kind === "capability")
-  assert.ok(click.config && typeof click.config === "object" && !Array.isArray(click.config))
-  const clickConfig = click.config as Record<string, JsonValue>
-  assert.deepEqual(click.input.targetOrdinal, { source: "node", nodeId: countId, path: [] })
-  assert.equal(clickConfig.targetOrdinalInput, "targetOrdinal")
-  assert.equal((clickConfig.target as Record<string, unknown>).ordinalBinding, undefined)
-  let modelCalls = 0, clickedOrdinal: JsonValue | undefined
-  const input = { url }
-  const run = await new TaskChainRuntime().execute({ chain, request: { contractVersion: CONTRACT_VERSION,
-    requestId: randomUUID(), mode: "sample", input, binding: { runId: randomUUID(), invocationId: randomUUID(),
-      taskId: chain.taskId, authorizationId: randomUUID(), plan: chain.plan,
-      chain: { id: chain.id, version: chain.version, digest: executableChainDigest(chain) }, inputDigest: digestJson(input) } },
-    capabilities: { capability: async (invocation) => {
-      if (invocation.node.id === "s-a-0001") return { outcome: "success", output: values }
-      if (invocation.node.id === "s-a-0002") clickedOrdinal = invocation.input.targetOrdinal
-      return { outcome: "success", output: null }
-    }, llm: async () => { modelCalls++; throw new Error("ordinary_replay_called_model") }, browserCommandCount: () => 3 } })
-  assert.equal(run.status, "completed")
-  assert.equal(clickedOrdinal, 3)
-  assert.equal(modelCalls, 0)
-  assert.equal(run.consumed.llmCalls, 0)
+  // WHY：动态选择须有已验证的方法来源；execution 的 resultSpec 没有 count derivation。
+  assert.throws(() => materializeHybridChain({ response, request, plan, step, version: 1, model: "fixture" }),
+    /hybrid_result_derivation_invalid/u)
 })
 
 test("ResultSpec 经编译产物物化后可非空/空列表零模型复跑", async () => {
@@ -400,7 +380,8 @@ function action(id: string, stepIndex: number, name: string, args: JsonValue, ef
     resultRef: { ref: `fixture:${id}`, digest: "d".repeat(64) }, postObservationRef: post, effect, retryOf: null }
 }
 function readSegment(id: string, specification: JsonValue, readFact: ReturnType<typeof fact>, schema: ValueSchema) {
-  return { id, kind: "deterministic", operation: { name: "browser.read-fields", version: 2, specification },
+  return { id, kind: "deterministic", operation: { name: "browser.read-fields", version: 2,
+      specification: { ...specification as Record<string, JsonValue>, maxInputBytes: 128000 } },
     target: null, preconditions: [], expectedEffect: { kind: "read" },
     postconditions: [{ kind: "output_schema", schemaDigest: digestJson(schema) }],
     outputs: [{ schema, sourceRef: readFact.id }], proofRefs: readFact.sourceRefs, bindings: [] }

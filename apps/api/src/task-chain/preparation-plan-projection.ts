@@ -62,6 +62,7 @@ export function projectPreparationPlan(requirement: TaskRequirement, version: nu
       digest: digestJson(requirement) },
     summary: requirement.goal, entryUrls: entries.map((entry) => entry.url), browserHandoff: draft.browserHandoff,
     inputContract, outputContract,
+    ...(requirement.navigationScope ? { navigationScope: requirement.navigationScope } : {}),
     steps: steps.map(item => research?.stepId === item.id ? { ...item, preparationResearch: research } : item),
     output: draft.outputSchema.type === "null" ? { source: "constant", value: null }
       : { source: "node", nodeId: steps[draft.resultSource ?? steps.length - 1]!.id, path: [] },

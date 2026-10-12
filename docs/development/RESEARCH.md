@@ -1,5 +1,9 @@
 # 技术调研与复用结论
 
+## 2026-10-12 导航授权承接与主流程核查
+
+沿用 tldts 的站点解析、browser-use allowed_domains/SecurityWatchdog、既有来源引用与草案确认、LangGraph 运行/恢复及 owner 清理。B-A-T 只增加版本化 navigationScope 并贯穿准备/复跑，禁止业务输入或观察 URL 反向授予权限；原生越界拒绝保留。具体 Reuse Assessment、原入口失败证据、协议/端口/来源反例和逐阶段验收见 [导航修复记录](NAVIGATION_SCOPE_REPAIR_20261012.md)。新任务保留原 localhost 入口完成准备、样本、变化输入独立验证、发布和同版两次正式运行；四次HUMAN/39 clear、输出与各自原报告一致、普通模型0、清理confirmed。此结论来自新证据，旧更换入口成功不再承担根因关闭证明。
+
 ## 2026-10-12 部署Review修复复用
 
 Lima2.2.1固定源码确认create --set、list --json中的dir/arch/vmType/param与info.limaHome；实例目录不存在时LimaDir可直接返回路径，因此创建标准home后再做realpath。绑定真实实例配置、唯一创建标记和目录身份，不以同名与旁路记录认领。归档按固定SHA复用和原子替换；停止继续复用Lima/systemd。

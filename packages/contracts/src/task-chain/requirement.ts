@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { contractVersionSchema, identitySchema, taskIdentitySchema, textSchema, versionReferenceSchema } from "./common.js"
 import { taskDataContractSchema } from "./value.js"
+import { navigationScopeSchema } from "./navigation-scope.js"
 
 export const taskRequirementSchema = z.object({
   contractVersion: contractVersionSchema, kind: z.literal("requirement"),
@@ -11,6 +12,7 @@ export const taskRequirementSchema = z.object({
   inputContract: taskDataContractSchema.nullable(), outputContract: taskDataContractSchema.nullable(),
   constraints: z.array(textSchema), completionCriteria: z.array(textSchema).min(1),
   authorization: z.object({ scope: textSchema, risks: z.array(textSchema), requiredApprovals: z.array(textSchema) }).strict(),
+  navigationScope: navigationScopeSchema.optional(),
   confirmation: z.object({ confirmedAt: z.string().datetime(), requestId: identitySchema }).strict().nullable(),
   confirmationFacts: z.object({
     // WHY：原文不能只存在访谈历史里而在交给 B-U 时丢失；optional 不改变旧版本摘要。

@@ -16,6 +16,9 @@ import { createSourceResolutionTools, ReadOnlySourceResolver, assertRequirementR
 import { candidateId } from "../src/interview/source-search-evidence.js"
 import { projectRoot } from "./helpers.js"
 import { testSelection } from "./fixtures/ai-model.js"
+import { TaskContractRepository } from "../src/task-chain/repository.js"
+import { syncConfirmedRequirement } from "../src/task-chain/requirement.js"
+import { projectPreparationPlan } from "../src/task-chain/preparation-plan-projection.js"
 
 // 保护真实首败：已选来源带查询参数时，草案不得再依赖模型逐字搬运 URL。
 const url = "https://catalog.example/items/current?utm_source=search"
@@ -26,6 +29,8 @@ const markdown = (entry: string) => `# 目标
 从指定站点搜索当前资料并保留页面。
 ## 试做入口
 1. ${entry}
+## 访问范围
+- ${entry}
 ## 运行输入
 - 无
 ## 任务步骤
@@ -173,6 +178,37 @@ test("正常 coordinator 只在整轮成功后持久化引用，确认后 SQLite
       assert.equal(saved.confirmedVersion, 1)
       assert.equal(saved.sourceResolutions[0]?.status, "selected")
       assert.equal(saved.sourceResolutions[0]?.candidates[0]?.url, url)
+    } finally { await reopened.close() }
+  })
+})
+
+test("正常确认和 SQLite 重开保留额外授权来源，计划继续使用原入口", async () => {
+  let currentStore: ProductStore, currentTask: string
+  await withCoordinator(async () => {
+    const refs = new InterviewSourceReferences(1, currentStore.snapshot(currentTask)).available()
+    const entry = refs.find(ref => ref.url === "https://localhost:4185/")!
+    const additional = refs.find(ref => ref.url === "https://*.shield.localhost:4185/")!
+    const body = markdown(`[入口][${entry.ref}]`).replace(`- [入口][${entry.ref}]`,
+      `- [入口][${entry.ref}]\n- [后续来源][${additional.ref}]`)
+    return `<authoring><interview-markdown title="原入口任务">${body}</interview-markdown></authoring>`
+  }, async ({ coordinator, store, taskId, directory }) => {
+    currentStore = store; currentTask = taskId
+    coordinator.dispatch(taskId, { type: "message", text: "从 https://localhost:4185 开始，后续允许 *.shield.localhost:4185", expectedRevision: 0, requestId: randomUUID() })
+    await coordinator.waitForIdle()
+    const state = store.snapshot(taskId)
+    assert.equal(state.turns.at(-1)?.status, "succeeded", state.turns.at(-1)?.reason ?? "")
+    coordinator.dispatch(taskId, { type: "confirm", version: 1, expectedRevision: state.revision, requestId: randomUUID() })
+    const saved = syncConfirmedRequirement(store, new TaskContractRepository(store), taskId)!
+    assert.equal(saved.confirmationFacts?.sources.length, 2)
+    assert.equal(saved.navigationScope?.sites.length, 2)
+    await coordinator.close(); await store.close()
+    const reopened = await ProductStore.open(directory)
+    try {
+      const restored = new TaskContractRepository(reopened).findRequirement(taskId, 1)!
+      assert.deepEqual(restored, saved)
+      const plan = projectPreparationPlan(restored, 1)
+      assert.deepEqual(plan.entryUrls, ["https://localhost:4185/"])
+      assert.deepEqual(plan.navigationScope, restored.navigationScope)
     } finally { await reopened.close() }
   })
 })

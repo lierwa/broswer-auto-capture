@@ -56,6 +56,9 @@ function failureReason(error: unknown) {
       return "生成内容前后不一致，结果未提交。请重试。"
     }
     if (error.message === "interview_output_invalid") return "生成的准备计划草案不符合要求，结果未提交。请重试。"
+    if (error.message.startsWith("interview_navigation_")) {
+      return "准备计划的访问范围缺少有效来源确认，或没有包含原入口；本轮未提交，请核对访问范围。"
+    }
     if (error.message.startsWith("interview_entry_") || error.message.startsWith("interview_draft_url_")) {
       return "准备计划草案中的网址缺少已确认来源引用，或试做入口格式不完整；本轮未提交，请继续核实来源。"
     }

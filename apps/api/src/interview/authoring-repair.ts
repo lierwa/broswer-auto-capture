@@ -14,7 +14,7 @@ function repairFailure(error: unknown, result: AuthoringTurnResult): {
   const root = result.blocks.find((block) => block.rootTag === "interview-markdown" || block.rootTag === "question-panel")?.rootTag
   if (root !== "interview-markdown" && root !== "question-panel" || !(error instanceof Error)) return null
   // WHY：只修复作者输出格式。身份、来源真实性、流丢失、网络和持久化错误不得靠模型重试掩盖。
-  const format = /^(?:interview_(?:authoring_invalid|authoring_cardinality_invalid|question_projection_invalid|output_invalid|result_and_completion_required|entry_section_required|entry_required|entry_order_invalid)|preparation_[a-z_]+(?::[^\r\n]+)?)$/u
+  const format = /^(?:interview_(?:authoring_invalid|authoring_cardinality_invalid|question_projection_invalid|output_invalid|result_and_completion_required|entry_section_required|entry_required|entry_order_invalid|navigation_scope_required|navigation_scope_invalid)|preparation_[a-z_]+(?::[^\r\n]+)?)$/u
   if (!format.test(error.message)) return null
   const diagnostics = result.diagnostics.map((item) => `${item.code}: ${item.message}`).join("\n")
   const reason = error instanceof DraftValidationError ? error.repairReason() : error.message

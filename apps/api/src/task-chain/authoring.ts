@@ -15,7 +15,7 @@ import { assertCapturedSourceIdentity, createHybridArtifact, createHybridSourceA
   hybridArtifactMediaType, hybridSourceMediaType } from "../upstream-browser/hybrid-artifact.js"
 import type { HybridAuthoringProgress, HybridSourceResult } from "../upstream-browser/hybrid-exploration.js"
 import { hybridNaturalRequestSchema } from "../upstream-browser/hybrid-schema.js"
-import { collectOrigins } from "./task-value-utils.js"
+import { planNavigationPolicy } from "./navigation-scope.js"
 import type { TaskContractRepository } from "./repository.js"
 import { projectPreparationPlan } from "./preparation-plan-projection.js"
 import { reusableHybridSources } from "./hybrid-source-reuse.js"
@@ -207,13 +207,12 @@ export class TaskChainAuthoring {
     let explorationError: unknown, closed = false
     try {
       const requirementText = naturalRequirementText(requirement).text
-      // WHY：新草案的允许导航来源只由已确认入口确定；正文或样本值里偶然出现的 URL 不扩大授权。
-      const allowedOrigins = collectOrigins([plan.entryUrls ?? []])
-      if (!allowedOrigins.length) throw new Error("preexecution_entry_unresolved")
+      // WHY：准备与复跑使用同版确认范围，入口不再承担全部权限。
+      const navigationPolicy = planNavigationPolicy(plan)
       await this.upstream.withAuthoring!({ selection: model.selection, signal, ownerId: job.browserRunId,
       connectionOwnerId: job.taskId,
       ...(job.browser?.mode ? { browserMode: job.browser.mode } : {}),
-      allowedOrigins,
+      ...navigationPolicy,
       onHumanWait: (wait, resume) => this.waitForHuman(job, wait, resume, signal),
       onProgress: (event) => this.recordProgress(job, event) }, async (session) => {
       for (const step of plan.steps) {
@@ -253,7 +252,7 @@ export class TaskChainAuthoring {
         this.touch(job)
         // WHY：原生安全拒绝优先于后续采集/编译缺口，不能在用户界面再退化为普通动作失败。
         const scopeFailure = result.sourceGaps.find(gap => gap.reason === "hybrid_navigation_outside_authorized_scope")
-        if (scopeFailure) throw new Error(scopeFailure.reason)
+        if (scopeFailure) throw new RequirementClarificationRequired([{ code: scopeFailure.reason, clauseRefs: [...scopeFailure.clauseRefs] }])
         const compilationFailure = result.sourceGaps.find(gap => gap.reason.startsWith("hybrid_compilation_"))
         if (compilationFailure) throw new Error(compilationFailure.reason)
         const ambiguities = result.sourceGaps.filter((gap) => gap.resolution === "confirm_intent")
@@ -321,7 +320,9 @@ export class TaskChainAuthoring {
     }
     if (error instanceof RequirementClarificationRequired && job.preparation) {
       job.preparation.requirementReturn = {
-        reason: "准备真实页面时发现会改变任务结果的业务歧义，需要返回需求对话由你确认。",
+        reason: error.issues.some(issue => issue.code === "hybrid_navigation_outside_authorized_scope")
+          ? "页面尝试访问尚未确认的来源，已停止。请返回需求对话核对访问范围；原入口和执行记录保留。"
+          : "准备真实页面时发现会改变任务结果的业务歧义，需要返回需求对话由你确认。",
         issues: error.issues,
       }
       job.reason = job.preparation.requirementReturn.reason

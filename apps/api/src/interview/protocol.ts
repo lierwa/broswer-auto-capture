@@ -1,3 +1,4 @@
+import { confirmedNavigationScope } from "./navigation-scope.js"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { z } from "zod"
@@ -43,7 +44,7 @@ const markdownAttributesSchema = z.object({ title: candidateText.optional() }).s
 const markdownCandidate = defineFlatXmlDirective({
   tag: markdownTag,
   rawText: true,
-  prompt: '<interview-markdown># 目标\n已确认的业务目标。\n\n## 试做入口\n1. [入口名称][工具返回的 ref 或 siteRef]\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成已确认目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：从入口完成已确认目标。\n\n## 代表试做\n从入口完成已确认的业务目标。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n说明可观察完成事实和不足处理。</interview-markdown>',
+  prompt: '<interview-markdown># 目标\n已确认的业务目标。\n\n## 试做入口\n1. [入口名称][工具返回的 ref 或 siteRef]\n\n## 访问范围\n- [获准访问的站点][工具返回的 ref 或 siteRef]\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成已确认目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：从入口完成已确认目标。\n\n## 代表试做\n从入口完成已确认的业务目标。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n说明可观察完成事实和不足处理。</interview-markdown>',
   // WHY：协议示例只说明单次任务的格式；重复业务必须由访谈产出逐项边界，宿主不能事后猜计划。
   summary: "One complete, user-reviewable preparation plan draft. The one-step example only illustrates a single operation, not a default task plan. When each selected object needs its own detail visit or operation, declare the selection as an entry collection and the dependent per-object step as 逐项执行. Derive the actual steps from the task. Put complete Markdown in the body; no attributes are required. Omit it while a question is required.",
   parse(element): FlatXmlPlatformDirective {
@@ -244,6 +245,7 @@ export function parseInterviewOutput(input: unknown, state: InterviewState, sour
     // WHY：自由文本可直接回答旧题板；只投影成功轮次将执行的取代，失败轮次保留原事实。
     if (activeTurn) supersedePriorQuestions(projected, activeTurn.revision)
     assertRequirementReady(projected, value.draft.markdown, true)
+    confirmedNavigationScope(projected, value.draft.markdown, true)
   }
   return { assistantText: value.assistantText, question: value.question,
     draft: { title: value.draft.title, markdown: value.draft.markdown, brief: null } }
@@ -271,9 +273,10 @@ function interviewPromptLayers(state: InterviewState, skill: string, references:
     stageGuidance: [
       "普通文本是唯一 assistantText；不得在结构化块中重复。生成问题或草稿时，先用一条简短自然的普通文本承接已知意图或说明本轮产物的意义；问题时不重复、预告或改写题面。",
       "所有浏览器任务只输出一份可审阅的准备计划草案，使用 interview-markdown：raw body 直接写完整 Markdown，不写 JSON 或重复标题属性。确认后 B-U 将直接收到这份草案，不能依赖后续模型补写业务计划。",
-      "Markdown 必须覆盖目标、已确认来源、范围和约束、动态选择规则、异常与不足、用户验收预期、现场未知、执行权限与确认点。必须有唯一的二级标题“试做入口”“运行输入”“任务步骤”“代表试做”“结果与完成”。",
+      "Markdown 必须覆盖目标、已确认来源、范围和约束、动态选择规则、异常与不足、用户验收预期、现场未知、执行权限与确认点。必须有唯一的二级标题“试做入口”“访问范围”“运行输入”“任务步骤”“代表试做”“结果与完成”。",
       "同一草案另写“明确要求”和“可自行决定”：逐项保留用户仍有效的起点、字面输入、动作、顺序和限制，引用对应原话；只把未指定技术细节或明确委托的事项留给 B-U。没有指定步骤就如实说明，不编造额外约束。最新明确纠正只取代对应旧要求。不要对整段需求分类或打分；已明确不重复问，公开事实自行查，技术细节现场探索，未决定的重要业务取舍才问。",
       "用户沿指定路径进入页面且未要求修改筛选/排序时沿用页面默认值，不为未请求的变更增加问题。已核实来源完整 URL 可证明相同协议与主机的首页（仅根路径、无查询参数），可以作为指定首页的来源引用；不得据此拼造其他路径或跨子域名。",
+      "“访问范围”逐行列出本次任务实际获准访问的站点，每行格式“- [站点名称][实际 ref 值]”，包含入口和已经确认的跨站跳转来源；参考资料与输出数据中的网址不自动属于访问范围。用户给出的通配来源只能放访问范围，不能放试做入口。不重复询问已经明确授权的来源，不改入口来迁就跳转。发现新的来源业务取舍才提 Question。",
       "“试做入口”下从 1 开始连续编号，每行只选一个宿主提供的引用，格式“1. [入口名称][实际 ref 值]”；用户指定站点首页时改用该来源的 siteRef。不要重写网址、搜索 ID、查询或来源清单，宿主会从原证据回填；正文引用来源也用相同 Markdown 引用。这只是 B-U 起点，动态目标现场查找；没有可靠引用时继续澄清。",
       "“运行输入”下无输入时只写“- 无”；有输入时每行写“- 字段名（文本|整数|数字|是或否|文本列表）：用户可读说明”。字段来自用户真实可变输入，不把起始 URL 当成默认输入。",
       "用户明确允许缺失的字段，在类型后加“，可缺失”，例如“- 字段：价格（数字，可缺失）：实际可见价格”。缺失表示省略该字段，不能填零或把文本放进数字字段。记录列表若有明确数量上限，另写“- 结果数量：最多 N 条”（N 为用户确认的整数）；没有上限时省略，不猜数量。",

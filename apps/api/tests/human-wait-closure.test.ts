@@ -23,6 +23,29 @@ const report = cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({ stage, stat
 const resume = (checkpoint: TaskCheckpoint) => ({ checkpoint, resumeRequest: { contractVersion: CONTRACT_VERSION,
   requestId: randomUUID(), binding: checkpoint.binding, checkpointId: checkpoint.id, expectedSequence: checkpoint.sequence } })
 
+test("没有确认范围的旧计划在创建 owner 前拒绝，不制造 cleanup_required", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bat-scope-preflight-")), store = await ProductStore.open(directory)
+  try {
+    const taskId = store.taskAction({ type: "create", requestId: randomUUID() }), fixture = makeFixture(taskId)
+    delete fixture.plan.entryUrls
+    fixture.chain.plan.digest = digestJson(fixture.plan)
+    fixture.record.steps[0]!.chain.digest = executableChainDigest(fixture.chain)
+    const repository = new TaskContractRepository(store)
+    repository.plan = () => fixture.plan; repository.chain = () => fixture.chain; repository.requirement = () => fixture.requirement
+    const host = new TaskRuntimeHost(repository, {} as never, undefined, {
+      withCapabilities: async () => { throw new Error("must_not_create_browser") },
+    })
+    const state = { snapshot: () => ({ active: false, confirmedVersion: 1 }) } as unknown as ProductStore
+    const record = repository.saveExecution(fixture.record)
+    const result = await new TaskPlanExecutor(state, repository, host).execute(record, new AbortController().signal)
+    assert.equal(result.status, "blocked")
+    assert.match(result.reason, /已确认访问范围/u)
+    assert.equal(result.browserHandoff.ownerId, null)
+    assert.equal(result.cleanup.attempt, 0)
+    assert.deepEqual(repository.runs(taskId), [])
+  } finally { await store.close(); await rm(directory, { recursive: true }) }
+})
+
 // 真实生产层负责路由、预算、handoff、SQLite 与恢复；runner 回执受控，不声称通过真实网站登录。
 test("认证未处理仍等待；SQLite 重建后恢复同 execution/run/owner，仅重试当前读取", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bat-human-wait-closure-"))
@@ -173,7 +196,7 @@ function makeFixture(taskId: string) {
     inputContract: nullContract, outputContract: nullContract, constraints: [], completionCriteria: ["读取完成"],
     authorization: { scope: "测试", risks: [], requiredApprovals: [] }, confirmation: { confirmedAt: now, requestId: randomUUID() } }
   const plan = taskPlanSchema.parse({ contractVersion: CONTRACT_VERSION, kind: "plan", id: chain.plan.id, taskId, version: 1,
-    requirement: { id: requirement.id, version: 1, revision: 1, digest: digestJson(requirement) }, summary: "人工处理恢复",
+    requirement: { id: requirement.id, version: 1, revision: 1, digest: digestJson(requirement) }, summary: "人工处理恢复", entryUrls: [browser.url],
     inputContract: nullContract, outputContract: nullContract, steps: [{ id: chain.stepId, title: "读取", goal: "读取完成",
       dependsOn: [], inputContract: nullContract, outputContract: nullContract, input: { source: "input", path: [] },
       invocation: { mode: "once" }, chain: { id: chain.id, version: chain.version }, budget: chain.budget,

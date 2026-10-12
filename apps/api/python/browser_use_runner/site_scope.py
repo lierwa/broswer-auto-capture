@@ -44,6 +44,8 @@ def allowed_url(url, sites):
     try:
         value = urlsplit(url)
         port = value.port
+        if port == {"http": 80, "https": 443}.get(value.scheme):
+            port = None
     except (TypeError, ValueError):
         return False
     if value.scheme not in ('https', 'http') or not value.hostname or value.username or value.password:

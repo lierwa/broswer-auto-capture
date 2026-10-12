@@ -5,6 +5,7 @@ import type { ProductStore } from "../database/store.js"
 import type { TaskContractRepository } from "./repository.js"
 import { assertRequirementReady, preparationEntryFacts, selectedSourceFacts } from "../interview/source-resolution.js"
 import { resultAndCompletionBody } from "../interview/protocol.js"
+import { confirmedNavigationScope } from "../interview/navigation-scope.js"
 import { parsePreparationDraft } from "../interview/preparation-draft.js"
 
 export function syncConfirmedRequirement(store: ProductStore, repository: TaskContractRepository, taskId: string): TaskRequirement | null {
@@ -19,8 +20,8 @@ export function syncConfirmedRequirement(store: ProductStore, repository: TaskCo
   parsePreparationDraft(draft.markdown)
   const resultExpectation = resultAndCompletionBody(draft.markdown)
   const entries = preparationEntryFacts(state, draft.markdown)
-  const entryResolutions = new Set(entries.map((entry) => entry.resolutionId))
-  const sources = selectedSourceFacts(state).filter((source) => entryResolutions.has(source.resolutionId))
+  const sources = selectedSourceFacts(state)
+  const navigationScope = confirmedNavigationScope(state, draft.markdown)
   const decisions = state.decisions.filter((decision) => decision.kind !== "draft_confirmation")
     .map(({ id, kind, text, createdAt }) => ({ id, kind: kind as "option" | "free_text", text, createdAt }))
   const requirement = taskRequirementSchema.parse({
@@ -29,7 +30,7 @@ export function syncConfirmedRequirement(store: ProductStore, repository: TaskCo
     scope: sources.length ? `仅限已确认来源：${sources.map((item) => `${item.label}（${item.domain}）`).join("、")}。`
       : "以已确认需求正文中的来源与范围描述为准；具体页面入口由准备任务调查。",
     definition: { format: "markdown", body: draft.markdown },
-    inputContract: null, outputContract: null,
+    inputContract: null, outputContract: null, navigationScope,
     constraints: decisions.length ? decisions.map((item) => item.text) : ["以已确认需求正文中的范围与约束为准。"],
     completionCriteria: [resultExpectation],
     authorization: { scope: "仅限该需求草稿确认的浏览器任务范围。",

@@ -1,4 +1,80 @@
+## 2026-10-12 当前结算与发布：原入口主流程通过，不复现历史项关闭
+
+用户已授权提交推送当前全部B-A-T代码。旧六次模型失败按“当前正常、未复现”关闭，不再追挂根因待办，原失败证据保留。Windows本轮未重测仅是证据范围。发布前只读mac-host status仍返回lima_instance_owner_changed / exit1，因此该本机维护项保留，不阻挡本次发布。复用刚完成的聚焦回归和真实产品验收，1233份冻结产品源码未变；不重复运行全量测试，不重启宿主。
+
+此前更换入口后的成功不能结算为通用导航根因修复。本轮将确认范围独立版本化，贯穿准备/复跑/恢复，移除业务输入与节点URL扩权，并补齐缺授权启动前检查和默认端口一致性。新任务33d234a3保留原localhost入口，需求v1→准备→样本→变化输入独立验证→发布V1→同版两次正式运行全部完成；四次HUMAN/39 clear、输出逐项吻合各自盾报告、普通模型0、完整审计、各自首次清理confirmed及lease ended。1233份冻结源码/配置未变。主流程逐段定点回归与API检查通过；范围外跳转仍需新需求确认。完整边界与证据见 [导航修复记录](NAVIGATION_SCOPE_REPAIR_20261012.md)。旧模型失败已按当前未复现关闭，VM维护摘要冲突仍可复现，Windows未重新实测。本轮未重启宿主；当前提交推送已获授权。下方均为历史时点，其中“必须更换check入口”的旧判断已由本次根因证据纠正。
+
 # 开发进度
+
+## 2026-10-12 当前结算：Mac 正常产品主流程通过
+
+任务 f9cf7406-61c8-4f29-bb35-74ec1978459c 的需求 v3，经正常工作台 prepare f13d95c5、代表探索、样本试跑、变化输入独立复验、UI 发布 V1 和同版两次正式运行全部完成。样本 18344fbd、独立复验 9187a297、正式 d4d0c4fd、变化输入正式 eba52b6f 均 Human/39 clear，逐项输出与各自盾 API 原报告完全一致；四个新 case 不同，普通模型调用 0、auditComplete=true，各自首次 cleanup confirmed、同 owner lease ended、child_exit confirmed。
+
+正式 release a72c902c-c417-4b83-81d2-c597d345b167，digest 441fcfb1dfe9d50938c95ecc67fa03cfa2ae6ae28029deeccb397966981cc7f9；两次输入 digest 不同，中英文节点均绑定运行输入并保留 target_value 后置检查。最终 case 44f9c02f-1754-4a99-97f0-b979277d8930。更新包后冻结的 1228 份源码/配置未变；本轮只调整依赖制品及正式任务来源，没有更改输入节奏、导航保护、检测规则或阈值。
+
+本次处理的具体问题：五项 Python 依赖缺失；本机 opencode 源码落后远端且消费包不同步；Mac 任务重复使用 localhost 入口，遗漏 10 月 11 日已明确的 check.shield.localhost 来源配置。原通用“派发 URL 与计划绑定一致、落地 URL 可变化”修复已存在，不重复修改。最新 opencode 881d5958 已打包同步 core 0.3.4/Pi 1.0.2；原本地改动保留，24 项关联检查及消费者构建通过。探索读取前两次参数不合 schema，原生探索第三次纠正后成功，编译和普通读取通过。
+
+仍单列：恢复安装源码后 VM owner/template 摘要不一致，mac-host 维护入口仍拒绝，当前运行中的盾及上述主流程正常；一个旧 Python 桥测试替身缺 human_wait 参数；原六次模型失败未保留底层 cause，不能用后续成功倒推唯一根因。首次依赖失败 cleanup unconfirmed 仍保留，后续成功不覆盖旧失败。未整机重启/关机，未提交/推送/建分支/worktree。实际工作台 PID38647，daily Chrome 保存授权连接正常且空闲。完整结果见 [Mac 实际记录](MAC_INSTALL_EXECUTION_20261012.md)，ignored 证据 work/mac-install-validation-20261012/mac-product-mainflow-final-proof.json。
+
+## 2026-10-12 当前恢复：复用既有检测来源配置，更新真实生产者源码和制品
+
+用户要求解决主流程而非停在报错清单。已追到10月11日原记录：盾任务必须采用check.shield.localhost入口；当时另修的通用导航契约已在当前代码中。此次Mac任务重新使用localhost，重复遗漏了已知来源配置；只改正文不足以更新结构化站点边界。按同一历史方案修订当前任务来源，公共导航/安全逻辑保持。
+
+本机opencode-dev并非远端最新：原82f28e6d落后当前同名分支两个提交，远端881d5958包含Pi1.0.2/AI Connect0.3.4升级。用户已明确授权打包并引入最新源码。当前分支已快进到881d5958，原本地改动保护后恢复；6个重叠文件中3个测试冲突保留本地等价行为，24项相关检查通过。锁文件安装、原stage隔离消费验证、B-A-T同步均成功；core 0.3.4-86075794、React 0.3.2-cc7d94fe、Pi AgentSession 0.1.0-5921e108，完整摘要及生产者source hashes在release.json与latest-packages-receipt.json。初次旧本机源码同步的npm私有包0.3.2 404日志保留，失败时引入且无消费者引用的e88c21c4制品已删除。
+
+B-A-T API类型、前端构建通过；模型桥TS2项、实际Python桥2项通过；另1项旧测试自身author_step替身缺human_wait参数而失败，未修改生产代码或测试迎合。正常工作台已重启为PID38647，daily Default保存授权重连，Mac/向日葵/Chrome主进程与盾保持。需求v3通过正式对话和确认，持久化entryUrls为check.shield.localhost；prepare f13d95c5-f2ad-4579-8205-ca3152e0f198、owner1245e30c-8256-4bba-8454-3c5cd38e1b96正在真实代表试做。后续样本、发布、正式复跑尚未结算，不以包升级代替产品通过。
+
+## 2026-10-12 依赖修复后的最新定位：模型恢复，导航范围配置阻塞
+
+五项缺失Python依赖已通过原upstream:setup补齐，原版本/导入检查通过。本轮没有新增产品或安装源码改动。B-A-T实际消费固定AI Connect 0.3.4-1464cd24制品；.ai-connect.local.json指向的本机opencode-dev源码和现存release为0.3.2，不能把相邻仓库“最新代码”等同消费者已同步，也不能直接用0.3.2覆盖现用0.3.4。
+
+同一保存账号/模型的文本JSON、有效PNG及现有openModelBridge对照均成功；最后一项加载与工作台相同app模块，通过实际桥HTTP调用返回200/generation.completed。无改模型、凭据配置或生产逻辑。无效1x1测试夹具得到供应商invalid image错误，只证明公开底层API可保留原始错误，不能用它解释原六次失败。
+
+基于新增成功对照，经正常工作台进行一次独立prepare 6026bb17-360c-48e6-8fa1-9eba7b3d26e7：真实探索模型调用1次completed；第一个navigate指向原入口，随后hybrid_navigation_outside_authorized_scope停止。此轮不是原ai_generation_failed，旧失败不被覆盖，其原始根因仍未恢复。任务计划entryUrls仅localhost:4185，生成站点includeSubdomains=false；需求文字允许的*.shield.localhost:4185未进入结构化范围。盾check.js正常申请session并跳向该随机主机；现有B-A-T及原生B-U判定函数均复现入口允许、子域拒绝。原拒绝事件未保留目标URL，不补写不存在的原始日志。该配置缺口已明确，需要在正式来源范围中表达，不能关闭范围保护。
+
+第三次owner/lease 512d577c-2465-4f0f-80a8-24ac03aa1968已ended，runtime_outcome清理confirmed/activeResources=false；本次辅助IAB已关闭。39项报告、发布与两次正式运行仍未完成。安装VM归属摘要与恢复后模板不一致的问题仍在，当前盾继续运行；无整机重启/关机。证据在work/mac-install-validation-20261012/model-*-repro.json、product-job-6026bb17-360c-48e6-8fa1-9eba7b3d26e7.json、product-third-artifact.json、navigation-scope-repro.json、product-third-scope-failure.png。
+
+## 2026-10-12 用户纠正后的当前断点：本轮代码已移除，Mac产品验收未完成
+
+用户要求删除本轮代码并走正式产品验证。已把 tools/antibot-lab/deployment/lima.yaml、paths.ts、prepare.ts 恢复至 a1b28cd0903d1cbff1c03e2534619a7d6117c5fa，并逐字核验；本轮新增2个测试与14个临时脚本/源码副本已永久删除。回执位于 ignored 的 work/mac-install-validation-20261012/session-code-removal.json。当前仅验收记录文档有工作区差异，无产品输入、盾检测或阈值修改；原失败证据、正式安装、数据与授权保留。
+
+撤回“仅剩宿主重启”的整体结论。原Mac报告31803ab6由桌面工具快速按键生成，未经过B-A-T task_input.py的60–1500ms随机节奏适配；原始事件在冻结检测器上离线重现了间隔/熵两项红灯，只证明该次输入路径，不能证明Mac产品输入有缺陷或已验收。旧报告和初次CDP失败均保留，不能用后续成功覆盖。
+
+当前正规路线：正常npm run dev工作台、既有daily Chrome选择与授权、产品创建所属窗口；从新需求经过prepare/样本/独立验证/发布，在同一发布版本做两次正式运行，第二次改变输入，核对39项、结论和报告地址、零隐式模型调用、输入绑定和清理事实。当前工作台4173/4175未监听，盾4183/4185/4193仍运行。恢复模板源码后，已安装VM的owner配置摘要与当前模板不同，mac-host管理入口将拒绝；不改owner绕过。此次产品验证使用现存运行的盾。不得整机重启或关机；下方安装过程记录不能覆盖此断点。
+
+产品现场结算：正常npm run dev已启动（API PID28798），daily revision2/Default授权保持。独立Codex IAB只操作工作台，不控制检测页；任务f9cf7406需求v2由真实对话确认。首次prepare f13e06d3在0动作/0探索模型调用时upstream_runner_closed，原失败保留。只读执行器导入复现ModuleNotFoundError: diskcache；元数据确认diskcache/pyrate-limiter/filelock/patchright/bat-request-budget五项未安装。按README原npm run upstream:setup复用现有managed Python环境补齐，原--check及canonical import/assert_runtime通过；1228冻结源码/配置文件无变化。
+
+依赖恢复后prepare 1e7bf588成功创建并连接产品所属日常Chrome窗口，但探索模型6次原内置调用全部ai_event_failure/ai_generation_failed，动作0，未进入盾页面，最终hybrid_completed_source_required；没有手动再次重试、改模型或补源码。固定AI Connect 0.3.4-1464cd24的generation.js将底层异常替换为无cause的统一错误，当前证据不能唯一判断网络、账号或模型适配原因。Node与curl无凭据HEAD均取得HTTP403，仅证明可建立HTTP连接，不证明模型认证/生成成功。
+
+验收不通过：完整39项、样本/独立复验、发布及同版本两次正式复跑均未完成。第二次owner/lease 24b99221已ended，原runtime_outcome cleanup confirmed/activeResources=false；第一次导入失败仍保留原cleanup unconfirmed，不能用第二次清理覆盖。首尾同API PID/checkout、同daily revision/Profile，模型设置与Chrome授权摘要全同；AI授权文件发生既有OAuth正常刷新，有credential_refreshed/succeeded审计，不能声称字节未变。完整回执product-final-proof.json及UI截图在ignored验收目录。只剩本文和Mac实际记录的文档差异；未整机重启、未提交推送、未创建分支/worktree。
+
+## 2026-10-12 Mac当地实际安装过程记录（最终结论已由上方纠正）
+
+本Mac已有master已快进至a1b28cd0903d1cbff1c03e2534619a7d6117c5fa，原任务库保持空、模型配置与日常Chrome授权保留。本机Apple M1 Pro/macOS26.5.1，原生Node24.12.0/npm11.6.2；沿[Mac安装交接](MAC_INSTALL_VALIDATION_20261012.md)执行，盾独立依赖已安装、固定Lima2.2.1归档SHA已核验，没有Docker/worktree/分支/提交/推送/关机。
+
+首次setup在Lima真实create校验阶段失败：宿主注入internal_batShieldOwner但模板没有消费，固定上游validateParamIsUsed拒绝；VM尚未创建。已增加实际Lima配置回归，修前复现同一错误；模板最小补为声明默认空值并在原provision中核验宿主注入标记非空，归属仍使用原Lima配置/目录/身份。修后真实配置1项、原宿主6项和盾包类型检查通过。只在证明VM/目录不存在且pending记录未变化时更新本次待创建配置摘要，保留原token；随后实际bat-shield目录已创建并绑定身份，但固定Ubuntu镜像两次在Go下载路径unexpected EOF，VM仍Stopped。
+
+Mac首次源码发布缺公共wheel，原rebuild又因跨平台ZIP头导致摘要不符。固定源码/前端/Hatchling重建的五个payload均核对，恢复ZIP中央目录原Windows平台字段后得到原cfc34413摘要精确匹配；原共享源码、manifest和门未修改。源码发布已生成148文件归档，宿主stage为work/mac-shield-source.puqq8dje。镜像curl亦发生部分传输提前结束，现沿同一官方URL/原SHA执行有进展的断点续传，完整核验前不交给Lima。原始失败与当地基线在ignored的work/mac-install-validation-20261012；新版工作台已启动、本地旧任务仍空。完整arm64构建、服务、可信HTTPS、39项、协议、VM/宿主重启尚未完成。其它历史机器的PID/成功不代替本机证据。
+
+当地后续：945530880字节Ubuntu镜像已沿原SHA63a93bd5完整验证并通过固定Lima缓存加载，实际VZ VM启动成功，setup返回Linux aarch64/servicesStarted=false。缓存首次加载有本轮执行顺序错误：setup早于异步缓存提交，仍走网络后失败；原错误记录保留，等待提交/退出后按正确顺序成功。当前验证未安装时stop-vm和重复停止，再恢复VM、记录Linux平台并创建独立原生构建目录；不把该无数据库停启计作最终数据保留/宿主重启验收。详细首败与结果见[Mac实际记录](MAC_INSTALL_EXECUTION_20261012.md)。
+
+当地构建阶段断点：未安装stop-vm、重复停止、同owner恢复均实测通过。客体Ubuntu26.04.1/aarch64/systemd259，shieldvz=192.168.64.2；源码已按8c030a28归档SHA复制到全新所属构建目录，正在安装原配方要求的构建工具。尚未执行构建主体、安装盾或生成Mac检测报告；构建目录/data尚未由build-linux.sh认领时不得假称已完成原生包。后续从ignored的guest-build.json中记录的精确路径继续，不新建同构stage。
+
+构建工具已安装，现执行原build-linux.sh；所属build/data由原配方记录build-owner，输出与首败保留当地native-build日志，状态写入guest-build.json。构建期不得启动五服务，也不得在失败后无变化重跑拒绝已有data的整套配方；依实际失败点恢复同一所属构建。安装、可信HTTPS/39项和后续重启仍未完成。
+
+原生构建首败已结算exit1，发生在lab prepare并发材料下载：31项中30项实际文件全部符合原SHA，只有Traefik arm64归档未写入，原stderr为terminated；尚未进入原生编译。保留同一build/data和原日志，正从固定官方Traefik URL补齐材料；完成原SHA核验后从node lab.ts prepare恢复原配方后续步骤，不重新认领/删除data。实际空异地LIMA_HOME的status拒绝也已通过，原VM仍Running，临时空目录已永久删除。
+
+后续材料已31项符合原SHA。恢复01首败为Go冷构建120秒超时，H2已有原生二进制，CrowdSec原生receipt尚无；给现有wsl转交新增显式构建预算900秒，维护默认120秒保持，新边界回归修前失败/修后与类型检查通过。paths.ts/prepare.ts及测试的guest源码覆盖SHA已记录，当前resume02继续同一构建，原生CrowdSec/H2等已进入Hub正式配置/数据校验阶段。固定mkcert已校验并生成Mac本机CA/叶证书；首次系统信任失败为sudo要求管理员密码，已异步请求远程终端输入，未安装系统信任/未复制CA私钥，不能因这一项停止其它独立构建。
+
+最新断点：resume02原生CrowdSec/持久化引擎/HAProxy均已生成，锁定探针依赖npm ci断流ECONNRESET，原exit1/日志保留；resume03只从该下载步骤继续原配方。用户现在可远程输入管理员密码，已提供固定mkcert命令；Terminal UI工具拒绝控制该应用，不以其它UI技术绕过。安装和检测报告仍未完成。
+
+实际后续已完成：arm64包0c77990a/496174584字节，59项SHA/7项ELF AArch64逐项通过；首次安装和same-package重复安装exit0，两个安装stage永久删除。用户一键文件正常sudo输入回执0，security系统信任通过，原trust-localhost签发本机私网IP，CA私钥未复制。五服务start/status/重复start均ready，同5个InvocationID、实际Linux PID与归属已记录。首次浏览器调试工具报告75661d6b因原引擎cdp/score100拒绝，完整Unknown/36clear/3unavailable保留；随后同一真实日常Chrome原生窗口/键盘/中文输入法报告31803ab6为Human/37clear/2节奏线索，完整39项UI导出与API匹配；不称39全clear或物理人工基线。原12项HTTP控制通过。下一步协议真实字段、nonce/配额重启、负向准入及VM/宿主重启；仍未重启/关机，临时构建清理尚未完成。详见Mac实际记录。
+
+当前协议阶段已通过：真实Chrome H2/JA4/RTT、Mac宿主原quic-go固定控制客户端直达shieldvz的H3/QUIC/RTT及大64位SETTINGS；后者不是Chrome H3基线。原H2正常/混合报文2项、Worker service/shared/dedicated/阳性/CSP缺测通过。原64HTTP配额跨origin重启保留，真实未过期已用票据跨engine重启仍拒绝且warmCookie业务200；原ticket/Cookie仅内存，所属两个控制/基线窗口已关闭，个人Chrome保留。驱动CSP、覆盖清单及空H3 SETTINGS的首败均保留且没有改检测。正在stop后的Tor/无Go PATH GeoIP刷新及原生制品/归属负向检查；之后从正式数据做冷VM启动与完整报告/SQLite保留，宿主FileVault开启且authrestart支持true但尚未安排实际重启。
+
+最新维护/重启证据：Tor原刷新通过；GeoIP默认HTTP下载首败TLS EOF保留，HTTP1.1差异下载成功后，在仅本次CURL_HOME配置和无Go PATH下原刷新全程通过，发行原生校验器/35天门未改。过期Tor、缺H2制品及外来同名origin/4188归属均拒绝，fixture PID不变且由原owner finally关闭，字节复原后五服务ready。冷VM boot_id e8cf305d→e1d42308，business/budget/challenge-spent逐表内容和secret/install-owner摘要全同，完整Human39项保留。宿主未重启，FileVault开启且authrestart支持true；已准备仅语法检查的一键重启/恢复文件，未装启动项、不保存密码，整机时间待用户安排。现在收尾所属build/stage，保留正式VM/数据/公开包/首败；本地B-A-T旧任务仍空的最终保护核对继续。
+
+最终当地收尾完成：所属Linux build/source stage/wheel复现目录、临时QUIC客户端及待签叶私钥永久删除；两个安装stage原finally已删除；所属验收标签/窗口0、原8个人Chrome标签保留。正式VM/五服务/数据/本机CA/公共包/首败保留，当前五服务ready。B-A-T任务0，原aiSettings行SHA及两个授权文件SHA全同，未提交/推送/建分支。只剩文档第6项Mac整机重启实际证据：已异步请求时间选择，一键重启/恢复脚本仅准备且语法通过；尚未获时间答复、尚未执行整机重启，不能将此任务整体结算完成。当地验收矩阵和限制见Mac实际记录。
 
 ## 2026-10-12 当前断点：部署Review五项修复完成，Mac当地拉取安装验收
 

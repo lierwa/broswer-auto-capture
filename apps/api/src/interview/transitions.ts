@@ -1,3 +1,4 @@
+import { confirmedNavigationScope } from "./navigation-scope.js"
 import { randomUUID } from "node:crypto"
 import {
   buildCommonSurfaceReplyPayload,
@@ -134,6 +135,7 @@ export function confirmDraft(state: InterviewState, version: number) {
   try {
     projected = projectProvidedDraftSources(state, currentDraft(state)!.markdown)
     assertRequirementReady(projected, currentDraft(state)!.markdown, true)
+    confirmedNavigationScope(projected, currentDraft(state)!.markdown)
     parsePreparationDraft(currentDraft(state)!.markdown)
   }
   catch { conflict("仍有重要待决事项，或试做入口缺少已确认的来源引用，不能确认准备计划草案。") }

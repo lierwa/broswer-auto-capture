@@ -1,3 +1,5 @@
+import { planNavigationPolicy } from "./navigation-scope.js"
+import { usesHybridBrowserRuntime } from "../upstream-browser/retirement.js"
 import { executionBudget } from "./execution-budget.js"
 import {
   CONTRACT_VERSION, DEFAULT_TASK_EXECUTION_BROWSER, parseTaskValue, taskPlanExecutionIssues, type JsonValue, type TaskChain, type TaskExecution,
@@ -75,6 +77,13 @@ export class TaskPlanExecutor {
       if (taskPlanExecutionIssues(plan).length) return this.finish(record, "blocked", "计划输入输出合同不再满足执行约束，需要生成新计划。",
         { classification: "version", code: "plan_contract_invalid", repairable: false })
       const chains = this.boundChains(record, plan)
+      // WHY：缺失历史授权在分配 owner 前拒绝，不能凭输入补权或制造不存在的清理故障。
+      const closure = this.host.assertExecutable(record.taskId, chains)
+      if (usesHybridBrowserRuntime(closure)) {
+        try { planNavigationPolicy(plan) }
+        catch { return this.finish(record, "blocked", "该计划缺少有效的已确认访问范围，请确认需求并生成新计划。",
+          { classification: "version", code: "navigation_scope_unconfirmed", repairable: false }) }
+      }
       // WHY：无头同样占用本次专属进程；沿用固定 owner 与清理审计，不因没有可见现场丢失资源身份。
       const managedWindow = Boolean(record.release)
       record.status = "running"; record.sequence++; record.reason = "正在执行本次计划固定的链路版本。"
@@ -92,7 +101,7 @@ export class TaskPlanExecutor {
         this.bump(record)
       }
       await this.host.group({ taskId: record.taskId, authorizationId: record.authorizationId, browserRunId,
-        requirementVersion: record.requirement.version, purpose: record.mode ?? "replay", chains, input: record.input, signal,
+        navigationPlan: plan, requirementVersion: record.requirement.version, purpose: record.mode ?? "replay", chains, input: record.input, signal,
         ...(record.browser || !record.mode || record.mode === "replay"
           ? { browser: record.browser ?? DEFAULT_TASK_EXECUTION_BROWSER } : {}),
         ...(managedWindow ? { managedWindow: { ownerId: browserRunId, resume: resumingWindow,

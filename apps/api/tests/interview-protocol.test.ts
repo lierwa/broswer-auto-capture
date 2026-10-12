@@ -13,6 +13,7 @@ import {
   parseInterviewOutput,
   settleInterviewMessageParts,
 } from "../src/interview/protocol.js"
+import { InterviewSourceReferences } from "../src/interview/source-references.js"
 import { recordUserProvidedSources } from "../src/interview/source-resolution.js"
 import { beginRound, confirmDraft, finishRound } from "../src/interview/transitions.js"
 
@@ -99,7 +100,7 @@ test("通用浏览器任务由私有 raw Markdown candidate 投影到既有草�
   const markdown = [
     "# 任务目标", "播放指定内容并定位到目标时间。",
     "## 已确认来源", "仅使用 example.org；具体页面由试做调查。",
-    "## 试做入口", `1. ${entry}`,
+    "## 试做入口", `1. ${entry}`, "## 访问范围", `- ${entry}`,
     "## 运行输入", "- 无",
     "## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。",
     "## 代表试做", "从已确认入口核实内容身份，再播放并定位。",
@@ -130,15 +131,16 @@ test("实际 composed prompt 只提供一个通用 raw Markdown 草稿示例", (
     schemaVersion: 1,
     packages: [CommonContentUIProtocol],
   })
-  const markdowns = authored.prompt.match(/<interview-markdown .*?<\/interview-markdown>/gs) ?? []
+  const markdowns = authored.prompt.match(/<interview-markdown(?: [^>]*)?>.*?<\/interview-markdown>/gs) ?? []
   assert.equal(markdowns.length, 1)
   assert.doesNotMatch(authored.prompt, /interview-result/)
-  authored.session.push(`<authoring>${markdowns[0]!.replace("已选来源候选的真实 URL", entry)}</authoring>`)
-  const generic = parseInterviewAuthoringOutput(authored.session.finish(), state, [], "run")
-  assert.equal(generic.draft?.title, "short title")
+  const references = new InterviewSourceReferences(state.revision, state)
+  authored.session.push(`<authoring>${markdowns[0]!.replaceAll("工具返回的 ref 或 siteRef", references.available()[0]!.ref)}</authoring>`)
+  const generic = parseInterviewAuthoringOutput(authored.session.finish(), state, [], "run", undefined, false, references)
+  assert.equal(generic.draft?.title, "准备计划")
   assert.equal(generic.draft?.brief, null)
   assert.match(generic.draft?.markdown ?? "", /已确认的业务目标/)
-  assert.match(authored.prompt, /根据完整对话决定/)
+  assert.match(authored.prompt, /宿主只校验引用，不判断语义/)
   assert.match(authored.prompt, /不按关键词或网站猜/)
   assert.match(authored.prompt, /结果形状：记录列表/)
   assert.match(authored.prompt, /不把平行文本列表冒充成组记录/)
@@ -148,11 +150,11 @@ test("动作型与数据型草稿都明确结果形态且继续写 brief=null", 
   const state = sourcedState()
   const action = parseInterviewOutput({ assistantText: "已整理播放完成条件。", question: null, draft: {
     title: "播放任务", brief: null,
-    markdown: `# 任务目标\n播放目标内容。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口调查并播放目标内容。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n以目标内容正在播放作为完成事实。`,
+    markdown: `# 任务目标\n播放目标内容。\n\n## 试做入口\n1. ${entry}\n\n## 访问范围\n- ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口调查并播放目标内容。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n以目标内容正在播放作为完成事实。`,
   } }, state)
   const data = parseInterviewOutput({ assistantText: "已整理列表结果。", question: null, draft: {
     title: "列表任务", brief: null,
-    markdown: `# 任务目标\n读取列表。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口读取列表。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：记录列表\n- 页面交付：无需保留\n- 字段：标题（文本）：每项的标题\n- 字段：链接（文本）：同一项的链接\n空列表时说明不足且不进入详情页。`,
+    markdown: `# 任务目标\n读取列表。\n\n## 试做入口\n1. ${entry}\n\n## 访问范围\n- ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口读取列表。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：记录列表\n- 页面交付：无需保留\n- 字段：标题（文本）：每项的标题\n- 字段：链接（文本）：同一项的链接\n空列表时说明不足且不进入详情页。`,
   } }, state)
   assert.equal(action.draft?.brief, null)
   assert.equal(data.draft?.brief, null)
@@ -163,7 +165,7 @@ test("动作型与数据型草稿都明确结果形态且继续写 brief=null", 
 
 test("访谈数据草案缺少结果形状时拒绝本轮，保留上一有效草案", () => {
   const state = sourcedState()
-  const markdown = `# 任务目标\n读取页面数据。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口读取数据。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：单条记录\n- 页面交付：无需保留\n- 字段：标题（文本）：页面标题\n读取不到时报告原因。`
+  const markdown = `# 任务目标\n读取页面数据。\n\n## 试做入口\n1. ${entry}\n\n## 访问范围\n- ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口读取数据。\n\n## 结果与完成\n- 交付：数据结果\n- 结果形状：单条记录\n- 页面交付：无需保留\n- 字段：标题（文本）：页面标题\n读取不到时报告原因。`
   const candidate = { assistantText: "已整理数据草案。", question: null,
     draft: { title: "数据任务", brief: null, markdown } }
   const first = beginRound(state, { type: "message", requestId: randomUUID(), expectedRevision: 0,
@@ -198,7 +200,7 @@ test("自由文本澄清旧题板后允许草案；失败轮次不篡改旧题�
   } })
   state.messages.push(message({ id: "access", role: "assistant", text: "请确认访问资格。", question }))
   state.unresolved.push({ id: "access", revision: 1, question, status: "open", answerMessageId: null })
-  const draft = { title: "播放任务", brief: null, markdown: `# 任务目标\n播放最新正片。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口调查最新正片并尝试播放。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n播放成功才算完成；看不了则报告原因。` }
+  const draft = { title: "播放任务", brief: null, markdown: `# 任务目标\n播放最新正片。\n\n## 试做入口\n1. ${entry}\n\n## 访问范围\n- ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n从入口调查最新正片并尝试播放。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：保留现场\n播放成功才算完成；看不了则报告原因。` }
   const candidate = { assistantText: "已按你的要求整理。", question: null, draft }
   assert.throws(() => parseInterviewOutput(candidate, state), /interview_unresolved_items_open/)
 
@@ -261,7 +263,7 @@ test("Question 与草稿混用或产生多个草稿时拒绝", () => {
   const state = structuredClone(emptyInterview)
   const options = { schemaVersion: 1 as const, packages: [CommonContentUIProtocol] }
   const reference = createInterviewMainAuthoring(state, "test skill", options).prompt
-  const markdown = reference.match(/<interview-markdown .*?<\/interview-markdown>/s)?.[0]
+  const markdown = reference.match(/<interview-markdown(?: [^>]*)?>.*?<\/interview-markdown>/s)?.[0]
   assert.ok(markdown)
 
   const multiple = createInterviewMainAuthoring(state, "test skill", options)

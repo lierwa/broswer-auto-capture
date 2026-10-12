@@ -31,7 +31,7 @@ import {
 import { testSelection } from "./fixtures/ai-model.js"
 import { authoredInterview, projectRoot } from "./helpers.js"
 
-const markdown = (domain: string, ...entries: string[]) => `# 任务目标与最终结果\n\n从 ${domain} 完成已确认任务。${entries.length ? `\n\n## 试做入口\n\n${entries.map((url, index) => `${index + 1}. ${url}`).join("\n")}` : ""}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：完成状态\n- 目标：按确认范围完成页面任务。\n\n## 代表试做\n从已选入口执行已确认任务。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n返回实际结果；没有结果时明确说明为空。`
+const markdown = (domain: string, ...entries: string[]) => `# 任务目标与最终结果\n\n从 ${domain} 完成已确认任务。${entries.length ? `\n\n## 试做入口\n\n${entries.map((url, index) => `${index + 1}. ${url}`).join("\n")}\n\n## 访问范围\n${entries.map(url => `- ${url}`).join("\n")}` : ""}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：完成状态\n- 目标：按确认范围完成页面任务。\n\n## 代表试做\n从已选入口执行已确认任务。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n返回实际结果；没有结果时明确说明为空。`
 const rss = (...items: Array<{ title: string; link: string; description?: string }>) =>
   `<?xml version="1.0"?><rss><channel>${items.map((item) => `<item><title>${item.title}</title><link>${item.link}</link><description>${item.description ?? ""}</description></item>`).join("")}</channel></rss>`
 const resolver = (body: string) => new ReadOnlySourceResolver(async () => new Response(body, {

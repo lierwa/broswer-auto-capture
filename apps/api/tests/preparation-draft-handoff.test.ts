@@ -228,7 +228,7 @@ test("本次来源沿用环境快照并关闭 owner；缺在线最终编译即�
     withAuthoring: async (_input: { browserMode?: string }, work: (session: HybridAuthorSession) => Promise<void>) => {
       assert.equal(_input.browserMode, "dedicated-headless")
       events.push("browser-open")
-      await work({ author: async (source, options) => {
+      try { await work({ author: async (source, options) => {
         const sign = (value: unknown) => ({ ...value as object, digest: digestCanonicalJson(jsonValueSchema.parse(value)) })
         const request = { compilerVersion: "bat-hybrid/2", actionRegistryVersion: "a".repeat(64),
           requirement: sign({ id: source.requirementId, version: source.requirementVersion,
@@ -249,7 +249,7 @@ test("本次来源沿用环境快照并关闭 owner；缺在线最终编译即�
         frozenSource = JSON.stringify(artifacts)
         return result
       } })
-      events.push("browser-closed")
+      } finally { events.push("browser-closed") }
     },
     recompile: async () => { events.push("compile"); throw new Error("compiler_fixture_failure") },
   }
@@ -269,6 +269,7 @@ test("未完成来源仅有业务歧义时返回需求对话，缺证和拒绝�
   const cases = [
     { resolutions: ["confirm_intent"], clarification: true },
     { resolutions: ["collect_evidence"], clarification: false },
+    { resolutions: ["reject_trace"], clarification: true, navigation: true },
     { resolutions: ["reject_trace"], clarification: false },
     { resolutions: ["confirm_intent", "reject_trace"], clarification: false },
   ] as const
@@ -298,7 +299,8 @@ test("未完成来源仅有业务歧义时返回需求对话，缺证和拒绝�
             trace: sign({ source: { historyRef: "fixture" }, completed: false, actions: [], observations: [] }) }
           const sourceGaps = scenario.resolutions.map((resolution) => ({ id: `gap-${resolution}`,
             code: "source_not_proven", actionRefs: [], clauseRefs: ["confirmed-scope"],
-            reason: resolution === "confirm_intent" ? "business_scope_ambiguous" : resolution, resolution }))
+            reason: "navigation" in scenario ? "hybrid_navigation_outside_authorized_scope"
+              : resolution === "confirm_intent" ? "business_scope_ambiguous" : resolution, resolution }))
           const wire = { output: null, canonicalRequest: JSON.stringify(request), sourceGaps }
           options?.onSource?.({ result: wire, forkSourceDigest: "a".repeat(64), modelCalls: [] })
           return parseCapturedSource(wire, "a".repeat(64), [])
@@ -313,7 +315,7 @@ test("未完成来源仅有业务歧义时返回需求对话，缺证和拒绝�
     assert.equal(job.status, "failed")
     assert.deepEqual((job.authoring!.exploration as { sources: { closed: boolean }[] }).sources.map((s) => s.closed), [true])
     assert.deepEqual(job.preparation?.requirementReturn?.issues,
-      scenario.clarification ? [{ code: "business_scope_ambiguous", clauseRefs: ["confirmed-scope"] }] : undefined)
+      scenario.clarification ? [{ code: "navigation" in scenario ? "hybrid_navigation_outside_authorized_scope" : "business_scope_ambiguous", clauseRefs: ["confirmed-scope"] }] : undefined)
   }
 
   const serviceJob = { id: randomUUID(), taskId: draft.taskId, key: "service-boundary", status: "queued",

@@ -6,7 +6,7 @@ import { assertRequirementReady, preparationEntryFacts, projectProvidedDraftSour
 import { authoredInterview, fixture } from "./helpers.js"
 
 const entry = "https://example.org/"
-const markdown = `# 目标\n读取 \`${entry}\` 首页的标题。\n\n## 试做入口\n1. ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n打开首页并读取标题。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n页面标题可见时完成。`
+const markdown = `# 目标\n读取 \`${entry}\` 首页的标题。\n\n## 试做入口\n1. ${entry}\n\n## 访问范围\n- ${entry}\n\n## 运行输入\n- 无\n\n## 任务步骤\n1. 完成确认的业务目标\n- 输入：任务输入\n- 执行：一次执行\n- 产出：最终结果\n- 目标：按本任务已确认的目标、范围与停止点完成。\n\n## 代表试做\n打开首页并读取标题。\n\n## 结果与完成\n- 交付：完成状态\n- 页面交付：无需保留\n页面标题可见时完成。`
 const draft = { title: "读取首页标题", markdown, brief: null }
 const output = { assistantText: "已整理草案。", question: null, draft }
 

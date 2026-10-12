@@ -1,3 +1,4 @@
+import type { BrowserAllowedSite } from "@browser-capture/contracts"
 import { randomUUID } from "node:crypto"
 import { spawn, type ChildProcess } from "node:child_process"
 import { mkdtemp, realpath, rm, stat } from "node:fs/promises"
@@ -37,7 +38,7 @@ export interface UpstreamBrowserRuntime {
   close?(): Promise<RunnerCleanupReport>
   sourceDigest?(): Promise<string>
   recompile?(input: Omit<Parameters<typeof recompileHybridSource>[0], "root" | "directory" | "subject">): ReturnType<typeof recompileHybridSource>
-  withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; canRestoreByNavigation?: boolean;
+  withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; allowedSites?: BrowserAllowedSite[]; canRestoreByNavigation?: boolean;
     legacyNodeIds?: Record<string, string[]>;
     sessionPurpose?: "account"; publicRead?: boolean;
     connectionOwnerId?: string; closeAfterOperation?: boolean;
@@ -47,7 +48,7 @@ export interface UpstreamBrowserRuntime {
     onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
     onCleanup?: (report: RunnerCleanupReport) => void },
     work: (capabilities: TaskChainCapabilities) => Promise<T>): Promise<T>
-  withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[];
+  withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[]; allowedSites?: BrowserAllowedSite[];
     managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] }; preserveWindow?: boolean;
     connectionOwnerId?: string; browserMode?: BrowserMode;
     onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
@@ -90,7 +91,7 @@ export class RunnerProcess {
   }
   managedWindowOwner() { return this.managedWindow?.ownerId ?? null }
 
-  async startHybrid(config: Omit<ReturnType<typeof hybridStartRequestSchema.parse>["config"], "allowedSites">) {
+  async startHybrid(config: Omit<ReturnType<typeof hybridStartRequestSchema.parse>["config"], "allowedSites"> & { allowedSites?: BrowserAllowedSite[] }) {
     const mode = this.lifecycle.browserMode ?? "daily"
     const extensionEndpoint = mode === "daily" && !config.existingBrowser
       ? await this.lifecycle.resolveExtensionEndpoint?.() : undefined
@@ -105,7 +106,7 @@ export class RunnerProcess {
     this.managedWindow = windowOwner ? { ownerId: windowOwner.ownerId,
       profilePath: config.profilePath } : null
     const request = hybridStartRequestSchema.parse({ id: randomUUID(), type: "hybrid_start",
-      config: { ...connection, allowedSites: browserAllowedSites(config.allowedOrigins) } })
+      config: { ...connection, allowedSites: config.allowedSites ?? browserAllowedSites(config.allowedOrigins) } })
     if (this.cleanup) throw new Error("upstream_runner_already_closed")
     if (!config.connectionOwnerId || this.hybridConnectionOwner !== config.connectionOwnerId) {
       await this.launch("main.py")

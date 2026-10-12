@@ -1,3 +1,4 @@
+import type { BrowserAllowedSite } from "@browser-capture/contracts"
 import { randomUUID } from "node:crypto"
 import { legacyCapabilities, legacyRequest } from "./legacy-capabilities.js"
 import { BrowserError } from "@browser-capture/browser"
@@ -16,7 +17,7 @@ import { verifyForkSource } from "../../../../vendor/workflow-use/verify-source.
 import { hybridBrowserStateSchema, hybridCommandSchema, hybridExecuteRequestSchema,
   hybridExecuteResultSchema, hybridObserveRequestSchema } from "./hybrid-protocol.js"
 import { HybridRuntimeScopeState, RUNTIME_SCOPE_FROM, withinHybridSignal } from "./hybrid-runtime-scope.js"
-import { isWithinBrowserSites } from "./site-scope.js"
+import { isWithinAllowedSites, browserAllowedSites } from "./site-scope.js"
 import { SourceLifecycleDiagnostics } from "./source-lifecycle-diagnostics.js"
 
 const TARGET_ORDINAL_INPUT = "targetOrdinal"
@@ -71,7 +72,7 @@ type HybridRunner = Pick<RunnerProcess, "close" | "envBoolean" | "request" | "st
 type HybridCapabilitiesInput = { root: string; directory: string; ownerId: string;
   legacyNodeIds?: Record<string, string[]>;
   profilePath?: string;
-  signal: AbortSignal; allowedOrigins: string[]; canRestoreByNavigation?: boolean; headless?: boolean;
+  signal: AbortSignal; allowedOrigins: string[]; allowedSites?: BrowserAllowedSite[]; canRestoreByNavigation?: boolean; headless?: boolean;
   managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[]; accountMaintenance?: boolean };
   handoffPurpose?: () => "delivery" | "human_wait" | null;
   onHandoff?: (purpose: "delivery" | "human_wait", lease: Awaited<ReturnType<RunnerProcess["handoff"]>>["lease"]) => void;
@@ -97,6 +98,7 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
   let primary: RuntimePrimaryOutcome<T>
   try {
     await runner.startHybrid({ allowedOrigins: input.allowedOrigins,
+      ...(input.allowedSites ? { allowedSites: input.allowedSites } : {}),
       profilePath: input.profilePath ?? path.join(input.directory, "browser-profile", "default"),
       headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
       managedWindow: input.managedWindow ?? { ownerId: input.ownerId, resume: false } })
@@ -237,7 +239,7 @@ async function finishHybridRunner<T>(input: HybridCapabilitiesInput, runner: Hyb
 
 async function verifyHybridResume(
   checkpoint: Parameters<NonNullable<TaskChainCapabilities["verifyResume"]>>[0],
-  context: { input: Pick<HybridCapabilitiesInput, "canRestoreByNavigation" | "allowedOrigins">;
+  context: { input: Pick<HybridCapabilitiesInput, "canRestoreByNavigation" | "allowedOrigins" | "allowedSites">;
     runner: HybridRunner; runtimeScope: HybridRuntimeScopeState; capabilities: TaskChainCapabilities;
     observe: (capabilities: TaskChainCapabilities) => Promise<z.infer<typeof hybridBrowserStateSchema>>;
     admit: (capabilities: TaskChainCapabilities) => void }) {
@@ -251,7 +253,7 @@ async function verifyHybridResume(
   const restore = !sameSession && input.canRestoreByNavigation && !checkpoint.pendingEffect
     && !checkpoint.resumeWhen && checkpoint.browser
   let restored = false
-  if (restore && isWithinBrowserSites(checkpoint.browser!.url, input.allowedOrigins)) {
+  if (restore && isWithinAllowedSites(checkpoint.browser!.url, input.allowedSites ?? browserAllowedSites(input.allowedOrigins))) {
     admit(capabilities)
     const result = hybridExecuteResultSchema.parse(await runner.request(hybridExecuteRequestSchema.parse({
       id: randomUUID(), type: "hybrid_execute", actionRef: checkpoint.cursor,
@@ -262,7 +264,7 @@ async function verifyHybridResume(
   }
   // WHY：人工处理只接受同一受控 tab 在授权来源内跳转；重开相同 URL 不能替代用户处理的原现场。
   const sameUrl = checkpoint.browser?.url === browser.url || (sameSession && humanNavigationResume
-    && isWithinBrowserSites(browser.url, input.allowedOrigins))
+    && isWithinAllowedSites(browser.url, input.allowedSites ?? browserAllowedSites(input.allowedOrigins)))
   const same = (sameSession || restored) && sameUrl
     && (humanNavigationResume || checkpoint.browser?.observationDigest === browser.observationDigest)
   // WHY：跨 session 的导航恢复可以继续普通链，但无法证明 dependent scope 的直接浏览器前驱身份。

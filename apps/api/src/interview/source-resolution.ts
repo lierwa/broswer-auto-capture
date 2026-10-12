@@ -10,6 +10,7 @@ import {
   type SourceResolution,
 } from "@browser-capture/contracts/interview"
 import { candidateId, PiSourceSearchObserver } from "./source-search-evidence.js"
+import { providedSourceUrls } from "./provided-source-urls.js"
 export { PiSourceSearchObserver } from "./source-search-evidence.js"
 
 const searchInputSchema = z.object({
@@ -102,9 +103,9 @@ export function recordSourceResolution(state: InterviewState, value: SourceResol
 
 export function recordUserProvidedSources(state: InterviewState, text: string, revision: number) {
   const seen = new Set<string>()
-  for (const raw of text.match(/https?:\/\/[^\s<>"'“”‘’)`，。；]+/gu) ?? []) {
-    let url: URL
-    try { url = new URL(raw) } catch { continue }
+  const previous = state.sourceResolutions.filter(item => item.provider === "user_provided" && item.status !== "superseded")
+    .flatMap(item => item.candidates.map(candidate => candidate.url))
+  for (const url of providedSourceUrls(text, previous)) {
     const candidate = candidateFromUrl(url)
     if (seen.has(candidate.url)) continue
     seen.add(candidate.url)
@@ -185,6 +186,7 @@ function draftEntryUrls(markdown: string) {
     const match = line.match(/^(\d+)\.\s+(?:(https?:\/\/\S+)|<(https?:\/\/[^<>\s]+)>)$/u)
     if (!match || Number(match[1]) !== index + 1) throw new Error("interview_entry_order_invalid")
     const url = new URL((match[2] ?? match[3])!).href
+    if (new URL(url).hostname.includes("*")) throw new Error("interview_entry_wildcard_forbidden")
     if (seen.has(url)) throw new Error("interview_entry_reference_invalid")
     seen.add(url)
     return url

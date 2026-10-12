@@ -61,6 +61,8 @@ mkcert使用Mac自己的CA；需要macOS钥匙串授权时在Mac正常完成。�
 
 检测页：`https://localhost:4185/measurement/check`。Mac入口支持`start/status/stop/logs/metrics/alerts`。`stop`只停所属盾服务；`stop-vm`停止该所属VM，未安装、从未启动和重复停止也有明确分支。运行期清理失败或活动服务归属不明仍拒绝停VM。
 
+通过B-A-T准备和复跑本检测任务时，确认来源与入口使用同一服务的`https://check.shield.localhost:4185/measurement/check?mode=interactive`。这是10月11日已验证的任务配置：现有站点解析把`check.shield.localhost`与随机报告子域归入`shield.localhost`。仅把`*.shield.localhost`写在需求正文中不会扩充由入口导出的范围；单独使用`localhost`入口将拒绝后续会话子域。准备前核对持久化计划的`entryUrls`，不修改公共来源保护。导航派发参数仍应等于计划绑定值，网站实际落地地址按已有导航契约处理。
+
 停止服务后分别刷新Tor来源和GeoIP来源，再启动：
 
 ```sh
