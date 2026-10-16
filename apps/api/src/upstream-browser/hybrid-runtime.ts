@@ -2,7 +2,8 @@ import type { BrowserAllowedSite } from "@browser-capture/contracts"
 import { randomUUID } from "node:crypto"
 import { legacyCapabilities, legacyRequest } from "./legacy-capabilities.js"
 import { BrowserError } from "@browser-capture/browser"
-import { resolveContentReceipts } from "./content-receipts.js"
+import { resolveContentReceipts, resolveNativeFileReceipts } from "./content-receipts.js"
+import { NATIVE_FILE_OUTPUT, nativeFileOutputSchema } from "./hybrid-native-file.js"
 import { BROWSER_CONTEXT_OUTPUT, browserContextOutputSchema } from "./hybrid-browser-context.js"
 import { elementEntrySchema } from "./element-entry-contract.js"
 import { materializeReadCommand } from "./hybrid-read-input.js"
@@ -52,8 +53,12 @@ export function materializeHybridWorkflowCommand(config: Record<string, unknown>
     throw new Error("hybrid_reserved_target_input")
   }
   const { targetOrdinalInput: _marker, missingTargetOutcome: _missingTargetOutcome, [BROWSER_CONTEXT_OUTPUT]: _context,
+    [NATIVE_FILE_OUTPUT]: _nativeFile,
     inheritedReadInput, ...commandConfig } = config
   if (_context !== undefined && _context !== true) throw new Error("hybrid_browser_context_output_marker_invalid")
+  if (_nativeFile !== undefined && _nativeFile !== true || _nativeFile && _context) {
+    throw new Error("hybrid_native_file_output_marker_invalid")
+  }
   if (inheritedReadInput === "record") {
     const record = input.record
     if (record === null || typeof record !== "object" || Array.isArray(record)) throw new Error("hybrid_inherited_read_input_missing")
@@ -70,6 +75,7 @@ type HybridRunner = Pick<RunnerProcess, "close" | "envBoolean" | "request" | "st
   & Partial<Pick<RunnerProcess, "handoff">>
 
 type HybridCapabilitiesInput = { root: string; directory: string; ownerId: string;
+  fileStateRequired?: boolean;
   legacyNodeIds?: Record<string, string[]>;
   profilePath?: string;
   signal: AbortSignal; allowedOrigins: string[]; allowedSites?: BrowserAllowedSite[]; canRestoreByNavigation?: boolean; headless?: boolean;
@@ -93,8 +99,6 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
   const onDiagnostic = diagnostics ? (line: string) => diagnostics.acceptPythonLine(line) : undefined
   const runner = input.createRunner?.(input.root, runnerSignal, onDiagnostic)
     ?? new RunnerProcess(input.root, runnerSignal, onDiagnostic)
-  let commands = 0
-  const runtimeScope = new HybridRuntimeScopeState()
   let primary: RuntimePrimaryOutcome<T>
   try {
     await runner.startHybrid({ allowedOrigins: input.allowedOrigins,
@@ -102,6 +106,17 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
       profilePath: input.profilePath ?? path.join(input.directory, "browser-profile", "default"),
       headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
       managedWindow: input.managedWindow ?? { ownerId: input.ownerId, resume: false } })
+    const value = await work(hybridCapabilitiesForRunner(input, runner, owner, diagnostics))
+    primary = { status: "completed", value }
+  } catch (error) { primary = { status: "failed", error } }
+  return finishHybridRunner(input, runner, diagnostics, primary)
+}
+
+/** WHY：能力适配复用已启动的同一个runner；不再启动、关闭或取得另一个Browser。 */
+export function hybridCapabilitiesForRunner(input: HybridCapabilitiesInput, runner: HybridRunner,
+  owner: AbortController, diagnostics?: ReturnType<typeof SourceLifecycleDiagnostics.open>): TaskChainCapabilities {
+  let commands = 0
+  const runtimeScope = new HybridRuntimeScopeState()
     const admit = (capabilities: TaskChainCapabilities) => {
       // WHY：先从宿主总账授权，再计入实际派发；失败也保留消耗，预算拒绝不算已派发命令。
       capabilities.accountConsumption?.({ browserCommands: 1 })
@@ -122,9 +137,10 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
           throw error
         }
       }) })
-    const value = await work({ ...legacy, browserCommandCount: () => commands,
+    return { ...legacy, browserCommandCount: () => commands,
       capability: managedCapability({ input, owner, runner, runtimeScope, diagnostics, legacy, observe, admit }),
       verifyResume(this: TaskChainCapabilities, checkpoint, signal) {
+        if (input.fileStateRequired) return Promise.resolve({ ok: false, reason: "native_file_resume_state_unverified" })
         const legacyIds = input.legacyNodeIds?.[checkpoint.binding.chain.id]
         if (legacyIds?.includes(checkpoint.resumeWhen ? checkpoint.cursor : checkpoint.browserNodeId ?? checkpoint.cursor)) {
           return legacy.verifyResume!.call(this, checkpoint, signal)
@@ -132,10 +148,7 @@ export async function withHybridCapabilities<T>(input: HybridCapabilitiesInput,
         return withinHybridSignal(signal, owner, () => verifyHybridResume(checkpoint,
           { input, runner, runtimeScope, capabilities: this, observe, admit }))
       },
-    })
-    primary = { status: "completed", value }
-  } catch (error) { primary = { status: "failed", error } }
-  return finishHybridRunner(input, runner, diagnostics, primary)
+    }
 }
 
 function managedCapability(context: {
@@ -164,6 +177,11 @@ function managedCapability(context: {
       }
       const config = z.record(z.string(), z.unknown()).parse(invocation.config)
       const contextOutput = config[BROWSER_CONTEXT_OUTPUT] === true
+      const nativeFileOutput = config[NATIVE_FILE_OUTPUT] === true
+      if (nativeFileOutput && (invocation.node.capability.name !== "browser.workflow-step"
+        || !isDeepStrictEqual(invocation.node.outputContract.schema, nativeFileOutputSchema))) {
+        throw new Error("hybrid_native_file_output_contract_invalid")
+      }
       if (contextOutput && (invocation.node.capability.name !== "browser.workflow-step"
         || !isDeepStrictEqual(invocation.node.outputContract.schema, browserContextOutputSchema))) {
         throw new Error("hybrid_browser_context_output_contract_invalid")
@@ -187,7 +205,9 @@ function managedCapability(context: {
         id: randomUUID(), type: "hybrid_execute", actionRef: invocation.node.id, command })))
       invocation.signal.throwIfAborted()
       runtimeScope.succeed(invocation.node.id, result.browser)
-      const output = await resolveContentReceipts(result.output, config,
+      let output = await resolveContentReceipts(result.output, config,
+        input.profilePath ?? path.join(input.directory, "browser-profile", "default"), input.ownerId)
+      if (nativeFileOutput) output = await resolveNativeFileReceipts(output,
         input.profilePath ?? path.join(input.directory, "browser-profile", "default"), input.ownerId)
       return { outcome: "success", output: contextOutput ? { url: result.browser.url, tabId: result.browser.tabId }
         : hybridCapabilityOutput(invocation.node.outputContract, output),

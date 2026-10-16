@@ -6,11 +6,13 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, stop
 
 from .dialog_event_bridge import DialogEventBridge
 from .evidence import digest
+from .context_bindings import close_dispatch_tabs
 from .postconditions import (PostconditionNotMet, SettlePolicy, capture_check_baselines, declared_checks,
                              settle_policy, verify_declared, action_result_readiness)
 from .native_event_capture import NativeEventCapture
+from .native_files import FILE_ACTIONS, check_native_file_arguments
 from .navigation import (NAVIGATION_ACTIONS, navigation_tab_ids, reconcile_new_navigation_tab,
-                         navigation_action_owner, assert_navigation_owner)
+                         navigation_action_owner, assert_navigation_owner, reconcile_closed_tab)
 from .registry import ActionRegistry
 from .scroll_observation import inspect_page_scroll, scroll_dispatch_metadata, scroll_failure_code
 from .target_preparation import attach_event_capture, current_document_id, event_target_error, verify_event_target
@@ -19,14 +21,17 @@ from .targets import TARGET_ORDINAL_ARGUMENT, TargetResolver, materialize_target
 from .visible_wait import VisibleWaitParams, register_visible_wait_tool
 
 # A capability admission set is deliberately separate from the complete public action registry.
-ORDINARY_ACTIONS = frozenset({'navigate', 'switch', 'go_back', 'wait', 'click', 'input', 'scroll', 'send_keys',
-                              'dropdown_options', 'select_dropdown', 'bat_scroll_to', 'bat_wait_for'})
-TARGET_ACTIONS = frozenset({'click', 'input', 'dropdown_options', 'select_dropdown'})
+ORDINARY_ACTIONS = frozenset({'navigate', 'search', 'switch', 'close', 'go_back', 'wait', 'click', 'input',
+    'scroll', 'find_text', 'send_keys', 'dropdown_options', 'select_dropdown', 'bat_scroll_to', 'bat_wait_for',
+    *FILE_ACTIONS})
+TARGET_ACTIONS = frozenset({'click', 'input', 'dropdown_options', 'select_dropdown', 'upload_file'})
 # WHY：上游 ScrollAction.index 可选；有目标时复用同一身份解析，无目标时保留 viewport 语义。
 # Source: browser-use eb4126921bea3373f91afc49fb4b59d6eda7fed6 tools/service.py:1256.
 OPTIONAL_TARGET_ACTIONS = frozenset({'scroll'})
 EVENT_HIT_ACTIONS = frozenset({'click', 'input', 'select_dropdown'})
 EVENT_FOCUS_ACTIONS = frozenset({'send_keys'})
+
+
 TARGET_READY_POLICY = SettlePolicy(maxMs=30000, maxAttempts=100, intervalMs=300)
 RETRYABLE_TARGET_ERRORS = frozenset({
     'missing_history_target', 'missing_item_target', 'missing_stable_target', 'missing_structure_container',
@@ -47,7 +52,7 @@ READINESS_BLOCKED_ERRORS = frozenset({
 
 
 class OrdinaryCapability:
-    def __init__(self, browser, tools=None, *, target_settle=None):
+    def __init__(self, browser, tools=None, *, target_settle=None, file_context=None):
         self.browser = browser
         self.tools = tools if tools is not None else Tools()
         if tools is None:
@@ -59,6 +64,7 @@ class OrdinaryCapability:
         self.last_dialog_events = []
         self.last_event_diagnostic = None
         self.target_settle = SettlePolicy.model_validate(target_settle or TARGET_READY_POLICY)
+        self.file_context = file_context
 
     async def execute_checked(self, action_name, args, target, postconditions, *, native_dialog_policy=None):
         self.last_event_diagnostic = None
@@ -125,7 +131,8 @@ class OrdinaryCapability:
                 check.parameters.pop('_actionResultOwner', None)
                 check.parameters.pop('_batAttemptCount', None)
                 check.parameters.pop('_batFailureDiagnostic', None)
-        return result.model_dump(mode='json')
+        return (self.file_context.result(action_name, args, result) if self.file_context is not None
+                else result.model_dump(mode='json'))
 
     async def execute(self, action_name: str, args: dict, target: dict | None = None, *, native_dialog_policy=None,
                       _prepared=None):
@@ -150,9 +157,18 @@ class OrdinaryCapability:
             raise ValueError('unexpected_target')
         elif TARGET_ORDINAL_ARGUMENT in parameters:
             raise ValueError('unexpected_target_binding')
-        if action_name == 'switch':
+        closed_id = None
+        if action_name in {'switch', 'close'}:
             from .context_bindings import native_switch_parameters
             parameters = await native_switch_parameters(self.browser, parameters)
+            if action_name == 'close':
+                closed_id = str(await self.browser.get_target_id_from_tab_id(parameters['tab_id']))
+                close_owned = await close_dispatch_tabs(self.browser, closed_id,
+                    await navigation_tab_ids(self.browser))
+        if action_name in FILE_ACTIONS:
+            if self.file_context is None:
+                raise ValueError('native_file_context_required')
+            parameters = self.file_context.prepare(action_name, parameters)
         action = self.registry.validate_action(action_name, parameters)
         if action_name != 'scroll':
             await self._prepare_native_frame(action_name, prepared)
@@ -194,6 +210,12 @@ class OrdinaryCapability:
             result = await self._act(action, native_dialog_policy)
         if result.error:
             raise event_target_error('ordinary_action_failed', capture)
+        if closed_id is not None:
+            await reconcile_closed_tab(self.browser, closed_id, close_owned)
+        if action_name == 'find_text':
+            from .natural_effects import read_text_in_view
+            if not await read_text_in_view(await self.browser.get_current_page(), parameters['text']):
+                raise ValueError('native_find_text_not_visible')
         return result
 
     async def execute_target_scroll(self, parameters, target):
@@ -321,9 +343,13 @@ class OrdinaryCapability:
             raise ValueError('target_document_changed')
 
     async def _act(self, action, dialog_policy=None):
-        return await self._with_dialog_bridge(
-            lambda: self.tools.act(action, browser_session=self.browser, page_extraction_llm=None),
-            dialog_policy)
+        context = self.file_context
+        dispatch = lambda: self.tools.act(action, browser_session=self.browser, page_extraction_llm=None,
+                file_system=context.file_system if context is not None else None,
+                available_file_paths=context.available_file_paths if context is not None else [])
+        if set(action.model_dump(exclude_unset=True)) <= {'read_file', 'write_file', 'replace_file'}:
+            return await dispatch()
+        return await self._with_dialog_bridge(dispatch, dialog_policy)
 
     async def _with_dialog_bridge(self, dispatch, dialog_policy):
         # Authoring owns a run-scoped bridge. Replay wraps only the native dispatch so the two owners never overlap.
@@ -349,7 +375,11 @@ class OrdinaryCapability:
         return result
 
     async def close(self):
-        await self.event_capture.close()
+        try:
+            await self.event_capture.close()
+        finally:
+            if self.file_context is not None:
+                self.file_context.close()
 
 
 def retryable_target_error(error):

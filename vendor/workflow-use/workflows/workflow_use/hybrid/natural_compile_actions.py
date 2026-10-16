@@ -1,7 +1,7 @@
 """One action classifier shared by preparation prefixes and final compilation."""
 from .action_dispatch import not_dispatched_coverage
+from .native_sequence_stop import sequence_stop_coverage
 from .causal import delayed_post_for_conditions, supporting_wait, waits_owned_by_next_target
-from .coverage import selection_validation_coverage
 from .evidence import ActionCoverage, gap
 from .natural_compile import (classify_natural_action, delayed_natural_post,
     failed_bat_field_read_coverage, observation_only_coverage, valid_native_action)
@@ -13,6 +13,14 @@ from .visible_wait_compile import failed_visible_wait_coverage
 from .inspected_compile import compile_inspected_navigation, inspection_coverage
 
 
+def _dispatch_readiness(trace, registry):
+    unentered = {action.id: not_dispatched_coverage(trace, action) or sequence_stop_coverage(trace, action)
+                 for action in trace.actions if valid_native_action(registry, action)}
+    readiness = consumer_readiness_by_action(trace, NATURAL_SETTLE,
+        proven_not_dispatched_ids={identity for identity, row in unentered.items() if row is not None})
+    return unentered, readiness
+
+
 def classify_natural_prefix(request, registry, source_gaps=(), *, output_schema=None, dependencies=None):
     trace, issues, segments, ledger = request.trace, list(source_gaps), [], []
     repeat, repeat_issues = repeat_context(request)
@@ -22,7 +30,7 @@ def classify_natural_prefix(request, registry, source_gaps=(), *, output_schema=
     if request.actionRegistryVersion != registry.schemaDigest or trace.source.version != registry.providerVersion:
         issues.append(gap('invalid_source', [], 'registry_version_mismatch', 'reject_trace'))
     observations = {item.id: item for item in trace.observations}
-    consumer_readiness = consumer_readiness_by_action(trace, NATURAL_SETTLE)
+    unentered, consumer_readiness = _dispatch_readiness(trace, registry)
     for action in trace.actions:
         if action.name == 'bat_inspect_action' and request.compilerVersion == 'bat-hybrid/3':
             row = inspection_coverage(trace, action) if valid_native_action(registry, action) else None
@@ -40,13 +48,9 @@ def classify_natural_prefix(request, registry, source_gaps=(), *, output_schema=
         if repeat and action.id in repeat['probeRefs'] and valid_native_action(registry, action):
             ledger.append(repeat_sample_coverage(repeat, action))
             continue
-        not_dispatched = not_dispatched_coverage(trace, action) if valid_native_action(registry, action) else None
+        not_dispatched = unentered.get(action.id)
         if not_dispatched is not None:
             ledger.append(not_dispatched)
-            continue
-        validation = selection_validation_coverage(registry, action)
-        if validation is not None:
-            ledger.append(validation)
             continue
         failed_read = failed_bat_field_read_coverage(registry, action)
         if failed_read is not None:

@@ -131,7 +131,7 @@ from workflow_use.hybrid.author import AuthorInput
 
 raw=json.load(sys.stdin)
 captured={}
-async def author_step(_browser, source, _models, _output_model_for, diagnostic=None):
+async def author_step(_browser, source, _models, _output_model_for, diagnostic=None, human_wait=None, compilation_exchange=None):
     captured.update(source)
     AuthorInput.model_validate(source)
     return {'resultSpecKeys': sorted(source['resultSpec'])}

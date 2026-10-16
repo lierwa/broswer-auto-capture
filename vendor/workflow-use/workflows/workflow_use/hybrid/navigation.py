@@ -5,6 +5,8 @@ from urllib.parse import parse_qs, urlsplit
 from browser_use.browser.events import SwitchTabEvent
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, stop_before_delay, wait_fixed
 
+from .context_bindings import native_live_pages, legal_owned_pages
+
 
 NAVIGATION_ACTIONS = frozenset({'click', 'send_keys'})
 
@@ -34,6 +36,28 @@ class NavigationTabPending(ValueError):
 async def navigation_tab_ids(browser):
     return {str(tab.target_id) for tab in await browser.get_tabs()
             if isinstance(getattr(tab, 'target_id', None), str) and tab.target_id}
+
+
+async def reconcile_closed_tab(browser, closed_id, owned_before):
+    pages = await native_live_pages(browser)
+    if closed_id in pages:
+        # WHY：原生close可能吞错误；真实目标未消失时不重派，也不以返回文字伪造成功。
+        raise ValueError('native_close_unconfirmed')
+    remaining = legal_owned_pages(browser, owned_before - {closed_id}, pages)
+    focus = getattr(browser, 'agent_focus_target_id', None)
+    if focus in remaining:
+        return
+    if focus is not None and focus not in owned_before:
+        raise ValueError('native_close_focus_owner_changed')
+    if len(remaining) != 1:
+        raise ValueError('native_close_post_observation_target_ambiguous')
+    # WHY：SDK关当前页后会选启动空白页；仅复用唯一既有授权页，不开页、不接管、不重放业务动作。
+    target_id = next(iter(remaining))
+    # 原生detach也可清空focus；公开session池API核活页并恢复focus，再走原生切换/缓存失效。
+    await browser.get_or_create_cdp_session(target_id=target_id, focus=True)
+    await browser.on_SwitchTabEvent(SwitchTabEvent(target_id=target_id))
+    if str(browser.agent_focus_target_id) != target_id:
+        raise ValueError('native_close_post_observation_focus_changed')
 
 
 async def reconcile_new_navigation_tab(browser, prior_tabs, *, attempts=100, interval=0.3, max_ms=30000,
@@ -120,6 +144,11 @@ def cross_tab_navigation_allowed(action, pre, post):
         before, after = _observed_tabs(pre), _observed_tabs(post)
         return (before is not None and after is not None and post.tabId in before & after
                 and action.args.get('tab_id') == post.tabId[-4:])
+    if action.name == 'close':
+        before, after = _observed_tabs(pre), _observed_tabs(post)
+        closed = [item for item in before or () if item.endswith(action.args.get('tab_id', ''))]
+        return (before is not None and after is not None and len(closed) == 1
+                and before - after == set(closed) and post.tabId in after)
     if action.name not in NAVIGATION_ACTIONS and not (
             action.name == 'navigate' and action.args.get('new_tab') is True):
         return False

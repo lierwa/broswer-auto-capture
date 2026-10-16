@@ -211,9 +211,8 @@ def complete_find_elements_query(evidence, results):
 def find_elements_total(memory):
     if not isinstance(memory, str):
         return None
-    # WHY：Browser-Use 的首句是查询总数事实；B-A-T 随后会追加有界目标摘要供下一步使用。
-    # 完整匹配会把这段宿主自有后缀误判成未知结果，导致完整列表无法形成可复跑读取证据。
-    match = re.match(r'^Found (\d+) elements? matching ".*?"\.(?:\s|$)', memory, flags=re.DOTALL)
+    # WHY：只消费原生查询计数，详情独立保存在 ActionResult 来源与确定性读取中。
+    match = re.fullmatch(r'Found (\d+) elements? matching ".*"\.', memory, flags=re.DOTALL)
     return int(match.group(1)) if match else None
 
 

@@ -19,7 +19,7 @@ def fixture(kind='navigation', identities=None, verified_child=None):
         from workflow_use.hybrid.author import author_tools
         from browser_use_runner.output_schema import output_model_for
         model, _ = output_model_for({'type': 'null'}, 'HybridAgentOutput')
-        registry = ActionRegistry.from_tools(author_tools(model))
+        registry = ActionRegistry.from_tools(author_tools())
     raw = navigation_request(registry)
     raw['requirement']['id'] = '10000000-0000-4000-8000-000000000002'
     raw['plan']['id'] = '10000000-0000-4000-8000-000000000003'

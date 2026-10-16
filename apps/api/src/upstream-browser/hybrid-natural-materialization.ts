@@ -9,6 +9,9 @@ import { assertSelectionValueBinding } from "./hybrid-selection.js"
 import { assertPriorBrowserContext } from "./hybrid-browser-context.js"
 import { boundReadSpecification } from "./hybrid-read-input.js"
 import { assertHostCollection } from "./hybrid-host-collection.js"
+import { nativeFileIdentitySchema } from "./hybrid-native-file.js"
+import { digestRuntimeUrl } from "./hybrid-runtime-scope.js"
+import { nativeSequenceStopCoverage, nativeNotDispatchedReferences } from "./hybrid-native-sequence-stop.js"
 
 type NaturalContext = { version: 2; request: z.infer<typeof hybridNaturalRequestSchema>;
   payload: ReturnType<typeof naturalPayloadContext> }
@@ -18,7 +21,8 @@ export function assertNaturalBinding(raw: unknown, trace: z.infer<typeof hybridN
   const decision = z.object({ actionRef: z.string(), argumentPath: z.string(), sourceRef: z.string(),
     binding: valueBindingSchema, proofRefs: z.array(z.object({ ref: z.string(),
       digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
-    derivation: z.enum(["anchor_navigation", "prior_verified_read", "selection_function", "prior_browser_context"]).optional() }).passthrough().parse(raw)
+    derivation: z.enum(["anchor_navigation", "prior_verified_read", "selection_function", "prior_browser_context", "owned_native_file"]).optional() }).passthrough().parse(raw)
+  if (decision.derivation === "owned_native_file") return assertOwnedNativeFileBinding(decision, trace, payload)
   if (decision.derivation === "prior_browser_context") return assertPriorBrowserContext(decision, trace, payload)
   if (decision.derivation === "selection_function") return assertSelectionValueBinding(decision, payload.ordinary, payload.assertFact)
   if (decision.derivation === "anchor_navigation") {
@@ -47,6 +51,84 @@ export function assertNaturalBinding(raw: unknown, trace: z.infer<typeof hybridN
     : fact.sourceRefs
   if (!isDeepStrictEqual(proofRefs, decision.proofRefs)) throw new Error("hybrid_natural_binding_proof_mismatch")
   return value.binding
+}
+
+function assertOwnedNativeFileBinding(decision: { actionRef: string; argumentPath: string; sourceRef: string;
+  binding: ValueBinding; proofRefs: Array<{ ref: string; digest: string }> },
+  trace: z.infer<typeof hybridNaturalRequestSchema>["trace"], payload: ReturnType<typeof naturalPayloadContext>) {
+  const index = trace.actions.findIndex(item => item.id === decision.actionRef), action = trace.actions[index]
+  const key = action?.name === "upload_file" ? "path" : action?.name === "read_file" ? "file_name" : null
+  const pre = trace.observations.find(item => item.id === action?.preObservationRef)
+  const inputs = pre?.facts.filter(item => item.id === decision.sourceRef && item.kind === "native_file_input") ?? []
+  if (!key || key !== decision.argumentPath || !pre || inputs.length !== 1) throw Error("hybrid_native_file_input_missing")
+  payload.assertFact(inputs[0]!, pre.id)
+  const input = nativeFileIdentitySchema.extend({ actionRef: z.string(),
+    argumentDigest: z.string().regex(/^[a-f0-9]{64}$/) }).parse(inputs[0]!.value)
+  const args = z.record(z.string(), jsonValueSchema).parse(action!.args)
+  if (input.actionRef !== action!.id || typeof args[key] !== "string"
+    || input.argumentDigest !== digestRuntimeUrl(args[key])
+    || args[key] !== input.fileName && input.pathDigest !== digestRuntimeUrl(args[key])
+    || action?.name === "upload_file" && input.byteLength === 0) {
+    throw Error("hybrid_native_file_input_mismatch")
+  }
+  const candidates = trace.actions.slice(0, index).toReversed().filter(item =>
+    typeof item.name === "string" && ["write_file", "replace_file"].includes(item.name)
+    && z.record(z.string(), jsonValueSchema).parse(item.args).file_name === input.fileName)
+  let producer: typeof action | undefined
+  const skipped: Array<{ ref: string; digest: string }> = []
+  for (const candidate of candidates) {
+    const proof = nativeNotDispatchedReferences(trace, candidate, payload.assertFact)
+      ?? nativeSequenceStopCoverage(trace, candidate, payload.assertFact)?.references
+    if (proof) { skipped.push(...proof); continue }
+    producer = candidate
+    break
+  }
+  const post = trace.observations.find(item => item.id === producer?.postObservationRef)
+  const producerPre = trace.observations.find(item => item.id === producer?.preObservationRef)
+  const outputs = post?.facts.filter(item => item.kind === "native_file_output" && item.value
+    && typeof item.value === "object" && !Array.isArray(item.value) && item.value.actionRef === producer?.id) ?? []
+  const names = producerPre?.facts.filter(item => item.kind === "natural_binding" && item.value
+    && typeof item.value === "object" && !Array.isArray(item.value)
+    && item.value.actionRef === producer?.id && item.value.argumentPath === "file_name") ?? []
+  if (!producer || producer.status !== "succeeded" || !post || !producerPre || outputs.length !== 1 || names.length > 1) {
+    throw Error("hybrid_native_file_producer_missing")
+  }
+  payload.assertFact(outputs[0]!, post.id)
+  const output = z.object({ resultDigest: z.string(), ownedFile: nativeFileIdentitySchema }).passthrough().parse(outputs[0]!.value)
+  const { actionRef: _action, argumentDigest: _argument, ...identity } = input
+  const result = z.object({ digest: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough().parse(producer.resultRef)
+  if (output.resultDigest !== result.digest || !isDeepStrictEqual(output.ownedFile, identity)) {
+    throw Error("hybrid_native_file_producer_mismatch")
+  }
+  const { binding: producerBinding, references: sourceRefs } = nativeFileProducerBinding(
+    producer, names, decision.binding, trace, payload)
+  const refs = [...new Map([...outputs[0]!.sourceRefs, ...inputs[0]!.sourceRefs, ...sourceRefs, ...skipped]
+    .map(item => [`${item.ref}\0${item.digest}`, item])).values()]
+  // WHY：临时路径仅证明同一次来源文件；复跑复用生成者的参数绑定，由当前owner解析实际文件。
+  if (!isDeepStrictEqual(producerBinding, decision.binding) || !isDeepStrictEqual(refs, decision.proofRefs)) {
+    throw Error("hybrid_native_file_binding_mismatch")
+  }
+  return producerBinding
+}
+
+function nativeFileProducerBinding(producer: z.infer<typeof hybridNaturalRequestSchema>["trace"]["actions"][number],
+  names: z.infer<typeof hybridNaturalRequestSchema>["trace"]["observations"][number]["facts"], expected: ValueBinding,
+  trace: z.infer<typeof hybridNaturalRequestSchema>["trace"], payload: ReturnType<typeof naturalPayloadContext>) {
+  if (names.length === 1) {
+    const fact = names[0]!, name = naturalBindingFactValueSchema.parse(fact.value)
+    const references = name.provenance === "node_output"
+      ? assertNaturalNodeBinding(name, fact.sourceRefs, producer, trace, payload) : fact.sourceRefs
+    return { binding: assertNaturalBinding({ actionRef: producer.id, argumentPath: "file_name", sourceRef: fact.id,
+      binding: name.binding, proofRefs: references }, trace, payload), references }
+  }
+  const source = expected.source === "node" ? trace.actions.find(item => item.id === expected.nodeId) : undefined
+  const post = trace.observations.find(item => item.id === source?.postObservationRef)
+  const facts = post?.facts.filter(item => item.kind === "verified_natural_read" && item.value
+    && typeof item.value === "object" && !Array.isArray(item.value) && item.value.actionRef === source?.id) ?? []
+  if (facts.length !== 1) throw Error("hybrid_native_file_producer_binding_missing")
+  const references = [...new Map(facts[0]!.sourceRefs.map(item => [`${item.ref}\0${item.digest}`, item])).values()]
+  return { binding: assertNaturalBinding({ actionRef: producer.id, argumentPath: "file_name", sourceRef: facts[0]!.id,
+    derivation: "prior_verified_read", binding: expected, proofRefs: references }, trace, payload), references }
 }
 
 function assertDerivedPriorReadBinding(decision: { actionRef: string; argumentPath: string; sourceRef: string;

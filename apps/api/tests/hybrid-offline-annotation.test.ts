@@ -1,18 +1,13 @@
 import assert from "node:assert/strict"
 import { createHash, randomUUID } from "node:crypto"
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import path from "node:path"
 import test from "node:test"
 import { jsonValueSchema, type JsonValue } from "@browser-capture/contracts"
 import { recompileHybridSource } from "../src/upstream-browser/hybrid-exploration.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
 import { digestCanonicalJson, validateHybridResponse } from "../src/upstream-browser/hybrid-materializer.js"
-import type { ModelAudit } from "../src/upstream-browser/model-bridge.js"
 import { canonical, naturalSourceFixture } from "./helpers/natural-source.js"
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex")
-const selection = { connectionId: randomUUID(), modelId: "fixture", reasoningEffort: "medium" as const }
 const gap = (reason: string) => ({ id: "missing-selection", code: "missing_binding", actionRefs: ["a-0001"],
   clauseRefs: [], reason, resolution: "collect_evidence" as const })
 const sourceGap = { id: "source-gap", code: "missing_observation", actionRefs: [] as string[],
@@ -55,98 +50,34 @@ function traceOf() {
     finalResultRef: null, redactionManifestRef: reference }
 }
 
-function annotated(source: ReturnType<typeof fixture>, tamper: boolean) {
-  const trace = JSON.parse(source.sourcePayloads[2]!) as ReturnType<typeof traceOf>
-  trace.observations[0]!.facts.push(fact("selection-a-0001", "selection_function", { actionRef: "a-0001" }))
-  if (tamper) trace.actions[0]!.status = "failed"
-  return pack(trace, "selection_function_evidence_required", source)
-}
-
-async function harness(source: ReturnType<typeof fixture>, authorized: boolean, tamper = false) {
-  const directory = await mkdtemp(path.join(tmpdir(), "bat-offline-annotation-"))
-  const counts = { compiler: 0, bridges: 0, runnerClosed: 0, bridgeClosed: 0 }
-  const commands: string[] = [], progress: unknown[] = []
-  let audit: ((value: ModelAudit) => void) | undefined
+async function harness(source: ReturnType<typeof fixture>) {
+  const original = structuredClone(source), commands: string[] = []
+  let closed = 0
   const dependencies: NonNullable<Parameters<typeof recompileHybridSource>[1]> = {
     verifySource: async () => "5".repeat(64),
-    createRunner: () => ({ startCompiler: async () => { counts.compiler++ },
-      request: async (command) => {
-        commands.push(command.type)
-        if (command.type !== "hybrid_compile" && command.type !== "hybrid_annotate") {
-          throw new Error("unexpected_fixture_command")
-        }
-        assert.match(JSON.stringify(command), /"number":1\.0/)
-        assert.deepEqual(command.sourceGaps, source.sourceGaps)
-        if (command.type === "hybrid_compile") return jsonValueSchema.parse(source.response)
-        assert.equal(command.type, "hybrid_annotate")
-        const requestId = randomUUID()
-        for (const type of ["generation.started", "generation.completed"] as const) {
-          audit!({ requestId, purpose: "semantic_annotation", event: { type } as ModelAudit["event"] })
-        }
-        const result = annotated(source, tamper)
-        return jsonValueSchema.parse({ request: result.request, response: result.response })
-      }, close: async () => { counts.runnerClosed++
-        return cleanupReport(RUNNER_CLEANUP_STAGES.map((stage) => ({ stage, status: "not_required", code: null })), false) } }),
-    openBridge: async (input) => { counts.bridges++; audit = input.onAudit
-      assert.deepEqual(input.allowedPurposes, ["semantic_annotation"])
-      return { url: "http://127.0.0.1:1", token: randomUUID(), close: async () => { counts.bridgeClosed++ } } },
+    createRunner: () => ({ startCompiler: async () => {}, request: async command => {
+      commands.push(command.type)
+      assert.equal(command.type, "hybrid_compile")
+      assert.match(JSON.stringify(command), /"number":1\.0/)
+      assert.deepEqual(command.sourceGaps, source.sourceGaps)
+      return jsonValueSchema.parse(source.response)
+    }, close: async () => { closed++
+      return cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => ({ stage, status: "not_required", code: null })), false)
+    } }),
   }
-  try {
-    const original = structuredClone(source)
-    const invoke = recompileHybridSource({ root: process.cwd(), directory, signal: new AbortController().signal,
-      canonicalRequest: source.canonicalRequest, sourceGaps: source.sourceGaps,
-      outputSchema: { type: "null" }, verifiedChildren: [],
-      subject: {} as NonNullable<Parameters<typeof recompileHybridSource>[0]["subject"]>,
-      ...(authorized ? { annotation: { selection, ownerId: randomUUID(), onProgress: (event: unknown) => progress.push(event) } } : {}),
-    }, dependencies)
-    if (tamper) await assert.rejects(invoke, /hybrid_annotation_source_mismatch/)
-    else {
-      const result = await invoke
-      assert.equal(result.modelCalls.length, counts.bridges * 2)
-      if (counts.bridges) {
-        assert.deepEqual(result.modelCalls.map((report) => [report.purpose, report.status]),
-          [["semantic_annotation", "intended"], ["semantic_annotation", "completed"]])
-        assert.ok(result.request)
-        assert.equal(progress.length, 2)
-      } else assert.equal(result.request, undefined)
-    }
-    assert.deepEqual(source, original)
-    assert.equal(counts.compiler, 1)
-    assert.equal(counts.runnerClosed, 1)
-    assert.equal(counts.bridgeClosed, counts.bridges)
-    return { counts, commands }
-  } finally { await rm(directory, { recursive: true, force: true }) }
+  const result = await recompileHybridSource({ root: process.cwd(), signal: new AbortController().signal,
+    ownerId: randomUUID(), canonicalRequest: source.canonicalRequest, sourceGaps: source.sourceGaps,
+    outputSchema: { type: "null" }, verifiedChildren: [] }, dependencies)
+  assert.deepEqual(source, original)
+  assert.deepEqual(result.modelCalls, [])
+  assert.equal(closed, 1)
+  assert.deepEqual(commands, ["hybrid_compile"])
+  return result
 }
 
-test("纯编译或未授权缺口不调用模型，也不启动浏览器", async () => {
-  for (const [reason, authorized] of [["", true], ["selection_function_evidence_required", false],
-    ["selection_function_source_mismatch", true]] as const) {
-    const result = await harness(fixture(reason), authorized)
-    assert.equal(result.counts.bridges, 0)
-    assert.deepEqual(result.commands, ["hybrid_compile"])
+test("恢复只重编译，完整保留来源与缺口且不请求模型救援", async () => {
+  for (const reason of ["", "selection_function_evidence_required", "repeat_annotation_invalid_response"]) {
+    const result = await harness(fixture(reason))
+    assert.deepEqual(result.response.compilation.gaps, fixture(reason).response.compilation.gaps)
   }
-})
-
-test("新协议已尝试生成的缺口恢复只重编译，不打开第二个模型桥", async () => {
-  const source = fixture()
-  source.request.compilerVersion = "bat-hybrid/3"
-  source.canonicalRequest = source.canonicalRequest.replace('"compilerVersion":"bat-hybrid/2"', '"compilerVersion":"bat-hybrid/3"')
-  const body = JSON.parse(source.response.canonicalPayload)
-  body.compilerVersion = "bat-hybrid/3"
-  const canonicalPayload = JSON.stringify(body)
-  source.response = validateHybridResponse({ ...source.response, canonicalPayload,
-    compilation: { ...body, canonicalDigest: hash(canonicalPayload) } })
-  const result = await harness(source, true)
-  assert.equal(result.counts.bridges, 0)
-  assert.deepEqual(result.commands, ["hybrid_compile"])
-})
-
-test("显式离线注解只请求一次，保留数字词法与原来源并单独返回新增审计", async () => {
-  const result = await harness(fixture(), true)
-  assert.equal(result.counts.bridges, 1)
-  assert.deepEqual(result.commands, ["hybrid_compile", "hybrid_annotate"])
-})
-
-test("离线注解拒绝改写浏览器事实，拒绝后仍关闭 compiler 与模型桥", async () => {
-  await harness(fixture(), true, true)
 })

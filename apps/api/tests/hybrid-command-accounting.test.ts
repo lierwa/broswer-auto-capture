@@ -8,7 +8,7 @@ import { CONTRACT_VERSION, nodePorts, stableTaskChainV2Schema, type StableChainN
 import { digestJson, executableChainDigest } from "@browser-capture/runtime"
 import { TaskRuntimeHost } from "../src/task-chain/runtime-host.js"
 import { TaskBudgetLedger } from "../src/task-chain/budget-ledger.js"
-import { withHybridCapabilities } from "../src/upstream-browser/hybrid-runtime.js"
+import { withHybridCapabilities, hybridCapabilitiesForRunner, materializeHybridWorkflowCommand } from "../src/upstream-browser/hybrid-runtime.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES } from "../src/upstream-browser/cleanup.js"
 import { assertExecutionBrowserSupported } from "../src/upstream-browser/retirement.js"
 import type { UpstreamBrowserRuntime } from "../src/upstream-browser/service.js"
@@ -19,6 +19,20 @@ const browser = { sessionId: "session", tabId: "tab", url: "https://example.test
   observationDigest: "a".repeat(64), observedAt: "2026-09-21T00:00:00.000Z" }
 const empty = (): TaskConsumption => ({ transitions: 0, browserCommands: 0, activeMs: 0, llmCalls: 0, invocations: 0 })
 const budget = { maxTransitions: 20, maxBrowserCommands: 4, maxActiveMs: 10_000, maxLlmCalls: 0, maxInvocations: 5, maxDepth: 3 }
+
+test("文件状态未核验时拒绝恢复且不发命令；非法输出标记在派发前拒绝", async () => {
+  const requests: string[] = [], runner = controlledRunner(requests)
+  const capabilities = hybridCapabilitiesForRunner({ root, directory: tmpdir(), ownerId: randomUUID(),
+    signal: new AbortController().signal, allowedOrigins: ["https://example.test"], fileStateRequired: true },
+  runner, new AbortController())
+  const checkpoint = { browser, resumeWhen: null, pendingEffect: { status: "uncertain" }, events: [] } as unknown as TaskCheckpoint
+  assert.deepEqual(await capabilities.verifyResume!(checkpoint, new AbortController().signal),
+    { ok: false, reason: "native_file_resume_state_unverified" })
+  assert.deepEqual(requests, [])
+  assert.equal(checkpoint.pendingEffect!.status, "uncertain")
+  assert.throws(() => materializeHybridWorkflowCommand({ nativeFileOutput: false }, {}), /native_file_output_marker_invalid/)
+  assert.throws(() => materializeHybridWorkflowCommand({ nativeFileOutput: true, browserContextOutput: true }, {}), /native_file_output_marker_invalid/)
+})
 
 test("显式浏览器显示模式覆盖环境默认值，旧调用仍使用环境后备", async () => {
   for (const [selected, environment, expected] of [
@@ -150,6 +164,8 @@ async function execute(options: { limit: number; ledgerLimit?: number; nested?: 
       chain: { id: chain.id, version: chain.version, digest: executableChainDigest(chain) }, inputDigest: digestJson(null) } }
   const run = await host.group({ taskId, authorizationId: request.binding.authorizationId, browserRunId: randomUUID(),
     requirementVersion: 1, purpose: "sample", chains: [chain], input: null, signal: new AbortController().signal,
+    navigationPlan: { entryUrls: [browser.url], navigationScope: { version: 1, sites: [
+      { scheme: "https", domain: "example.test", port: null, includeSubdomains: true }] } },
     budget: { ...chain.budget, maxBrowserCommands: options.ledgerLimit ?? options.limit },
     consumed: empty(), scopeConsumption: { [chain.stepId]: empty() },
     onConsumption: (_scope, snapshot) => { consumption = snapshot.total } }, (runChain) => runChain(chain, request))

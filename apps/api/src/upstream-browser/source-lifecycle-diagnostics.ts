@@ -4,6 +4,7 @@ import type { AuthoringProgressEvent, TaskExecutionDetail } from "@browser-captu
 import type { ModelCallReport } from "@browser-capture/runtime"
 import { z } from "zod"
 import { authorResultIssues } from "./author-result-diagnostics.js"
+import { modelTransportDiagnosticSchema } from "./model-transport-diagnostics.js"
 import { runnerCleanupCodeSchema, retainedConnectionSchema, type RunnerCleanupReport, type RuntimePrimaryOutcome } from "./cleanup.js"
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
@@ -39,7 +40,8 @@ const runtimeCheckSchema = z.object({
 const runtimeActionFailureSchema = z.object({ phase: z.literal("runtime_action_failure"), status: z.literal("failed"),
   actionRef: z.string().regex(/^[A-Za-z0-9._:-]{1,256}$/), actionName: z.enum([
     "navigate", "go_back", "wait", "click", "input", "scroll", "send_keys",
-    "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for",
+    "dropdown_options", "select_dropdown", "search", "find_text", "close", "switch",
+    "read_file", "write_file", "replace_file", "upload_file", "save_as_pdf", "screenshot",
   ]), errorCode: z.string().regex(/^ordinary_postcondition_[a-z_]{1,140}$/), dispatchCount: z.literal(1),
   check: runtimeCheckSchema, beforePage: pageIdentitySchema.nullable(), afterPage: pageIdentitySchema.nullable(),
   validationTarget: validationTargetSchema.nullable(), eventTarget: z.object({
@@ -89,9 +91,10 @@ const runtimeCommandFailureSchema = z.object({ phase: z.literal("runtime_command
 }).strict()
 
 const actionNameSchema = z.enum([
-  "bat_inspect_dom", "bat_read_fields", "bat_request_human", "bat_scroll_to", "bat_summarize", "bat_validate_selection", "bat_wait_for", "click", "close", "done",
+  "bat_inspect_action", "bat_read_fields", "bat_request_human", "click", "close", "done",
   "dropdown_options", "extract", "find_elements", "find_text", "go_back", "input", "navigate", "save_as_pdf",
   "scroll", "search", "search_page", "select_dropdown", "send_keys", "switch", "wait",
+  "read_file", "write_file", "replace_file", "upload_file", "screenshot",
 ])
 const progressPhaseSchema = z.enum(["author", "before_action", "after_step", "dispatch"])
 const pythonEventSchema = z.object({
@@ -272,15 +275,17 @@ export class SourceLifecycleDiagnostics {
     } catch { /* Invalid or sensitive metadata is discarded without persisting the raw line. */ }
   }
 
-  recordModel(report: ModelCallReport) {
+  recordModel(report: ModelCallReport, transport?: unknown) {
     const event = modelEventSchema.safeParse({ callId: report.callId, purpose: report.purpose, status: report.status,
       ...(report.failureCategory ? { failureCategory: report.failureCategory } : {}),
       ...(report.failureCode ? { failureCode: report.failureCode } : {}) })
     if (!event.success) return
+    const diagnostic = modelTransportDiagnosticSchema.safeParse(transport)
     this.record({ source: "model", phase: "model", status: modelStatus[event.data.status],
       callId: event.data.callId, purpose: event.data.purpose }, "model",
     event.data.failureCategory ? { failureCategory: event.data.failureCategory,
-      failureCode: event.data.failureCode } : undefined)
+      failureCode: event.data.failureCode,
+      ...(diagnostic.success ? { transport: diagnostic.data } : {}) } : undefined)
   }
 
   recordRuntimeOutcome(primary: RuntimePrimaryOutcome<unknown>, cleanup: RunnerCleanupReport | null,

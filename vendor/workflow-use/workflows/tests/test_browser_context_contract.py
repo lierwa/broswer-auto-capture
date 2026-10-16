@@ -16,6 +16,70 @@ from workflow_use.hybrid.evidence import NormalizedObservation, digest
 from workflow_use.hybrid.postconditions import declared_checks, check_fact
 from workflow_use.hybrid.natural_media_compile import bind_action_playback
 from test_method_source_compile import fact, reference
+from workflow_use.hybrid.author import author_tools_for_result_spec
+from workflow_use.hybrid.compiler import compile_request
+from workflow_use.hybrid.method_receipt import attach_method_receipt
+from workflow_use.hybrid.natural_facts import binding_facts
+from workflow_use.hybrid.natural_binding_compile import natural_bindings
+from browser_use.agent.views import ActionResult
+from test_natural_read_liveness import sequence_stopped_fixture
+from workflow_use.hybrid.native_sequence_stop import sequence_stop_coverage
+
+
+def native_file_source():
+    """Current file-source identity and native receipts, consumed by Python and TS together."""
+    raw, _, _ = source_fixture()
+    schema = {'type': 'object', 'properties': {'name': {'type': 'string'}},
+              'required': ['name'], 'additionalProperties': False}
+    raw.update(task='Write the supplied filename, then read its content.', input={'name': 'note.txt'},
+        inputSchema=schema, outputSchema={'type': 'null'}, requirementText='Write then read the file.',
+        resultSpec={'contractVersion': 'bat-result-spec/v1', 'mode': 'execution'}, sourceProtocol='bat-hybrid/3')
+    author = AuthorInput.model_validate(raw)
+    tools = author_tools_for_result_spec(author.resultSpec, source_protocol=author.sourceProtocol)
+    tools.exclude_action('screenshot')
+    registry = ActionRegistry.from_tools(tools)
+    path = '/source-owner/note.txt'
+    identity = {'fileName': 'note.txt', 'pathDigest': digest(path), 'contentDigest': 'c' * 64, 'byteLength': 7}
+    actions = [{'write_file': {'file_name': 'note.txt', 'content': 'content', 'trailing_newline': False}},
+               {'read_file': {'file_name': path}}, {'done': {'text': 'Finished.', 'success': True}}]
+    observations, records = [], []
+    for index, raw_action in enumerate(actions):
+        name, args = next(iter(raw_action.items()))
+        action_ref = f'a-{index + 1:04d}'
+        result = ActionResult(extracted_content='content', is_done=name == 'done',
+                              success=True if name == 'done' else None).model_dump(mode='json')
+        result_ref = reference(result)
+        pre = observation(f'o-{index * 2 + 1:04d}', 'owned-0001', 'https://fixture.invalid/')
+        post = observation(f'o-{index * 2 + 2:04d}', 'owned-0001', 'https://fixture.invalid/')
+        pre.sequence, post.sequence = index * 2, index * 2 + 1
+        pre.facts.extend(fact('natural_binding', item.model_dump(mode='json')) for item in binding_facts(
+            action_ref, name, args, raw['input'], schema, raw['requirementText']))
+        pre.facts.extend([fact('native_action_dispatch', {'schemaVersion': 'bat.native-action-dispatch/v3',
+            'nativeStepNumber': index + 1, 'nativeActionIndex': 0, 'actionRef': action_ref, 'actionName': name,
+            'intentTarget': None, 'resultRef': result_ref.model_dump(mode='json'), 'entered': True,
+            'resultReceived': True, 'eventCapture': {'status': 'not_applicable', 'eventExpectation': 'none',
+                'eventCount': 0, 'limitations': []}}), fact('native_action_result', {
+            'schemaVersion': 'bat.native-action-result/v1', 'actionRef': action_ref,
+            'resultRef': result_ref.model_dump(mode='json'), 'receivedFromToolsAct': True, 'result': result})])
+        if name in {'write_file', 'read_file'}:
+            value = {'schemaVersion': 'bat.native-file-output/v1', 'actionRef': action_ref,
+                     'resultDigest': result_ref.digest, 'text': result['extracted_content'], 'files': []}
+            if name == 'write_file':
+                value['ownedFile'] = identity
+            else:
+                pre.facts.append(fact('native_file_input', {'actionRef': action_ref,
+                    'argumentDigest': digest(path), **identity}))
+            post.facts.append(fact('native_file_output', value))
+        observations.extend([pre, post])
+        records.append(HistoryRecord(stepIndex=index, actions=[raw_action], results=[ResultEvidence(
+            errorPresent=False, is_done=name == 'done', success=True if name == 'done' else None, ref=result_ref)],
+            preObservationRef=pre.id, postObservationRefs={'0': post.id}))
+    trace, issues = normalize_history(HistoryInput(source=TraceSource(version=registry.providerVersion,
+        historyRef='fixture:owned-native-file'), completed=True, records=records, observations=observations,
+        finalResultRef=reference(None), redactionManifestRef=reference('redaction')), registry)
+    if issues:
+        raise AssertionError([item.reason for item in issues])
+    return natural_compilation_request(author, attach_method_receipt(trace, author), registry), registry
 
 
 def observation(identifier, target, url):
@@ -89,6 +153,63 @@ def immediate_navigation_source():
 
 
 class BrowserContextContractTests(unittest.IsolatedAsyncioTestCase):
+    def test_native_file_producer_crosses_only_a_strict_unentered_write_and_rejects_raw_path_mismatch(self):
+        request, registry = native_file_source()
+        producer = compile_natural_prefix(request, registry, output_schema={'type': 'null'}).segments[0]
+        stopped, _, _ = sequence_stopped_fixture()
+        tail = stopped.actions[4]
+        tail.name, tail.args = 'write_file', {'file_name': 'note.txt', 'content': 'not entered'}
+        dispatch = next(f for o in stopped.observations for f in o.facts
+                        if f.kind == 'native_action_dispatch' and f.value['actionRef'] == tail.id)
+        dispatch.value['actionName'] = tail.name
+        dispatch.sourceRefs[0].digest = digest(dispatch.value)
+        proof = sequence_stop_coverage(stopped, tail)
+        self.assertIsNotNone(proof)
+        action, pre = request.trace.actions[1], request.trace.observations[2]
+        joined = SimpleNamespace(trace=SimpleNamespace(actions=[request.trace.actions[0], *stopped.actions[2:5], action],
+            observations=[*request.trace.observations[:4], *stopped.observations]), runtimeInputSchema=request.runtimeInputSchema)
+        decisions, issues = natural_bindings(joined, action, pre, False, [producer])
+        self.assertEqual(issues, [])
+        self.assertTrue(set((ref.ref, ref.digest) for ref in proof.evidenceRefs).issubset(
+            {(ref['ref'], ref['digest']) for ref in decisions[0]['proofRefs']}))
+        dispatch.value['entered'] = True
+        dispatch.sourceRefs[0].digest = digest(dispatch.value)
+        self.assertEqual(natural_bindings(joined, action, pre, False, [producer])[0], [])
+        action.args['file_name'] = '/source-owner/different.txt'
+        input_fact = next(item for item in pre.facts if item.kind == 'native_file_input')
+        input_fact.value['argumentDigest'] = digest(action.args['file_name'])
+        self.assertEqual(natural_bindings(request, action, pre, False, [producer])[0], [])
+
+    def test_native_file_paths_compile_from_the_current_producer_without_freezing_source_owner(self):
+        request, registry = native_file_source()
+        original = copy.deepcopy(request)
+        prefix = compile_natural_prefix(request, registry, output_schema={'type': 'null'})
+        final = compile_request(request, registry, output_schema={'type': 'null'})
+        self.assertEqual((prefix.gaps, final.gaps), ([], []))
+        read = next(item for item in final.segments if item['id'] == 's-a-0002')
+        self.assertEqual(read['bindings'][0]['binding'], {'source': 'input', 'path': ['name']})
+        self.assertEqual(read['bindings'][0]['derivation'], 'owned_native_file')
+        self.assertNotIn('/source-owner', str(final.segments))
+        self.assertEqual(request, original)
+        action, pre = request.trace.actions[1], request.trace.observations[2]
+        producer = prefix.segments[0]
+        for name, key, value in [('read_file', 'file_name', 'note.txt'),
+                                 ('upload_file', 'path', request.trace.actions[1].args['file_name'])]:
+            action.name, action.args = name, {key: value}
+            input_fact = next(item for item in pre.facts if item.kind == 'native_file_input')
+            input_fact.value['argumentDigest'] = digest(value)
+            decisions, issues = natural_bindings(request, action, pre, False, [producer])
+            self.assertEqual(issues, [])
+            self.assertEqual(decisions[0]['binding'], {'source': 'input', 'path': ['name']})
+        request.trace.actions[0].status = 'failed'
+        self.assertEqual(natural_bindings(request, action, pre, False, [producer])[1][0].reason,
+                         'native_file_producer_required')
+        request.trace.actions[0].status = 'succeeded'
+        input_fact.value['contentDigest'] = 'e' * 64
+        self.assertEqual(natural_bindings(request, action, pre, False, [producer])[0], [])
+        input_fact.value['fileName'] = 'todo.md'
+        self.assertEqual(natural_bindings(request, action, pre, False, [producer])[0], [])
+
     def test_successful_navigation_and_switch_publish_their_verified_immediate_context(self):
         request, registry = immediate_navigation_source()
         compiled = compile_natural_prefix(request, registry, output_schema={'type': 'null'})
@@ -176,11 +297,20 @@ class BrowserContextContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_switch_rejects_missing_ambiguous_and_recorded_short_id_before_dispatch(self):
         browser = SimpleNamespace(get_tabs=AsyncMock(return_value=[SimpleNamespace(target_id='run-full-1234')]),
                                   get_target_id_from_tab_id=AsyncMock(return_value='run-full-1234'))
+        targets = AsyncMock(return_value={'targetInfos': [{'targetId': 'run-full-1234', 'type': 'page',
+                                                         'url': 'https://fixture.invalid/'}]})
+        browser.cdp_client = SimpleNamespace(send=SimpleNamespace(Target=SimpleNamespace(getTargets=targets)))
         self.assertEqual(await native_switch_parameters(browser, {'tab_id': 'run-full-1234'}), {'tab_id': '1234'})
-        for invalid in ['1234', 'other-full-9999']:
+        self.assertEqual(await native_switch_parameters(browser, {'tab_id': '1234'}), {'tab_id': '1234'})
+        for invalid in ['123', 'other-full-9999']:
             with self.assertRaises(ValueError):
                 await native_switch_parameters(browser, {'tab_id': invalid})
         browser.get_tabs.return_value.append(SimpleNamespace(target_id='another-full-1234'))
+        targets.return_value['targetInfos'].append({'targetId': 'another-full-1234', 'type': 'page',
+                                                   'url': 'https://fixture.invalid/'})
+        with self.assertRaises(ValueError):
+            await native_switch_parameters(browser, {'tab_id': 'run-full-1234'})
+        targets.return_value['targetInfos'] = []
         with self.assertRaises(ValueError):
             await native_switch_parameters(browser, {'tab_id': 'run-full-1234'})
 

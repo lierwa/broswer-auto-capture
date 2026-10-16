@@ -71,7 +71,7 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
       }
     }
   }
-  recompile(input: Omit<Parameters<typeof recompileHybridSource>[0], "root" | "directory" | "subject">) {
+  recompile(input: Omit<Parameters<typeof recompileHybridSource>[0], "root">) {
     return recompileHybridSource({ ...input, ...this.options })
   }
 
@@ -105,7 +105,7 @@ export class PythonUpstreamBrowserRuntime implements UpstreamBrowserRuntime {
   }
 
   async managedWindowAction(input: Parameters<NonNullable<UpstreamBrowserRuntime["managedWindowAction"]>>[0]) {
-    const runner = new RunnerProcess(this.options.root, new AbortController().signal)
+    const runner = new RunnerProcess(this.options.root, AbortSignal.timeout(30_000))
     const transport = input.browserMode === "daily" ? await this.dailyTransport(input.ownerId, input.action === "end") : {}
     const result = await runner.managedWindowAction({ ...input, ...transport,
       profilePath: this.profilePath(input.browserMode ?? "daily", input.ownerId, false, true) })

@@ -29,6 +29,20 @@ def runner_on_page():
 
 
 class HybridReadStageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_required_object_waits_even_without_downstream_paths(self):
+        command = ReadCommand(name='browser.read-fields', version=2, specification={
+            'container': '.result:not([data-state="processing"])',
+            'fields': {'value': {'selector': ':scope'}}, 'maxItems': 1, 'maxInputBytes': 10000,
+            'outputSchema': {'type': 'object', 'properties': {'value': {'type': 'string'}},
+                             'required': ['value'], 'additionalProperties': False}})
+        policy = SimpleNamespace(maxMs=200, maxAttempts=3, intervalMs=10)
+        not_ready = PostconditionNotMet('ordinary_postcondition_failed_read_fields_projection_not_ready')
+        with patch('browser_use_runner.read_readiness.settle_policy', return_value=policy), \
+                patch('workflow_use.hybrid.postconditions.verify_once',
+                      AsyncMock(side_effect=[not_ready, None])) as check:
+            await wait_required_paths(object(), command, None)
+            self.assertEqual(check.await_count, 2)
+
     async def test_required_read_reuses_bounded_wait_without_retrying_actions(self):
         command = ReadCommand(name='browser.read-fields', version=2,
                               specification=collection_spec('.items'), requiredPaths=[[0]])

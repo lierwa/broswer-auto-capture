@@ -34,7 +34,7 @@ async def method_fixture(*, playback=False, actual_navigation=False, protocol='b
     raw.update(overrides or {})
     author = AuthorInput.model_validate(raw)
     model, _ = output_model_for({'type': 'null'}, 'MethodOutput')
-    tools = author_tools_for_result_spec(model, author.resultSpec, source_protocol=protocol)
+    tools = author_tools_for_result_spec(author.resultSpec, source_protocol=protocol)
     registry = ActionRegistry.from_tools(tools)
     args = {'selector': 'a.item', 'max_results': 10, 'include_text': True, 'attributes': ['href']}
     facts, result = query_facts('a-0001', PAGE, True, args, duplicates=3, destination=PAGE + '/7')
@@ -66,8 +66,7 @@ async def method_fixture(*, playback=False, actual_navigation=False, protocol='b
         observations[-2].facts.append(fact('natural_binding', {'actionRef': f'a-{len(records):04d}',
             'argumentPath': 'seconds', 'binding': {'source': 'constant', 'value': 1},
             'provenance': 'native_parameter'}))
-    add_action(records, observations, 'done', {'success': True, 'reason': 'Method retained.',
-        'methodOutcome': 'recorded'}, end, end, done=True)
+    add_action(records, observations, 'done', {'success': True, 'text': 'Method retained.'}, end, end, done=True)
     for observation in observations:
         observation.facts.append(fact('document_identity', {'targetId': 'tab-1',
             'documentDigest': digest({'document': observation.url})}))
@@ -95,7 +94,7 @@ class InspectedMethodTests(unittest.IsolatedAsyncioTestCase):
         from pydantic import TypeAdapter
         model, _ = output_model_for({'type': 'null'}, 'CaptureOutput')
         for protocol in ('bat-hybrid/2', 'bat-hybrid/3'):
-            tools = author_tools_for_result_spec(model,
+            tools = author_tools_for_result_spec(
                 TypeAdapter(ResultSpec).validate_python({'contractVersion': 'bat-result-spec/v1', 'mode': 'execution'}),
                 source_protocol=protocol)
             audit = ActionDispatchAudit()
@@ -189,25 +188,18 @@ class InspectedMethodTests(unittest.IsolatedAsyncioTestCase):
             compiled = compile_request(request, registry, output_schema={'type': 'null'})
             self.assertTrue(compiled.gaps, mutation)
 
-    async def test_feedback_is_once_per_tools_request_even_after_public_reregistration(self):
-        model, _ = output_model_for({'type': 'null'}, 'DoneOutput')
+    async def test_native_done_does_not_request_method_status_or_reopen_exploration(self):
         from workflow_use.hybrid.author_tools import AuthorTools
-        tools = AuthorTools(output_model=model, source_protocol='bat-hybrid/3')
-        tools._bat_method_can_continue = lambda: True
+        from browser_use import Tools
+        tools = AuthorTools()
         done = tools.registry.registry.actions['done']
-        params = done.param_model(success=True, reason='Already satisfied.', methodOutcome='state_only')
-        browser, files = SimpleNamespace(downloaded_files=[], cdp_client=None), SimpleNamespace()
-        first = await done.function(params=params, file_system=files, browser_session=browser)
-        self.assertFalse(first.is_done)
-        self.assertIn('preparation_method_required', first.error)
-        tools.use_structured_output_action(model)
-        self.assertTrue(tools._bat_method_feedback_sent)
-        done = tools.registry.registry.actions['done']
-        second = await done.function(params=done.param_model.model_validate(params.model_dump()),
-                                     file_system=files, browser_session=browser)
-        self.assertTrue(second.is_done)
-        self.assertTrue(second.success)
-        self.assertEqual(set(done.param_model.model_json_schema()['properties']), {'success', 'reason', 'methodOutcome'})
+        params = done.param_model(text='Already satisfied.', success=True)
+        browser = SimpleNamespace(downloaded_files=[], cdp_client=None)
+        result = await done.function(params=params, file_system=SimpleNamespace(), browser_session=browser)
+        self.assertTrue(result.is_done)
+        self.assertTrue(result.success)
+        self.assertEqual(done.param_model.model_json_schema(),
+                         Tools(output_model=None).registry.registry.actions['done'].param_model.model_json_schema())
 
 
 if __name__ == '__main__':

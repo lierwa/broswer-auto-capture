@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from .action_dispatch import proven_not_dispatched_ids
 from .causal import DELAYED_EFFECTS
 from .evidence import Contract, EvidenceRef, gap
 from .natural_repeat_evidence import verified_read, _query_scope
@@ -54,14 +55,14 @@ def defer_repeat_navigation(request, action, key, expected, segments, dependenci
 
 
 def expired_dependencies(trace, dependencies, ledger):
-    safe = {row.actionRef for row in ledger if row.exclusionRule == 'native_action_not_dispatched/v1'}
+    safe = proven_not_dispatched_ids(trace, ledger)
     positions = {action.id: index for index, action in enumerate(trace.actions)}
     issues = []
     for dependency in dependencies:
         if dependency.kind != 'consumer_readiness':
             continue
         following = trace.actions[positions[dependency.actionRef] + 1:]
-        if any(action.name == 'done' or action.effect in DELAYED_EFFECTS and action.id not in safe
+        if any((action.name == 'done' or action.effect in DELAYED_EFFECTS) and action.id not in safe
                for action in following):
             issues.append(gap('missing_effect_proof', [dependency.actionRef],
                 'prefix_consumer_boundary_crossed', 'collect_evidence'))

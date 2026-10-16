@@ -4,6 +4,18 @@ from jsonschema import Draft202012Validator
 from .natural_reads import paths_conflict, schema_at_path, value_at_path
 from .natural_output import _assemble_verified_output
 from .method_read_schema import compatible_read_schema, representative_schema
+from .contract_constants import contract_constants
+
+
+def unambiguous_read_refs(records):
+    selected = getattr(records, 'records', ())
+    paths = [record.mapping.outputPath for record in selected]
+    if any(paths_conflict(left, right) for i, left in enumerate(paths) for right in paths[i + 1:]):
+        raise ValueError('completion_read_path_conflict')
+    scopes = {(record.sample.pageIdentity['targetId'], record.sample.documentRootId) for record in selected}
+    if len(scopes) > 1:
+        raise ValueError('completion_read_document_conflict')
+    return [record.readRef for record in selected]
 
 
 def content_read_refs(records):
@@ -11,11 +23,12 @@ def content_read_refs(records):
     if not successful:
         return []
     scopes = {(record.sample.pageIdentity['targetId'], record.sample.documentRootId) for record in successful}
-    # WHY：一个原始区域输出由最后成功选择的方法提供；同文档纠正范围不等于合并多页。
-    # TRADE-OFF：保留历史采集审计，跨 tab/document 仍须显式成功 readRef，不能自动丢弃。
+    # WHY：原生done不选技术引用；多个成功范围仍有冲突，不能猜最后一次就是正式交付。
     if len(scopes) != 1:
         raise ValueError('completion_content_scope_ambiguous')
-    return [successful[-1].readRef]
+    if len(successful) != 1:
+        raise ValueError('completion_read_path_conflict')
+    return [successful[0].readRef]
 
 
 def complete_from_read_refs(records, read_refs, output_schema, result_spec):
@@ -42,6 +55,9 @@ def complete_from_read_refs(records, read_refs, output_schema, result_spec):
         actual = value_at_path(record.sample.output, mapping.readPath)
         compiled.append(({'path': mapping.outputPath}, actual))
     _append_input_fields(compiled, records, output_schema)
+    occupied = [field['path'] for field, _ in compiled]
+    compiled.extend((field, value) for field, value in contract_constants(output_schema)
+                    if not any(paths_conflict(field['path'], path) for path in occupied))
     if not compiled:
         raise ValueError('completion_read_reference_invalid')
     _append_derivations(compiled, result_spec)

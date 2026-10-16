@@ -13,6 +13,7 @@ import {
 import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
 import { DomainError } from "../errors.js"
 import type { ProductStore } from "../database/store.js"
+import { recordInterruptedAuthoringCleanup } from "./authoring-cleanup.js"
 import { executionCleanupAuditSchema, type ExecutionCleanupAudit } from "../upstream-browser/cleanup.js"
 import {
   taskArtifacts, taskAuthoringJobs, taskContracts, taskDrafts, taskExecutionCandidates,
@@ -324,9 +325,10 @@ export class TaskContractRepository {
   private recoverInterrupted() {
     for (const job of this.store.db.select().from(taskAuthoringJobs).all().map((row) => taskAuthoringJobSchema.parse(row.body))) {
       if (!["queued", "running"].includes(job.status)) continue
-      job.status = "interrupted"; job.sequence++; job.reason = "服务重启中断了模型生成；可以用新请求重试。"
+      job.status = "interrupted"; job.sequence++; job.reason = "服务恢复时发现原生成未完成；原退出原因未确认，原记录保留。"
       job.updatedAt = new Date().toISOString()
       if (job.audit?.status === "intended") job.audit.status = "interrupted"
+      recordInterruptedAuthoringCleanup(this, job)
       this.saveJob(job)
     }
     for (const run of this.store.db.select().from(taskContracts).where(eq(taskContracts.kind, "run")).all()

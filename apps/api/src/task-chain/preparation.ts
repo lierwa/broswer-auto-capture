@@ -13,6 +13,8 @@ import { projectPreparationPlan } from "./preparation-plan-projection.js"
 import type { TaskContractRepository } from "./repository.js"
 import { syncConfirmedRequirement } from "./requirement.js"
 import { validatePreparationResearch } from "./preparation-research.js"
+import { validationEvidence } from "./release-evidence.js"
+import { mergeMethodRevision, methodRevisionPrefix, resolveMethodRevisionBase, validateMethodRevisionSource } from "./method-revision.js"
 
 type WorkStarter = (job: TaskAuthoringJob, run: (signal: AbortSignal) => Promise<unknown>) => void
 type ValidationEnqueuer = (requestId: string, draft: TaskDraft, input: JsonValue,
@@ -54,8 +56,49 @@ export class TaskPreparationCoordinator {
     })
   }
 
+  revise(taskId: string, command: Extract<TaskChainCommand, { type: "revise_task_method" }>, startWork: WorkStarter) {
+    if (this.store.operation("task-product:revise-method", command.requestId, command)) return
+    const requirement = syncConfirmedRequirement(this.store, this.repository, taskId)
+    if (!requirement || requirement.version !== command.requirementVersion) conflict("只能修订当前已确认需求的方法。")
+    if (this.repository.jobs(taskId).some(job => job.type === "prepare"
+      && ["queued", "running", "waiting_for_human"].includes(job.status))) conflict("当前准备或修订尚未结束。")
+    const base = resolveMethodRevisionBase(this.repository, taskId, requirement, command.base)
+    const source = validateMethodRevisionSource(this.repository, taskId, requirement, base, command)
+    methodRevisionPrefix(this.repository, base.content, command.stepId)
+    const plan = base.content.plan, now = new Date().toISOString()
+    // WHY：只修订已选链路；原计划、已发布版本和旧来源均保持只读，不重新投影需求计划。
+    const job = this.repository.saveJob({ id: stableUuid(command.requestId, "method-revision"), taskId,
+      type: "prepare", key: `${requirement.id}:${requirement.version}:prepare`, status: "queued", sequence: 0,
+      reason: "正在为所选方法取得新的浏览器来源。", resultId: null, browserRunId: null, waitpoint: null, audit: null,
+      browser: this.store.executionBrowser(command.browser, taskId), createdAt: now, updatedAt: now,
+      preparation: { phase: "preexecuting", plan: planReference(plan), candidatePlan: plan, chains: [],
+        draft: null, planCandidates: [], representativeInput: source.input, verificationInput: null,
+        inputRequest: null, requirementReturn: null, validationExecutionIds: [], priorAudits: [],
+        methodRevision: { base: command.base, stepId: command.stepId, nodeIds: command.nodeIds,
+          source: command.source, problem: command.problem, input: source.input,
+          affectedStepIds: [command.stepId], prefixRunIds: [] } } })
+    this.store.recordOperation("task-product:revise-method", command.requestId, command, job.id)
+    startWork(job, async signal => {
+      try { await this.authorChains(job, requirement, plan, source.input, signal) }
+      catch (error) {
+        // WHY：探索已正常结束后发生过期合并也必须结算；旧来源保留，不能留下 completed 假准备。
+        const current = this.repository.job(taskId, job.id)
+        if (!["failed", "interrupted"].includes(current.status)) {
+          current.status = signal.aborted ? "interrupted" : "failed"
+          current.reason = error instanceof DomainError ? error.message : `方法修订未完成：${authoringFailureMessage(error)}`
+          if (current.authoring) {
+            current.authoring.failureLayer = "局部候选合并"
+            current.authoring.failureCode = "preparation_method_merge_failed"
+          }
+          this.touch(current)
+        }
+        throw error
+      }
+    })
+  }
+
   compilationRecovery(taskId: string, job: TaskAuthoringJob | null) {
-    if (!job || job.type !== "prepare" || job.status !== "failed"
+    if (!job || job.type !== "prepare" || job.status !== "failed" || job.preparation?.methodRevision
       || !job.preparation || !["preexecuting", "validating_sample", "validating_verification"].includes(job.preparation.phase)) return null
     // WHY：恢复记录显式保留原来源 owner；只沿该引用核验，不搜索或猜测历史任务。
     const sourceJobId = job.preparation.recoveredFromJobId ?? job.id
@@ -178,7 +221,10 @@ export class TaskPreparationCoordinator {
     try {
       const plan = job.preparation.candidatePlan
       if (!plan) throw new Error("preparation_plan_missing")
-      const draft = recordDraftTrial(requireJobDraft(this.repository, job), record)
+      const current = requireJobDraft(this.repository, job)
+      // WHY：准备完成和发布必须消费同一组权威证据，不能仅凭 completed 摘要提前显示可发布。
+      if (!validationEvidence(this.repository, current, record.id)) throw new Error("draft_trial_evidence_invalid")
+      const draft = recordDraftTrial(current, record)
       this.repository.saveDraft(draft)
       if (record.mode === "sample") {
         if (!taskInputRequiresVariation(plan.inputContract)) {
@@ -205,12 +251,22 @@ export class TaskPreparationCoordinator {
     if (!job.preparation) throw new Error("preparation_state_missing")
     job.preparation.phase = "preexecuting"; job.preparation.representativeInput = input
     job.status = "queued"; job.reason = "正在用代表输入生成可复跑草稿。"; this.touch(job)
+    const revision = job.preparation.methodRevision
+    const revisionBase = revision ? resolveMethodRevisionBase(this.repository, job.taskId, requirement, revision.base) : undefined
     const result = await this.authoring.task(job, requirement, plan, input, signal, recoverySourceJobId)
     const current = this.repository.job(job.taskId, job.id)
     if (!current.preparation) throw new Error("preparation_state_missing")
+    if (revisionBase) {
+      signal.throwIfAborted()
+      const latest = syncConfirmedRequirement(this.store, this.repository, job.taskId)
+      if (!latest || digestJson(latest) !== digestJson(requirement))
+        conflict("修订过程中需求已变化；新来源保留，未覆盖当前草稿。")
+    }
     const base = currentReleaseForRequirement(this.repository, job.taskId, requirement)
-    const draft = createTaskDraft({ taskId: job.taskId, requirement, baseRelease: base ? releaseReference(base) : null,
-      plan, chains: result.chains, presentations: result.presentations, current: this.repository.draft(job.taskId) })
+    const draft = revision && revisionBase
+      ? mergeMethodRevision(this.repository, job.taskId, requirement, revisionBase, revision.stepId, result)
+      : createTaskDraft({ taskId: job.taskId, requirement, baseRelease: base ? releaseReference(base) : null,
+        plan, chains: result.chains, presentations: result.presentations, current: this.repository.draft(job.taskId) })
     this.repository.saveDraft(draft)
     current.preparation.candidatePlan = plan; current.preparation.plan = planReference(plan)
     current.preparation.chains = draft.content.steps.map((step) => ({ id: step.chain.id, version: step.chain.version,

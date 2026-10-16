@@ -4,7 +4,7 @@ from pydantic import Field
 from .evidence import Contract, digest
 from .natural_reads import (VerifiedNaturalRead, schema_at_path, value_at_path,
                             validate_compiled_query_read, validate_compiled_read_identity)
-from .natural_repeat_actions import repeat_mode, validate_same_page_advance, validate_selection_sample, validate_passive_wait
+from .natural_repeat_actions import repeat_mode, validate_same_page_advance, validate_passive_wait
 
 
 class RepeatIteration(Contract):
@@ -184,15 +184,11 @@ def sample_action_refs(trace, value):
     while last + 1 < len(trace.actions) and trace.actions[last + 1].name == 'wait':
         last += 1
     extra = [item for item in trace.actions[first:last + 1] if item.id not in declared]
-    lookups, validations, waits = set(), set(), set()
+    lookups, waits = set(), set()
     for action in extra:
         if action.name == 'wait':
             validate_passive_wait(trace, action)
             waits.add(action.id)
-            continue
-        if action.name == 'bat_validate_selection':
-            validate_selection_sample(trace, action)
-            validations.add(action.id)
             continue
         if action.name != 'find_elements':
             continue
@@ -203,7 +199,7 @@ def sample_action_refs(trace, value):
         _query_scope(action, read, pre, post, require_href=False)
         _assert_same_document(pre, post)
         lookups.add(action.id)
-    extra = [item for item in extra if item.id not in lookups | validations | waits]
+    extra = [item for item in extra if item.id not in lookups | waits]
     # WHY：准备可单独验证终页，不必为证明停止而先抓取全部页面。
     if extra:
         if len(extra) != 1 or repeat_mode(trace, value) != 'href':
@@ -226,7 +222,7 @@ def sample_action_refs(trace, value):
         left, right = observations[before.postObservationRef], observations[after.preObservationRef]
         if left.url != right.url or left.tabId != right.tabId:
             raise ValueError('repeat_method_observation_discontinuous')
-        if before.id in lookups | validations | waits or after.id in lookups | validations | waits:
+        if before.id in lookups | waits or after.id in lookups | waits:
             _assert_same_document(left, right)
     return [item.id for item in trace.actions[first:last + 1]]
 

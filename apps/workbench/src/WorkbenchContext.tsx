@@ -59,6 +59,7 @@ function PreparationContext({ model, connection, onClose, onPrepare }: {
   const diagnostics = model.view.diagnostics?.preparation
   const currentDiagnostics = diagnostics?.jobId === activity?.id ? diagnostics : null
   const compilationRecovery = currentDiagnostics?.compilationRecovery
+  const windowRecovery = currentDiagnostics?.windowRecovery
   const canRecoverCompilation = failed && activity?.phase === "compiling" && compilationRecovery?.available === true
   // WHY：来源可离线读取不保证方法正确；编译失败后仍须能沿原需求重新准备，旧来源和失败记录保留。
   const canRestartPreparation = failed && ["forming_plan", "preexecuting", "compiling"].includes(activity?.phase ?? "")
@@ -90,7 +91,19 @@ function PreparationContext({ model, connection, onClose, onPrepare }: {
     {activity && !model.build && (model.draft || model.release)
       && ["forming_plan", "preexecuting", "compiling"].includes(activity.phase)
       && <p className="context-warning">这里是最近一次准备记录；左侧画布仍显示已有链路及其运行。这次准备尚未替换它。</p>}
-    {activity?.build && <PreparationCompilation build={activity.build} />}
+    {activity && <PreparationCompilation build={activity.build} status={activity.compilationStatus} />}
+    {activity && windowRecovery && <section aria-label="原准备窗口收尾">
+      {windowRecovery.reason && <p>{windowRecovery.reason}</p>}
+      {windowRecovery.status === "checking" && <p role="status">已接受原窗口核验请求，正在处理…</p>}
+      {model.view.error && <p className="error-text" role="alert">{model.view.error}</p>}
+      {windowRecovery.canInspect && <Button size="1" disabled={model.view.busy || model.view.diagnosticsBusy}
+        onClick={() => void connection.dispatch({ type: "cleanup_authoring", requestId: crypto.randomUUID(),
+          jobId: activity.id, expectedSequence: activity.sequence, action: "inspect" })}>核验原准备窗口</Button>}
+      {windowRecovery.canEnd && <Button size="1" color="red" variant="soft" disabled={model.view.busy || model.view.diagnosticsBusy}
+        onClick={() => void connection.dispatch({ type: "cleanup_authoring", requestId: crypto.randomUUID(),
+          jobId: activity.id, expectedSequence: activity.sequence, action: "end" })}>
+          {windowRecovery.status === "active" ? "结束本次准备的原窗口" : "核验并结束原窗口"}</Button>}
+    </section>}
     {request && input !== undefined ? <>{!noParameters && <ValueSchemaForm contract={request.contract} value={input}
       onChange={setInput} disabled={connection.snapshot().busy} />}{error && <p className="error-text">{error}</p>}
       <Button disabled={model.view.busy} onClick={() => void submit()}>{model.view.busy ? "正在提交…"

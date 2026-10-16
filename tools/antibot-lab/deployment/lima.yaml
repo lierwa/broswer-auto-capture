@@ -20,6 +20,7 @@ networks:
   interface: shieldvz
 param:
   internal_netplanOptional: "true"
+  internal_batShieldOwner: ""
 portForwards:
 - guestPort: 4183
   proto: tcp
@@ -42,6 +43,8 @@ provision:
   script: |
     #!/bin/sh
     set -eu
+    # WHY：Lima要求param被实际消费；没有宿主注入的归属标记时拒绝provision，不另建VM管理器。
+    test -n '{{.Param.internal_batShieldOwner}}'
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends python3 curl ca-certificates openssl liblua5.4-0 libpcre2-8-0 libcrypt1

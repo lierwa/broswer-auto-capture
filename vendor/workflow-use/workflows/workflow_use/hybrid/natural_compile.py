@@ -11,7 +11,6 @@ from .coverage import (
     native_extraction_coverage,
     native_dom_lookup_observation_coverage,
     search_page_coverage,
-    selection_validation_coverage,
 )
 from .evidence import ActionCoverage, EvidenceRef, digest, gap
 from .human_wait_compile import compile_human_wait
@@ -27,6 +26,7 @@ from .navigation import NAVIGATION_ACTIONS, cross_tab_navigation_allowed
 from .navigation_compile import navigation_postconditions, navigation_command_postconditions
 from .postconditions import declared_checks
 from .registry import action_effect
+from .native_files import FILE_RESULT_ACTIONS, FILE_OUTPUT_SCHEMA
 from .summary_compile import compile_verified_summary
 from .target_scroll import TargetScrollParams, VerifiedTargetScroll
 from .visible_wait_compile import compile_visible_wait, failed_visible_wait_coverage
@@ -169,6 +169,14 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
     except ValueError:
         return None, None, [gap('unsupported_capability', [action.id],
                                 'natural_postcondition_not_admitted', 'add_capability')]
+    outputs = []
+    if action.name in FILE_RESULT_ACTIONS:
+        facts = natural_facts(post, 'native_file_output', action.id)
+        if (len(facts) != 1 or facts[0].value.get('schemaVersion') != 'bat.native-file-output/v1'
+                or facts[0].value.get('resultDigest') != action.resultRef.digest):
+            return None, None, [gap('missing_effect_proof', [action.id],
+                'native_file_output_required', 'collect_evidence')]
+        outputs = [{'schema': FILE_OUTPUT_SCHEMA, 'sourceRef': facts[0].id}]
     proof_refs = unique_refs([action.resultRef, *pre.sourceRefs, *post.sourceRefs,
                               *target_refs, *post_refs,
                               *(ref for binding in bindings for ref in binding['proofRefs'])])
@@ -177,7 +185,7 @@ def classify_natural_action(request, registry, action, pre, post, output_schema=
             'target': target, 'bindings': bindings,
             'preconditions': [{'kind': 'source_observation', 'evidenceRef': pre.id}],
             'expectedEffect': {'kind': action.effect}, 'postconditions': postconditions,
-            'outputs': [], 'proofRefs': [ref.model_dump(mode='json') for ref in proof_refs]}, None, []
+            'outputs': outputs, 'proofRefs': [ref.model_dump(mode='json') for ref in proof_refs]}, None, []
 
 
 def compile_target_scroll(request, action, pre, post):
@@ -230,6 +238,18 @@ def natural_dom_lookup_coverage(registry, action, pre, post):
 
 def natural_postconditions(action, pre, post, target, bindings, consumer=None, *, dependencies=None):
     from .context_bindings import context_facts
+    if action.name == 'find_text':
+        facts = natural_facts(post, 'find_text_visible', action.id)
+        if len(facts) != 1 or facts[0].value.get('text') != action.args.get('text') or facts[0].value.get('visible') is not True:
+            return [], [], [gap('missing_effect_proof', [action.id], 'find_text_visible_required')]
+        return ([{'kind': 'text_in_view', 'bindingArgument': 'text', 'clauseRef': facts[0].id}],
+                facts[0].sourceRefs, [])
+    if action.name == 'close':
+        context = context_facts(post)
+        if context is None:
+            return [], [], [gap('missing_effect_proof', [action.id], 'close_current_context_required')]
+        condition = 'changed' if pre.tabId != post.tabId else 'unchanged'
+        return ([{'kind': 'active_tab', condition: True, 'clauseRef': context[0].id}], context[0].sourceRefs, [])
     if action.name == 'switch':
         context = context_facts(post)
         if (context is not None and action.args.get('tab_id') == post.tabId[-4:]

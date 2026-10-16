@@ -4,15 +4,20 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from browser_use import Tools
-from browser_use.agent.views import ActionResult
+from browser_use.agent.views import ActionResult, AgentStepInfo
+from browser_use.agent.message_manager.service import MessageManager
+from browser_use.llm.messages import SystemMessage
 
 from workflow_use.hybrid.capture import EvidenceCollector
 from workflow_use.hybrid.dom_evidence import capture_find_elements_query, complete_find_elements_query
 from workflow_use.hybrid.evidence import EvidenceRef, digest
 from workflow_use.hybrid.natural_compile import classify_natural_action, natural_dom_lookup_coverage
 from workflow_use.hybrid.natural_selection import selection_read
+from workflow_use.hybrid.natural_binding_compile import natural_bindings
+from workflow_use.hybrid.natural_target_compile import natural_target
 from workflow_use.hybrid.post_action_target import CapturedTargetIdentity, verified_collection_query
 from workflow_use.hybrid.registry import ActionRegistry
+from workflow_use.hybrid.action_dispatch import bind_tools_act
 
 
 URL = 'https://example.test/items'
@@ -64,13 +69,78 @@ class EmptyNativeQueryPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.registry = ActionRegistry.from_tools(self.tools)
         self.collector = EvidenceCollector(self.browser, self.registry,
             put_evidence=reference, redact_action=lambda value: value)
-        self.collector.pending = {'sourceUrl': URL, 'actionId': 'a-0001'}
+        self.collector.pending = {'sourceUrl': URL, 'actionId': 'a-0001', 'actionIndex': 0}
         self.summary = SimpleNamespace(url=URL)
         self.request = SimpleNamespace(plan=SimpleNamespace(outputSchemaDigest=digest({'type': 'null'})))
 
     async def native_result(self):
         registered = self.tools.registry.registry.actions['find_elements']
         return await registered.function(params=registered.param_model(**ARGS), browser_session=self.browser)
+
+    async def test_dispatch_preserves_native_feedback_and_captures_full_results(self):
+        async def act(_action):
+            return await self.native_result()
+        tools = SimpleNamespace(act=act)
+        audit = SimpleNamespace(active=None, enter=AsyncMock(), complete=AsyncMock())
+        restore = bind_tools_act(tools, audit)
+        action = SimpleNamespace(model_dump=lambda **_kwargs: {'find_elements': ARGS})
+        try:
+            result = await tools.act(action)
+            query, reads, _pre, _post, _action, segment, _path, gaps = await self.pipeline(result)
+            self.assertEqual((query.total, query.complete), (0, True))
+            self.assertEqual(reads[0].value['output'], [])
+            self.assertIsNotNone(segment)
+            self.assertEqual(gaps, [])
+            self.assertEqual(result.long_term_memory, f'Found 0 elements matching "{SELECTOR}".')
+            self.assertEqual(audit.complete.await_args.args[0].model_dump(mode='json'),
+                             result.model_dump(mode='json'))
+            self.assertNotIn('Found 0 elements', result.extracted_content or '')
+            manager = MessageManager(task='read current query', system_message=SystemMessage(content='test'),
+                                     file_system=SimpleNamespace())
+            for total in (1, 3, 11):
+                self.browser.session.cdp_client.send.Runtime.evaluate.return_value = {'result': {'value': {
+                    'total': total, 'showing': min(total, 10), 'elements': [], 'truncated': total > 10}}}
+                result = await tools.act(action)
+                query = complete_find_elements_query(capture_find_elements_query(
+                    self.summary, 'a-0001', ARGS, ARGS, 'tab-1'), [result])
+                self.assertEqual((query.total, query.complete), (total, total <= 10))
+                plural = '' if total == 1 else 's'
+                self.assertEqual(result.long_term_memory,
+                                 f'Found {total} element{plural} matching "{SELECTOR}".')
+                self.assertTrue(result.include_extracted_content_only_once)
+                manager._update_agent_history_description(result=[result],
+                    step_info=AgentStepInfo(step_number=total, max_steps=20))
+                self.assertIn(result.extracted_content, manager.state.read_state_description)
+                self.assertNotIn(result.extracted_content, manager.agent_history_description)
+            manager._update_agent_history_description(result=[ActionResult(long_term_memory='Later action')],
+                step_info=AgentStepInfo(step_number=12, max_steps=20))
+            self.assertEqual(manager.state.read_state_description, '')
+        finally:
+            restore()
+
+    async def test_viewport_scroll_zero_remains_native_without_a_dom_target(self):
+        raw = {'scroll': {'index': 0}}
+        self.collector.pending = None
+        observed = []
+        async def observe(_summary, facts):
+            observed.extend(facts)
+            return SimpleNamespace(id='o-scroll')
+        self.collector.observe = observe
+        self.collector.natural_effect_facts = AsyncMock(return_value=[])
+        self.collector.observation_scope = SimpleNamespace(verify_before_action=AsyncMock(
+            return_value=self.summary))
+        action = SimpleNamespace(model_dump=lambda **_: raw)
+        await self.collector.before_action(self.summary,
+            SimpleNamespace(action=[action]), 1)
+        self.assertEqual(self.collector.pending['action'], raw)
+        self.assertEqual(raw['scroll']['index'], 0)
+        self.assertEqual(self.collector.observation_scope.verify_before_action.await_args.args,
+                         (self.summary, 1, None, 'scroll'))
+        self.assertNotIn('dom_structure', [fact.kind for fact in observed])
+        source = SimpleNamespace(id='a-scroll', name='scroll', args=raw['scroll'])
+        pre = SimpleNamespace(facts=[])
+        self.assertEqual(natural_target(source, pre), (None, [], []))
+        self.assertEqual(natural_bindings(self.request, source, pre, False), ([], []))
 
     async def pipeline(self, result, *, url=URL, tab_id='tab-1', arguments=None):
         arguments = arguments or ARGS

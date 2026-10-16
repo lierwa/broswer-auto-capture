@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 import { assertBrowserContextOutput, BROWSER_CONTEXT_OUTPUT } from "./hybrid-browser-context.js"
+import { assertNativeFileOutput, NATIVE_FILE_OUTPUT } from "./hybrid-native-file.js"
 import { assertInputEntryTarget } from "./hybrid-element-entry.js"
 import { jsonValueSchema, requiredNodeOutcomes, valueBindingSchema, type StableChainNode,
   type StableChainNodeV2, type TaskDataContract, type ValueBinding, type ValueSchema } from "@browser-capture/contracts"
@@ -123,7 +124,8 @@ function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }
   const inheritedRead = segment.postconditions.some(condition => condition.kind === "read_fields"
     && (condition.read as { inheritFields?: string[] } | undefined)?.inheritFields?.length)
   if (inheritedRead) bindings.record = { source: "input", path: [] }
-  const contextOutput = context.version === 2 && assertBrowserContextOutput(segment, context.request, context.payload)
+  const nativeFileOutput = context.version === 2 && assertNativeFileOutput(segment, context.request, context.payload)
+  const contextOutput = !nativeFileOutput && context.version === 2 && assertBrowserContextOutput(segment, context.request, context.payload)
   const config = operation.name === "browser.read-fields" ? { specification: operation.specification,
     ...(segment.id.startsWith("collection-") ? { requiredPaths: [[0]] } : {}),
     ...(bindings.take ? { readTakeInput: "take" } : {}),
@@ -133,6 +135,7 @@ function materializeSegment(segment: Exclude<HybridSegment, { kind: "function" }
       ...(inheritedRead ? { inheritedReadInput: "record" } : {}),
       ...(missingTargetOutcome ? { missingTargetOutcome: true } : {}),
       ...(contextOutput ? { [BROWSER_CONTEXT_OUTPUT]: true } : {}), ...runtimeConfig }
+  if (nativeFileOutput) Object.assign(config, { [NATIVE_FILE_OUTPUT]: true })
   return { ...base, kind: "capability", capability: { name: operation.name, version: operation.version }, input: bindings,
     config: jsonValueSchema.parse(config), effect: segment.expectedEffect.kind === "external_write" ? "external_write"
       : segment.expectedEffect.kind === "read" || segment.expectedEffect.kind === "none" ? "read" : "idempotent_write",

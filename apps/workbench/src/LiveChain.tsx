@@ -4,6 +4,7 @@ import { Ellipsis, History, MessageSquare, Play, Wrench } from "lucide-react"
 import { DraftControls } from "./ChainRevisionEditor.js"
 import { ChainRunDialog } from "./ChainRunDialog.js"
 import { PrepareTaskDialog } from "./PrepareTaskDialog.js"
+import { MethodRevisionDialog } from "./MethodRevisionDialog.js"
 import { LiveChainCanvas, LiveChainCanvasToolbar } from "./LiveChainCanvas.js"
 import { WorkbenchContext } from "./WorkbenchContext.js"
 import { executionStatus, executionOutcome, executionFailureReason } from "./ExecutionPresentation.js"
@@ -24,6 +25,7 @@ export function LiveChain({ connection, active, theme, onInterview, onRequiremen
   const model = useLiveChain(connection, active)
   const [publishOpen, setPublishOpen] = useState(false)
   const [prepareOpen, setPrepareOpen] = useState(false)
+  const [methodRevisionOpen, setMethodRevisionOpen] = useState(false)
   const [focusExecutionId, setFocusExecutionId] = useState<string | null>(null)
   const { view, workspace } = model
   const handledAttention = useRef<string | undefined>(undefined)
@@ -37,8 +39,14 @@ export function LiveChain({ connection, active, theme, onInterview, onRequiremen
   if (!workspace) return <section className="chain-workbench chain-loading"><p role="status">
     {view.error || "正在读取任务工作区…"}</p><Button onClick={() => void connection.reload()}>重新连接</Button></section>
   return <section className="chain-workbench" aria-label="链路画布">
+    {view.connectionStatus === "unavailable" && <p className="run-action-error" role="status">
+      服务连接不可用，正在重新连接。当前显示最后保存的任务事实。
+      {(workspace.activity?.updatedAt ?? workspace.execution?.updatedAt ?? view.lastConnectedAt) && <span>
+        最后事实更新：{new Date(workspace.activity?.updatedAt ?? workspace.execution?.updatedAt
+          ?? view.lastConnectedAt!).toLocaleString()}</span>}
+    </p>}
     <WorkbenchToolbar model={model} connection={connection} onInterview={onInterview}
-      onPublish={() => setPublishOpen(true)} onPrepare={() => setPrepareOpen(true)} />
+      onPublish={() => setPublishOpen(true)} onPrepare={() => setPrepareOpen(true)} onMethodRevision={() => setMethodRevisionOpen(true)} />
     {!model.build && (!model.chain || !model.presentation) && !model.plan?.steps.length ? <div className="chain-layout"
       data-inspector-open={Boolean(model.contextMode)}>
         <EmptyCanvas model={model} connection={connection} onInterview={onInterview} onPrepare={() => setPrepareOpen(true)} />
@@ -56,15 +64,17 @@ export function LiveChain({ connection, active, theme, onInterview, onRequiremen
       onOpenChange={(open) => { if (!open) model.setRunDialogMode(null) }} />}
     <PublishDialog open={publishOpen} onOpenChange={setPublishOpen} model={model} connection={connection} />
     <PrepareTaskDialog open={prepareOpen} onOpenChange={setPrepareOpen} workspace={workspace} connection={connection} />
+    <MethodRevisionDialog open={methodRevisionOpen} onOpenChange={setMethodRevisionOpen} model={model} connection={connection} />
   </section>
 }
 
-function WorkbenchToolbar({ model, connection, onInterview, onPublish, onPrepare }: {
+function WorkbenchToolbar({ model, connection, onInterview, onPublish, onPrepare, onMethodRevision }: {
   model: LiveChainModel
   connection: TaskChainConnection
   onInterview(): void
   onPublish(): void
   onPrepare(): void
+  onMethodRevision(): void
 }) {
   const { workspace, draft, release, activityRunning, executionRunning, view } = model
   if (!workspace) return null
@@ -81,10 +91,11 @@ function WorkbenchToolbar({ model, connection, onInterview, onPublish, onPrepare
       {activity && (model.build || model.chain && model.presentation) && <button className="activity-chip" data-status={activity.status}
         onClick={() => model.openContext("preparation")}>
         <i aria-hidden="true" />{!model.build ? "准备记录：" : ""}{preparationActivityLabel(activity.phase, activity.status)}</button>}
-      {model.build?.compilation && <button className="activity-chip" data-status={model.build.compilation.issues.length ? "failed" : activity?.status}
+      {(activity?.compilationStatus || model.build?.compilation) && <button className="activity-chip"
+        data-status={activity?.compilationStatus?.status === "failed" || model.build?.compilation?.issues.length ? "failed" : activity?.status}
         onClick={() => model.openContext("preparation")}>
-        <i aria-hidden="true" />已记录 {model.build.compilation.observedActions} 个动作
-        {model.build.compilation.issues.length > 0 ? " · 编译有缺口" : ""}
+        <i aria-hidden="true" />已记录 {activity?.compilationStatus?.observedActions ?? model.build?.compilation?.observedActions} 个动作
+        {activity?.compilationStatus?.status === "failed" || model.build?.compilation?.issues.length ? " · 编译有缺口" : ""}
       </button>}
       {model.presentation && <LiveChainCanvasToolbar model={model} />}
     </div>
@@ -110,6 +121,8 @@ function WorkbenchToolbar({ model, connection, onInterview, onPublish, onPrepare
           <Play size={13} />运行已发布任务</DropdownMenu.Item>}
         <DropdownMenu.Item onSelect={() => model.openContext("history")}><History size={13} />历史记录</DropdownMenu.Item>
         <DropdownMenu.Item onSelect={() => model.openContext("diagnostics")}><Wrench size={13} />诊断详情</DropdownMenu.Item>
+        {model.source && <DropdownMenu.Item disabled={view.busy || activityRunning || executionRunning || Boolean(model.build)}
+          onSelect={onMethodRevision}><Wrench size={13} />{model.selectedNode ? "修订所选动作的方法" : "局部修订当前步骤方法"}</DropdownMenu.Item>}
         {workspace.requirement && <DropdownMenu.Item disabled={view.busy || activityRunning || executionRunning}
           onSelect={onPrepare}>重新准备当前需求</DropdownMenu.Item>}
         <DropdownMenu.Separator /><DropdownMenu.Item onSelect={onInterview}><MessageSquare size={13} />返回需求对话</DropdownMenu.Item>

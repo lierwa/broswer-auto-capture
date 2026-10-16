@@ -31,6 +31,29 @@ SCROLL_POSITION_SCRIPT = '() => ({x: window.scrollX, y: window.scrollY})'
 MEDIA_PLAYBACK_SCRIPT = """() => Array.from(document.querySelectorAll('video,audio')).some((node) =>
   node.isConnected && node.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})
   && !node.paused && !node.ended && node.readyState >= 2) ? 'playing' : 'not_playing'"""
+TEXT_IN_VIEW_SCRIPT = """(text) => {
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(), count = 0; node && count < 20000; node = walker.nextNode(), count++) {
+    if (!node.textContent.toLowerCase().includes(text.toLowerCase())) continue;
+    const element = node.parentElement;
+    if (!element || !element.checkVisibility({checkOpacity:true, checkVisibilityCSS:true})) continue;
+    const range = document.createRange(); range.selectNodeContents(node);
+    if (Array.from(range.getClientRects()).some(rect => rect.width > 0 && rect.height > 0
+      && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth)) return {visible: true};
+  }
+  return {visible: false};
+}"""
+
+
+async def read_text_in_view(page, text):
+    if page is None or not isinstance(text, str) or not 0 < len(text) <= 4000:
+        raise ValueError('native_find_text_input_invalid')
+    # WHY：原生Page.evaluate对bool返回Python字符串True/False，只有对象保证JSON序列化。
+    # 来源：B-U0.13.8 actor/page.py:103-159；保持同一可见性判断，不把返回格式误报为动作失败。
+    result = _object(await page.evaluate(TEXT_IN_VIEW_SCRIPT, text), 'native_find_text_observation_invalid')
+    if set(result) != {'visible'} or type(result['visible']) is not bool:
+        raise ValueError('native_find_text_observation_invalid')
+    return result['visible']
 
 
 async def read_target_state(element, *, include_focus=False) -> str:

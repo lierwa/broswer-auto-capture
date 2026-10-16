@@ -7,88 +7,57 @@ import { verifyForkSource } from "../../../../vendor/workflow-use/verify-source.
 import { RunnerProcess, modelReport } from "./service.js"
 import { openModelBridge } from "./model-bridge.js"
 import { hybridAuthorRequestSchema, hybridAuthorSourceSchema, hybridCompileRequestSchema,
-  hybridAnnotateRequestSchema, hybridAnnotateResultSchema, type HybridRunnerRequest } from "./hybrid-protocol.js"
+  type HybridRunnerRequest } from "./hybrid-protocol.js"
 import { z } from "zod"
 import { validateHybridRequestSources, validateHybridResponse } from "./hybrid-materializer.js"
-import { jsonValueSchema, type JsonValue } from "@browser-capture/contracts"
-import { naturalPayloadContext, naturalSourceContext } from "./hybrid-natural-payload.js"
+import { type JsonValue } from "@browser-capture/contracts"
+import { naturalSourceContext } from "./hybrid-natural-payload.js"
 import { SourceLifecycleDiagnostics, type SourceLifecycleProgress } from "./source-lifecycle-diagnostics.js"
-import { RuntimeCleanupRequiredError, type RuntimePrimaryOutcome } from "./cleanup.js"
+import { RuntimeCleanupRequiredError, type RuntimePrimaryOutcome, type RunnerCleanupReport } from "./cleanup.js"
 import { withSelectionValidation } from "./hybrid-selection.js"
-import { assertAnnotationSource, missingSelectionActions, missingRepeatActions } from "./hybrid-annotation.js"
 import { parseCapturedSource, type HybridSourceResult, type CapturedSourceReceipt } from "./hybrid-captured-source.js"
 import type { AuthoringHumanHandlers } from "./hybrid-author-human.js"
 import type { CompilationHandler } from "./hybrid-compilation-checkpoint.js"
+import { hybridCapabilitiesForRunner } from "./hybrid-runtime.js"
 
 export type { HybridSourceResult } from "./hybrid-captured-source.js"
 export type HybridAuthoringProgress = SourceLifecycleProgress
 export interface HybridAuthorSession {
+  capabilities?: import("@browser-capture/runtime").TaskChainCapabilities
   author(source: z.infer<typeof hybridAuthorSourceSchema>, options?: { closeAfterResponse?: boolean;
     onCompilation?: CompilationHandler;
     onSource?: (source: CapturedSourceReceipt) => void }): Promise<HybridSourceResult>
 }
 
-export type HybridSourceAnnotation = { selection: ModelSelection; ownerId: string;
-  onProgress?: (event: HybridAuthoringProgress) => void }
-type RecompileResult = { request?: JsonValue; response: ReturnType<typeof validateHybridResponse>;
+type RecompileResult = { response: ReturnType<typeof validateHybridResponse>;
   forkSourceDigest: string; modelCalls: ModelCallReport[] }
-type CompilerDependencies = { verifySource?: typeof verifyForkSource; openBridge?: typeof openModelBridge;
+type CompilerDependencies = { verifySource?: typeof verifyForkSource;
   createRunner?: (root: string, signal: AbortSignal) => Pick<RunnerProcess, "startCompiler" | "request" | "close"> }
 type AuthoringDependencies = { verifySource?: typeof verifyForkSource; openBridge?: typeof openModelBridge;
   createRunner?: (root: string, signal: AbortSignal, onDiagnostic?: (line: string) => void) =>
     Pick<RunnerProcess, "startHybrid" | "request" | "close" | "envBoolean"> & Partial<Pick<RunnerProcess, "handoff">> }
 
 export async function recompileHybridSource(input: Omit<z.infer<typeof hybridCompileRequestSchema>, "id" | "type" | "request">
-  & { root: string; signal: AbortSignal; canonicalRequest: string; annotation?: HybridSourceAnnotation;
-    directory?: string; subject?: ReturnType<AI["forSubject"]> }, dependencies: CompilerDependencies = {}) {
+  & { root: string; signal: AbortSignal; canonicalRequest: string; ownerId: string },
+  dependencies: CompilerDependencies = {}) {
   const forkSourceDigest = await (dependencies.verifySource ?? verifyForkSource)(input.root)
   const runner = dependencies.createRunner?.(input.root, input.signal) ?? new RunnerProcess(input.root, input.signal)
-  const reports: ModelCallReport[] = [], intended = new Map<string, string>()
-  let bridge: Awaited<ReturnType<typeof openModelBridge>> | undefined
-  let diagnostics: SourceLifecycleDiagnostics | undefined
   let primary: RuntimePrimaryOutcome<RecompileResult>
   try {
     const { request, transportRequest } = naturalSourceContext(input.canonicalRequest)
     const command = hybridCompileRequestSchema.parse({ id: randomUUID(), type: "hybrid_compile", request,
       outputSchema: input.outputSchema, sourceGaps: input.sourceGaps, verifiedChildren: input.verifiedChildren })
     await runner.startCompiler()
-    let response = validateHybridResponse(await runner.request(
+    const response = validateHybridResponse(await runner.request(
       { ...command, request: transportRequest } as HybridRunnerRequest))
     validateHybridRequestSources(response, request)
-    let annotatedRequest: Record<string, JsonValue> | undefined
-    // WHY：/3 在线已对同一动作尝试一次源码生成；恢复只重编译，不能借旧补注解分支再调模型。
-    if (request.compilerVersion === "bat-hybrid/2" && input.annotation
-      && (missingSelectionActions(response).size || missingRepeatActions(response).size)) {
-      if (!input.subject || !input.directory) throw new Error("hybrid_annotation_context_missing")
-      const annotation = input.annotation
-      diagnostics = SourceLifecycleDiagnostics.open(input.directory, annotation.ownerId, annotation.onProgress)
-      bridge = await (dependencies.openBridge ?? openModelBridge)({ subject: input.subject,
-        selection: annotation.selection, signal: input.signal, allowedPurposes: ["semantic_annotation"],
-        onAudit: (audit) => { const report = modelReport(audit, annotation.selection.modelId, intended)
-          reports.push(report); diagnostics?.recordModel(report) } })
-      const annotate = hybridAnnotateRequestSchema.parse({ ...command, type: "hybrid_annotate",
-        model: { model: annotation.selection.modelId, endpoint: bridge.url, token: bridge.token } })
-      // WHY：canonical transport 保留 Python 数字词法；只发一次注解 RPC，不启动 Browser 或重复探索。
-      const result = hybridAnnotateResultSchema.parse(await runner.request({ ...annotate,
-        request: naturalPayloadContext(response, request).transportRequest } as HybridRunnerRequest))
-      annotatedRequest = z.record(z.string(), jsonValueSchema).parse(result.request)
-      const annotatedResponse = validateHybridResponse(result.response)
-      assertAnnotationSource(request, annotatedRequest, response, annotatedResponse)
-      response = annotatedResponse
-    }
-    response = validateHybridResponse(await withSelectionValidation(response, annotatedRequest ?? request, input.signal))
-    primary = { status: "completed", value: { ...(annotatedRequest ? { request: annotatedRequest } : {}),
-      response, forkSourceDigest, modelCalls: reports } }
+    // WHY：恢复只消费现行已保存来源，不借旧协议缺口开启第二次语义模型救援。
+    const validated = validateHybridResponse(await withSelectionValidation(response, request, input.signal))
+    primary = { status: "completed", value: { response: validated, forkSourceDigest, modelCalls: [] } }
   } catch (error) { primary = { status: "failed", error } }
   const cleanup = await runner.close()
-  let bridgeFailure: unknown
-  try { await bridge?.close() } catch (error) { bridgeFailure = error } finally {
-    diagnostics?.recordRuntimeOutcome(primary, cleanup, bridgeFailure)
-    diagnostics?.close()
-  }
-  if (cleanup.status === "unconfirmed") throw new RuntimeCleanupRequiredError(input.annotation?.ownerId ?? "hybrid-compiler", cleanup, primary)
+  if (cleanup.status === "unconfirmed") throw new RuntimeCleanupRequiredError(input.ownerId, cleanup, primary)
   if (primary.status === "failed") throw primary.error
-  if (bridgeFailure) throw bridgeFailure
   return primary.value
 }
 
@@ -97,6 +66,7 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
   selection: ModelSelection; signal: AbortSignal; allowedOrigins: string[]; allowedSites?: BrowserAllowedSite[]; directory: string; ownerId: string;
   headless?: boolean; profilePath?: string;
   managedWindow?: { ownerId: string; resume: boolean }; preserveWindow?: boolean;
+  onCleanup?: (report: RunnerCleanupReport) => void;
   onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
   work: (session: HybridAuthorSession) => Promise<T>, dependencies: AuthoringDependencies = {}) {
   const fork = await (dependencies.verifySource ?? verifyForkSource)(input.root)
@@ -107,15 +77,17 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
   try {
     bridge = await (dependencies.openBridge ?? openModelBridge)({ ...input, allowedPurposes: ["agent", "judge", "extract", "semantic_annotation"],
       onAudit: (audit) => { const report = modelReport(audit, input.selection.modelId, intended)
-        reports.push(report); diagnostics?.recordModel(report) } })
+        reports.push(report); diagnostics?.recordModel(report, audit.transport) } })
   } catch (error) {
     diagnostics?.recordRuntimeOutcome({ status: "failed", error }, null)
     diagnostics?.close()
     throw error
   }
-  const runner = dependencies.createRunner?.(input.root, input.signal,
+  const capabilityOwner = new AbortController()
+  const runnerSignal = AbortSignal.any([input.signal, capabilityOwner.signal])
+  const runner = dependencies.createRunner?.(input.root, runnerSignal,
     diagnostics ? (line) => diagnostics.acceptPythonLine(line) : undefined)
-    ?? new RunnerProcess(input.root, input.signal,
+    ?? new RunnerProcess(input.root, runnerSignal,
       diagnostics ? (line) => diagnostics.acceptPythonLine(line) : undefined)
   let primary: RuntimePrimaryOutcome<T>
   try {
@@ -124,7 +96,8 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
       profilePath: input.profilePath ?? path.join(input.directory, "browser-profile", "default"),
       headless: input.headless ?? runner.envBoolean("BAT_UPSTREAM_BROWSER_HEADLESS", false),
       managedWindow: input.managedWindow ?? { ownerId: input.ownerId, resume: false } })
-    const value = await work({ author: async (source, options) => {
+    const value = await work({ capabilities: hybridCapabilitiesForRunner(input, runner, capabilityOwner, diagnostics),
+      author: async (source, options) => {
       const offset = reports.length
       let compilationError: unknown
       let raw: JsonValue
@@ -169,6 +142,7 @@ export async function withHybridAuthoring<T>(input: { root: string; subject: Ret
     diagnostics?.recordRuntimeOutcome(primary, cleanup, bridgeFailure)
     diagnostics?.close()
   }
+  input.onCleanup?.(cleanup)
   if (cleanup.status === "unconfirmed") throw new RuntimeCleanupRequiredError(input.ownerId, cleanup, primary)
   if (primary.status === "failed") throw primary.error
   if (bridgeFailure) throw bridgeFailure

@@ -9,10 +9,11 @@ type AssertFact = ReturnType<typeof naturalPayloadContext>["assertFact"]
 const proposedAction = z.object({ navigate: z.object({ url: z.string().url() }).strict() }).strict()
 const method = z.object({ actionRef: z.string(), readFactRef: z.string(), requirementDigest: z.string(),
   registryDigest: z.string(), action: proposedAction, dispatch: z.literal(false), intent: z.string() }).strict()
-export const preparationMethodOutcomeSchema = z.enum(["recorded", "state_only", "unsupported"])
-const receipt = z.object({ doneActionRef: z.string(), methodOutcome: preparationMethodOutcomeSchema,
+const receipt = z.object({ doneActionRef: z.string(), methodOutcome: z.enum(["recorded", "state_only", "unsupported"]),
   requirementDigest: z.string(), observedActionRefs: z.array(z.string()).max(500),
   inspectedMethodRefs: z.array(z.string()).max(500) }).strict()
+const navigationBinding = z.object({ argumentPath: z.literal("url"), kind: z.literal("prior_output"),
+  derivation: z.literal("selection_function"), binding: z.object({ source: z.literal("node") }).passthrough() }).passthrough()
 
 export function selectionNavigationUrl(action: Action) {
   return action.name === "bat_inspect_action"
@@ -63,15 +64,18 @@ function assertSameDocument(left: Request["trace"]["observations"][number], righ
 
 export function assertPreparationMethod(request: Request, compilation: HybridCompilation, assertFact: AssertFact) {
   if (request.compilerVersion !== "bat-hybrid/3") return
-  const done = request.trace.actions.at(-1), args = z.object({ methodOutcome: receipt.shape.methodOutcome })
-    .passthrough().safeParse(done?.args)
+  const done = request.trace.actions.at(-1), args = z.object({ text: z.string(), success: z.literal(true).default(true),
+    files_to_display: z.array(z.string()).nullable().optional() }).strict().safeParse(done?.args)
   const matches = request.trace.observations.flatMap(o => o.facts.filter(f => f.kind === "preparation_method_receipt")
     .map(f => ({ o, f })))
   if (!request.trace.completed || done?.name !== "done" || done.status !== "succeeded" || !args.success
     || matches.length !== 1 || matches[0]!.o.id !== done.postObservationRef) throw new Error("preparation_method_receipt_required")
   const { o, f } = matches[0]!, value = receipt.parse(f.value)
   assertFact(f, o.id)
-  const expected = { doneActionRef: done.id, methodOutcome: args.data.methodOutcome,
+  // WHY：方法状态由宿主真实动作计算，原生 done 不拥有编译技术字段。
+  const methodOutcome = request.trace.actions.some(a => a.status === "succeeded" && a.name !== "done")
+    ? "recorded" : "state_only"
+  const expected = { doneActionRef: done.id, methodOutcome,
     requirementDigest: request.requirement.sourceDigest,
     observedActionRefs: request.trace.actions.filter(a => a.status === "succeeded"
       && a.name !== "done" && a.name !== "bat_inspect_action").map(a => a.id),
@@ -88,7 +92,9 @@ export function assertPreparationMethod(request: Request, compilation: HybridCom
     }
     if (segment.kind !== "deterministic" || segment.operation.name !== "browser.workflow-step"
       || segment.operation.actionName !== "navigate" || segment.target !== null
-      || !segment.postconditions.some(p => p.kind === "url" && p.bindingArgument === "url")) {
+      || segment.expectedEffect.kind !== "navigation"
+      || !segment.bindings.some(b => navigationBinding.safeParse(b).success)) {
+      // WHY：派发URL来自已核验选择函数；落地URL由原生导航和样本试运行检查，不要求重定向后相等。
       throw new Error("inspected_navigation_postcondition_required")
     }
     assertRequiredOnCompletion(compilation, segment.id)

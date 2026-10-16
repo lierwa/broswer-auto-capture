@@ -6,10 +6,15 @@ import { hybridPrefixResponseSchema } from "./hybrid-prefix-schema.js"
 const digest = z.string().regex(/^[a-f0-9]{64}$/)
 export const compilationCheckpointSchema = z.object({ id: z.uuid(), event: z.literal("authoring_compilation"),
   sequence: z.number().int().min(1).max(202), digest, payload: z.string().min(1).max(8_000_000) }).strict()
-const common = { stepId: z.string().min(1), canonicalRequest: z.string().min(1).max(8_000_000) }
-export const compilationPayloadSchema = z.discriminatedUnion("phase", [
-  z.object({ ...common, phase: z.literal("prefix"), response: hybridPrefixResponseSchema }).strict(),
-  z.object({ ...common, phase: z.literal("final"), response: hybridCompilerResponseSchema }).strict(),
+// WHY：外层来源先接收；内层候选非法不能让合法 canonical 来源一同消失。
+export const compilationPayloadSchema = z.object({ stepId: z.string().min(1),
+  canonicalRequest: z.string().min(1).max(8_000_000), phase: z.enum(["prefix", "final"]),
+  candidate: z.unknown() }).strict()
+const candidateError = z.discriminatedUnion("stage", [
+  z.object({ kind: z.literal("error"), stage: z.literal("annotation"),
+    code: z.literal("hybrid_semantic_annotation_failed") }).strict(),
+  z.object({ kind: z.literal("error"), stage: z.literal("compile"),
+    code: z.literal("hybrid_native_compilation_failed") }).strict(),
 ])
 export const compilationAckSchema = z.object({ id: z.uuid(), type: z.literal("hybrid_compilation_ack"),
   authorRequestId: z.uuid(), sequence: z.number().int().min(1).max(202), digest, accepted: z.boolean() }).strict()
@@ -28,8 +33,18 @@ export function parseCompilationCheckpoint(event: CompilationCheckpoint) {
 }
 
 export function confirmationBudget(payload: CompilationPayload) {
-  return 10_000 + payload.response.compilation.segments.reduce((sum, segment) => sum
-    + (segment.kind === "function" ? segment.draft.examples.length * 1000 : 0), 0)
+  try {
+    const candidate = parseCompilationCandidate(payload)
+    return 10_000 + (candidate.kind === "error" ? 0 : candidate.response.compilation.segments.reduce((sum, segment) => sum
+      + (segment.kind === "function" ? segment.draft.examples.length * 1000 : 0), 0))
+  } catch { return 10_000 }
+}
+
+export function parseCompilationCandidate(payload: CompilationPayload) {
+  const candidate = z.object({ kind: z.enum(["result", "error"]) }).passthrough().parse(payload.candidate)
+  if (candidate.kind === "error") return candidateError.parse(payload.candidate)
+  const response = payload.phase === "prefix" ? hybridPrefixResponseSchema : hybridCompilerResponseSchema
+  return z.object({ kind: z.literal("result"), response }).strict().parse(payload.candidate)
 }
 
 /** WHY：只有保存完成才能 ACK；fd4 日志和前端订阅均不参与这个屏障。 */

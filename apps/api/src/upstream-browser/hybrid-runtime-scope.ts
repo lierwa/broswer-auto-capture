@@ -4,6 +4,7 @@ import type { JsonValue, TaskCheckpoint } from "@browser-capture/contracts"
 import { checkpointBrowserReceipt } from "@browser-capture/runtime"
 import { isCompleteDiscovery } from "./hybrid-discovery.js"
 import { advanceBoundedNavigationWait, sameDocumentIdentity } from "./hybrid-navigation-wait-scope.js"
+import { isNativeSequenceStopExclusion, NATIVE_SEQUENCE_STOP_RULE } from "./hybrid-native-sequence-stop.js"
 
 export const RUNTIME_SCOPE_FROM = "runtimeScopeFrom"
 export const RUNTIME_SCOPE_READ_ONLY = "runtimeScopeReadOnlySameDocument"
@@ -14,7 +15,7 @@ type NaturalFact = { id: string; kind: string; value: JsonValue; sourceRefs: Evi
 type NaturalObservation = { id: string; sequence?: unknown; url?: unknown; tabId?: unknown;
   sourceRefs?: EvidenceReference[]; facts: NaturalFact[] }
 type NaturalAction = { id: string; name?: unknown; status?: unknown; effect?: unknown;
-  actionIndex?: unknown; args?: unknown; resultRef?: EvidenceReference | null;
+  stepIndex?: unknown; actionIndex?: unknown; args?: unknown; resultRef?: EvidenceReference | null;
   preObservationRef: string | null; postObservationRef: string | null }
 type NaturalTrace = { actions: NaturalAction[]; observations: NaturalObservation[] }
 type Compilation = {
@@ -122,6 +123,9 @@ function classifySegment(segmentId: string, { compilation, trace, assertFact, di
       }
       continue
     }
+    if (row.disposition === "agent_internal" && row.exclusionRule === NATIVE_SEQUENCE_STOP_RULE) {
+      if (!isNativeSequenceStopExclusion(trace, action, row, assertFact)) return limited(segmentId, "runtime_scope_native_sequence_stop_unproven")
+      continue }
     return limited(segmentId, "runtime_scope_intermediate_action_unsafe")
   }
   const before = observations.get(currentAction.preObservationRef)
@@ -306,19 +310,15 @@ function soleFact(observation: NaturalObservation, kind: string) {
   const facts = observation.facts.filter((fact) => fact.kind === kind)
   return facts.length === 1 ? facts[0] : undefined
 }
-
 function hasProofRefs(haystack: EvidenceReference[], needles: Array<EvidenceReference | null | undefined>) {
   return needles.every((needle) => Boolean(needle && haystack.some((item) => sameReference(item, needle))))
 }
-
 function sameReferenceSet(left: EvidenceReference[], right: EvidenceReference[]) {
   return left.length === right.length && hasProofRefs(left, right) && hasProofRefs(right, left)
 }
-
 function uniqueReferences(refs: EvidenceReference[]) {
   return [...new Map(refs.map((ref) => [`${ref.ref}\u0000${ref.digest}`, ref])).values()]
 }
-
 function sameReference(value: unknown, expected: EvidenceReference) {
   return isRecord(value) && value.ref === expected.ref && value.digest === expected.digest
 }

@@ -41,6 +41,7 @@ type RuntimeGroup = Readonly<{
   onHandoffFailure?: (purpose: "delivery" | "human_wait", reason: string) => void;
   pacing?: RuntimeNodePacing;
   browser?: TaskExecution["browser"];
+  sessionCapabilities?: TaskChainCapabilities;
 }>
 
 export class TaskRuntimeHost {
@@ -59,7 +60,8 @@ export class TaskRuntimeHost {
     const ledger = new TaskBudgetLedger(input.budget, input.consumed, scopes, input.onConsumption)
     const closure = this.assertExecutable(input.taskId, input.chains)
     assertExecutionBrowserSupported(closure, input.browser?.headless ?? false)
-    const injected = await this.factory?.({ taskId: input.taskId, authorizationId: input.authorizationId, purpose: input.purpose })
+    const injected = input.sessionCapabilities
+      ?? await this.factory?.({ taskId: input.taskId, authorizationId: input.authorizationId, purpose: input.purpose })
     if (injected) return work(this.executor(injected, input.purpose, input.signal, ledger, 0, input.pacing))
     if (closure.some(chain => chain.nodes.some(node => node.kind === "browser" || node.kind === "capability" && node.capability.name === "browser.perform"))
       && !closure.some(chain => taskChainBrowserActions(chain).length || chain.nodes.some(node =>
@@ -77,6 +79,10 @@ export class TaskRuntimeHost {
           || node.capability.name === "browser.workflow-step"
             && z.object({ actionName: z.literal("navigate") }).passthrough().safeParse(node.config).success)))
       return this.upstream.withCapabilities<T>({ signal: input.signal, ownerId: input.browserRunId,
+        // WHY：现有checkpoint只有浏览器事实，不能把重建的空FileSystem当作已核恢复状态。
+        fileStateRequired: closure.some(chain => chain.nodes.some(node => node.kind === 'capability'
+          && node.capability.name === 'browser.workflow-step' && node.config && typeof node.config === 'object'
+          && !Array.isArray(node.config) && ['read_file', 'write_file', 'replace_file', 'upload_file', 'save_as_pdf', 'screenshot'].includes(String(node.config.actionName)))),
         // WHY：混合新旧节点时按实际检查点选择旧观察投影，不覆盖新版作用域恢复合同。
         legacyNodeIds: Object.fromEntries(closure.map(chain => [chain.id, chain.nodes.filter(node =>
           ["browser", "observe", "human"].includes(node.kind)

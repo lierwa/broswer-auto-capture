@@ -94,7 +94,6 @@ export type HybridRunnerRequest = z.infer<typeof hybridStartRequestSchema> | z.i
   | z.infer<typeof hybridObserveRequestSchema> | z.infer<typeof hybridHandoffRequestSchema>
   | z.infer<typeof hybridReleaseRequestSchema>
   | z.infer<typeof hybridManagedWindowRequestSchema> | z.infer<typeof hybridAuthorRequestSchema> | z.infer<typeof hybridCompileRequestSchema>
-  | z.infer<typeof hybridAnnotateRequestSchema>
   | z.infer<typeof hybridAuthorResumeRequestSchema>
   | z.infer<typeof compilationAckSchema>
 
@@ -114,9 +113,5 @@ export const hybridAuthorSourceSchema = z.object({ task: z.string().min(1).max(1
 export const hybridAuthorRequestSchema = z.object({ id, type: z.literal("hybrid_author"), source: hybridAuthorSourceSchema,
   onlineCompilation: z.boolean().default(false),
   model: z.object({ model: z.string().min(1), endpoint: z.url(), token: z.string().min(1) }).strict() }).strict()
-export const hybridAnnotateRequestSchema = hybridCompileRequestSchema.extend({ type: z.literal("hybrid_annotate"),
-  model: hybridAuthorRequestSchema.shape.model }).strict()
-export const hybridAnnotateResultSchema = z.object({ request: jsonValueSchema,
-  response: hybridCompilerResponseSchema }).strict()
 export const hybridAuthorResultSchema = z.object({ output: jsonValueSchema,
   canonicalRequest: z.string().min(1), sourceGaps: z.array(compilationGapSchema) }).strict()

@@ -30,7 +30,7 @@ async def main():
 asyncio.run(main())
 `
 function fixture(actual_navigation = false) {
-  const process = spawnSync(path.join(root, "work/upstream-browser-hybrid/.venv/Scripts/python.exe"), ["-c", source], {
+  const child = spawnSync(process.env.BAT_UPSTREAM_PYTHON ?? path.join(root, "work/upstream-browser-hybrid/.venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python"), ["-c", source], {
     cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000,
     env: { ...globalThis.process.env, PYTHONDONTWRITEBYTECODE: "1", ANONYMIZED_TELEMETRY: "false",
       PYTHONPATH: ["vendor/workflow-use/workflows", "apps/api/python", "vendor/workflow-use/workflows/tests"]
@@ -39,8 +39,8 @@ function fixture(actual_navigation = false) {
       requirementVersion: plan.requirement.version, requirementDigest: plan.requirement.digest,
       planId: plan.id, planVersion: plan.version, planDigest: digestJson(plan), stepId: step.id } }),
   })
-  assert.equal(process.status, 0, process.stderr)
-  const result = JSON.parse(process.stdout)
+  assert.equal(child.status, 0, child.stderr)
+  const result = JSON.parse(child.stdout)
   return { ...naturalSourceContext(result.canonicalRequest), canonicalRequest: result.canonicalRequest as string,
     response: validateHybridResponse(result.response) }
 }

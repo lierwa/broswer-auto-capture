@@ -1,5 +1,5 @@
 import type {
-  JsonValue, ResultSpec, TaskExecutionFailureEvidence, TaskPlan, TaskPlanStep, TaskRequirement, ValueSchema,
+  JsonValue, ResultSpec, TaskExecutionFailureEvidence, TaskMethodRevisionContext, TaskPlan, TaskPlanStep, TaskRequirement, ValueSchema,
 } from "@browser-capture/contracts"
 import { digestJson } from "@browser-capture/runtime"
 import { parsePreparationDraft } from "../interview/preparation-draft.js"
@@ -31,7 +31,8 @@ export function naturalRequirementText(requirement: TaskRequirement) {
 
 /** WHY：上游 Agent 接收完整业务请求；页面寻找、滚动、定位和抽取策略仍由 browser-use 决定。 */
 export function browserUseTask(input: { requirement: TaskRequirement; plan: TaskPlan; step: TaskPlanStep;
-  resolvedInput: JsonValue; repair?: TaskExecutionFailureEvidence }) {
+  resolvedInput: JsonValue; repair?: TaskExecutionFailureEvidence;
+  methodRevision?: Pick<TaskMethodRevisionContext, "problem"> }) {
   const { requirement, plan, step } = input
   const requirementText = naturalRequirementText(requirement)
   const entryUrls = plan.entryUrls ?? []
@@ -50,6 +51,10 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
   const origin = requirementText.legacyMachineBlockRemoved
     ? "以下内容来自已确认的历史需求正文；历史机器规则块已经排除，不属于本次业务指令。"
     : "以下内容来自用户已确认的需求正文。"
+  // WHY：只省略与已展示步骤名称/目标逐字相同的派生说明；原需求、原话和独立完成条件保持完整。
+  const stepDescriptions = new Set([step.title, step.goal])
+  const completionDescriptions = step.completion.map(condition => condition.description)
+    .filter(description => !stepDescriptions.has(description))
   return [
     "你正在执行 B-A-T 已确认的一次浏览器任务步骤。请按自然语言目标理解页面并完成业务结果。",
     confirmedEntries?.length ? `【已确认准备计划草案 v${requirement.version}】` : "【完整需求】",
@@ -62,7 +67,7 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
       "以下是已结束来源上的技术备注，不是新的业务要求，也不是本次现场事实。先用原生工具在当前输入上复核，再形成实际动作和读取；不能仅凭备注编译、报告成功或扩大授权来源。",
       `来源准备：${step.preparationResearch.sourceJobId}；步骤：${step.preparationResearch.stepId}；产物：${step.preparationResearch.artifact.artifactId}；摘要：${step.preparationResearch.artifact.digest}`,
       step.preparationResearch.notes] : []),
-    `在总任务中的作用：${plan.summary}`,
+    ...(stepDescriptions.has(plan.summary) ? [] : [`在总任务中的作用：${plan.summary}`]),
     `已完成的前置步骤：${step.dependsOn.length ? step.dependsOn.map(id => plan.steps.find(item => item.id === id)?.title ?? id).join("、") : "无"}`,
     mode,
     ...(plan.steps.length > 1 ? ["完整需求说明整项任务的范围和约束。本次只执行上面的步骤目标与下面的阶段输出合同；"
@@ -76,6 +81,7 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
     ...describeValue(input.resolvedInput, "输入"),
     "复跑时输入值可以变化，但字段、类型和边界如下：",
     ...describeSchema(step.inputContract.schema, "输入", true),
+    ...(input.methodRevision ? ["【本次同需求方法修订】", input.methodRevision.problem] : []),
     ...(input.repair ? ["【本次显式修复依据】",
       `用户已授权修复运行 ${input.repair.executionId} 中已保存的确定性失败。`,
       `失败代码：${input.repair.code}`,
@@ -87,13 +93,13 @@ export function browserUseTask(input: { requirement: TaskRequirement; plan: Task
     ...(requiredResultSpec(step).mode === "data" ? [
       "以下合同约束本阶段正式复跑的结果。bat_read_fields 的首/尾代表样本只验证读取方法；"
       + "sampled 少于 total 不表示漏采，不要为凑齐合同数量重复同页读取或抄写页面值。"
-      + "选择同一输出路径的一份成功 readRef，使用 readRefs 结束；当前页面完整范围由普通运行器执行该方法读取。"
+      + "同一输出路径保留一份完整读取；用原生 done 结束，平台从成功读取装配结果。"
       + "若任务需要跨页或加载后续批次，仍须观察并保存实际推进和停止方法，当前 DOM 的 total 不代表全任务数量。",
     ] : []),
     ...describeResultSpec(requiredResultSpec(step)),
     ...describeSchema(step.outputContract.schema, "结果", true),
-    "【完成条件】",
-    ...step.completion.map((condition) => `- ${condition.description}`),
+    ...(completionDescriptions.length ? ["【完成条件】",
+      ...completionDescriptions.map(description => `- ${description}`)] : []),
     plan.steps.length > 1 ? "本步骤成功只声明本阶段方法可复跑；整项需求由全部步骤和正式运行完成，不能要求本步骤重复承担其他步骤。"
       : "需求正文中的相关完成条件也必须满足；条件不足时不得报告完整成功。",
     "【范围与等待点】",
@@ -113,12 +119,11 @@ export function describeResultSpec(spec: ResultSpec) {
   ]
   return [
     "- 本步骤必须返回符合下列合同的业务数据。",
-    ...spec.fields.map((field) => `- 结果${displayPath(field.path)}：${field.description}；逻辑来源 ${field.producerRef}`),
+    ...spec.fields.map((field) => `- 结果${displayPath(field.path)}：${field.description}`),
     ...(spec.derivations.length ? ["- 确定性派生：", ...spec.derivations.map((item) =>
-      `  - ${item.producerRef} 使用普通 ${item.operation} 数据节点，来源 ${item.sourceProducerRef} 的结果${displayPath(item.sourcePath)}`)] : []),
+      `  - 对结果${displayPath(item.sourcePath)}进行${item.operation}派生。`)] : []),
     ...(spec.edgeCases.length ? ["- 边界流程：", ...spec.edgeCases.map((edge) =>
-      `  - ${edge.description}；逻辑控制 ${edge.controlRef}`)] : []),
-    "- 逻辑引用只说明计划关系；不需要你编写链路结构、DOM 证明或真实 E1 节点 ID。原生浏览器工具所需参数按工具说明提供。",
+      `  - ${edge.description}`)] : []),
   ]
 }
 

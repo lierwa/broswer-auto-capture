@@ -1,3 +1,101 @@
+> **2026-10-13 当前：C真实新来源与双验证通过，现场两缺陷及请求取消传播已修，最终冻结3验收中。** 速度前两轮不达标，原失败保留。两站最终发布/同版复跑未完成，以[PROGRESS](PROGRESS.md)顶部及[本轮记录](BAT_NATIVE_EXPLORATION_EXECUTION_20261013.md)为准，下方为历史。
+
+## 2026-10-13 原生探索整改：复用选择与审核纠正
+
+复用既有 B-U 0.13.8 Agent/Tools、多动作序列及停止能力，TaskBrowser/Actor/CDP 原接线保留；B-A-T 仅补逐动作来源、IR 和版本生命周期。锁定上游源码及本机签名确认默认最多 5 动作，当前 1 动作来自自有适配。workflow-use 现有 fork/LICENSE 与依赖不变，不重装上游覆盖反爬补丁。完整 Reuse Assessment 见[方案第 10 节](BAT_NATIVE_EXPLORATION_REMEDIATION_PLAN_20261013.md)。
+
+独立 review 纠正：现有 not-dispatched 规则不能直接接受原生正常停止的无结果尾部；bat_inspect_dom 等实际工具也可能刷新索引；访问限制当前在整轮结束结算；同 URL SPA 的子控件身份保护不能未经反例核验宣称完备。方案已逐条补接线与兼容核验，未改产品代码。默认不先增加异步编译复杂度，先减不必要调用并测剩余瓶颈。
+
+模型 error-only 方法仍为语义质量问题，需新真实观察/方法/来源、局部候选与真实变化验证；不能以格式门或重编译旧 CSS 关闭。局部修订需同时处理 preparation-research 与 hybrid-source-reuse 的 failed-only 假设，保留 completed 的原运行事实。性能按全 job/同终点计算，开发变化验收不成为所有产品任务的统一完成门。
+
+后续用户质疑暴露首轮漏项 M1：逐动作记录完整不证明最终方法合适。定点核查 `natural_compile_actions`、`natural_compile_result`、`natural_read_liveness` 与 `coverage`，现有能力覆盖探查分类、纯未消费查询裁剪、readiness 重绑定、输出装配与 repeat 方法，但不拥有一般的导航/回退副作用消除。方案新增 §8.0 B3：沿现有编译器做有限证据变换，明确数据/控制/状态依赖、必需无值动作、动态目标和参数化方法，保守保留合法冗余，错误副作用经局部新来源修订；不新增模型逐动作 keep/drop、轨迹优化框架或最短路径发布门。
+
+本轮仅文档/只读 review，B3 增补已修正“跨 revision 冻结分类”和“retry coverage 误当副作用安全证明”两项发现，两个 reviewer 均复审通过；源码、平台、速度、稳定性和反爬行为尚未按该方案验收。证据与必须执行的能力核验见[审核记录](BAT_NATIVE_EXPLORATION_REMEDIATION_REVIEW_20261013.md)。
+
+## 2026-10-13 模型质量与宿主过度约束的分离
+
+原来源证明 Pixelscan 的 error-only 条件由模型提交；BrowserScan 未观察图标就声称没有状态也是模型判断问题。相反，错误的读取基数、Python/TS 方法合同不同步、必需结果跳过等待属于代码错误。发布证据检查不是两站这些失败的原始原因。
+
+同需求、同代码对照：5.6-sol/high 第一阶段不再限定 error，第二阶段仍限定；样本与独立复跑均完成不能消除这一缺陷。刷新账号目录后试用 astra/high，其原生结束明确因没有处理中生命周期证据而拒绝完成。用户随后明确指定 6.1-sol，产品已切换，后续仅使用该型号。当前宿主指导要求每次结果读取都捕获处理中快照，但 B-U 的正常动作完成后页面可能早已结束；这把调查途径变成额外完成门，与“有可执行完成条件”并非同一要求。
+
+本次修正只限指导：观察当前结果区域、可见完成标志与尚在处理的反证；仅在实际见到初始/处理中状态时用其排除错误方法，不要求倒追或重做操作来捕获短暂中间态。继续要求可复跑的等待条件，不把特定业务结果值、模型思考耗时或固定睡眠当作完成条件。不新增字段、模型调用或全局 judge。6.1-sol 未改代码基线 fe37db7a 同因 done(false)，19 动作/22 调用且首次 cleanup confirmed。现仅修正 author.py 与 method_read_diagnostics.py 两处宿主说明，既有公共/历史模型 schema 和普通执行器不变，待同型号原需求实跑。
+
+```text
+Product Alignment:
+- natural-language task: 原已确认的 Pixelscan 检测及同类异步结果读取。
+- reusable chain boundary: 原生探索记录读取方法，普通执行器执行现有等待与读取。
+- runtime inputs: 原需求、阶段输入、页面实际状态。
+- dynamic task outputs: 原合同的现场检测结论和项目。
+- generic platform capability used: Browser-Use 原生观察与 CSS 投影、现有 StepVerifier/Tenacity。
+- replay model calls: 0。
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 纠正探索指导中的额外完成门，不新增观察器或等待引擎。
+- existing implementation in repository: Browser-Use action/observation、自然读取证据及原有界等待。
+- mature candidates and pinned versions: 沿用现有锁定版本，无依赖变更。
+- selected implementation: 现有 B-U 观察和现有 runtime 等待。
+- reused public surface: find_elements、原生动作、bat_read_fields 和既有后置条件。
+- B-A-T-owned adapter and remaining gap: 只改宿主对方法形成的说明；模型仍负责语义选择。
+- license/runtime/platform fit: 沿用既有依赖，纯指导修改。
+- browser/runtime/state ownership conflicts: 不创建第二控制器，不更改历史来源。
+- replay model calls: 0。
+- rejected candidates and evidence: 无需新增全局 judge、状态词表、截图抓拍循环或 LLM 必填字段。
+- focused validation: 保留真实失败，原需求用指定模型验证；不新增测试文件。
+```
+
+## 2026-10-13 主流程发布证据与方法验证边界
+
+复用现有 TaskRun/TaskExecution/Candidate、SQLite 事务、Zod 和执行器输入展开；没有新增依赖或通用框架。新反例证实 completed 摘要不能独立授权发布或准备完成，三处消费已收敛至同一 release-evidence。最小模型入口与旧来源 parser 分开，回归夹具同步到各自真实接口。新增固定主流程检查入口，389 项不同定向检查分组与定点复验通过；产品语义变化验证未因此获得证明。
+
+关键否定证据：Pixelscan 两份当前草稿试跑能通过完整运行证据校验，但条件仍限定本次结果。这说明一致性校验与方法有效范围是两件事。禁止将所有属性选择器禁用、用状态词表或新增全局 judge 代替；合法筛选任务是直接反例。现有 prepare_task.research 只接收 failed job，也不能冒称已有 completed 来源的完整局部修订入口。后续能力与关闭条件见 MAIN_FLOW_INVARIANT_AUDIT_20261013.md；当前整体验收不通过。
+
+## 2026-10-13 原生查询摘要保留
+
+Reuse Assessment:
+- capability: 查询总数事实与原生详情同时保留。
+- existing implementation in repository: action_dispatch.bind_tools_act和dom_evidence.complete_find_elements_query。
+- mature candidates and pinned versions: 当前已固定browser-use Tools.find_elements，原生long_term_memory携带总数首句，extracted_content携带明细。
+- selected implementation: 原生两个返回字段原样复用，不重查页面或新建解析协议。
+- reused public surface: ActionResult.long_term_memory/extracted_content。
+- B-A-T-owned adapter and remaining gap: 适配器不能覆盖原生计数首句；追加详情继续满足后续模型记忆。
+- license/runtime/platform fit: 既有依赖，纯Python字符串组装，无新增平台依赖。
+- browser/runtime/state ownership conflicts: 不新增控制会话、查询、状态库或模型循环。
+- replay model calls: 0。
+- rejected candidates and evidence: 放宽正则兼容错误替换会保留双重事实源；应在造成信息丢失的适配器修复。
+- focused validation: 真实原生0/多项结果经派发适配器、捕获和既有空集合编译链核验。
+
+## 2026-10-13 逐行标量集合适配
+
+Reuse Assessment:
+- capability: 每个观察到的DOM行生成一个标量结果，保持采样与普通复跑一致
+- existing implementation in repository: 现有ReadSpec maxValues、多值投影、normalize_author_action前置来源捕获
+- mature candidates and pinned versions: 已固定browser-use actor CSS公开API；JSON Schema Draft202012Validator
+- selected implementation: 复用上述现有能力
+- reused public surface: :root容器与原CSS行选择器、多值fields.value
+- B-A-T-owned adapter and remaining gap: 仅在已确认标量数组且value=:scope时互换原container与field selector；不推断父元素或任务语义
+- license/runtime/platform fit: 不引入依赖；现有Python/Chrome跨平台接口
+- browser/runtime/state ownership conflicts: 不新增浏览器或DOM写入；来源捕获前定型参数
+- replay model calls: 0
+- rejected candidates and evidence: 不新增模型字段、模型循环或另一读取执行器；原110项误报单容器超限的真实来源855601a2保留
+- focused validation: 19项合同/来源/采样，真实Chrome异构卡片与变更复读，实际Python到TS四场景，32组旧Schema/10份来源兼容通过
+
+## 2026-10-13 组合字段读取复用
+
+真实缺口：同一业务字符串由名称和SVG图标属性组成，整个父节点又含不应采集的原始值。现有DOM投影/ReadSpec和绑定编译器覆盖读取生命周期，局部扩展parts复用querySelectorAll/getAttribute，不另造DOM引擎或语义模型。两类适用任务为状态报告（名称+图标）、订单/工单列表（标题+徽标）。parts每段仅selector/可选attribute，换行由代码固定，不让模型填类型、数量预算、分隔符、样例或绑定。属性命名空间按原生getAttribute读取，状态原值不按网站特判转换。闭环要求真实DOM变更状态后复读、旧schema摘要不变、Python→TS编译消费以及两站正式业务输出验收。
+
+## 2026-10-13 读取动画稳定性复用
+
+使用原生Web Animations的getAnimations/finished与下一帧事件，不改变页面，不让模型提供等待字段。有限动画3秒超时明确失败，无限动画不阻塞。实际Chrome局部回归通过，依据与真实外站根因见[当前修复记录](PUBLIC_NATIVE_REMAINING_ROOT_CAUSES_20261012.md#第三轮复验发现的动画中间态)。
+
+## 2026-10-13 两站原生准备修复的复用核验
+
+读取界面复用当前 Pydantic create_model / model_validator 和 JSON Schema Draft202012Validator，执行仍复用既有 ReadSpec；无新读取器或模型重试循环。完成来源复用现有 assemble / ValueBinding；只把合同唯一值、已有输入和经验证读取贯通。旧注册表只读适配与 HEAD 的32种组合摘要逐一相等。生命周期复用 RunnerCleanupReport、同 owner managedWindowAction 与 SQLite 部分索引，不引入第二套调度。
+
+网络诊断采用 Node 官方 [Undici DiagnosticsChannel](https://github.com/nodejs/undici/blob/main/docs/docs/api/DiagnosticsChannel.md)，实测真实 fetch 并发调用隔离、HTTP 503 和 TCP 断开，只返回白名单 code / HTTP status。由请求对象 WeakMap 关联 AsyncLocalStorage 调用，不记录 URL、请求头、正文或异常消息。选型为现有 Node 24 内置能力，无新增依赖、许可证或 Python 平台差异。
+
+进程代理采用 Node 官方 [NODE_USE_ENV_PROXY](https://nodejs.org/docs/latest-v24.x/api/cli.html#node_use_env_proxy1)，本机 Node 24.12 支持；normal dev/API start 通过可选 .env 读取，NO_PROXY 保留回环直连。不改共享 Clash 规则、系统时区、个人扩展或远程控制。Node 24.14 的 setGlobalProxyFromEnv 本机不可用，未采用，亦未自写代理路由器。
+
 # 技术调研与复用结论
 
 ## 2026-10-12 导航授权承接与主流程核查

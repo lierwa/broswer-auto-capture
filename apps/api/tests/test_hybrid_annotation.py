@@ -19,7 +19,7 @@ def annotation_request():
     output_schema, input_schema = {'type': 'null'}, {'type': 'null'}
     model, _ = output_model_for(output_schema, 'HybridAgentOutput')
     result_spec = {'contractVersion': 'bat-result-spec/v1', 'mode': 'execution'}
-    registry = ActionRegistry.from_tools(author_tools_for_result_spec(model, SimpleNamespace(mode='execution')))
+    registry = ActionRegistry.from_tools(author_tools_for_result_spec(SimpleNamespace(mode='execution')))
     requirement = {'id': 'requirement', 'version': 1, 'text': 'Choose the eligible item.',
         'taskText': 'Choose it.', 'sourceDigest': '2' * 64}
     requirement['digest'] = digest(requirement)

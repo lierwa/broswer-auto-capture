@@ -81,11 +81,13 @@ class NormalizedTraceBase(Contract):
                 raise ValueError('observation_order')
             for fact in observation.facts:
                 if fact.kind in {'dom_structure', 'dom_query', 'natural_binding', 'native_extraction',
-                                 'native_action_dispatch', 'native_action_result', 'native_dom_event', 'browser_context',
+                                 'native_action_dispatch', 'native_action_result', 'native_dom_event',
+                                 'native_sequence_stop', 'browser_context',
                                  'verified_natural_read', 'verified_target_scroll', 'verified_visible_wait',
                                  'verified_natural_summary', 'verified_output_assembly', 'selection_function',
                                  'verified_human_resume', 'host_collection_read',
-                                 'observation_diagnostic', 'document_identity', 'entry_source_document'}:
+                                 'observation_diagnostic', 'document_identity', 'entry_source_document',
+                                 'native_file_output', 'native_file_input', 'find_text_visible'}:
                     value_digest = digest(fact.value)
                     if any(reference.digest != value_digest for reference in fact.sourceRefs):
                         raise ValueError('fact_source_digest_mismatch')

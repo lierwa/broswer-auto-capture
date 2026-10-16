@@ -1,8 +1,22 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { DomainError } from "../src/errors.js"
-import { authoringFailureCode, authoringFailureMessage, failureLayer } from "../src/task-chain/authoring-failure.js"
+import { authoringFailureCode, authoringFailureMessage, failureLayer, incompleteSourceError } from "../src/task-chain/authoring-failure.js"
 import { cleanupReport, RUNNER_CLEANUP_STAGES, RuntimeCleanupRequiredError } from "../src/upstream-browser/cleanup.js"
+
+// 不变量：早期读取失败已纠正时，最终主动失败/中断不能再次归因于该读取。
+test("准备终止原因只消费最终动作，保留主动失败与无明确终止动作的区别", () => {
+  const corrected = [{ name: "bat_read_fields", status: "failed", args: {} },
+    { name: "bat_read_fields", status: "succeeded", args: {} }]
+  const declared = incompleteSourceError([...corrected,
+    { name: "done", status: "failed", args: { success: false, reason: "private page text" } }])
+  assert.equal(declared.message, "hybrid_source_declared_failure")
+  assert.match(authoringFailureMessage(declared), /明确以未完成结束/)
+  assert.doesNotMatch(authoringFailureMessage(declared), /private|第 1 个动作/)
+  assert.equal(incompleteSourceError(corrected).message, "hybrid_completed_source_required")
+  assert.equal(incompleteSourceError([{ name: "navigate", status: "failed", args: {} }]).message,
+    "hybrid_completed_source_required:navigate:1")
+})
 
 // WHY：保留启动/协议原因，同时阻止异常正文中的页面、地址和凭据进入持久化诊断。
 test("准备失败代码保留确定原因，剔除异常正文", () => {

@@ -24,11 +24,8 @@ def repeat_context(request):
         declared = {ref for row in value['iterations'] for ref in row.values() if ref}
         lookup_refs = {action.id for action in request.trace.actions
                        if action.id in set(refs) - declared and action.name == 'find_elements'}
-        validation_refs = {action.id for action in request.trace.actions
-                           if action.id in set(refs) - declared and action.name == 'bat_validate_selection'}
         return {'fact': fact, 'value': value, 'sampleRefs': refs,
-                'probeRefs': set(refs) - declared - lookup_refs - validation_refs,
-                'lookupRefs': lookup_refs, 'validationRefs': validation_refs}, []
+                'probeRefs': set(refs) - declared - lookup_refs, 'lookupRefs': lookup_refs}, []
     except Exception:
         return None, [gap('invalid_source', [], 'repeat_method_evidence_invalid', 'reject_trace')]
 
@@ -140,8 +137,7 @@ def validate_repeat_coverage(trace, row):
         value = validate_repeat_method(trace, fact.value, fact.value['requirementDigest'])
         refs = sample_action_refs(trace, value)
         declared = {ref for iteration in value['iterations'] for ref in iteration.values() if ref}
-        validation_refs = {action.id for action in trace.actions if action.name == 'bat_validate_selection'}
-        aliases = _sample_aliases(value, set(refs) - declared - validation_refs)
+        aliases = _sample_aliases(value, set(refs) - declared)
         action = next(item for item in trace.actions if item.id == row.actionRef)
         if row.actionRef not in aliases or not any(ref.digest == digest(value) for ref in fact.sourceRefs):
             return False

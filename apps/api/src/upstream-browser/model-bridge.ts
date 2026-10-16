@@ -3,6 +3,7 @@ import Fastify from "fastify"
 import { z } from "zod"
 import type { AI, AIEvent, ModelSelection } from "@agent-platform/ai-connect/server"
 import { validateSelectionRequest } from "./selection-validation.js"
+import { withModelTransport, modelTransportDiagnosticSchema } from "./model-transport-diagnostics.js"
 
 export const modelPurposeSchema = z.enum(["agent", "judge", "workflow_generation", "variable_suggestion",
   "extract", "output_conversion", "semantic_annotation"])
@@ -20,7 +21,8 @@ export const modelRequestSchema = z.object({
   jsonSchema: z.record(z.string(), z.unknown()).optional(),
 }).strict()
 export type ModelAudit = { requestId: string; upstreamSessionId?: string;
-  purpose: z.infer<typeof modelPurposeSchema>; event: AIEvent }
+  purpose: z.infer<typeof modelPurposeSchema>; event: AIEvent;
+  transport?: z.infer<typeof modelTransportDiagnosticSchema> }
 type AISubject = ReturnType<AI["forSubject"]>
 type Subject = Pick<AISubject, "generate" | "generateObject"> & {
   verifyCapabilities(...args: Parameters<AISubject["verifyCapabilities"]>): Promise<unknown>
@@ -60,26 +62,34 @@ export async function openModelBridge(input: {
     if (input.allowedPurposes && !input.allowedPurposes.includes(body.purpose)) return reply.code(400).send({ error: "bridge_purpose_denied" })
     if (seen.has(body.id)) return reply.code(409).send({ error: "bridge_duplicate_request" })
     seen.add(body.id)
-    try {
-      signal.throwIfAborted()
+    const disconnected = new AbortController()
+    // WHY：正文收完后客户端仍可能取消等待；只停本请求，正常响应关闭不能取消同轮其他调用。
+    const onClose = () => { if (!reply.raw.writableFinished) disconnected.abort() }
+    reply.raw.once("close", onClose)
+    if (reply.raw.destroyed) onClose()
+    const requestSignal = AbortSignal.any([signal, disconnected.signal])
+    try { return await withModelTransport(async diagnostic => { try {
+      requestSignal.throwIfAborted()
       // WHY：prepareInvocation 仅支持 managed profile；普通账号用公开 generate 接口，固定选择并由 AI Connect 核验能力。
       const args = { model: selection, requiredCapabilities: ["vision", "structuredOutput"] as const,
-        messages: body.messages, ...(body.system === undefined ? {} : { system: body.system }), signal,
+        messages: body.messages, ...(body.system === undefined ? {} : { system: body.system }), signal: requestSignal,
         onEvent: (event: AIEvent) => {
           // WHY：正文流、页面提取和搜索内容不能进入产品审计；保留生命周期与供应商 usage。
           if (["generation.started", "generation.completed", "generation.failed", "generation.cancelled"].includes(event.type)) {
+            const transport = event.type === "generation.failed" ? diagnostic() : undefined
             input.onAudit({ requestId: body.id, purpose: body.purpose, event,
+              ...(transport ? { transport } : {}),
               ...(body.upstreamSessionId === undefined ? {} : { upstreamSessionId: body.upstreamSessionId }) })
           }
         } }
       const result = body.jsonSchema
         ? await input.subject.generateObject({ ...args, schema: { jsonSchema: body.jsonSchema, parse: (value) => z.json().parse(value) } })
         : await input.subject.generate(args)
-      signal.throwIfAborted()
+      requestSignal.throwIfAborted()
       return { completion: body.jsonSchema ? result.object : result.text, usage: result.usage }
     } catch {
-      return reply.code(signal.aborted ? 409 : 502).send({ error: signal.aborted ? "bridge_cancelled" : "bridge_model_failed" })
-    }
+      return reply.code(requestSignal.aborted ? 409 : 502).send({ error: requestSignal.aborted ? "bridge_cancelled" : "bridge_model_failed" })
+    } }) } finally { reply.raw.off("close", onClose) }
   })
   try {
     const url = await app.listen({ host: "127.0.0.1", port: 0 })

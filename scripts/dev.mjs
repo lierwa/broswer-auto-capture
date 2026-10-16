@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { appendFileSync, mkdirSync } from "node:fs"
 import { createServer as createHttpServer } from "node:http"
 import { createConnection } from "node:net"
 import path from "node:path"
@@ -316,6 +317,21 @@ async function askForRestart() {
 
 async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+  // WHY：固定元数据保留服务退出证据；不接管调度、改变异常行为或记录页面/凭据。
+  const recordLifecycle = (event, fields = {}) => {
+    try {
+      const directory = path.resolve(process.env.BROWSER_CAPTURE_DATA_DIRECTORY
+        ?? process.env.BROWSER_CAPTURE_INTERVIEW_DATA_DIRECTORY ?? path.join(root, "data"))
+      mkdirSync(directory, { recursive: true })
+      appendFileSync(path.join(directory, "service-lifecycle.jsonl"), `${JSON.stringify({
+        schemaVersion: "bat.service-lifecycle/v1", occurredAt: new Date().toISOString(),
+        pid: process.pid, parentPid: process.ppid, event, ...fields })}\n`, { mode: 0o600 })
+    } catch { /* 诊断故障不改变服务的启动或关闭。 */ }
+  }
+  recordLifecycle("starting")
+  process.once("exit", code => recordLifecycle("exit", { code }))
+  process.once("uncaughtExceptionMonitor", (error, origin) => recordLifecycle("uncaught_exception", {
+    origin, errorKind: error?.name === "Error" ? "error" : "other_error" }))
   const ports = selectedPorts()
   await ensureDevPortsAvailable({
     ports,
@@ -330,10 +346,14 @@ async function main() {
     onStopping: (owners) => process.stderr.write(`正在停止已确认的 PID：${[...new Set(owners.map((owner) => owner.pid))].join(", ")}\n`),
   })
   const running = await launchDevServices({ root, ports })
+  recordLifecycle("listening", { apiPort: ports.api, webPort: ports.web })
   let interrupted = false
-  const stop = () => { interrupted = true; void running.stop().catch(() => { process.exitCode = 1 }) }
-  process.once("SIGINT", stop)
-  process.once("SIGTERM", stop)
+  const stop = signal => {
+    interrupted = true; recordLifecycle("stop_requested", { signal })
+    void running.stop().then(() => recordLifecycle("stopped"), () => { recordLifecycle("stop_failed"); process.exitCode = 1 })
+  }
+  process.once("SIGINT", () => stop("SIGINT"))
+  process.once("SIGTERM", () => stop("SIGTERM"))
   try { await running.result }
   catch { if (!interrupted) throw new DevStartError("API 或 Workbench 启动失败；本次启动的其他服务已停止。") }
 }

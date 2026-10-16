@@ -18,10 +18,17 @@ def natural_bindings(request, action, pre, has_target, prior_segments=(), *, dep
     for key in sorted(args):
         if has_target and key in ('index', 'element_index', 'xpath'):
             continue
-        # WHY：原生 viewport scroll 的显式 None 与缺省同义，不是需要绑定的元素目标。
-        if action.name == 'scroll' and key == 'index' and args[key] is None:
+        # WHY：原生 viewport scroll 的 0/None 与缺省同义；来源保留参数，复跑不绑定元素索引。
+        if action.name == 'scroll' and key == 'index' and args[key] in (None, 0):
             continue
         if key in IGNORED_TECHNICAL_PARAMETERS.get(action.name, frozenset()):
+            continue
+        if action.name in {'read_file', 'upload_file'} and key == ('path' if action.name == 'upload_file' else 'file_name'):
+            owned = owned_native_file_binding(request, action, pre, key, prior_segments)
+            if owned is None:
+                issues.append(gap('missing_binding', [action.id], 'native_file_producer_required', 'collect_evidence'))
+            else:
+                decisions.append(owned)
             continue
         from .inspected_compile import inspected_navigation_source
         if (getattr(request, 'compilerVersion', None) == 'bat-hybrid/3' and key == 'url'
@@ -69,6 +76,62 @@ def natural_bindings(request, action, pre, has_target, prior_segments=(), *, dep
             'proofRefs': [ref.model_dump(mode='json') for ref in proof_refs],
             'binding': value.binding})
     return decisions, issues
+
+
+def owned_native_file_binding(request, action, pre, key, prior_segments):
+    import re
+    from .action_dispatch import not_dispatched_coverage
+    from .native_sequence_stop import sequence_stop_coverage
+    from .native_files import native_filename
+    inputs = [fact for fact in pre.facts if fact.kind == 'native_file_input'
+              and isinstance(fact.value, dict) and fact.value.get('actionRef') == action.id]
+    if len(inputs) != 1:
+        return None
+    identity = {key: value for key, value in inputs[0].value.items() if key not in {'actionRef', 'argumentDigest'}}
+    if (set(identity) != {'fileName', 'pathDigest', 'contentDigest', 'byteLength'}
+            or type(identity.get('byteLength')) is not int or not 0 <= identity['byteLength'] <= 64 * 1024 * 1024
+            or action.name == 'upload_file' and identity['byteLength'] == 0
+            or any(not isinstance(identity.get(key), str) or not re.fullmatch(r'[a-f0-9]{64}', identity[key])
+                   for key in ('pathDigest', 'contentDigest'))):
+        return None
+    try:
+        filename = native_filename(identity['fileName'])
+        if inputs[0].value.get('argumentDigest') != digest(action.args[key]):
+            return None
+        if action.args[key] != filename and identity['pathDigest'] != digest(action.args[key]):
+            return None
+    except (KeyError, ValueError):
+        return None
+    candidates = [item for item in request.trace.actions[:request.trace.actions.index(action)]
+                  if item.name in {'write_file', 'replace_file'} and item.args.get('file_name') == filename]
+    producer, skipped = None, []
+    for candidate in reversed(candidates):
+        excluded = not_dispatched_coverage(request.trace, candidate) or sequence_stop_coverage(request.trace, candidate)
+        if excluded is not None:
+            skipped.extend(excluded.evidenceRefs)
+            continue
+        producer = candidate
+        break
+    segment = next((item for item in prior_segments if producer is not None and item['id'] == 's-' + producer.id), None)
+    post = next((item for item in request.trace.observations
+                 if producer is not None and item.id == producer.postObservationRef), None)
+    if producer is None or producer.status != 'succeeded' or producer.resultRef is None or segment is None or post is None:
+        return None
+    outputs = [fact for fact in post.facts if fact.kind == 'native_file_output' and isinstance(fact.value, dict)
+               and fact.value.get('actionRef') == producer.id]
+    bindings = [item for item in segment.get('bindings', []) if item.get('argumentPath') == 'file_name']
+    if (len(outputs) != 1 or len(bindings) != 1 or outputs[0].value.get('ownedFile') != identity
+            or outputs[0].value.get('resultDigest') != producer.resultRef.digest
+            or outputs[0].id not in {item.get('sourceRef') for item in segment.get('outputs', [])}):
+        return None
+    source = bindings[0]
+    if source.get('kind') not in {'authorized_constant', 'runtime_input', 'prior_output'} or 'binding' not in source:
+        return None
+    refs = _unique_refs([*outputs[0].sourceRefs, *inputs[0].sourceRefs, *source['proofRefs'], *skipped])
+    # WHY：来源临时绝对路径只证明本次文件；复跑消费生成者的同一filename绑定，由当前owner定位实盘。
+    return {'id': f'b-{action.id}-{key}', 'actionRef': action.id, 'argumentPath': key, 'kind': source['kind'],
+            'sourceRef': inputs[0].id, 'transform': None, 'derivation': 'owned_native_file',
+            'proofRefs': [ref.model_dump(mode='json') for ref in refs], 'binding': source['binding']}
 
 
 def derived_prior_read_binding(request, action, key, expected, prior_segments):

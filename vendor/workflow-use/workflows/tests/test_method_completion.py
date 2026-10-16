@@ -33,7 +33,8 @@ class MethodCompletionTests(unittest.IsolatedAsyncioTestCase):
         second = case['records'].records[0].model_copy(deep=True)
         second.readRef, second.parameters.container = 'r2', '#combined-region'
         case['records'].records.append(second)
-        self.assertEqual(content_read_refs(case['records']), ['r2'])
+        with self.assertRaisesRegex(ValueError, 'completion_read_path_conflict'):
+            content_read_refs(case['records'])
         second.sample.documentRootId += 1
         with self.assertRaisesRegex(ValueError, 'completion_content_scope_ambiguous'):
             content_read_refs(case['records'])
@@ -42,58 +43,50 @@ class MethodCompletionTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, 'completion_content_scope_ambiguous'):
             content_read_refs(case['records'])
 
-    async def test_done_preserves_path_conflict_without_merging_page_samples(self):
+    async def test_native_done_ends_but_host_rejects_conflicting_page_samples(self):
         case = fixture()
-        second = case['records'].records[0].model_copy(deep=True)
-        second.readRef = 'r2'
+        second = case['records'].records[0].model_copy(deep=True); second.readRef = 'r2'
         case['records'].records.append(second)
-        output_model, _unwrap = output_model_for(SCHEMA, 'ConflictOutput')
-        tools = AuthorTools(output_model=output_model, output_schema=SCHEMA)
-        tools._bat_field_read_records = case['records']
-        result = await tools.registry.execute_action('done',
-            {'success': True, 'reason': 'Observed both pages.', 'readRefs': ['r1', 'r2']},
-            browser_session=SimpleNamespace(downloaded_files=[], cdp_client=None), file_system=SimpleNamespace())
-        self.assertTrue(result.error.startswith('completion_read_path_conflict:'))
-        self.assertIn('one representative readRef per output path', result.error)
-        self.assertFalse(result.is_done)
-        self.assertIsNone(result.extracted_content)
-        self.assertEqual(getattr(case['records'], 'selected_refs', ()), ())
-
-    async def test_done_preserves_only_known_safe_failure_codes(self):
-        output_model, _unwrap = output_model_for(SCHEMA, 'FailureOutput')
-        tools = AuthorTools(output_model=output_model, output_schema=SCHEMA)
-        cases = [('completion_read_schema_mismatch', 'completion_read_schema_mismatch'),
-                 ('completion_derivation_source_missing', 'completion_derivation_source_missing'),
-                 ('completion_derivation_source_invalid', 'completion_derivation_source_invalid'),
-                 ('completion_read_path_conflict SECRET_PAGE_VALUE', 'completion_read_reference_invalid'),
-                 ('credentials=SECRET_PAGE_VALUE', 'completion_read_reference_invalid')]
-        for failure, expected in cases:
-            with self.subTest(failure=failure), patch(
-                    'workflow_use.hybrid.author_tools.complete_from_read_refs', side_effect=ValueError(failure)):
-                result = await tools.registry.execute_action('done',
-                    {'success': True, 'reason': 'Observed.', 'readRefs': ['r1']},
-                    browser_session=SimpleNamespace(downloaded_files=[], cdp_client=None), file_system=SimpleNamespace())
-                self.assertEqual(result.error, expected)
-                self.assertFalse(result.is_done)
-                self.assertIsNone(result.extracted_content)
-
-    async def test_done_only_accepts_refs_and_serializes_host_sample(self):
-        case = fixture()
-        output_model, unwrap = output_model_for(SCHEMA, 'MethodOutput')
-        tools = AuthorTools(output_model=output_model, output_schema=SCHEMA)
-        tools._bat_field_read_records = case['records']
-        model = tools.registry.registry.actions['done'].param_model
-        self.assertEqual(set(model.model_json_schema()['required']), {'success', 'reason', 'readRefs'})
-        with self.assertRaises(ValidationError):
-            model.model_validate({'success': True, 'reason': 'observed', 'readRefs': ['r1'],
-                                  'data': [{'title': 'rewritten'}]})
-        result = await tools.registry.execute_action('done',
-            {'success': True, 'reason': 'Observed the record method.', 'readRefs': ['r1']},
+        model, unwrap = output_model_for(SCHEMA, 'ConflictOutput')
+        tools = AuthorTools()
+        result = await tools.registry.execute_action('done', {'text': 'Observed both pages.', 'success': True},
             browser_session=SimpleNamespace(downloaded_files=[], cdp_client=None), file_system=SimpleNamespace())
         self.assertTrue(result.is_done)
-        self.assertTrue(result.success)
-        self.assertEqual(unwrap(output_model.model_validate_json(result.extracted_content)),
-                         case['records'].records[0].sample.output)
+        history = SimpleNamespace(is_done=lambda: result.is_done, is_successful=lambda: result.success)
+        completed, output, gaps = _business_result(history, False, SCHEMA, case['records'])
+        self.assertTrue(completed)
+        self.assertIsNone(output)
+        self.assertEqual([item.reason for item in gaps], ['completion_read_path_conflict'])
+        self.assertEqual(getattr(case['records'], 'selected_refs', ()), ())
+
+    def test_host_failure_codes_do_not_include_page_values(self):
+        model, unwrap = output_model_for(SCHEMA, 'FailureOutput')
+        history = SimpleNamespace(is_done=lambda: True, is_successful=lambda: True)
+        cases = [('completion_read_schema_mismatch', 'completion_read_schema_mismatch'),
+                 ('completion_derivation_source_missing', 'completion_derivation_source_missing'),
+                 ('completion_read_path_conflict SECRET_PAGE_VALUE', 'business_output_schema_not_proven')]
+        for failure, expected in cases:
+            with self.subTest(failure=failure), patch(
+                    'workflow_use.hybrid.author.complete_from_read_refs', side_effect=ValueError(failure)):
+                completed, output, gaps = _business_result(history, False, SCHEMA)
+                self.assertTrue(completed)
+                self.assertIsNone(output)
+                self.assertEqual([item.reason for item in gaps], [expected])
+
+    async def test_native_done_text_never_substitutes_for_host_read_sample(self):
+        case = fixture(); model, unwrap = output_model_for(SCHEMA, 'MethodOutput')
+        tools = AuthorTools()
+        properties = tools.registry.registry.actions['done'].param_model.model_json_schema()['properties']
+        self.assertNotIn('readRefs', properties)
+        self.assertNotIn('data', properties)
+        result = await tools.registry.execute_action('done', {'text': 'A model-written summary.', 'success': True},
+            browser_session=SimpleNamespace(downloaded_files=[], cdp_client=None), file_system=SimpleNamespace())
+        history = SimpleNamespace(is_done=lambda: result.is_done, is_successful=lambda: result.success)
+        completed, output, gaps = _business_result(history, False, SCHEMA, case['records'])
+        self.assertTrue(completed)
+        self.assertEqual(gaps, [])
+        self.assertEqual(output, case['records'].records[0].sample.output)
+        self.assertNotEqual(output, result.extracted_content)
 
     def test_unknown_duplicate_and_overlapping_refs_are_rejected(self):
         case = fixture()
@@ -128,14 +121,12 @@ class MethodCompletionTests(unittest.IsolatedAsyncioTestCase):
             lambda _kind, value: reference(value), selected_read_refs=['r1'])
         self.assertEqual(issues, [])
         trace = SimpleNamespace(observations=[post, SimpleNamespace(id='o-done', facts=[assembly])],
-            actions=[action, SimpleNamespace(name='done', args={'readRefs': ['r1']})],
+            actions=[action, SimpleNamespace(name='done', args={'text': 'Observed.', 'success': True})],
             finalResultRef=reference(output))
         compiled, issues = compile_natural_output_assembly(trace, SCHEMA, [segment])
         self.assertIsNone(compiled)
         self.assertEqual([issue.reason for issue in issues], ['natural_output_cardinality_disjoint'])
         self.assertEqual(SCHEMA, original_schema)
-        trace.actions[-1].args['readRefs'] = []
-        self.assertTrue(compile_natural_output_assembly(trace, SCHEMA, [segment])[1])
 
     def test_source_output_relaxes_cardinality_only_with_selected_receipts(self):
         case = fixture()
@@ -143,11 +134,11 @@ class MethodCompletionTests(unittest.IsolatedAsyncioTestCase):
         sample = complete_from_read_refs(case['records'], ['r1'], SCHEMA, None)
         history = SimpleNamespace(is_done=lambda: True, is_successful=lambda: True,
             get_structured_output=lambda model: model.model_validate({'value': sample}))
-        completed, output, gaps = _business_result(history, False, output_model, unwrap, SCHEMA, case['records'])
+        completed, output, gaps = _business_result(history, False, SCHEMA, case['records'])
         self.assertTrue(completed)
         self.assertEqual(gaps, [])
         self.assertEqual(output, sample)
-        self.assertTrue(_business_result(history, False, output_model, unwrap, SCHEMA)[2])
+        self.assertTrue(_business_result(history, False, SCHEMA)[2])
 
 
 if __name__ == '__main__':

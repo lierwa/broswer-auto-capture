@@ -35,7 +35,10 @@ async def annotate_selections(request, trace, model, *, skip_action_refs=frozens
         if (action.id in existing or action.id in skip_action_refs
                 or action.name not in ('click', 'navigate', 'bat_inspect_action') or action.status != 'succeeded' or pre is None):
             continue
-        target, _, target_issues = natural_target(action, pre) if action.name == 'click' else (None, None, [])
+        # WHY：复用正式编译的需求、输入及后态；不能在注解入口丢掉已有固定/输入目标证明。
+        target, _, target_issues = natural_target(action, pre, request.requirementText,
+            getattr(request, 'inputSchema', None), observations.get(action.postObservationRef)) \
+            if action.name == 'click' else (None, None, [])
         try:
             match = None if target_issues else selection_read(trace, action, target)
         except ValueError:
@@ -71,11 +74,14 @@ async def annotate_selections(request, trace, model, *, skip_action_refs=frozens
 
 
 async def selection_source(request, trace, action, target, read, model):
-    content = {'requirement': request.requirementText, 'task': request.task,
+    content = {'task': request.task,
                'candidates': read.output, 'observedValue': selection_value(action, target),
                'outputSchema': selection_schema(action, read),
                'candidateSchema': read.specification.outputSchema,
                'actionContext': selection_action_context(trace, action, target, read)}
+    # WHY：正式 task 已逐字包含确认正文；只去重复字节，旧调用未包含时仍保留完整要求。
+    if request.requirementText not in request.task:
+        content['requirement'] = request.requirementText
     encoded = json.dumps(content, ensure_ascii=False, allow_nan=False)
     if len(encoded.encode()) > 128000:
         return None, 'selection_annotation_input_limit'

@@ -12,7 +12,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt,
 from workflow_use.workflow.step_verifier import StepVerifier, VerificationCheck, VerificationMethod, VerificationResult
 
 from .evidence import Contract, digest
-from .natural_effects import read_page_effect, read_target_state, read_target_value
+from .natural_effects import read_page_effect, read_target_state, read_target_value, read_text_in_view
 from .natural_reads import deterministic_read_schema
 from .navigation import navigation_destination_matches
 from .read import ReadPaths, ReadSpec, read_fields
@@ -46,7 +46,7 @@ class PostconditionNotMet(RuntimeError):
 _CHECK_KINDS = frozenset({
     'url', 'url_digest', 'title', 'target_value', 'target_text', 'target_state',
     'target_in_view', 'target_visible', 'scroll_position', 'visible_overlays',
-    'media_playback', 'focused_element', 'read_fields', 'active_tab',
+    'media_playback', 'focused_element', 'read_fields', 'active_tab', 'text_in_view',
 })
 _FIELD_READ_CODES = frozenset({
     'read_container_resolution_failed', 'read_collection_limit', 'read_single_object_required',
@@ -75,7 +75,7 @@ def _safe_check_error(error):
 class Postcondition(Contract):
     kind: Literal['url', 'url_digest', 'title', 'target_value', 'target_text', 'target_state',
                   'target_in_view', 'target_visible', 'scroll_position', 'visible_overlays',
-                  'media_playback', 'focused_element', 'read_fields', 'active_tab']
+                  'media_playback', 'focused_element', 'read_fields', 'active_tab', 'text_in_view']
     bindingArgument: str | None = None
     equals: JsonValue = None
     clauseRef: str | None = None
@@ -369,7 +369,9 @@ async def check_fact(parameters, browser):
         # 重读事实；动作本身仍只派发一次，正式消费者读取也不会被这里替代。
         parameters.pop('stableDigest', None)
         return False, 'declared_projection_not_ready'
-    if parameters.get('ready') is True:
+    if parameters['kind'] == 'text_in_view':
+        passed = actual is True
+    elif parameters.get('ready') is True:
         passed = True
     elif parameters.get('transition') is True:
         passed = parameters.get('baselineUnavailable') is True or actual != parameters['expected']
@@ -425,6 +427,8 @@ def readiness_projection_unavailable(parameters, error):
 
 
 async def read_check_value(parameters, browser):
+    if parameters['kind'] == 'text_in_view':
+        return await read_text_in_view(await browser.get_current_page(), parameters['expected'])
     return await read_fields(browser, ReadSpec.model_validate(parameters['read']),
                              scope=parameters.get('_runtimeReadScope', parameters.get('scope')),
                              page=_ATTEMPT_PAGE.get(), required_paths=parameters.get('requiredPaths', ()),

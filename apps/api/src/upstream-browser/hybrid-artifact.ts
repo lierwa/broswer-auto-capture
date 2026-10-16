@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { jsonValueSchema, parseTaskValue, type JsonValue, type TaskPlan, type TaskPlanStep,
-  type TaskExecutionFailureEvidence, type TaskRequirement } from "@browser-capture/contracts"
+  type TaskExecutionFailureEvidence, type TaskMethodRevisionContext, type TaskRequirement } from "@browser-capture/contracts"
 import { digestJson, resolveBinding } from "@browser-capture/runtime"
 import type { ModelCallReport } from "@browser-capture/runtime"
 import { hybridCompilerResponseSchema, hybridNaturalRequestSchema, naturalBindingFactValueSchema } from "./hybrid-schema.js"
@@ -58,18 +58,18 @@ export function createHybridSourceArtifact(requirement: TaskRequirement, plan: T
 }
 
 export function assertCapturedSourceIdentity(requirement: TaskRequirement, plan: TaskPlan, stepId: string,
-  input: JsonValue, source: HybridSourceResult) {
+  input: JsonValue, source: HybridSourceResult, methodRevision?: Pick<TaskMethodRevisionContext, "problem">) {
   const step = plan.steps.find((item) => item.id === stepId)
   if (!step) throw new Error("hybrid_natural_step_missing")
   assertNaturalSourceIdentity(source.request, requirement, plan, step, input, source.history,
-    undefined, naturalSourceContext(source.canonicalRequest))
+    undefined, naturalSourceContext(source.canonicalRequest), methodRevision)
 }
 
 /** WHY：只有正常结束的来源和零 gap 的编译产物能写 candidate；模型只拥有独立的探索调用审计。 */
 export function createHybridArtifact(input: { requirement: TaskRequirement; plan: TaskPlan; step: TaskPlanStep;
   stepInput: JsonValue; request: unknown; response: unknown; forkSourceDigest: string;
   source: z.infer<typeof hybridArtifactSchema>["source"]; modelCalls: ModelCallReport[]; version: number; model: string;
-  repair?: TaskExecutionFailureEvidence; resolveChild?: ResolveHybridChild }) {
+  repair?: TaskExecutionFailureEvidence; methodRevision?: Pick<TaskMethodRevisionContext, "problem">; resolveChild?: ResolveHybridChild }) {
   if (!input.requirement.confirmation || input.plan.requirement.id !== input.requirement.id
     || input.plan.requirement.version !== input.requirement.version || input.plan.requirement.digest !== digestJson(input.requirement)
     || input.plan.requirement.revision !== input.requirement.revision) throw new Error("hybrid_confirmed_source_required")
@@ -81,7 +81,7 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
     const payload = naturalPayloadContext(envelope, request)
     const natural = assertNaturalSourceIdentity(
       request, input.requirement, input.plan, input.step, input.stepInput, input.source.history,
-      input.repair, payload)
+      input.repair, payload, input.methodRevision)
     assertSourceModelAudit(input.modelCalls, requiresSemanticAnnotationAudit({ request: natural,
       compilation: envelope.compilation, assertFact: payload.assertFact, transportRequest: payload.transportRequest }))
     const chain = materializeHybridChain({ response: envelope, request, plan: input.plan,
@@ -101,10 +101,13 @@ export function createHybridArtifact(input: { requirement: TaskRequirement; plan
 export function assertNaturalSourceIdentity(raw: unknown, requirement: TaskRequirement, plan: TaskPlan,
   step: TaskPlanStep, input: JsonValue, history: { localRef: string; digest: string },
   repair: TaskExecutionFailureEvidence | undefined,
-  payload: Pick<ReturnType<typeof naturalPayloadContext>, "assertFact" | "assertTraceEvidence">) {
+  payload: Pick<ReturnType<typeof naturalPayloadContext>, "assertFact" | "assertTraceEvidence">,
+  methodRevision?: Pick<TaskMethodRevisionContext, "problem">) {
   const source = hybridNaturalRequestSchema.parse(raw)
   const requirementText = naturalRequirementText(requirement).text
-  const taskText = browserUseTask({ requirement, plan, step, resolvedInput: input, ...(repair ? { repair } : {}) })
+  const taskInput = { requirement, plan, step, resolvedInput: input, ...(repair ? { repair } : {}),
+    ...(methodRevision ? { methodRevision } : {}) }
+  const taskText = browserUseTask(taskInput)
   if (source.requirement.id !== requirement.id || source.requirement.version !== requirement.version
     || source.requirement.text !== requirementText || source.requirement.taskText !== taskText
     || source.requirement.sourceDigest !== digestJson(requirement) || source.plan.id !== plan.id

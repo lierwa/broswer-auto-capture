@@ -23,7 +23,8 @@ import { saveExecutionReview } from "./execution-review.js"
 import { executionDetail } from "./execution-detail.js"
 import { projectExecutionResult } from "./execution-result.js"
 import { ExecutionPacingController } from "./execution-pacing.js"
-import { recoverExecutionResources } from "./resource-recovery.js"
+import { recoverExecutionResources, recoverAuthoringResources } from "./resource-recovery.js"
+import { authoringWindowRecovery, prepareAuthoringWindowRecovery } from "./authoring-cleanup.js"
 import { TaskPlanExecutor, verifyClosedExecutionBrowser, exitedOwnedRunner, executionBrowserOwner } from "./plan-executor.js"
 import { readStartupFailure } from "../upstream-browser/source-lifecycle-diagnostics.js"
 import { recordPlanValidation } from "./plan-validation.js"
@@ -33,10 +34,9 @@ import { queuedDraftExecution, queuedExecution } from "./queued-runs.js"
 import { TaskContractRepository } from "./repository.js"
 import { syncConfirmedRequirement } from "./requirement.js"
 import { TaskRuntimeHost, type RuntimeCapabilityFactory } from "./runtime-host.js"
+import { methodRevisionOptions } from "./method-revision.js"
 import { TaskSummaryProjector, releaseReference, workspaceSnapshot } from "./workspace-projection.js"
-
 type QueueItem = { taskId: string; id: string; resume: boolean }
-
 export class TaskChainService {
   readonly repository: TaskContractRepository
   readonly product: TaskProductService
@@ -50,7 +50,6 @@ export class TaskChainService {
   private readonly controllers = new Map<string, AbortController>()
   private readonly queue: QueueItem[] = []
   private closing = false
-
   constructor(private readonly store: ProductStore, private readonly browser: BrowserService,
     ai: AIModelProvider, private readonly upstream: UpstreamBrowserRuntime, capabilityFactory?: RuntimeCapabilityFactory,
     private readonly diagnosticsDirectory?: string) {
@@ -58,19 +57,17 @@ export class TaskChainService {
     this.product = new TaskProductService(store, this.repository)
     this.summaries = new TaskSummaryProjector(store, this.repository, this.product)
     this.host = new TaskRuntimeHost(this.repository, ai, capabilityFactory, upstream)
-    this.authoring = new TaskChainAuthoring(this.repository, ai, upstream)
+    this.authoring = new TaskChainAuthoring(this.repository, ai, upstream, this.host)
     this.executor = new TaskPlanExecutor(store, this.repository, this.host)
     this.preparation = new TaskPreparationCoordinator(store, this.repository, this.authoring,
       (requestId, draft, input, mode, browser) => this.enqueueDraftTrial(requestId, draft, input, mode, browser),
       () => this.scheduleDrain())
   }
-
   snapshot(taskId: string) {
     return workspaceSnapshot(this.store, this.repository, this.product, taskId)
   }
   /** WHY：仅供服务器启动接线验证实际 controller；HTTP 无此权限标志。 */
   ownsStartupController(taskId: string, id: string) { return this.controllers.has(`${taskId}:${id}`) }
-
   executionDetail(taskId: string, executionId: string, includeContent = true) {
     const record = this.repository.execution(taskId, executionId)
     // WHY：启动失败已释放窗口后会清空 handoff；正式运行的确定 owner 仍可定位原脱敏原因。
@@ -78,7 +75,6 @@ export class TaskChainService {
     return executionDetail(this.repository, record, includeContent ? this.frozenEventContent(taskId, record) : null,
       readStartupFailure(this.diagnosticsDirectory, ownerId))
   }
-
   async controlBrowserHandoff(taskId: string, raw: unknown) {
     const command = z.object({ requestId: z.uuid(), executionId: z.uuid(), expectedSequence: z.number().int().nonnegative(),
       action: z.enum(["inspect", "focus", "end"]) }).strict().parse(raw)
@@ -135,28 +131,40 @@ export class TaskChainService {
     this.store.recordOperation("task-execution:browser-handoff", command.requestId, command, record.id)
     return this.snapshot(taskId)
   }
-
   history(taskId: string, kind: "releases" | "executions", offset: number, limit: number) {
     const values = kind === "releases" ? this.repository.releaseHistory(taskId, offset, limit + 1)
       : this.repository.executionHistory(taskId, offset, limit + 1)
     const items = values.slice(0, limit), nextOffset = values.length > limit ? offset + limit : null
     return taskWorkspaceHistoryPageSchema.parse({ kind, items, nextOffset })
   }
-
   diagnostics(taskId: string) {
     this.store.task(taskId)
     const job = this.repository.latestPreparationJob(taskId)
     return taskWorkspaceDiagnosticsSchema.parse({ capabilityDescriptors: capabilityDescriptors(),
+      methodRevision: methodRevisionOptions(this.repository, taskId),
       preparation: job?.preparation ? {
         jobId: job.id, phase: job.preparation.phase === "preexecuting"
           && ["compiling", "compiled"].includes(job.authoring?.stage ?? "") ? "compiling" : job.preparation.phase,
         status: job.status, reason: job.reason,
+        windowRecovery: authoringWindowRecovery(this.repository, job, this.cleanupInFlight.has(`${taskId}:${job.id}`)),
         compilationRecovery: this.preparation.compilationRecovery(taskId, job),
       } : null })
   }
-
   async dispatchAsync(taskId: string, raw: unknown): Promise<TaskChainDispatchResponse> {
     const command = taskChainCommandSchema.parse(raw)
+    if (command.type === "cleanup_authoring") {
+      const key = `${taskId}:${command.jobId}`
+      if (this.cleanupInFlight.has(key) && !this.store.operation("task-authoring:window-cleanup", command.requestId, command))
+        conflict("正在核验原准备窗口，请等待本次结果。")
+      const run = prepareAuthoringWindowRecovery(this.store, this.repository, this.upstream, taskId, command, () => this.closing || this.isActive(taskId))
+      if (run) {
+        this.cleanupInFlight.add(key)
+        let work!: Promise<unknown>
+        work = Promise.resolve().then(run).catch(() => {}).finally(() => { this.activeWork.delete(work); this.cleanupInFlight.delete(key) })
+        this.activeWork.add(work)
+      }
+      return { snapshot: this.snapshot(taskId), acceptedExecution: null }
+    }
     if (command.type === "cleanup_execution") {
       const key = `${taskId}:${command.executionId}`
       if (this.cleanupInFlight.has(key)) conflict("正在核验本次运行的资源清理，请等待结果。")
@@ -170,7 +178,6 @@ export class TaskChainService {
     await this.preparation.resumeHuman(taskId, command)
     return { snapshot: this.snapshot(taskId), acceptedExecution: null }
   }
-
   dispatch(taskId: string, raw: unknown): TaskWorkspaceSnapshot
   dispatch(taskId: string, raw: unknown, includeReceipt: true): TaskChainDispatchResponse
   dispatch(taskId: string, raw: unknown, includeReceipt = false): TaskWorkspaceSnapshot | TaskChainDispatchResponse {
@@ -184,6 +191,10 @@ export class TaskChainService {
       if (!this.store.operation("task-product:prepare", command.requestId, command)) this.assertDirectRunAvailable(taskId)
       this.preparation.start(taskId, command, (job, run) => this.startAuthoring(taskId, job, run))
     }
+    else if (command.type === "revise_task_method") {
+      if (!this.store.operation("task-product:revise-method", command.requestId, command)) this.assertDirectRunAvailable(taskId)
+      this.preparation.revise(taskId, command, (job, run) => this.startAuthoring(taskId, job, run))
+    }
     else if (command.type === "continue_preparation") this.preparation.continue(taskId, command,
       (job, run) => this.startAuthoring(taskId, job, run))
     else if (command.type === "recover_preparation_compilation") {
@@ -195,12 +206,11 @@ export class TaskChainService {
     else if (command.type === "review_execution") savedReview = saveExecutionReview(this.store, this.repository, taskId, command)
     else if (command.type === "run_task") acceptedExecution = this.runTask(taskId, command)
     else if (command.type === "resume_execution") this.resumeExecution(taskId, command)
-    else if (command.type === "cleanup_execution") conflict("资源清理需要等待现场核验，请使用异步命令入口。")
+    else if (command.type === "cleanup_execution" || command.type === "cleanup_authoring") conflict("资源清理需要异步核验，请使用异步命令入口。")
     else this.cancelExecution(taskId, command.executionId)
     const snapshot = this.snapshot(taskId)
     return includeReceipt ? { snapshot, acceptedExecution, ...(savedReview ? { savedReview } : {}) } : snapshot
   }
-
   executionEvents(taskId: string, executionId: string, after: number) {
     const execution = this.repository.execution(taskId, executionId)
     const frozen = this.frozenEventContent(taskId, execution)
@@ -226,7 +236,6 @@ export class TaskChainService {
     return taskExecutionEventBatchSchema.parse({ executionId, executionSequence: execution.sequence,
       status: execution.status, after, next: events.at(-1)?.sequence ?? after, events })
   }
-
   private frozenEventContent(taskId: string, execution: TaskExecution): TaskDraftContent | null {
     let content: TaskDraftContent | null = null
     if (execution.release) {
@@ -248,28 +257,23 @@ export class TaskChainService {
       || digestJson(content.plan) !== execution.plan.digest) return null
     return content
   }
-
   projectTasks(tasks: TaskSummary[]) {
     return tasks.map((task) => this.summaries.project(task))
   }
-
   isActive(taskId: string) {
     return [...this.controllers.keys()].some((key) => key.startsWith(`${taskId}:`))
       || this.queue.some((item) => item.taskId === taskId)
   }
   isAnyActive() { return this.controllers.size > 0 || this.queue.length > 0 || this.activeWork.size > 0 }
-
   async close() {
     this.closing = true
     for (const controller of this.controllers.values()) controller.abort()
     await Promise.allSettled([...this.activeWork])
   }
-
   private cancelAuthoring(taskId: string, jobId: string) {
     this.repository.job(taskId, jobId)
     this.controllers.get(`${taskId}:${jobId}`)?.abort()
   }
-
   private trialDraft(taskId: string, command: Extract<TaskChainCommand, { type: "trial_task_draft" }>) {
     const previous = this.store.operation("task-draft:trial", command.requestId, command)
     if (previous) return this.acceptedExecution(command.requestId, this.repository.execution(taskId, previous))
@@ -284,7 +288,6 @@ export class TaskChainService {
     this.scheduleDrain()
     return this.acceptedExecution(command.requestId, record)
   }
-
   private enqueueDraftTrial(requestId: string, draft: TaskDraft, input: JsonValue,
     mode: "sample" | "verification", browser?: TaskExecution["browser"]) {
     this.host.assertExecutable(draft.taskId, draft.content.steps.map((step) => step.chain))
@@ -297,7 +300,6 @@ export class TaskChainService {
     this.queue.push({ taskId: draft.taskId, id: record.id, resume: false })
     return record
   }
-
   private publishDraft(taskId: string, command: Extract<TaskChainCommand, { type: "publish_task_draft" }>) {
     if (this.store.operation("task-draft:publish", command.requestId, command)) return
     this.assertDirectRunAvailable(taskId)
@@ -308,7 +310,6 @@ export class TaskChainService {
     this.product.publishDraft(taskId, draft, (releaseId) =>
       this.store.recordOperation("task-draft:publish", command.requestId, command, releaseId))
   }
-
   private runTask(taskId: string, command: Extract<TaskChainCommand, { type: "run_task" }>) {
     const previous = this.store.operation("task-execution:run", command.requestId, command)
     if (previous) return this.acceptedExecution(command.requestId, this.repository.execution(taskId, previous))
@@ -330,7 +331,6 @@ export class TaskChainService {
     this.queue.push({ taskId, id: record.id, resume: false }); this.scheduleDrain()
     return this.acceptedExecution(command.requestId, record)
   }
-
   private acceptedExecution(requestId: string, record: TaskExecution) {
     const source = record.release ? { kind: "release" as const, release: record.release }
       : record.draft ? { kind: "draft" as const, draft: record.draft } : null
@@ -344,7 +344,6 @@ export class TaskChainService {
       source, plan: record.plan, chains: content.steps.map((step) => ({ stepId: step.stepId,
         chain: record.steps.find((item) => item.stepId === step.stepId)?.chain ?? step.chain })) })
   }
-
   private resumeExecution(taskId: string, command: Extract<TaskChainCommand, { type: "resume_execution" }>) {
     if (this.store.operation("task-execution:resume", command.requestId, command)) return
     const record = this.repository.execution(taskId, command.executionId)
@@ -359,7 +358,6 @@ export class TaskChainService {
     this.store.recordOperation("task-execution:resume", command.requestId, command, record.id)
     this.queue.push({ taskId, id: record.id, resume: true }); this.scheduleDrain()
   }
-
   private async cleanupExecution(taskId: string, command: Extract<TaskChainCommand, { type: "cleanup_execution" }>) {
     if (this.store.operation("task-execution:cleanup", command.requestId, command)) return
     const record = this.repository.execution(taskId, command.executionId)
@@ -407,6 +405,8 @@ export class TaskChainService {
   /** WHY：运行/账号共用资源恢复入口；按实际浏览器隔离，不要求用户操作某条历史任务。 */
   async recoverBrowserResources(kind: "daily" | "dedicated", requestId: string = randomUUID()) {
     if (this.closing) return
+    await recoverAuthoringResources(this.store, this.repository, this.upstream, kind,
+      key => this.controllers.has(key), this.cleanupInFlight)
     await recoverExecutionResources(this.store, kind, requestId,
       (taskId, command) => this.dispatchAsync(taskId, command), (taskId, command) => this.controlBrowserHandoff(taskId, command),
       (taskId, id) => this.controllers.has(`${taskId}:${id}`) || this.cleanupInFlight.has(`${taskId}:${id}`))

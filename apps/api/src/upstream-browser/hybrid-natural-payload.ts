@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 import { jsonValueSchema, type JsonValue } from "@browser-capture/contracts"
 import { hybridCompilerResponseSchema, hybridNaturalRequestSchema } from "./hybrid-schema.js"
+import { assertNativeSequenceStops } from "./hybrid-native-sequence-stop.js"
 
 type Envelope = z.infer<typeof hybridCompilerResponseSchema>
 type NaturalRequest = z.infer<typeof hybridNaturalRequestSchema>
@@ -15,11 +16,11 @@ const rawApi = JSON as typeof JSON & {
 const parseWithSource = JSON.parse as (text: string,
   reviver: (key: string, value: unknown, context: { source: string }) => unknown) => unknown
 const evidenceKinds = new Set(["dom_structure", "dom_query", "natural_binding", "native_extraction",
-  "native_action_dispatch", "native_action_result", "native_dom_event", "browser_context",
+  "native_action_dispatch", "native_action_result", "native_dom_event", "native_sequence_stop", "browser_context",
   "url_digest", "verified_natural_read", "host_collection_read", "verified_target_scroll", "verified_visible_wait",
   "verified_natural_summary", "verified_output_assembly", "selection_function", "repeat_method",
   "native_completion_review", "observation_diagnostic", "document_identity", "verified_human_resume",
-  "inspected_method", "preparation_method_receipt"])
+  "inspected_method", "preparation_method_receipt", "native_file_output", "native_file_input", "find_text_visible"])
 
 /** WHY：采集只交接一份原始 request；不依赖编译结果才能验证或保存来源。 */
 export function naturalSourceContext(canonicalRequest: string) {
@@ -38,6 +39,8 @@ export function naturalSourceContext(canonicalRequest: string) {
     for (const observation of ordinary.trace.observations) for (const fact of observation.facts) {
       if (evidenceKinds.has(fact.kind)) assertFact(fact, observation.id)
     }
+    assertNativeSequenceStops(ordinary.trace, assertFact, (fact, observationId) =>
+      digestRawFactResult(rawTrace, fact, observationId))
   }
   assertTraceEvidence()
   // WHY：校验器的默认值不能改写跨语言来源；交给编译器的 request 仍是 canonical 原文。
@@ -63,8 +66,17 @@ export function naturalPayloadContext(envelope: Envelope, request: Record<string
     for (const observation of ordinary.trace.observations) for (const fact of observation.facts) {
       if (evidenceKinds.has(fact.kind)) assertFact(fact, observation.id)
     }
+    assertNativeSequenceStops(ordinary.trace, assertFact, (fact, observationId) =>
+      digestRawFactResult(rawTrace, fact, observationId))
   }
   return { ordinary, transportRequest, assertFact, assertTraceEvidence }
+}
+
+function digestRawFactResult(rawTrace: Record<string, unknown>, fact: NaturalFact, observationId: string) {
+  const matches = assertRawFact(rawTrace, fact, observationId)
+  if (matches.length !== 1) throw new Error("hybrid_natural_fact_payload_ambiguous")
+  const result = record(matches[0]!.value, "hybrid_natural_fact_value_invalid").result
+  return createHash("sha256").update(canonicalRaw(result)).digest("hex")
 }
 
 export function validateHybridRequestSources(envelope: Envelope, request: Record<string, JsonValue>) {

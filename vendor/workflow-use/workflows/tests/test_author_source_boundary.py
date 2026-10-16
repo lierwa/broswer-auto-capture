@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
-from browser_use_runner.hybrid_commands import AnnotateRequest, CompileRequest
+from browser_use_runner.hybrid_commands import REQUEST, CompileRequest
 from browser_use_runner.hybrid_compile import compile_offline
 from workflow_use.hybrid import author
 from workflow_use.hybrid.evidence import NormalizedTrace, digest, gap
@@ -42,18 +42,21 @@ async def failed_author(raw, trace, capture_gap):
     class Agent:
         def __init__(self, **_kwargs):
             self.history = SimpleNamespace()
+            self.file_system = SimpleNamespace()
 
         async def run(self, **_kwargs):
             raise RuntimeError('fixture agent failure')
 
     callbacks = SimpleNamespace(failed=False, before_action=lambda *_: None,
-                                after_step=lambda *_: None, bind=lambda *_: None)
+                                after_step=lambda *_: None, bind=lambda *_: None,
+                                before_dispatch_action=lambda *_: None, after_dispatch_action=lambda *_: None)
     collector = SimpleNamespace(finish=Mock(return_value=(trace, [capture_gap], None)))
     event_capture = SimpleNamespace(close=AsyncMock())
     dialog = SimpleNamespace(start=lambda: None, settle=lambda: None, close=AsyncMock())
     scope = SimpleNamespace(start=lambda: None, close=lambda: None)
     tools = SimpleNamespace(_bat_field_read_records=None, _bat_summary_records=None,
-                            _bat_target_scroll_records=None, _bat_visible_wait_records=None)
+                            _bat_target_scroll_records=None, _bat_visible_wait_records=None,
+                            _bat_selections=SimpleNamespace(bind=lambda *_: None, attach=lambda value: value, before_dispatch=lambda *_: None))
     replacements = {'Agent': Agent, 'NativeEventCapture': lambda *_: event_capture,
                     'DialogEventBridge': lambda *_: dialog, 'ActionDispatchAudit': lambda *_: object(),
                     'EvidenceCollector': lambda *_, **__: collector,
@@ -73,7 +76,7 @@ async def failed_author(raw, trace, capture_gap):
                                   side_effect=forbidden))
         return await author.author_step(object(), raw,
             {'agent': object(), 'extract': object(), 'judge': object(),
-             'semantic_annotation': object()}, lambda *_: (object(), lambda value: value))
+             'semantic_annotation': object()})
 
 
 class AuthorSourceBoundaryTests(unittest.IsolatedAsyncioTestCase):
@@ -107,7 +110,7 @@ class AuthorSourceBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item['reason'] for item in result['sourceGaps']],
                          ['fixture_capture_gap', 'native_agent_run_failed'])
 
-    async def test_offline_compile_consumes_source_gaps_and_old_envelope_defaults_empty(self):
+    async def test_offline_compile_preserves_source_gaps_without_model_or_browser(self):
         _raw, request, _trace = source_fixture()
         source_gap = gap('missing_observation', [], 'fixture_capture_gap')
         envelope = CompileRequest.model_validate({'id': uuid4(), 'type': 'hybrid_compile',
@@ -117,33 +120,20 @@ class AuthorSourceBoundaryTests(unittest.IsolatedAsyncioTestCase):
             'request': request.model_dump(mode='json', by_alias=True), 'outputSchema': OUTPUT_SCHEMA})
         self.assertEqual(old.sourceGaps, [])
         registry = SimpleNamespace(schemaDigest='registry')
-        with patch('browser_use_runner.hybrid_compile.output_model_for', return_value=(object(), None)), \
-             patch('browser_use_runner.hybrid_compile.author_tools_for_result_spec', return_value=object()), \
-             patch('browser_use_runner.hybrid_compile.ActionRegistry.from_tools', return_value=registry), \
+        with patch('browser_use_runner.hybrid_compile.matching_registry', return_value=registry), \
              patch('browser_use_runner.hybrid_compile.compilation_response', return_value={}) as compile_call:
             await compile_offline(envelope)
             self.assertEqual(compile_call.call_args.args[3], [source_gap])
             await compile_offline(old)
             self.assertEqual(compile_call.call_args.args[3], [])
 
-    async def test_offline_annotation_extends_instead_of_replacing_source_gaps(self):
-        _raw, request, trace = source_fixture()
-        source_gap = gap('missing_observation', [], 'fixture_capture_gap')
-        annotation_gap = gap('missing_binding', [], 'fixture_annotation_gap')
-        envelope = AnnotateRequest.model_validate({'id': uuid4(), 'type': 'hybrid_annotate',
-            'request': request.model_dump(mode='json', by_alias=True), 'outputSchema': OUTPUT_SCHEMA,
-            'sourceGaps': [source_gap.model_dump(mode='json', by_alias=True)],
-            'model': {'model': 'fixture', 'endpoint': 'http://127.0.0.1:1234', 'token': 'fixture'}})
-        registry = SimpleNamespace(schemaDigest='registry')
-        with patch('browser_use_runner.hybrid_compile.output_model_for', return_value=(object(), None)), \
-             patch('browser_use_runner.hybrid_compile.author_tools_for_result_spec', return_value=object()), \
-             patch('browser_use_runner.hybrid_compile.ActionRegistry.from_tools', return_value=registry), \
-             patch('browser_use_runner.hybrid_compile.AIConnectModel', return_value=object()), \
-             patch('browser_use_runner.hybrid_compile.annotate_selections',
-                   AsyncMock(return_value=(trace, [annotation_gap]))), \
-             patch('browser_use_runner.hybrid_compile.compilation_response', return_value={}) as compile_call:
-            await compile_offline(envelope)
-        self.assertEqual(compile_call.call_args.args[3], [source_gap, annotation_gap])
+    def test_removed_offline_model_rescue_is_not_a_runner_command(self):
+        _raw, request, _trace = source_fixture()
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            REQUEST.validate_python({'id': uuid4(), 'type': 'hybrid_annotate',
+                'request': request.model_dump(mode='json', by_alias=True), 'outputSchema': OUTPUT_SCHEMA,
+                'model': {'model': 'fixture', 'endpoint': 'http://127.0.0.1:1234', 'token': 'fixture'}})
 
 
 if __name__ == '__main__':

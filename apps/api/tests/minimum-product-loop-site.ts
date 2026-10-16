@@ -13,6 +13,7 @@ export async function startMinimumProductSite(port = 0) {
     const url = new URL(request.url ?? "/", "http://127.0.0.1")
     if (url.pathname === "/action") return actionPage(state, response)
     if (url.pathname === "/catalog") return catalogPage(state, response)
+    if (url.pathname === "/native-tools") return nativeToolsPage(state, response)
     state.requests.push({ path: url.pathname, status: 404, at: new Date().toISOString() })
     response.writeHead(404, headers); response.end(page("Not found", "The requested local page does not exist."))
   })
@@ -64,4 +65,25 @@ function catalogPage(state: MinimumProductSiteState, response: ServerResponse) {
 function page(title: string, body: string, marker?: string) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head>
     <body><main><h1${marker ? ` data-purpose="${marker}"` : ""}>${title}</h1><p>${body}</p></main></body></html>`
+}
+
+function nativeToolsPage(state: MinimumProductSiteState, response: ServerResponse) {
+  state.requests.push({ path: "/native-tools", status: 200, at: new Date().toISOString() })
+  response.writeHead(200, headers)
+  response.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Native tool evidence</title></head>
+    <body><main><h1>Native tool evidence</h1><label for="native-upload">Upload this run's text file</label>
+    <input id="native-upload" type="file" accept="text/plain"><section id="upload-result" aria-live="polite">
+    <p id="upload-name">none</p><p id="upload-size">0</p><p id="upload-content">none</p><p id="upload-count">0</p></section>
+    <p id="native-marker" data-in-view="false" style="margin-top:250vh;margin-bottom:100vh">Native tool viewport marker</p></main>
+    <script>const marker=document.querySelector('#native-marker');
+    const updateViewport=()=>{const bounds=marker.getBoundingClientRect();
+      marker.dataset.inView=String(bounds.top>=0&&bounds.bottom<=innerHeight);};
+    addEventListener('scroll',updateViewport);addEventListener('resize',updateViewport);updateViewport();
+    document.querySelector('#native-upload').addEventListener('change',async(event)=>{
+      const file=event.target.files[0];if(!file)return;
+      document.querySelector('#upload-name').textContent=file.name;
+      document.querySelector('#upload-size').textContent=String(file.size);
+      document.querySelector('#upload-content').textContent=await file.text();
+      const count=document.querySelector('#upload-count');count.textContent=String(Number(count.textContent)+1);});
+    </script></body></html>`)
 }

@@ -1,9 +1,10 @@
+import { validationEvidence } from "./release-evidence.js"
 import {
   CONTRACT_VERSION, parseTaskValue, runnableTaskReleaseSchema, taskInputRequiresVariation, taskPlanExecutionIssues,
   type JsonValue, type RunnableReleaseValidation, type RunnableTaskRelease, type TaskDraft,
-  type TaskExecution, type TaskRequirement, type VersionReference,
+  type TaskRequirement, type VersionReference,
 } from "@browser-capture/contracts"
-import { digestJson, executableChainDigest, stableUuid } from "@browser-capture/runtime"
+import { digestJson, stableUuid } from "@browser-capture/runtime"
 import { LRUCache } from "lru-cache"
 import type { ProductStore } from "../database/store.js"
 import { conflict, DomainError } from "../errors.js"
@@ -111,37 +112,6 @@ export class TaskProductService {
       return parseTaskValue(release.content.plan.inputContract, {})
     }
     conflict("请确认本次运行输入。")
-  }
-}
-
-function validationEvidence(repository: TaskContractRepository, draft: TaskDraft,
-  executionId: string): RunnableReleaseValidation | null {
-  const execution = optionalValidationFact(() => repository.execution(draft.taskId, executionId))
-  if (!execution || execution.status !== "completed" || !execution.draft || execution.draft.id !== draft.id
-    || execution.draft.revision !== draft.revision || execution.draft.checksum !== draft.checksum
-    || !["sample", "verification"].includes(execution.mode ?? "")) return null
-  const candidate = repository.candidate(draft.taskId, execution.id)
-  if (!candidate || candidate.draft.id !== draft.id || candidate.draft.revision !== draft.revision
-    || candidate.draft.checksum !== draft.checksum || digestJson(candidate.content) !== digestJson(draft.content)) return null
-  for (const step of execution.steps) for (const runId of step.runIds) {
-    const run = optionalValidationFact(() => repository.run(execution.taskId, runId))
-    if (!run || run.status !== "completed" || !run.auditComplete || run.binding.plan.id !== execution.plan.id
-      || run.binding.plan.version !== execution.plan.version || run.binding.plan.digest !== execution.plan.digest
-      || run.binding.chain.id !== step.chain.id || run.binding.chain.version !== step.chain.version
-      || run.binding.chain.digest !== step.chain.digest) return null
-  }
-  return { phase: execution.mode as "sample" | "verification", executionId: execution.id,
-    inputDigest: execution.inputDigest, steps: execution.steps.map((step) => ({ stepId: step.stepId,
-      chain: step.chain, runIds: step.runIds, outputDigest: digestJson(step.output) })),
-    modelCalls: execution.consumed.llmCalls, completedAt: execution.updatedAt }
-}
-
-function optionalValidationFact<T>(read: () => T) {
-  try { return read() }
-  catch (error) {
-    // WHY：缺失的历史执行或运行只能让验证失效，不能让工作台快照整体无法读取。
-    if (error instanceof DomainError && ["execution_not_found", "run_not_found"].includes(error.code)) return null
-    throw error
   }
 }
 

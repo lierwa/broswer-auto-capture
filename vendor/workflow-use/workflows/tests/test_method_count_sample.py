@@ -60,7 +60,7 @@ def business_result(schema, spec, output, records):
     model, unwrap = output_model_for(schema, 'CountSampleOutput')
     history = SimpleNamespace(is_done=lambda: True, is_successful=lambda: True,
                               get_structured_output=lambda chosen: chosen.model_validate(output))
-    return _business_result(history, False, model, unwrap, schema, records, spec)
+    return _business_result(history, False, schema, records, spec)
 
 
 class MethodCountSampleTests(unittest.TestCase):

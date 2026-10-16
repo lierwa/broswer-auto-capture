@@ -28,6 +28,8 @@ type ReviewIntent = { command: ReviewCommand; saved: TaskExecutionReviewReceipt 
 type HandoffIntent = { action: "inspect" | "focus" | "end"; executionId: string; expectedSequence: number; requestId: string }
 type ConnectionView = {
   workspace: TaskWorkspaceSnapshot | null
+  connectionStatus: "connecting" | "connected" | "unavailable"
+  lastConnectedAt: string | null
   error: string
   errorCode: string | null
   pending: TaskChainCommand | null
@@ -50,7 +52,8 @@ type ConnectionView = {
 
 export class TaskChainConnection {
   private view: ConnectionView = {
-    workspace: null, error: "", errorCode: null, pending: null, pendingHandoff: null, pendingUncertain: false, busy: false,
+    workspace: null, connectionStatus: "connecting", lastConnectedAt: null,
+    error: "", errorCode: null, pending: null, pendingHandoff: null, pendingUncertain: false, busy: false,
     acceptedExecution: null, executionId: null, eventBatch: null,
     executionDetail: null, detailBusy: false, detailError: "", savedReview: null, reviewIntents: {},
     history: {}, historyBusy: null, diagnostics: null, diagnosticsBusy: false,
@@ -159,11 +162,13 @@ export class TaskChainConnection {
       const value: unknown = await response.json()
       if (!signal?.aborted) {
         this.accept(value)
+        this.update({ connectionStatus: "connected", lastConnectedAt: new Date().toISOString() })
         if (!this.view.pending) this.update({ error: "", errorCode: null })
         return true
       }
     } catch {
-      if (!signal?.aborted) this.update({ error: "无法读取任务工作区；已加载的草稿和运行状态仍保留。", errorCode: null })
+      if (!signal?.aborted) this.update({ connectionStatus: "unavailable",
+        error: "无法读取任务工作区；已加载的草稿和运行状态仍保留。", errorCode: null })
     }
     return false
   }
@@ -182,7 +187,8 @@ export class TaskChainConnection {
         if (!signal.aborted) throw new Error("状态流中断")
       } catch {
         if (!signal.aborted) {
-          this.update({ error: "状态连接中断，正在重新连接；已加载的运行事实保留。", errorCode: null })
+          this.update({ connectionStatus: "unavailable",
+            error: "状态连接中断，正在重新连接；已加载的运行事实保留。", errorCode: null })
           // WHY：仅故障重连退避；健康连接和已完成任务没有周期请求。
           await reconnect(signal, failures++)
         }

@@ -12,6 +12,15 @@ NATIVE_PARAMETERS = {
     'bat_scroll_to': frozenset({'selector'}),
     'bat_wait_for': frozenset({'selector'}),
     'navigate': frozenset({'new_tab'}),
+    'search': frozenset({'engine', 'query'}),
+    'find_text': frozenset({'text'}),
+    'read_file': frozenset({'file_name'}),
+    'write_file': frozenset({'file_name', 'content', 'append', 'trailing_newline', 'leading_newline'}),
+    'replace_file': frozenset({'file_name', 'old_str', 'new_str'}),
+    'upload_file': frozenset({'path'}),
+    'save_as_pdf': frozenset({'file_name', 'paper_format', 'landscape', 'print_background', 'scale',
+                            'display_header_footer', 'header_template', 'footer_template'}),
+    'screenshot': frozenset({'file_name'}),
     'input': frozenset({'clear', 'text'}),
     'wait': frozenset({'seconds'}),
     'scroll': frozenset({'down', 'pages'}),
@@ -92,6 +101,12 @@ def is_native_parameter(action_name, argument_path, value):
         return is_field_read_parameter(argument_path, value)
     if action_name in ('bat_scroll_to', 'bat_wait_for'):
         return isinstance(value, str) and 0 < len(value) <= 2000
+    if action_name in {'read_file', 'upload_file'}:
+        from .native_files import native_filename
+        try:
+            native_filename(value)
+        except ValueError:
+            return False
     return True
 
 

@@ -51,7 +51,7 @@ try {
     commands: source.browserCommands, modelCalls: source.modelCalls.filter((call) => call.status === "completed").length }))
   assert.equal(source.sourceSuccess, true, "real_source_not_completed")
   assert.equal(source.sourceGaps.length, 0, "real_source_has_gaps")
-  const compiled = await recompileHybridSource({ root, signal, canonicalRequest: source.canonicalRequest,
+  const compiled = await recompileHybridSource({ root, ownerId: randomUUID(), signal, canonicalRequest: source.canonicalRequest,
     outputSchema: schema, sourceGaps: source.sourceGaps, verifiedChildren: [] })
   await save("compilation.json", compiled)
   assert.equal(compiled.response.compilation.gaps.length, 0, "real_compilation_has_gaps")

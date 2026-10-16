@@ -6,7 +6,7 @@ import { digestJson } from "@browser-capture/runtime"
 import { type ValueSchema } from "@browser-capture/contracts"
 import { extractionFixture } from "../../../packages/contracts/tests/task-chain-fixtures.js"
 import { materializeHybridPrefix } from "../src/upstream-browser/hybrid-prefix-materializer.js"
-import { compilationPayloadSchema, confirmationBudget } from "../src/upstream-browser/hybrid-compilation-checkpoint.js"
+import { compilationPayloadSchema, confirmationBudget, parseCompilationCandidate } from "../src/upstream-browser/hybrid-compilation-checkpoint.js"
 import { projectRoot } from "./helpers.js"
 
 test("500 动作上界的纯前缀计算与物化处于单包和确认预算内", async context => {
@@ -27,12 +27,23 @@ test("500 动作上界的纯前缀计算与物化处于单包和确认预算内"
   })) as { payload: string; pythonMs: number; bytes: number }
   assert.ok(value.bytes <= 8_000_000)
   const started = performance.now(), payload = compilationPayloadSchema.parse(JSON.parse(value.payload))
-  assert.equal(payload.response.compilation.gaps.length, 0)
-  const graph = await materializeHybridPrefix({ response: payload.response, request: JSON.parse(payload.canonicalRequest),
+  const candidate = parseCompilationCandidate(payload)
+  if (candidate.kind !== "result") throw new Error("fixture_candidate_result_required")
+  assert.equal(candidate.response.compilation.gaps.length, 0)
+  const graph = await materializeHybridPrefix({ response: candidate.response, request: JSON.parse(payload.canonicalRequest),
     plan, step, model: "unused" }, new AbortController().signal)
   const hostMs = performance.now() - started
   assert.equal(graph.nodes.length, 500)
   assert.equal(graph.edges.length, 499)
   assert.ok(hostMs < confirmationBudget(payload))
   context.diagnostic(`actions=500 bytes=${value.bytes} pythonMs=${value.pythonMs.toFixed(1)} hostMs=${hostMs.toFixed(1)}`)
+})
+
+test("候选错误和非法内层包沿用确认预算，不增加函数样例成本", () => {
+  const source = { phase: "prefix", stepId: "step", canonicalRequest: "current-source" }
+  for (const candidate of [
+    { kind: "error", stage: "annotation", code: "hybrid_semantic_annotation_failed" },
+    { kind: "error", stage: "compile", code: "hybrid_native_compilation_failed" },
+    { kind: "result", response: { malformed: true } },
+  ]) assert.equal(confirmationBudget(compilationPayloadSchema.parse({ ...source, candidate })), 10_000)
 })

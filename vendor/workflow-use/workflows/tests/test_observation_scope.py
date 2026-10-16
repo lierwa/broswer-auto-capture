@@ -75,9 +75,11 @@ class ObservationScopeTests(unittest.IsolatedAsyncioTestCase):
         scope.collector = callbacks.collector = collector
         raw = {'click': {'index': 4771}}
         model = SimpleNamespace(action=[SimpleNamespace(model_dump=lambda **kwargs: raw)])
+        callbacks.agent.history = SimpleNamespace(history=[])
+        await callbacks.before_action(observed, model, 1)
 
         with self.assertRaisesRegex(ObservationRefreshRequired, 'index'):
-            await callbacks.before_action(observed, model, 1)
+            await callbacks.before_dispatch_action(model.action[0])
         await callbacks.after_step(callbacks.agent)
 
         self.assertFalse(callbacks.failed)

@@ -6,6 +6,19 @@ export class RequirementClarificationRequired extends Error {
   }
 }
 
+export function incompleteSourceError(actions: ReadonlyArray<Record<string, unknown>>) {
+  const last = actions.at(-1)
+  // WHY：已纠正的早期错误不是终止原因；只消费最终动作，原失败仍保留在不可变来源。
+  if (last?.name === "done" && last.args && typeof last.args === "object"
+    && "success" in last.args && last.args.success === false) {
+    return Object.assign(new Error("hybrid_source_declared_failure"), {
+      nativeText: "text" in last.args && typeof last.args.text === "string" ? last.args.text.slice(0, 4000) : "" })
+  }
+  const action = last?.status === "failed" && typeof last.name === "string" && /^[a-z][a-z0-9_]*$/u.test(last.name)
+    ? `:${last.name}:${actions.length}` : ""
+  return new Error(`hybrid_completed_source_required${action}`)
+}
+
 /** WHY：只保存固定代码/异常类，不保存原异常正文、URL、页面内容或凭据。 */
 export function authoringFailureCode(error: unknown): string {
   if (error instanceof RuntimeCleanupRequiredError && error.primary.status === "failed") {
@@ -16,7 +29,7 @@ export function authoringFailureCode(error: unknown): string {
   const reason = error && typeof error === "object" && "reason" in error ? error.reason : undefined
   const message = typeof coded === "string" ? `${coded}:${typeof reason === "string" ? reason : ""}`
     : error instanceof Error ? error.message : "unknown"
-  const safe = /^(?:(?:hybrid_|upstream_|workflow_|daily_chrome_|account_|content_|ordinary_|read_|target_)[a-z0-9_]{1,100}|[A-Za-z]{1,60}Error)$/
+  const safe = /^(?:(?:hybrid_|preparation_|inspected_|upstream_|workflow_|daily_chrome_|account_|content_|ordinary_|read_|target_)[a-z0-9_]{1,100}|[A-Za-z]{1,60}Error)$/
   const parts = message.split(":").slice(0, 3).filter(part => safe.test(part))
   return parts.length ? parts.join(":") : "authoring_failure_unclassified"
 }
@@ -30,8 +43,10 @@ export function failureLayer(error: unknown, stage: string): string {
   if (authoringFailureCode(error).startsWith("account_")) return "账号准备检查"
   if (/^hybrid_existing_browser_/.test(message)) return "日常 Chrome 连接"
   if (message === "hybrid_source_protocol_invalid") return "来源结果交接"
+  if (/^(preparation_method_|preparation_reusable_|inspected_navigation_)/.test(message)) return "准备方法来源核验"
   if (/hybrid_compilation_(ack|save)/.test(message)) return "在线节点保存"
   if (/^hybrid_(compilation_|prefix_|online_final_)/.test(message)) return "在线节点编译"
+  if (/^hybrid_(semantic_annotation_failed|native_compilation_failed)$/.test(message)) return "在线节点编译"
   if (/^hybrid_(annotation_audit_missing|source_model_audit_)/.test(message)) return "准备模型调用审计"
   if (message.includes("hybrid_action_registry_mismatch")) return "离线编译动作合同"
   if (/workflow_fork_/.test(message)) return "workflow-use 受管源码校验"
@@ -54,6 +69,15 @@ export function authoringFailureMessage(error: unknown): string {
     if (primary) return authoringFailureMessage(primary)
   }
   const message = error instanceof Error ? error.message : "authoring_failed"
+  if (message === "preparation_method_prefix_not_completed")
+    return "建立前置页面的运行没有正常完成；原运行和已取得来源保留，本次局部修订未继续。"
+  if (message === "preparation_method_same_session_capabilities_required")
+    return "当前准备会话无法安全建立前置页面；本次局部修订已停止，没有另开浏览器或重放任务。"
+  if (message === "preparation_method_fresh_source_required")
+    return "本次方法修订未取得新的独立来源；原方法和历史版本保留，未合并候选。"
+  if (/^(preparation_method_|preparation_reusable_|inspected_navigation_)/.test(message)) {
+    return "代表试做的可复跑方法来源未通过核验；已有来源保留，尚未发布。请查看技术详情中的具体原因。"
+  }
   if (authoringFailureCode(error) === "account_check_incomplete") {
     return "账号检查过程发生错误，浏览器试做尚未开始，登录状态未能核验。已保存的账号保留。"
   }
@@ -72,7 +96,7 @@ export function authoringFailureMessage(error: unknown): string {
   if (message === "hybrid_source_protocol_invalid") {
     return "代表执行的结果交接未通过协议校验；本轮已停止，需要修复该问题后继续。"
   }
-  if (/^hybrid_(compilation_(?!gaps$)|prefix_|online_final_)/.test(message)) {
+  if (/^hybrid_(compilation_(?!gaps$)|prefix_|online_final_|semantic_annotation_failed|native_compilation_failed)/.test(message)) {
     return "在线节点生成或保存未通过；已有来源和节点保留，未重新执行动作。"
   }
   if (message === "workflow_fork_source_verifier_unavailable") {
@@ -87,6 +111,12 @@ export function authoringFailureMessage(error: unknown): string {
   if (message.startsWith("hybrid_completed_source_required:")) {
     const [, action, index] = message.split(":")
     return `代表试做未完成，第 ${index} 个动作 ${action} 未通过。首次失败、读取合同和模型调用已保留在技术详情中。`
+  }
+  if (message === "hybrid_source_declared_failure") {
+    const text = error && typeof error === "object" && "nativeText" in error && typeof error.nativeText === "string"
+      ? error.nativeText : ""
+    return text ? `原生浏览器探索未完成：${text}`
+      : "原生浏览器探索明确以未完成结束；结束说明和完整动作记录已保留在技术详情中。"
   }
   if (message === "hybrid_completed_source_required") {
     return "代表任务没有正常结束或输出不符合已确认合同，系统没有发布不完整链路。"

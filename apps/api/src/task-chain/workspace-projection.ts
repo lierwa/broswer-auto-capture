@@ -10,7 +10,6 @@ import type { TaskContractRepository } from "./repository.js"
 import type { TaskProductService } from "./product.js"
 import { syncConfirmedRequirement } from "./requirement.js"
 import { ungroupedPreparationPresentation, createStepChainPresentation } from "./presentation.js"
-import { storedCompilationProgress } from "./authoring-build-progress.js"
 import { storedStepBuilds } from "./preparation-step-builds.js"
 
 const INCOMPLETE_AUTHORING = ["failed", "cancelled", "interrupted"]
@@ -138,6 +137,8 @@ export function projectActivity(job: TaskAuthoringJob | null, repository?: TaskC
     ? "compiling" : job.preparation.phase
   // WHY：样本/独立验证开始后由正式草稿和本次 execution 接管画布，不能继续以生成片段遮住运行。
   const build = ["preexecuting", "compiling"].includes(phase) ? job.authoring?.build : undefined
+  const receipt = ["preexecuting", "compiling"].includes(phase) ? job.authoring?.sourceReceipt : undefined
+  const candidate = receipt ? job.authoring?.candidateStatus : undefined
   const plan = job.preparation.candidatePlan
   // WHY：仅展示当前 job 的确切计划版本，不能混入旧发布或其他准备的链路。
   const chains = plan && repository ? repository.chains(job.taskId).filter(chain => chain.plan.id === plan.id
@@ -153,8 +154,11 @@ export function projectActivity(job: TaskAuthoringJob | null, repository?: TaskC
     ...(job.browser ? { browser: job.browser } : {}),
     ...(build ? { build: { stepId: build.stepId, sequence: build.sequence, digest: build.digest,
       phase: build.phase, nodes: build.nodes, edges: build.edges,
-      compilation: storedCompilationProgress(build),
+      compilation: build.compilation,
       presentation: build.presentation ?? ungroupedPreparationPresentation(build.nodes, build.edges) } } : {}),
+    ...(receipt && candidate ? { compilationStatus: { ...candidate, stepId: receipt.stepId, sequence: receipt.sequence,
+      phase: receipt.phase, stale: build?.stepId !== receipt.stepId || build.sequence !== receipt.sequence
+        || build.digest !== receipt.digest || build.authorRequestId !== receipt.authorRequestId } } : {}),
     inputRequest: job.preparation.inputRequest, waitpoint: job.waitpoint, updatedAt: job.updatedAt }
 }
 

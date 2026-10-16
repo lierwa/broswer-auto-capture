@@ -1,11 +1,12 @@
+import { invocationInputs, outputFor, outputValue } from "./plan-values.js"
 import { planNavigationPolicy } from "./navigation-scope.js"
 import { usesHybridBrowserRuntime } from "../upstream-browser/retirement.js"
 import { executionBudget } from "./execution-budget.js"
 import {
   CONTRACT_VERSION, DEFAULT_TASK_EXECUTION_BROWSER, parseTaskValue, taskPlanExecutionIssues, type JsonValue, type TaskChain, type TaskExecution,
-  type TaskExecutionStep, type TaskOutput, type TaskPlan, type TaskPlanStep, type TaskRun, type TaskRunRequest,
+  type TaskExecutionStep, type TaskPlan, type TaskPlanStep, type TaskRun, type TaskRunRequest,
 } from "@browser-capture/contracts"
-import { readPath, resolveBinding, digestJson, executableChainDigest, stableUuid,
+import { resolveBinding, digestJson, executableChainDigest, stableUuid,
   RuntimeBudgetExceededError, type BindingContext, type RuntimeControl, type RuntimeNodePacing } from "@browser-capture/runtime"
 import type { ProductStore } from "../database/store.js"
 import type { TaskContractRepository } from "./repository.js"
@@ -390,25 +391,6 @@ export class TaskPlanExecutor {
   private save(record: TaskExecution) { this.repository.saveExecution(record) }
 }
 
-function invocationInputs(step: TaskPlanStep, context: BindingContext) {
-  if (step.invocation.mode !== "each") return [{ input: parseTaskValue(step.inputContract, resolveBinding(step.input, context)), stableKey: "root" }]
-  const invocation = step.invocation
-  const collection = resolveBinding(invocation.collection, context)
-  if (!Array.isArray(collection)) throw new Error("plan_each_collection_required")
-  const selected: { input: JsonValue; stableKey: string }[] = [], seen = new Map<string, string>()
-  for (const item of collection) {
-    const variables = { ...context.variables, [invocation.itemVariable]: item }
-    const stableValue = readPath(item, invocation.stableKeyPath)
-    if (!["string", "number", "boolean"].includes(typeof stableValue)) throw new Error("plan_stable_key_scalar_required")
-    const input = parseTaskValue(step.inputContract, resolveBinding(step.input, { ...context, variables }))
-    const stableKey = digestJson(stableValue), inputDigest = digestJson(input), previous = seen.get(stableKey)
-    if (previous && previous !== inputDigest) throw new Error("plan_stable_key_collision")
-    if (previous) continue
-    seen.set(stableKey, inputDigest); selected.push({ input, stableKey })
-  }
-  if (selected.length > invocation.maxItems) throw new Error("plan_item_limit_exceeded")
-  return selected
-}
 
 function runRequest(record: TaskExecution, chain: TaskChain, input: JsonValue, runId: string, invocationId: string): TaskRunRequest {
   return { contractVersion: CONTRACT_VERSION, requestId: stableUuid(runId, "request"), mode: record.mode ?? "replay", input,
@@ -431,13 +413,4 @@ function externalFailureReason(failure: NonNullable<TaskRun["externalFailure"]>)
   const status = failure.httpStatus === null ? "" : ` HTTP ${failure.httpStatus}`
   const origin = failure.origin ? `（${failure.origin}）` : ""
   return `来源访问已熔断：${failure.category}${status}${origin}；已完成输入和检查点保留，未继续调度剩余输入。`
-}
-
-function outputFor(chain: TaskChain, run: TaskRun): TaskOutput | null {
-  return Object.values(run.outputs).find((output) => output.contract.id === chain.outputContract.id
-    && output.contract.version === chain.outputContract.version) ?? null
-}
-function outputValue(output: TaskOutput): JsonValue {
-  return output.kind === "value" ? output.value : { artifactId: output.artifact.artifactId,
-    mediaType: output.artifact.mediaType, digest: output.artifact.digest }
 }

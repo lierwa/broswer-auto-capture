@@ -9,6 +9,7 @@ from .natural_result_binding import build_result_derivation_fields
 from .summary_compile import compiled_summary_fields, summary_capture_fields
 from .method_read_schema import compatible_read_schema, representative_schema
 from .result_schema import ResultSchemaFailure, assert_result_count_schema, assert_result_read_schema
+from .contract_constants import contract_constants
 
 
 class NaturalOutputField(Contract):
@@ -173,10 +174,7 @@ def _compiled_fields(trace, segments, output_schema, assembly_fields, runtime_in
         Draft202012Validator(value.specification.outputSchema).validate(value.output)
         target_check = representative_schema(target_schema, [[]]) if value.coverage else target_schema
         Draft202012Validator(target_check).validate(actual)
-        if value.coverage is not None:
-            done = next((action for action in reversed(trace.actions) if action.name == 'done'), None)
-            if done is None or value.readRef not in done.args.get('readRefs', []):
-                raise ValueError('natural_output_read_reference_unselected')
+        # WHY：真实装配事实的当前node binding就是宿主选择；原生done不携带技术readRefs。
         output.append((field, actual))
     output.extend(compiled_summary_fields(trace, segments, output_schema))
     dynamic = {digest(field): actual for field, actual in output}
@@ -192,7 +190,8 @@ def _compiled_fields(trace, segments, output_schema, assembly_fields, runtime_in
                 raise ValueError('natural_output_input_schema_mismatch')
         elif binding['source'] == 'constant':
             value = binding['value']
-            if not isinstance(value, str) or not value or value not in requirement_text:
+            trusted = any(digest(actual) == digest(value) for _field, actual in contract_constants(target_schema))
+            if not trusted and (not isinstance(value, str) or not value or value not in requirement_text):
                 raise ValueError('natural_output_constant_authority_missing')
         elif binding['source'] == 'node':
             segment = next((item for item in segments if _item(item, 'id') == binding['nodeId']), None)
@@ -257,16 +256,23 @@ def _static_output_fields(final_output, output_schema, covered, input_value, inp
     def visit(value, schema, path):
         if any(path[:len(owner)] == owner for owner in covered):
             return
+        # WHY：已有子字段来自现场读取时，不得因样本恰好等于输入而绑定整个父对象，覆盖动态来源。
+        has_read_children = any(owner[:len(path)] == path for owner in covered)
+        fixed = contract_constants(schema)
+        if len(fixed) == 1 and fixed[0][0]['path'] == [] and digest(fixed[0][1]) == digest(value):
+            fields.append({**fixed[0][0], 'path': path})
+            covered.append(path)
+            return
         # WHY：相同字段路径的继承优先于值匹配；多个字段恰好相同不应丢失合法输入绑定。
         try:
-            if schema_path_required(input_schema, path) and schema_at_path(input_schema, path) == schema \
+            if not has_read_children and schema_path_required(input_schema, path) and schema_at_path(input_schema, path) == schema \
                     and digest(_value_at(input_value, path)) == digest(value):
                 fields.append({'binding': {'source': 'input', 'path': path}, 'path': path, 'sampleValue': value})
                 covered.append(path)
                 return
         except (ValueError, TypeError, AttributeError):
             pass
-        matches = _input_matches(input_value, input_schema, value, schema)
+        matches = [] if has_read_children else _input_matches(input_value, input_schema, value, schema)
         if len(matches) == 1:
             fields.append({'binding': {'source': 'input', 'path': matches[0]},
                            'path': path, 'sampleValue': value})

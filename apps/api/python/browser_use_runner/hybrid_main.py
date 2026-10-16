@@ -12,6 +12,7 @@ from browser_use import BrowserProfile
 from browser_use_runner.task_browser import TaskBrowser as Browser
 import workflow_use
 from workflow_use.hybrid.capability import OrdinaryCapability
+from workflow_use.hybrid.native_files import NativeFileContext
 from workflow_use.hybrid.evidence import digest
 from workflow_use.hybrid.postconditions import PostconditionNotMet
 from workflow_use.hybrid.read import read_fields
@@ -21,7 +22,6 @@ from workflow_use.hybrid.author import author_step
 from browser_use_runner.author_access import AuthorAccessControl
 from browser_use_runner.access_cooldown import DocumentResponses, document_key, guard, external_document_error
 from browser_use_runner.ai_connect import AIConnectModel
-from browser_use_runner.output_schema import output_model_for
 from browser_use_runner.hybrid_compile import compile_offline
 from browser_use_runner.popup_resume import PopupResumeAdapter
 from browser_use_runner.diagnostic_channel import DiagnosticChannel
@@ -175,7 +175,7 @@ class Runner:
                 self.assert_document_access)
             self.diagnostic({'phase': 'author', 'status': 'started'})
             try:
-                result = await author_step(self.browser, request.source.model_dump(mode='json', by_alias=True), models, output_model_for,
+                result = await author_step(self.browser, request.source.model_dump(mode='json', by_alias=True), models,
                                             diagnostic=self.diagnostic, human_wait=self.human_wait,
                                             **({'compilation_exchange': self.compilation.exchange} if self.compilation else {}))
             except asyncio.CancelledError:
@@ -244,7 +244,12 @@ class Runner:
         session = await self.browser.get_or_create_cdp_session()
         session.cdp_client.register.Network.responseReceived(self.record_document_response)
         await session.cdp_client.send.Network.enable(session_id=session.session_id)
-        self.capability = OrdinaryCapability(self.browser)
+        file_owner = window_config.ownerId if window_config is not None else self.browser.id
+        if file_owner is not None:
+            self.browser._bat_native_file_context = NativeFileContext(self.profile_path.parent, file_owner)
+        self.capability = OrdinaryCapability(self.browser,
+            file_context=getattr(self.browser, '_bat_native_file_context', None))
+        self.browser._bat_close_allowed_url = lambda url: allowed_url(url, self.allowed_sites)
         if window_config is not None:
             self.browser._bat_content_store = (self.profile_path.parent, window_config.ownerId)
         return {'mode': 'hybrid/v2', 'modelCalls': 0}

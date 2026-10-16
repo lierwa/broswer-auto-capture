@@ -32,8 +32,10 @@ class HistoryRecord(Contract):
     actions: list[dict[str, JsonValue]]
     results: list[ResultEvidence]
     preObservationRef: str | None = None
+    preObservationRefs: dict[str, str] = Field(default_factory=dict)
     postObservationRefs: dict[str, str] = Field(default_factory=dict)
-    resultDisposition: Literal['action_aligned', 'agent_step_auxiliary', 'unpaired'] = 'action_aligned'
+    resultDisposition: Literal['action_aligned', 'agent_step_auxiliary', 'unpaired',
+                               'native_sequence_stopped'] = 'action_aligned'
 
 
 class HistoryInput(Contract):
@@ -59,7 +61,8 @@ def normalize_history(source: HistoryInput, registry: ActionRegistry):
             raise ValueError('invalid_auxiliary_result_disposition')
         if not auxiliary and len(record.results) > len(record.actions):
             gaps.append(gap('invalid_source', [], f'unpaired_result_at_step:{index}', 'reject_trace'))
-        ambiguous = len(record.results) != len(record.actions) and any(r.errorPresent for r in record.results)
+        ambiguous = (record.resultDisposition != 'native_sequence_stopped'
+                     and len(record.results) != len(record.actions) and any(r.errorPresent for r in record.results))
         for action_index, raw in enumerate(record.actions):
             action, issues = normalize_action(record, action_index, raw,
                 action_refs[(record.stepIndex, action_index)], ambiguous, registry)
@@ -70,7 +73,13 @@ def normalize_history(source: HistoryInput, registry: ActionRegistry):
                 actions=[a.model_dump() for a in actions], observations=[o.model_dump() for o in source.observations],
                 finalResultRef=source.finalResultRef.model_dump() if source.finalResultRef else None,
                 redactionManifestRef=source.redactionManifestRef.model_dump())
-    return NormalizedTrace.model_validate({**body, 'digest': digest(body)}), sorted(gaps, key=lambda item: item.id)
+    trace = NormalizedTrace.model_validate({**body, 'digest': digest(body)})
+    from .native_sequence_stop import sequence_stop_coverage
+    stopped = {action.id for action in trace.actions if sequence_stop_coverage(trace, action) is not None}
+    # WHY：只消除经完整 stop/dispatch/cause 校验的尾部未配对；已派发未知结果仍拒绝来源。
+    gaps = [item for item in gaps if not (item.reason == 'action_result_unpaired_or_ambiguous'
+            and len(item.actionRefs) == 1 and item.actionRefs[0] in stopped)]
+    return trace, sorted(gaps, key=lambda item: item.id)
 
 
 def normalize_action(record, index, raw, action_id, ambiguous, registry):
@@ -95,7 +104,8 @@ def normalize_action(record, index, raw, action_id, ambiguous, registry):
     if result is None:
         issues.append(gap('invalid_source', [action_id], 'action_result_unpaired_or_ambiguous', 'reject_trace'))
     # WHY: 同一 item 的 pre state 只属于首动作；缺逐动作观察不能复制给后续动作。
-    pre = record.preObservationRef if index == 0 else record.postObservationRefs.get(str(index - 1))
+    pre = record.preObservationRefs.get(str(index)) or (record.preObservationRef if index == 0
+        else record.postObservationRefs.get(str(index - 1)))
     post = record.postObservationRefs.get(str(index))
     effect = action_effect(name)
     if status == 'succeeded' and effect != 'none' and not pre:

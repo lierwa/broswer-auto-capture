@@ -16,19 +16,20 @@ def consumer_readiness_by_action(trace, settle=NATURAL_SETTLE, *, allowed_consum
             continue
         for consumer in trace.actions[index + 1:]:
             # WHY：失败但已派发的动作仍可能改变页面；只有审计证明未派发，才能跨过它继续找消费者。
-            if (consumer.name == 'done' or consumer.effect in DELAYED_EFFECTS
+            if ((consumer.name == 'done' or consumer.effect in DELAYED_EFFECTS)
                     and consumer.id not in proven_not_dispatched_ids):
                 break
             if allowed_consumer_ids is not None and consumer.id not in allowed_consumer_ids:
                 continue
-            readiness = _verified_consumer_readiness(producer, consumer, observations, settle, trace.actions[:index])
+            readiness = _verified_consumer_readiness(producer, consumer, observations, settle,
+                trace.actions[:index], proven_not_dispatched_ids)
             if readiness is not None:
                 output[producer.id] = readiness
                 break
     return output
 
 
-def _verified_consumer_readiness(producer, consumer, observations, settle, preceding=()):
+def _verified_consumer_readiness(producer, consumer, observations, settle, preceding=(), not_dispatched=frozenset()):
     if consumer.name not in ('extract', 'bat_read_fields', 'find_elements') or consumer.status != 'succeeded':
         return None
     pre, post = observations.get(consumer.preObservationRef), observations.get(consumer.postObservationRef)
@@ -52,7 +53,7 @@ def _verified_consumer_readiness(producer, consumer, observations, settle, prece
         return None
     # WHY：滚动/点击不代表后续字段必然变化；只有同一投影的前后读取能证明这种要求。
     authority = ('transition' if producer.effect != 'navigation'
-                 and _observed_read_transition(preceding, observations, value) else 'ready')
+                 and _observed_read_transition(preceding, observations, value, not_dispatched) else 'ready')
     condition = {'kind': 'read_fields', authority: True, 'consumerRef': 's-' + consumer.id,
                  'clauseRef': facts[0].id, 'read': runtime_read_specification(value.specification),
                  'scope': {'url': pre.url, 'urlDigest': value.urlDigest}, 'settle': settle}
@@ -61,9 +62,9 @@ def _verified_consumer_readiness(producer, consumer, observations, settle, prece
     return {'condition': condition, 'proofRefs': refs}
 
 
-def _observed_read_transition(preceding, observations, current):
+def _observed_read_transition(preceding, observations, current, not_dispatched=frozenset()):
     for action in reversed(preceding):
-        if action.effect in DELAYED_EFFECTS:
+        if (action.name == 'done' or action.effect in DELAYED_EFFECTS) and action.id not in not_dispatched:
             break  # 其它页面动作隔开了因果边界，不能把更早的变化归给本动作。
         post = observations.get(action.postObservationRef)
         if action.status != 'succeeded' or post is None:

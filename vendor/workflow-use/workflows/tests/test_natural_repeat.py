@@ -13,6 +13,7 @@ from workflow_use.hybrid.method_completion import complete_from_read_refs
 from workflow_use.hybrid.method_read_evidence import verified_method_read
 from workflow_use.hybrid.method_read_tool import (
     MethodReadRecord, MethodReadRecords, MethodReadToolParams, expand_method_read_params, method_read_model_result,
+    method_read_params_for,
 )
 from workflow_use.hybrid.natural_output import build_verified_output_assembly
 from workflow_use.hybrid.natural_reads import VerifiedNaturalRead, find_elements_read_spec
@@ -32,8 +33,10 @@ QUERY_ARGS = {'selector': 'a.next', 'max_results': 1, 'include_text': True, 'att
 
 def method_case(page, action_ref, prior_records=None):
     records = copy.deepcopy(prior_records) if prior_records else MethodReadRecords(SCHEMA)
-    params = MethodReadToolParams(outputPath=[], container='.item', fields={
-        'title': {'selector': 'a'}, 'url': {'selector': 'a', 'attribute': 'href', 'resolveUrl': True}})
+    public = method_read_params_for(SCHEMA).model_validate({'container': '.item', 'fields': {
+        'title': {'selector': 'a'}, 'url': {'selector': 'a', 'attribute': 'href', 'resolveUrl': True}}})
+    arguments = public.model_dump(mode='json', exclude_unset=True)
+    params = MethodReadToolParams(outputPath=[], **arguments)
     mapping = expand_method_read_params(params, SCHEMA)
     rows = [{'title': 'Record ' + str(index), 'url': page + '/item/' + str(index)} for index in range(3)]
     sample = ReadSample(specificationDigest=digest(mapping.specification), output=rows, outputDigest=digest(rows),
@@ -44,7 +47,7 @@ def method_case(page, action_ref, prior_records=None):
     record = MethodReadRecord(readRef='r' + str(start + 1), parameters=params, mapping=mapping, sample=sample)
     records.records.append(record)
     payload = method_read_model_result(record)
-    return {'records': records, 'start': start, 'arguments': params.model_dump(mode='json'),
+    return {'records': records, 'start': start, 'arguments': arguments,
             'results': [ActionResult(extracted_content=json.dumps(payload))],
             'result_ref': reference(payload), 'action_ref': action_ref}
 
@@ -124,8 +127,8 @@ def repeat_source(*, terminal_probe=False, hidden_effect=False, output_read='r1'
         lambda _kind, value: reference(value), selected_read_refs=[output_read], result_spec=request.plan.resultSpec)
     if issues:
         raise AssertionError(issues)
-    add_action(records, observations, 'done', {'success': True, 'reason': 'Observed repeat method.',
-        'readRefs': [output_read]}, end_page, end_page, facts=[assembly], result_ref=reference(output), done=True)
+    add_action(records, observations, 'done', {'success': True, 'text': 'Observed repeat method.'},
+        end_page, end_page, facts=[assembly], result_ref=reference(output), done=True)
     if lookup_probes:
         for observation in observations:
             observation.facts.append(fact('document_identity', {

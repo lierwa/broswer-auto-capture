@@ -1,11 +1,29 @@
 import { taskExecutionSchema, type TaskChainCommand, type TaskExecution } from "@browser-capture/contracts"
 import { eq, sql } from "drizzle-orm"
 import { z } from "zod"
-import { executionResourcePredicate } from "../database/execution-resource-index.js"
+import { executionResourcePredicate, authoringResourcePredicate } from "../database/execution-resource-index.js"
 import { stableUuid } from "@browser-capture/runtime"
-import { taskExecutions } from "../database/schema.js"
+import { taskExecutions, taskAuthoringJobs } from "../database/schema.js"
 import type { ProductStore } from "../database/store.js"
+import type { TaskContractRepository } from "./repository.js"
+import type { UpstreamBrowserRuntime } from "../upstream-browser/service.js"
+import { settleAuthoringCleanup } from "./authoring-cleanup.js"
 type Dispatch = (taskId: string, command: TaskChainCommand) => Promise<unknown>
+export function authoringResourceRecords(store: ProductStore) {
+  return store.db.select({ id: taskAuthoringJobs.id, taskId: taskAuthoringJobs.taskId })
+    .from(taskAuthoringJobs).where(sql.raw(authoringResourcePredicate)).all()
+}
+export async function recoverAuthoringResources(store: ProductStore, repository: TaskContractRepository,
+  upstream: UpstreamBrowserRuntime, kind: "daily" | "dedicated", active: (key: string) => boolean, inFlight: Set<string>) {
+  for (const record of authoringResourceRecords(store)) {
+    const key = `${record.taskId}:${record.id}`, job = repository.job(record.taskId, record.id)
+    if ((job.browser?.mode === "daily" ? "daily" : "dedicated") !== kind || active(key) || inFlight.has(key)) continue
+    inFlight.add(key)
+    try { await settleAuthoringCleanup(repository, upstream, job, false) }
+    catch { /* 原始清理证据保留；一个损坏来源不能阻止其它 owner 核验。 */ }
+    finally { inFlight.delete(key) }
+  }
+}
 type Control = (taskId: string, command: { requestId: string; executionId: string; expectedSequence: number; action: "inspect" | "end" }) => Promise<unknown>
 
 type ResourceRecord = Pick<TaskExecution, "id" | "taskId" | "status" | "sequence" | "browser" | "browserHandoff">

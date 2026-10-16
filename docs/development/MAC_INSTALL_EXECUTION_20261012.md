@@ -1,5 +1,7 @@
 # Mac 当地安装与实际验收记录
 
+后续更新：VM管理问题已按用户授权修复，恢复原创建模板3行后status exit0、五服务ready，Lima validate及6项宿主测试通过。未重启VM/Mac、未改owner记录。下方该问题未关闭的描述保留历史时点；当前见[最新执行记录](MAC_VM_AND_PUBLIC_NATIVE_TEST_20261012.md)。
+
 ## 最新结算与发布口径
 
 导航授权根因已修复，保留原localhost入口的新任务完整验收见[导航修复记录](NAVIGATION_SCOPE_REPAIR_20261012.md)，下方改用check入口的成功属于历史绕行证据。按用户最新指令，旧六次模型失败以“当前正常、未复现”关闭，不再作为活动待办；旧错误及未取得底层cause的事实保留。发布前只读mac-host status仍返回lima_instance_owner_changed / exit1，故该本机维护项保留；当前运行盾及产品主流程正常。用户已授权提交推送当前全部B-A-T代码；本记录下方“不推送/未提交”均为当时边界，不覆盖最新授权。

@@ -99,6 +99,8 @@ class SourceObservationScope:
         self.stamps, self.diagnostics = [], []
         self.initial_security_events = set(getattr(getattr(browser, 'event_bus', None), 'event_history', {}))
         self.installed = False
+        self.batch = None
+        self.last_native_identity = None
         self.had_instance_method = 'get_browser_state_summary' in vars(browser)
         self.instance_method = vars(browser).get('get_browser_state_summary')
         self.had_instance_url = 'get_current_page_url' in vars(browser)
@@ -137,6 +139,7 @@ class SourceObservationScope:
             raise ValueError('observation_tab_changed')
         if not isinstance(url, str) or not url:
             raise ValueError('observation_url_unavailable')
+        self.last_native_identity = {'url': url, 'targetId': tab_id}
         return url
 
     async def capture(self, include_screenshot=True, cached=False, include_recent_events=False):
@@ -149,10 +152,39 @@ class SourceObservationScope:
                                          include_recent_events=include_recent_events)
             self.reject_navigation_scope()
             return result
+        if self.batch is not None:
+            return await self.capture_batch_summary()
         return await self._capture(include_screenshot, include_recent_events, allow_transition=False)
 
     async def capture_post(self, include_screenshot=False, cached=False, include_recent_events=False):
+        if self.batch is not None:
+            sample = await live_document_sample(self.browser)
+            if sample_identity(sample) == sample_identity(self.batch['sample']):
+                return await self.capture_batch_summary(sample)
+            # WHY：文档/页面已变化时原生会终止旧序列；后观察可刷新，绝不重用余下旧索引。
         return await self._capture(include_screenshot, include_recent_events, allow_transition=True)
+
+    def begin_batch(self, summary, native_step):
+        baseline = next((sample for candidate, sample in reversed(self.stamps) if candidate is summary), None)
+        if baseline is None:
+            raise ValueError('observation_baseline_unavailable')
+        self.batch = {'summary': summary, 'sample': baseline, 'nativeStep': native_step}
+
+    def end_batch(self):
+        self.batch = None
+
+    async def capture_batch_summary(self, sample=None):
+        """Sample current identity/metadata without rebuilding native batch indices."""
+        self.reject_navigation_scope()
+        sample = sample or await live_document_sample(self.browser)
+        if not sample['stable'] or sample_identity(sample) != sample_identity(self.batch['sample']):
+            raise ObservationRefreshRequired('document changed inside the current action sequence')
+        summary = copy(self.batch['summary'])
+        summary.url = sample['url']
+        summary.tabs = [_updated_tab(tab, sample) for tab in summary.tabs]
+        self.stamps.append((summary, sample))
+        self.stamps = self.stamps[-8:]
+        return summary
 
     def reject_navigation_scope(self):
         # WHY：原生安全watchdog会先记录拒绝再退回空白页；DOM变化不能盖掉真正的越界原因。
@@ -219,6 +251,8 @@ class SourceObservationScope:
 
     async def verify_before_action(self, summary, native_step, selector_index=None, action_name=None):
         baseline = next((sample for candidate, sample in reversed(self.stamps) if candidate is summary), None)
+        if baseline is None and self.batch is not None and summary is self.batch['summary']:
+            baseline = self.batch['sample']
         try:
             current = await live_document_sample(self.browser)
         except LiveDocumentReadError as error:
@@ -285,6 +319,8 @@ class SourceObservationScope:
 
     def document_identity(self, summary):
         sample = next((value for candidate, value in reversed(self.stamps) if candidate is summary), None)
+        if sample is None and self.batch is not None and summary is self.batch['summary']:
+            sample = self.batch['sample']
         if sample is None or not sample['stable'] or not sample['documentDigest'] or not sample['targetId']:
             return None
         return {'targetId': sample['targetId'], 'documentDigest': sample['documentDigest']}

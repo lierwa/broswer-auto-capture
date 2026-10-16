@@ -40,12 +40,13 @@ class MainlineRecordContractTests(unittest.IsolatedAsyncioTestCase):
             await read_fields(Browser(page), spec, inherited={'name': 'second'})
 
     def mapping(self):
+        # WHY：业务take/ordinal由已确认合同/宿主派生，不再要求探索模型声明技术字段。
         model = method_read_params_for(SCHEMA)
         self.assertNotIn('maxItems', model.model_json_schema()['properties'])
         with self.assertRaises(ValidationError):
-            model.model_validate({'outputPath': [], 'container': '.row', 'fields': {'name': {'selector': '.name'}}, 'maxItems': 5})
-        args = model.model_validate({'outputPath': [], 'container': '.row', 'take': 5,
-            'fields': {'name': {'selector': '.name'}, 'rank': {'selector': ':scope', 'ordinal': True}}})
+            model.model_validate({'container': '.row', 'fields': {'name': {'selector': '.name'}}, 'maxItems': 5})
+        args = MethodReadToolParams(outputPath=[], container='.row', take=5,
+            fields={'name': {'selector': '.name'}, 'rank': {'selector': ':scope', 'ordinal': True}})
         return expand_method_read_params(args, SCHEMA)
 
     async def test_30_matches_take_5_preserves_full_page_budget_and_real_ordinals(self):

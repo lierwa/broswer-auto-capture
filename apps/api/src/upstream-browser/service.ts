@@ -37,8 +37,9 @@ export interface UpstreamBrowserRuntime {
     signal: AbortSignal): Promise<JsonValue>
   close?(): Promise<RunnerCleanupReport>
   sourceDigest?(): Promise<string>
-  recompile?(input: Omit<Parameters<typeof recompileHybridSource>[0], "root" | "directory" | "subject">): ReturnType<typeof recompileHybridSource>
+  recompile?(input: Omit<Parameters<typeof recompileHybridSource>[0], "root">): ReturnType<typeof recompileHybridSource>
   withCapabilities?<T>(input: { signal: AbortSignal; ownerId: string; allowedOrigins: string[]; allowedSites?: BrowserAllowedSite[]; canRestoreByNavigation?: boolean;
+    fileStateRequired?: boolean;
     legacyNodeIds?: Record<string, string[]>;
     sessionPurpose?: "account"; publicRead?: boolean;
     connectionOwnerId?: string; closeAfterOperation?: boolean;
@@ -51,6 +52,7 @@ export interface UpstreamBrowserRuntime {
   withAuthoring?<T>(input: { selection: ModelSelection; signal: AbortSignal; ownerId: string; allowedOrigins: string[]; allowedSites?: BrowserAllowedSite[];
     managedWindow?: { ownerId: string; resume: boolean; releasedOwners?: string[] }; preserveWindow?: boolean;
     connectionOwnerId?: string; browserMode?: BrowserMode;
+    onCleanup?: (report: RunnerCleanupReport) => void;
     onProgress?: (event: HybridAuthoringProgress) => void } & AuthoringHumanHandlers,
     work: (session: HybridAuthorSession) => Promise<T>): Promise<T>
   managedWindowAction?(input: { action: "inspect" | "focus" | "page" | "end" | "verify_closed"; ownerId: string; leaseId: string; browserMode?: BrowserMode; controllerReleased?: boolean }):
@@ -225,8 +227,8 @@ export class RunnerProcess {
           notRequired("child_exit"), notRequired("process_tree"))
       } else {
         await this.closeChild(child, stages)
-        activeResources = !hasExited(child)
-          || stages.some((stage) => stage.stage === "browser_close" && stage.status === "unconfirmed")
+        activeResources = !hasExited(child) ? true
+          : stages.some((stage) => stage.stage === "browser_close" && stage.status === "unconfirmed") ? null : false
       }
     } finally {
       this.lines?.close(); this.diagnosticLines?.close(); this.child = null
@@ -255,7 +257,7 @@ export class RunnerProcess {
     } else {
       // WHY：取消/崩溃只证明控制进程退出；受管浏览器属于原 lease，必须交回既有 owner 清理核验。
       stages.push(notRequired("capability_close"), this.managedWindow
-        ? unconfirmed("browser_close", "cleanup_browser_close_failed") : notRequired("browser_close"),
+        ? unconfirmed("browser_close", "cleanup_browser_close_unverified") : notRequired("browser_close"),
       notRequired("close_protocol"))
     }
     child.stdin?.end()

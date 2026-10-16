@@ -88,22 +88,6 @@ def native_receipt(trace, action):
     return value
 
 
-def validate_selection_sample(trace, action):
-    from .natural_repeat_evidence import _assert_same_document
-    from .selection_tool import SelectionCheck
-    if (action.effect != 'none' or action.status not in ('succeeded', 'failed') or action.resultRef is None):
-        raise ValueError('repeat_method_selection_audit_invalid')
-    SelectionCheck.model_validate(action.args)
-    receipt = native_receipt(trace, action)
-    if receipt.get('intentTarget') is not None or receipt.get('eventCapture') != {
-            'status': 'not_applicable', 'eventExpectation': 'none', 'eventCount': 0, 'limitations': []}:
-        raise ValueError('repeat_method_selection_effect_unproven')
-    pre, post = action_observations(trace, action)
-    if pre.url != post.url:
-        raise ValueError('repeat_method_selection_scope_changed')
-    _assert_same_document(pre, post)
-
-
 def validate_passive_wait(trace, action):
     from .action_capture_policy import action_capture_policy
     from .natural_repeat_evidence import _assert_same_document

@@ -1,3 +1,4 @@
+import { completedDraftExecution, completedDraftRuns } from "./fixtures/completed-draft-trial.js"
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import Database from "better-sqlite3"
-import { taskExecutionSchema, type TaskExecution } from "@browser-capture/contracts"
+import { type TaskExecution, type TaskRun } from "@browser-capture/contracts"
 import { digestJson, executableChainDigest } from "@browser-capture/runtime"
 import { extractionFixture } from "../../../packages/contracts/tests/task-chain-fixtures.js"
 import { ProductStore } from "../src/database/store.js"
@@ -26,6 +27,7 @@ test("仅在当前草稿完成样本试跑和不同输入的独立复验后发�
   let draft = createTaskDraft({ taskId: draftTaskId(plan.taskId), requirement, baseRelease: null,
     plan, chains: [chain], presentations: [createChainPresentation(chain)] })
   const executions = new Map<string, TaskExecution>()
+  const runs = new Map<string, TaskRun>()
   const releases: unknown[] = []
   let deleted = false
   const store = { snapshot: () => ({ active: false, revision: 1, confirmedVersion: 1,
@@ -44,7 +46,7 @@ test("仅在当前草稿完成样本试跑和不同输入的独立复验后发�
       return execution && { executionId: execution.id, taskId: draft.taskId,
         draft: draftReference(draft), content: structuredClone(draft.content), createdAt: execution.createdAt }
     },
-    run: () => { throw new Error("unexpected_run") },
+    run: (_taskId: string, id: string) => runs.get(id),
     saveRelease: (release: unknown) => { releases.push(release); return release },
     deleteDraft: () => { deleted = true },
   }
@@ -52,6 +54,7 @@ test("仅在当前草稿完成样本试跑和不同输入的独立复验后发�
   const recordTrial = (mode: "sample" | "verification", destination: string) => {
     const execution = completedDraftExecution(draft, mode, destination)
     executions.set(execution.id, execution)
+    for (const run of completedDraftRuns(draft, execution)) runs.set(run.binding.runId, run)
     draft = recordDraftTrial(draft, execution)
     return execution
   }
@@ -117,6 +120,7 @@ test("正式发布入口在回执写入失败时回滚 Release 和草稿删除�
       ["verification", "https://example.org"]] as const) {
       const execution = completedDraftExecution(draft, mode, destination)
       service.repository.saveExecution(execution)
+      for (const run of completedDraftRuns(draft, execution)) service.repository.saveRun(run)
       service.repository.saveCandidate({ executionId: execution.id, taskId,
         draft: draftReference(draft), content: structuredClone(draft.content), createdAt: execution.createdAt })
       draft.validation.records.push({ executionId: execution.id, revision: draft.revision,
@@ -165,6 +169,7 @@ test("就绪摘要复用只读事实，同连接、外部写入及事务回滚�
       presentations: [createChainPresentation(chain)] })
     const execution = completedDraftExecution(draft, "sample", "https://example.com")
     repository.saveExecution(execution)
+    for (const run of completedDraftRuns(draft, execution)) repository.saveRun(run)
     repository.saveCandidate({ executionId: execution.id, taskId, draft: draftReference(draft),
       content: draft.content, createdAt: execution.createdAt })
     draft.validation.records.push({ executionId: execution.id, revision: draft.revision, checksum: draft.checksum,
@@ -191,25 +196,5 @@ test("就绪摘要复用只读事实，同连接、外部写入及事务回滚�
     await rm(directory, { recursive: true, force: true })
   }
 })
-
-function completedDraftExecution(draft: ReturnType<typeof createTaskDraft>, mode: "sample" | "verification",
-  destination: string): TaskExecution {
-  const now = "2026-09-22T00:05:00.000Z", plan = draft.content.plan
-  const input = { destination }
-  return taskExecutionSchema.parse({ contractVersion: draft.contractVersion, kind: "execution", id: randomUUID(),
-    taskId: draft.taskId, authorizationId: randomUUID(),
-    plan: { id: plan.id, version: plan.version, digest: digestJson(plan) }, requirement: draft.requirement,
-    draft: draftReference(draft), mode, input,
-    inputDigest: digestJson(input), pacing: { nodeDelayMs: 0 },
-    consumed: { transitions: 1, browserCommands: 1, activeMs: 1, llmCalls: 0, invocations: 1 },
-    status: "completed", sequence: 1, currentStepId: null, currentRunId: null,
-    steps: draft.content.steps.map((step) => ({ stepId: step.stepId,
-      chain: { id: step.chain.id, version: step.chain.version, digest: executableChainDigest(step.chain) },
-      invocationIds: [], runIds: [], consumed: { transitions: 1, browserCommands: 1, activeMs: 1,
-        llmCalls: 0, invocations: 1 }, status: "completed", output: null, reason: null })),
-    output: null, reason: "试跑完成。", cleanup: { status: "confirmed", attempt: 1, code: null,
-      evidenceDigest: "a".repeat(64), updatedAt: now }, cleanupResume: null, reviews: [],
-    createdAt: now, updatedAt: now })
-}
 
 function draftTaskId(taskId: string) { return taskId }

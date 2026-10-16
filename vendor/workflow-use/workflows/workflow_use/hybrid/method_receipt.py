@@ -20,7 +20,10 @@ def receipt_value(trace, requirement_digest):
     done = trace.actions[-1] if trace.actions else None
     if done is None or done.name != 'done' or done.status != 'succeeded':
         raise ValueError('preparation_terminal_done_required')
-    return MethodReceipt(doneActionRef=done.id, methodOutcome=done.args.get('methodOutcome'),
+    observed = [a for a in trace.actions if a.status == 'succeeded' and a.name != 'done']
+    # WHY：技术方法可用性由已保存动作与后续编译门判定，模型不再重复填方法状态。
+    outcome = 'recorded' if observed else 'state_only'
+    return MethodReceipt(doneActionRef=done.id, methodOutcome=outcome,
         requirementDigest=requirement_digest,
         observedActionRefs=[a.id for a in trace.actions if a.status == 'succeeded'
                             and a.name not in ('done', 'bat_inspect_action')],

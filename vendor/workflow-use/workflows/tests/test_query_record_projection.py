@@ -5,7 +5,6 @@ from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from workflow_use.hybrid.collection_completion import collection_proof_candidates
 from workflow_use.hybrid.dom_evidence import DomQueryEvidence, DomScope
 from workflow_use.hybrid.evidence import EvidenceRef, ObservationFact, digest
 from workflow_use.hybrid.host_read_facts import attach_host_read_facts
@@ -205,9 +204,8 @@ class QueryRecordProjectionTest(unittest.TestCase):
 
         output = attach_host_read_facts(collector, ROWS)
         self.assertEqual(output, ROWS)
-        self.assertEqual(collection_proof_candidates(collector, SCHEMA, ROWS)[0]
-                         ['queryActionRefs'], ['a-0003'])
-        action = SimpleNamespace(id='a-0002', name='extract', resultRef=result,
+        self.assertEqual(collector.completed_queries, [(query, verified)])
+        action = SimpleNamespace(id='a-0002', name='extract', args={}, resultRef=result,
             postObservationRef=post.id)
         request = SimpleNamespace(plan=SimpleNamespace(outputSchemaDigest=digest(SCHEMA)))
         segment, paths, issues = compile_verified_read(request, action, pre, post, SCHEMA, [])

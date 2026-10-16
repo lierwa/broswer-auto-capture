@@ -36,13 +36,6 @@ class ActionRegistry(Contract):
             raise ValueError('unsupported_action')
         if self._action_model is None:
             raise ValueError('live_registry_required')
-        if name == 'bat_read_fields' and isinstance(args, dict) and 'maxItems' in args:
-            # WHY：新模型界面隐藏宿主预算，但既存来源的显式预算仍按原受限合同校验，不改历史动作。
-            from .method_read_tool import MethodReadToolParams
-            Draft202012Validator(MethodReadToolParams.model_json_schema()).validate(args)
-            parameters = MethodReadToolParams.model_validate(args)
-            result = self._action_model.model_validate({name: {key: value for key, value in args.items() if key != 'maxItems'}})
-            return result.model_copy(update={'root': result.root.model_copy(update={name: parameters})})
         result = self._action_model.model_validate({name: args})
         parameters = getattr(result.root, name, None) if name == 'bat_read_fields' else None
         content = isinstance(parameters, ContentReadToolParams)
@@ -62,12 +55,12 @@ class ActionRegistry(Contract):
 # WHY: 这是已核验的效果保守分类，绝不是 action 注册表或允许名单。
 # 未评估动作仍由公开 schema 识别并完整保留；默认按最高效果处理，不能排除。
 EFFECTS = {
-    'done': 'none', 'wait': 'none', 'bat_validate_selection': 'none', 'screenshot': 'read', 'find_elements': 'read',
+    'done': 'none', 'wait': 'none', 'screenshot': 'read', 'find_elements': 'read',
     'search_page': 'read', 'extract': 'read', 'bat_inspect_dom': 'read', 'bat_read_fields': 'read', 'bat_wait_for': 'read',
     'bat_summarize': 'read', 'bat_request_human': 'read', 'bat_inspect_action': 'read',
     'dropdown_options': 'read',
-    'navigate': 'navigation', 'go_back': 'navigation', 'switch': 'navigation', 'close': 'navigation',
-    'scroll': 'ui_state', 'bat_scroll_to': 'ui_state',
+    'navigate': 'navigation', 'search': 'navigation', 'go_back': 'navigation', 'switch': 'navigation', 'close': 'navigation',
+    'scroll': 'ui_state', 'find_text': 'ui_state', 'bat_scroll_to': 'ui_state', 'read_file': 'read',
 }
 
 

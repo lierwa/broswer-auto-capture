@@ -4,6 +4,7 @@ import re
 from types import SimpleNamespace
 
 from .action_dispatch import NOT_DISPATCHED_RULE, not_dispatched_coverage
+from .native_sequence_stop import sequence_stop_coverage
 from .dom_evidence import DomQueryEvidence
 from .evidence import ActionCoverage, NormalizedTrace, digest, gap
 from .natural_reads import VerifiedNaturalRead, validate_compiled_query_read
@@ -14,22 +15,7 @@ DOM_NODE_INSPECTION_RULE = 'dom_node_inspection_observation/v1'
 NATIVE_EXTRACTION_RULE = 'native_extraction_observation/v1'
 EXECUTION_EXTRACTION_RULE = 'execution_extraction_observation/v1'
 FAILED_NATIVE_DOM_LOOKUP_RULE = 'failed_native_dom_lookup_observation/v1'
-PREPARATION_SELECTION_VALIDATION_RULE = 'preparation_selection_validation/v1'
 URL_DIGEST = re.compile(r'^[a-f0-9]{64}$')
-
-
-def selection_validation_coverage(registry, action):
-    """A registered pure preparation computation owns no replay browser segment."""
-    if (registry is None or action.name != 'bat_validate_selection' or action.effect != 'none'
-            or action.status not in ('succeeded', 'failed') or action.resultRef is None):
-        return None
-    try:
-        registry.validate_action(action.name, action.args)
-    except Exception:
-        return None
-    # WHY：成功与失败都保留真实校验回执；纯准备计算不得混入普通链路或隐藏浏览器副作用。
-    return ActionCoverage(actionRef=action.id, disposition='agent_internal', ownerSegmentId=None,
-                          exclusionRule=PREPARATION_SELECTION_VALIDATION_RULE, evidenceRefs=[action.resultRef])
 
 
 # WHY: search_page/dropdown_options 仅提供原生只读文本发现；选择值仍需输入或需求绑定，不能成为复跑输出。
@@ -314,17 +300,17 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
             dispatch = not_dispatched_coverage(trace, action)
             skipped = (row.exclusionRule == NOT_DISPATCHED_RULE and dispatch is not None
                        and row.evidenceRefs == dispatch.evidenceRefs)
+            sequence_stop = sequence_stop_coverage(trace, action)
+            skipped = skipped or (sequence_stop is not None and row == sequence_stop)
             field_probe = failed_bat_field_read_probe(registry, action, row)
             wait_probe = failed_bat_wait_probe(registry, trace, action, row)
-            selection_probe = selection_validation_coverage(registry, action)
-            selection_probe = selection_probe is not None and row == selection_probe
             from .inspected_compile import inspection_coverage
             method_inspection = inspection_coverage(trace, action)
             method_inspection = method_inspection is not None and row == method_inspection
             if (not done and not lookup and not failed_lookup and not text_lookup and not inspection and not extraction
                     and not method_inspection
                     and not execution_extraction
-                    and not skipped and not field_probe and not wait_probe and not selection_probe):
+                    and not skipped and not field_probe and not wait_probe):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'invalid_exclusion', 'reject_trace'))
         if row.disposition == 'supporting':
             from .natural_repeat import validate_repeat_coverage
@@ -335,7 +321,9 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
                 issues.append(gap('incomplete_action_coverage', [action.id], 'unproven_supporting_action', 'reject_trace'))
         if row.disposition == 'retry_attempt':
             successor = next((a for a in trace.actions if a.retryOf == action.id and a.status == 'succeeded'), None)
-            if action.status != 'failed' or successor is None or not row.evidenceRefs:
+            # WHY：后继成功不证明失败动作没有部分副作用；只有原有限的失败纯读取证明可排除。
+            if (action.status != 'failed' or successor is None or not row.evidenceRefs
+                    or not _proven_read_retry(trace, registry, action, row, observations)):
                 issues.append(gap('incomplete_action_coverage', [action.id], 'unproven_retry', 'reject_trace'))
         if row.disposition == 'compiled' and action.status != 'succeeded':
             issues.append(gap('incomplete_action_coverage', [action.id], 'unexecuted_action', 'reject_trace'))
@@ -344,6 +332,15 @@ def validate_coverage(trace: NormalizedTrace, ledger: list[ActionCoverage], segm
     for action_id in actions.keys() - seen:
         issues.append(gap('incomplete_action_coverage', [action_id], 'unassigned_action', 'reject_trace'))
     return sorted(issues, key=lambda item: item.id)
+
+
+def _proven_read_retry(trace, registry, action, row, observations):
+    # WHY：复用同一严格 probe 证明；不把 read effect、相同参数或 retryOf 当作纯度证明。
+    probe = row.model_copy(update={'disposition': 'agent_internal', 'ownerSegmentId': None})
+    return (failed_bat_field_read_probe(registry, action, probe)
+            or failed_bat_wait_probe(registry, trace, action, probe)
+            or failed_native_dom_lookup_probe(registry, action, observations.get(action.preObservationRef),
+                                             observations.get(action.postObservationRef), probe))
 
 
 def _fixed_target_waits(trace, registry, segments):

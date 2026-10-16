@@ -4,7 +4,6 @@ import { hybridPrefixCompilationSchema } from "../upstream-browser/hybrid-prefix
 
 type Build = NonNullable<NonNullable<TaskAuthoringJob["authoring"]>["build"]>
 const compilation = hybridPrefixCompilationSchema.pick({ coverage: true, gaps: true }).strip()
-const actions = z.array(z.object({ id: z.string(), name: z.string() }))
 
 /** WHY：进度来自同一已验正编译包，不能用当前可见前缀的节点数冒充全部动作。 */
 export function compilationProgress(source: z.infer<typeof compilation>, trace: { actions: { id: string; name?: unknown }[] }): NonNullable<Build["compilation"]> {
@@ -21,17 +20,6 @@ export function compilationProgress(source: z.infer<typeof compilation>, trace: 
   }).slice(0, 500)
   return { observedActions: source.coverage.length, compiledActions: compiled, pendingActions: pending.length,
     excludedActions: source.coverage.length - compiled - pending.length, issues }
-}
-
-/** 历史快照只读投影；不补造来源，不改写旧 job。 */
-export function storedCompilationProgress(build: Build): Build["compilation"] {
-  if (build.compilation) return build.compilation
-  try {
-    const value = z.object({ canonicalRequest: z.string(), response: z.object({ compilation }) })
-      .parse(JSON.parse(build.payload))
-    const trace = z.object({ trace: z.object({ actions }) }).parse(JSON.parse(value.canonicalRequest)).trace
-    return compilationProgress(value.response.compilation, trace)
-  } catch { return undefined }
 }
 
 function safeCode(value: string, fallback: string) {

@@ -28,15 +28,17 @@ test("owned end refreshes transport while inspection stays passive and ended lea
       return { window: { ownerId, leaseId: ownerId, targetDigest: null, active: false, reason: null },
         report: cleanupReport(RUNNER_CLEANUP_STAGES.map(stage => ({ stage, status: "not_required", code: null })), false) }
     })
-    for (const action of ["inspect", "verify_closed", "end"] as const) {
-      await runtime.managedWindowAction({ action, ownerId, leaseId: ownerId, browserMode: "daily", controllerReleased: true })
+    for (const action of ["inspect", "verify_closed"] as const) {
+      await assert.rejects(runtime.managedWindowAction({ action, ownerId, leaseId: ownerId, browserMode: "daily" }),
+        /hybrid_attached_window_connection_unavailable/)
     }
+    assert.equal(requests.length, 0)
+    await runtime.managedWindowAction({ action: "end", ownerId, leaseId: ownerId, browserMode: "daily", controllerReleased: true })
     assert.deepEqual(calls, ["inspect", "inspect", "connect"])
-    assert.equal(requests[0]?.cdpUrl, undefined); assert.equal(requests[1]?.cdpUrl, undefined)
-    assert.equal(requests[2]?.cdpUrl, refreshed); assert.equal(requests[2]?.legacyEndpointVerified, true)
-    assert.equal(requests[2]?.controllerReleased, true)
+    assert.equal(requests[0]?.cdpUrl, refreshed); assert.equal(requests[0]?.legacyEndpointVerified, true)
+    assert.equal(requests[0]?.controllerReleased, true)
     lease.status = "ended"; await writeLease()
     await runtime.managedWindowAction({ action: "end", ownerId, leaseId: ownerId, browserMode: "daily" })
-    assert.equal(calls.length, 3); assert.equal(requests[3]?.cdpUrl, undefined)
+    assert.equal(calls.length, 3); assert.equal(requests[1]?.cdpUrl, undefined)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

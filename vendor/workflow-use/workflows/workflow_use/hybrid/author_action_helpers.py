@@ -1,18 +1,9 @@
-"""Native action argument normalization and safe bounded outcome summaries."""
+"""Host read normalization and safe bounded native outcome summaries."""
 import re
 from pydantic import RootModel
 
-VISIBLE_TEXT_EXTRACTION_GUIDANCE = (
-    ' Return every string as literal browser-visible text: add no Markdown, YAML, bullets, numbering, backticks, '
-    'or link/image syntax unless those characters are visibly present. Collapse every whitespace run to one space '
-    'and concatenate inline element text without adding delimiters.')
-
-def find_elements_outcome(agent):
+def find_elements_outcome(result):
     try:
-        results = agent.history.history[-1].result
-        if len(results) != 1:
-            return {'queryOutcome': 'unavailable'}
-        result = results[0]
         if result.error:
             return {'queryOutcome': 'invalid_selector' if 'Invalid CSS selector' in result.error else 'error'}
         matched = re.match(r'^Found ([0-9]+) elements? matching ', result.long_term_memory or '')
@@ -23,12 +14,8 @@ def find_elements_outcome(agent):
     except Exception:
         return {'queryOutcome': 'unavailable'}
 
-def field_read_outcome(agent):
+def field_read_outcome(result):
     try:
-        results = agent.history.history[-1].result
-        if len(results) != 1:
-            return {'readOutcome': 'unavailable'}
-        result = results[0]
         if not result.error:
             return {'readOutcome': 'succeeded'}
         error = result.error
@@ -40,23 +27,30 @@ def field_read_outcome(agent):
     except Exception:
         return {'readOutcome': 'unavailable'}
 
-FIND_ELEMENTS_DEFAULT_ATTRIBUTES = ['data-testid', 'class', 'role', 'aria-label', 'title', 'href', 'datetime']
-
-def normalize_author_action(action):
-    """Fill Browser-Use's optional DOM attributes before capture and dispatch."""
+def normalize_author_action(action, read_records=None):
+    """Normalize host-owned reads without rewriting native action parameters."""
     action = action.root if isinstance(action, RootModel) else action
-    scroll = getattr(action, 'scroll', None)
-    if scroll is not None and getattr(scroll, 'index', None) == 0:
-        # WHY：原生 scroll 的 0 与 None 都指向 viewport，不能当成缺失 DOM 索引。
-        scroll.index = None
-    extract = getattr(action, 'extract', None)
-    query = getattr(extract, 'query', None)
-    if isinstance(query, str) and VISIBLE_TEXT_EXTRACTION_GUIDANCE not in query:
-        # WHY：extract LLM 可能把视觉样式转写成 Markdown；固定为纯可见文本与既有
-        # normalizeWhitespace DOM 投影对齐，业务值仍由页面证明而不是由模型格式决定。
-        extract.query = query.rstrip() + VISIBLE_TEXT_EXTRACTION_GUIDANCE
-    params = getattr(action, 'find_elements', None)
-    if params is not None and getattr(params, 'attributes', None) is None:
-        # WHY：B-A-T 后续要编译相对字段 selector；只有数量和文本不足以证明真实 DOM 属性，
-        # 因此在适配边界复用 Browser-Use 公开 attributes 参数，而不是让模型反复猜 selector。
-        params.attributes = list(FIND_ELEMENTS_DEFAULT_ATTRIBUTES)
+    _normalize_scalar_collection(getattr(action, 'bat_read_fields', None), read_records)
+def _normalize_scalar_collection(params, records):
+    """Canonicalize one value per selected row into the existing multi-value ReadSpec."""
+    if params is None or records is None or getattr(params, 'readRef', None) is not None:
+        return
+    fields = getattr(params, 'fields', None)
+    if not fields or set(fields) != {'value'} or fields['value'].selector != ':scope':
+        return
+    from .natural_reads import schema_at_path
+    path = getattr(params, 'outputPath', None)
+    if path is None:
+        paths = getattr(params, 'paths', [])
+        if len(paths) != 1:
+            return
+        path = paths[0]
+    try:
+        target = schema_at_path(records.output_schema, path)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return  # 参数错误留给工具的正式校验，不能让归一化回调中断原生探索。
+    if target.get('type') != 'array' or target.get('items', {}).get('type') not in {'string', 'number', 'integer', 'boolean'}:
+        return
+    # WHY：每行读取自身与在文档中读取同一行集合等价；只交换两个既有选择器，
+    # 不推断祖先/业务范围、不截断条目。归一化先于来源捕获，采样与复跑消费同一参数。
+    fields['value'].selector, params.container = params.container, ':root'

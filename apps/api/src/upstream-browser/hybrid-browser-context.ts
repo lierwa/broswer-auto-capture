@@ -76,7 +76,8 @@ export function assertPriorBrowserContext(decision: { actionRef: string; argumen
   binding: ValueBinding; proofRefs: Array<{ ref: string; digest: string }> }, trace: Trace, payload: Payload) {
   const index = trace.actions.findIndex(action => action.id === decision.actionRef), action = trace.actions[index]
   const field = action?.name === "navigate" && decision.argumentPath === "url" ? "url"
-    : action?.name === "switch" && decision.argumentPath === "tab_id" ? "tabId" : undefined
+    : typeof action?.name === "string" && ["switch", "close"].includes(action.name)
+      && decision.argumentPath === "tab_id" ? "tabId" : undefined
   const binding = decision.binding
   if (!field || index < 1 || binding.source !== "node" || !isDeepStrictEqual(binding.path, [field])) {
     throw new Error("hybrid_browser_context_binding_invalid")

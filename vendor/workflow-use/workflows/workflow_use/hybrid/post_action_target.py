@@ -1,4 +1,5 @@
 """Refresh one callback target only through a pre-verified stable query."""
+import json
 import re
 from dataclasses import dataclass, replace
 
@@ -126,7 +127,17 @@ def _has_matching_peer(summary, selector_index, backends):
 async def callback_target_element(browser, summary, selector_index, target_id):
     node = _selector_node(summary, selector_index)
     _require_main_document(node, target_id)
-    return await _element(browser, node, target_id)
+    from .observation_scope import ObservationRefreshRequired
+    try:
+        element = await _element(browser, node, target_id)
+        # WHY：公开 Element.evaluate 将原始布尔转为 Python 字符串；对象才是 JSON。
+        state = json.loads(await element.evaluate('() => ({connected: Boolean(this.isConnected)})'))
+    except Exception as error:
+        raise ObservationRefreshRequired('the proposed target identity could not be verified') from error
+    if not isinstance(state, dict) or set(state) != {'connected'} or state['connected'] is not True:
+        # WHY：旧批次的 backend 已脱离或身份未证实；不能猜新控件或刷新索引后继续。
+        raise ObservationRefreshRequired('the proposed target is detached from the current document')
+    return element
 
 
 async def refreshed_target_element(browser, summary, identity):

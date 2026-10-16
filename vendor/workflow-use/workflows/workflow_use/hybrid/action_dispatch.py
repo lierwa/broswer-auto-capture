@@ -5,6 +5,7 @@ from .action_capture_policy import action_capture_policy
 from .action_identity import history_action_refs, resolve_history_step
 from .evidence import ActionCoverage, EvidenceRef, digest
 from .lifecycle_diagnostics import action_metadata, observe_lifecycle
+from .native_sequence_stop import sequence_stop_coverage
 
 DISPATCH_FACT_KIND = 'native_action_dispatch'
 RESULT_FACT_KIND = 'native_action_result'
@@ -19,9 +20,9 @@ class ActionDispatchAudit:
         self.active = None
         self.event_capture = event_capture
 
-    def propose(self, native_step, action_index, raw_action, target=None):
+    def propose(self, native_step, action_index, raw_action, target=None, *, activate=True):
         position = (native_step, action_index)
-        if self.active is not None or position in self.entries:
+        if (activate and self.active is not None) or position in self.entries:
             raise ValueError('native_action_dispatch_position_reused')
         action_name = next(iter(raw_action)) if isinstance(raw_action, dict) and len(raw_action) == 1 else None
         expectation = action_capture_policy(action_name).event_expectation
@@ -31,7 +32,23 @@ class ActionDispatchAudit:
                                   'eventCapture': {'status': 'not_dispatched',
                                                    'eventExpectation': expectation,
                                                    'events': [], 'limitations': []}}
+        if activate:
+            self.active = position
+
+    def activate(self, position, raw_action, target=None):
+        entry = self.entries.get(position)
+        if (self.active is not None or entry is None or entry['entered']
+                or entry['actionDigest'] != digest(raw_action)):
+            raise ValueError('native_action_dispatch_position_mismatch')
+        marker = entry.get('sequenceStop')
+        if marker is not None:
+            # WHY：原生仍进入下一 act 就推翻待结算的停止推断；事实优先，不用采集预测阻断队列。
+            for key, value in self.entries.items():
+                if key[0] == position[0] and value.get('sequenceStop') == marker:
+                    value.pop('sequenceStop', None)
         self.active = position
+        if target is not None:
+            entry['target'] = target
 
     async def enter(self, raw_action):
         if self.active is None:
@@ -115,10 +132,13 @@ class ActionDispatchAudit:
                 'nativeResult': entry['nativeResult'],
                 'eventCapture': entry['eventCapture'],
             }
+            if entry.get('sequenceStop') is not None:
+                resolved[(step_index, action_index)]['sequenceStop'] = entry['sequenceStop']
         return resolved, invalid
 
 
-def bind_tools_act(tools, audit, diagnostic=None, registry_provider=None, settle_dispatch=None):
+def bind_tools_act(tools, audit, diagnostic=None, registry_provider=None, settle_dispatch=None,
+                   before_dispatch=None, after_dispatch=None):
     """Wrap and later restore ``act`` on the exact Tools instance owned by Agent."""
     original = tools.act
 
@@ -126,6 +146,8 @@ def bind_tools_act(tools, audit, diagnostic=None, registry_provider=None, settle
     async def audited_act(*args, **kwargs):
         action = kwargs.get('action') if 'action' in kwargs else (args[0] if args else None)
         raw = action.model_dump(exclude_unset=True) if action is not None else None
+        if before_dispatch is not None:
+            await before_dispatch(action)
         registry = registry_provider() if registry_provider is not None else None
         step_number = audit.active[0] if audit.active is not None else None
         metadata = action_metadata(registry, raw, step_number) if registry is not None else {}
@@ -133,28 +155,24 @@ def bind_tools_act(tools, audit, diagnostic=None, registry_provider=None, settle
             if raw is not None:
                 await audit.enter(raw)
             try:
-                result = await original(*args, **kwargs)
-            except BaseException as dispatch_error:
                 try:
-                    if settle_dispatch is not None:
-                        await settle_dispatch()
+                    result = await original(*args, **kwargs)
+                except BaseException:
                     await audit.complete()
-                except BaseException as settle_error:
-                    raise settle_error from dispatch_error
-                raise
-            # WHY：状态值/动态候选会被后续方法使用；只给一次详情、长期只留数量会使原值丢失。
-            # 复用原生查询原文与记忆通道，不再查DOM或注入父子结构；页面搜索仍只给一次详情。
-            if (isinstance(raw, dict) and set(raw) & {'find_elements', 'search_page'}
-                    and not getattr(result, 'error', None) and getattr(result, 'extracted_content', None)):
-                if 'find_elements' in raw:
-                    result.long_term_memory = result.extracted_content
-                    result.include_extracted_content_only_once = False
-                else:
+                    raise
+                if (isinstance(raw, dict) and set(raw) == {'find_elements'} and result.error is None
+                        and result.extracted_content and result.long_term_memory):
+                    # WHY：固定SDK同时返回预览和计数，但默认flag使Agent只见计数。
+                    # 复用原生一次读取策略；不改两份原文，不注入采集侧完整DOM，也不污染长期记忆。
                     result.include_extracted_content_only_once = True
-            if settle_dispatch is not None:
-                await settle_dispatch()
-            await audit.complete(result)
-            return result
+                # WHY：后置采集/访问结算失败不能覆盖已发生的动作结果或令副作用变成未派发。
+                await audit.complete(result)
+                if after_dispatch is not None:
+                    await after_dispatch(result)
+                return result
+            finally:
+                if settle_dispatch is not None:
+                    await settle_dispatch()
         return await observe_lifecycle(diagnostic, 'dispatch', dispatch, metadata,
                                        result_failed=lambda result: bool(getattr(result, 'error', None)))
 
@@ -209,6 +227,15 @@ def unique_refs(refs):
             ref = EvidenceRef.model_validate(ref)
         found[(ref.ref, ref.digest)] = ref
     return list(found.values())
+
+
+def proven_not_dispatched_ids(trace, ledger):
+    """Only exact current audit coverage can remove a causal dispatch boundary."""
+    actions = {item.id: item for item in trace.actions}
+    # WHY：两种原生未派发都需回到来源证明；仅信 exclusionRule 会把伪账本或部分副作用抹掉。
+    return {row.actionRef for row in ledger if row.disposition == 'agent_internal'
+            and (action := actions.get(row.actionRef)) is not None
+            and row == (not_dispatched_coverage(trace, action) or sequence_stop_coverage(trace, action))}
 
 
 def public_action_result(result):

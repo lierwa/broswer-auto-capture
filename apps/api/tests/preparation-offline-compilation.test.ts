@@ -58,8 +58,8 @@ function fixture() {
   const saved: TaskAuthoringJob[] = [], calls = { browser: 0, compiler: 0, model: 0 }
   const repository = { saveJob: (value: TaskAuthoringJob) => { saved.push(structuredClone(value)); return value },
     job: () => ({ status: "completed" }) }
-  const ai = { selection: () => selection, prepare: async () => ({ selection,
-    generateObject: async () => { calls.model++; throw new Error("unexpected_model_call") } }) }
+  const ai = { selection: () => selection, prepare: async () => {
+    calls.model++; throw new Error("model_account_revoked") } }
   const upstream = { withAuthoring: async () => { calls.browser++; throw new Error("unexpected_browser_call") },
     recompile: async () => { calls.compiler++; throw new UpstreamProtocolError("hybrid_runner_failed",
       "ValueError:hybrid_action_registry_mismatch") } }

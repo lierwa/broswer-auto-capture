@@ -59,7 +59,7 @@ class ContentReadEvidenceDefaults(unittest.TestCase):
 
         def content_tools(model, result_spec):
             result_spec.fields[0].producerRef = 'page-content'
-            return author_tools_for_result_spec(model, result_spec)
+            return author_tools_for_result_spec(result_spec)
 
         with patch('test_method_source_compile.author_tools_for_result_spec', content_tools):
             return method_source(case, CONTENT_SCHEMA)

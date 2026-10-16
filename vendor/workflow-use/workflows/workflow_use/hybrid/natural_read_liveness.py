@@ -1,6 +1,6 @@
 """Keep replay reads used by values or indispensable, source-proven effect readiness."""
 
-from .action_dispatch import NOT_DISPATCHED_RULE, not_dispatched_coverage
+from .action_dispatch import proven_not_dispatched_ids
 from .coverage import native_dom_lookup_observation_coverage, unused_verified_dom_read_coverage
 from .evidence import gap
 from .natural_readiness import consumer_readiness_by_action
@@ -9,7 +9,7 @@ from .native_action_receipt import native_action_receipt
 
 def consumed_query_ids(trace, segments):
     """Return reads referenced by retained executable consumers or the final result."""
-    references = set()
+    references = _summary_consumer_refs(trace, segments)
     for segment in segments:
         for key in ('bindings', 'target', 'inputBindings'):
             references.update(_node_refs(segment.get(key)))
@@ -24,6 +24,25 @@ def consumed_query_ids(trace, segments):
                     for key in ('readActionRef', 'continuationActionRef', 'advanceActionRef')
                     if isinstance(row, dict) and isinstance(row.get(key), str))
     return {reference.removeprefix('s-') for reference in references}
+
+
+def _summary_consumer_refs(trace, segments):
+    references = set()
+    for segment in segments:
+        if segment.get('kind') != 'explicit_llm' or segment.get('purpose') != 'summarize':
+            continue
+        facts = [fact for observation in trace.observations for fact in observation.facts
+                 if fact.kind == 'verified_natural_summary' and fact.id == segment.get('sourceRef')]
+        if (len(facts) != 1 or not isinstance(facts[0].value, dict)
+                or facts[0].value.get('actionRef') != segment['id'].removeprefix('s-')):
+            continue
+        # WHY：摘要的真实输入在已校验来源中，执行段只引用虚拟 merge；仅追踪保留的摘要，
+        # 不能让未编译的历史摘要或页面值中的伪 binding 把纯探查永久保活。
+        sources = facts[0].value.get('sources')
+        if isinstance(sources, list):
+            references.update(node for source in sources if isinstance(source, dict)
+                              for node in _node_refs(source.get('binding')))
+    return references
 
 
 def retire_unused_discovery(request, registry, ledger, issues, consumed):
@@ -94,20 +113,15 @@ def prune_unused_queries(request, registry, segments, ledger, *, repeat_lookup_i
     return retained, updated, consumed, issues
 
 
-def _proven_not_dispatched_ids(trace, ledger):
-    actions = {item.id: item for item in trace.actions}
-    return {row.actionRef for row in ledger
-            if row.disposition == 'agent_internal' and row.exclusionRule == NOT_DISPATCHED_RULE
-            and actions.get(row.actionRef) is not None
-            and row == not_dispatched_coverage(trace, actions[row.actionRef])}
-
-
 def _required_readiness_queries(trace, segments, ledger, consumed):
     available = {segment['id'] for segment in segments
                  if segment.get('operation', {}).get('name') == 'browser.read-fields'}
-    original = consumer_readiness_by_action(trace)
+    actions = {item.id: item for item in trace.actions}
+    observations = {item.id: item for item in trace.observations}
+    harmless = proven_not_dispatched_ids(trace, ledger)
+    original = consumer_readiness_by_action(trace, proven_not_dispatched_ids=harmless)
     alternative = consumer_readiness_by_action(trace, allowed_consumer_ids=consumed,
-        proven_not_dispatched_ids=_proven_not_dispatched_ids(trace, ledger))
+        proven_not_dispatched_ids=harmless)
     required = set()
     for segment in segments:
         action_id = segment['id'].removeprefix('s-')
@@ -123,7 +137,11 @@ def _required_readiness_queries(trace, segments, ledger, consumed):
         # 可独立物理后态或已保留替代读时才保留；伪 consumerRef/跨派发读取不能复活探查。
         if (len(previous) == 1 and proof is not None and previous[0] == proof['condition']
                 and previous[0]['consumerRef'] in available):
-            required.add(previous[0]['consumerRef'].removeprefix('s-'))
+            producer = actions.get(action_id)
+            pre = observations.get(producer.preObservationRef) if producer else None
+            # WHY：与下游 rebind 使用同一独立回执；动作已获证明时，纯探查不能仅因先出现而保活。
+            if pre is None or native_action_receipt(producer, pre) is None:
+                required.add(previous[0]['consumerRef'].removeprefix('s-'))
     return required
 
 
@@ -133,8 +151,8 @@ def rebind_consumer_readiness(trace, segments, ledger):
     observations = {item.id: item for item in trace.observations}
     allowed = {item['id'].removeprefix('s-') for item in segments
                if item.get('operation', {}).get('name') == 'browser.read-fields'}
-    harmless = _proven_not_dispatched_ids(trace, ledger)
-    previous_readiness = consumer_readiness_by_action(trace)
+    harmless = proven_not_dispatched_ids(trace, ledger)
+    previous_readiness = consumer_readiness_by_action(trace, proven_not_dispatched_ids=harmless)
     readiness = consumer_readiness_by_action(
         trace, allowed_consumer_ids=allowed, proven_not_dispatched_ids=harmless)
     issues, unproven = [], set()

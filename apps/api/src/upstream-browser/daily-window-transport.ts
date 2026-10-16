@@ -20,6 +20,8 @@ export async function dailyWindowTransport(directory: string, ownerId: string,
   // 未创建/已结束的原 owner 不需要连接 Chrome；其它 owner 的收据不是本次资源。
   if (!lease || lease.status === "ended" || !lease.ownedTargets.length && lease.targetCreationPending === false) return {}
   const cdpUrl = await endpoint?.()
+  // WHY：正式连接尚未恢复不能退回旧relay；旧端口失联或被复用都不是原窗口已关闭的证据。
+  if (endpoint && !cdpUrl) throw Error("hybrid_attached_window_connection_unavailable")
   if (!cdpUrl || cdpUrl === lease.cdpUrl) return {}
   const binding = (url: string) => new URL(url).pathname.replace(/\/[0-9a-f-]{36}$/i, "")
   const sameBinding = binding(cdpUrl) === binding(lease.cdpUrl)

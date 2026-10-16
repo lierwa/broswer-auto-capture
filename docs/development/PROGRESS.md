@@ -1,3 +1,241 @@
+## 2026-10-13 当前实施：P1–P4已固定，P5 BrowserScan正常准备中
+
+固定2 BrowserScan第二轮92cdf506失败115.823秒：8次Agent（3completed/5failed），五个ai_generation_failed/ECONNRESET分别10.206、10.184、10.194、10.151、10.189秒，全部模型终态102.868秒；5动作，native done(false)保留，来源303fe537完整保存，三条find_elements实际结果一次读取flag均true。首次清理confirmed/activeResources=false；没有样本/独立/发布/正式run。不是把浏览器预算设8停止，实际maxSteps仍100、step原预算3850，五次连接重置触发原生失败结束，重置根因尚未知。最后模型已能回应，代码无变化，新正常UI第三job a2fe3a6a-b86b-4313-8567-9b91b38c8563 于2026-10-13T15:50:47.193Z从原v1/daily发起；源于新的成功回应，不新增模型重试循环/换模型/调超时或改盾。
+
+当前BrowserScan第二轮正常UI原v1/daily job92cdf506于15:37:24.976Z接受，固定2已加载新Pythonworker；模型gpt-6.1-sol/high不变。最新状态running/exploring，样本、独立、发布、同版3正式尚未完成。
+
+P5 BrowserScan首轮4da6bab1正常UI取消：700.872秒、31次Agent（30completed/1cancelled）、模型终态累计625.694秒、70动作/0业务读取；首次cleanup_browser_close_unverified保留，同owner核验attempt2 confirmed/activeResources=false。发现P1连正确一次读取flag一并删掉，导致SDK formatted预览未进Agent（只见计数）；不把此缺口称整个循环唯一根因。现仅成功find_elements恢复公开flag，不改两份原文/参数/截断，不注入采集侧全量DOM，下一步清空，search/error保原策略；首个read_state反例先0.005秒失败，修后3项0.006秒与真实Tools.find_elements→MessageManager/capture/compile现有1项0.021秒通过。独立AI只读核通过边界。重新固定session-freeze2-final（仍1274文件、160保护零漂移），只改Python新worker载入，不无变化重启已恢复的服务；准备从原v1正常重新发起，两站仍未完成。
+
+已固定session-freeze-final：1274份源码/配置，digest 748648a747e1c059addf20d26b4d95f8582e71b47d1f975818ccf865c231b6b0，fork ff29bc0e97dc6be25b08fae45c34d02c4726b780490c7058cfa7d96c4ea90cbd；160份保护区零漂移，HEAD/分支不变。重载前只读核无活动job/execution/runner、daily connected且不busy，原PID72766/root与个人Chrome657明确；现有dev脚本二次核归属后正常shutdown旧服务并恢复PID42398，Chrome不启停、不重放旧job。历史清理unknown不由本次改写。正常工作台重新准备BrowserScan原v1/daily已接受job4da6bab1（15:16:22.700Z）；该首次冻结已因上述新事实解除，本版两站发布和三次正式运行尚未完成。
+
+用户本session明确授权在现有目录/分支实施代码整改、最相关现有验证、核验后必要现有服务恢复及两站正常产品验收。实际checkout为本仓库，master@2b00a63d4b664678fa62c2810b02f79bab9d5dcd；freeze3的1273份源码/配置SHA全部匹配，P0未发现推翻现行方案的新事实，不重复整轮规划。继承session实际开发型号/推理；产品gpt-6.1-sol/high不变。既有dirty完整保留；不新建测试文件、分支/worktree，不提交推送，不删除数据库/历史，不自动重放中断job或副作用。
+
+P1先前检查未覆盖首个模型上下文，P5已纠正：原生查询预览/计数原文与三项派发参数不改；成功find_elements必要的一次读取flag恢复，计数和完整来源独立保留；scroll.index=0只在确定性编译/目标解释中按已证原生viewport语义处理。21项不同现有检查最终通过。前两轮12项/0.196秒（1失败3错误）、17项/0.165秒（1错误）保留，原因是旧夹具缺actionIndex/args和失效导入；修正现有夹具后最后失败case1项/0.005秒通过。没有新增测试文件或模型调用。
+
+P2通路实现及最小验证已收尾：同Tools/FileSystem、owner全新文件目录、有界附件→真实Artifact、search/find_text/多owned-tab close与当前registry转换已接，撤对应编译排除，evaluate仍安全限制。原生截图由use_vision原生最终配置排除，不影响视觉观察；没有download_file工具，不保留无效排除。仅可核文本write/replace，binary写入未知仍拒；last-owned-tab close缺合法后观察仍拒；文件跨runner未核恢复拒，不从state覆盖部分写入。原生FileSystem写盘错误可能error=None/内存已更新，现同验证helper核AgentFS与普通FS字节，留源缺口不假成功/不自动重派。
+
+文件产物现有验证3项最终通过：新增同owner真实文件→SQLite Artifact→临时文件删除后仍保有原字节，拒绝owner/越界/symlink/摘要篡改。首轮1.414秒中2项因Mac /var→/private合法父目录别名被拒；父目录先realpath再拼owner路径，仍拒owner内symlink，2项定点复验1.265秒通过。P2真实Tools/FileSystem4项最终0.130秒通过、转换4项6.603秒通过；accounting8项原失败定点复验2.823秒通过；AgentFS失败来源/当前registry2项0.176秒通过。首轮4个源码摘要拒绝、4个旧navigationPlan夹具缺项、文件替身缺cdp_client及Pydantic实例patch错误保留，未安装或扩大到根测试。fork6038d18f核通过。P5已真实覆盖上述工具，search/find_text/PDF已通过，upload/多owned close仍有失败待修；这些工具检查不能替代两站产品流程。
+
+当前P3已接来源先存/独立sourceReceipt、候选失败ACK(true)/保旧图不可发布、来源失效ACK(false)/取消不唤醒；原生done结束与宿主读取/输出分账。跨进程/SQLite/物化/普通执行等8项7.39秒通过；原生Tools/Agent完成6项0.262秒、输出与现有边界18项0.174秒、编译分账8项0.210秒通过。注解失败同来源一次/final真实来源交接新增2项首轮1错误（0.051秒，fixture缺后两观察），补当前fixture后该项0.028秒通过。API/Workbench类型已通过。P4发现normal sequence-stop已严格证明却未被liveness/prefix_dependency消费，现已共享严格证明；未把历史失败查询当部分写入证据。
+
+P4当前代码已收束：严格sequence-stop/not-dispatched覆盖贯穿classifier、liveness和initial/final readiness；实际派发/部分写入/未知effect仍保留因果屏障。整步骤局部修订不再以旧registry约束新原生探索，但新来源自身provider/身份/digest仍核；新draft revision与双验证失效。原生done与宿主装配保持分账，唯一当前factory去掉unused output_model/legacy字段与旧注册表孤儿；离线重编译不再开启模型桥/语义救援，纯离线无需账号资格。业务完整原话、隐私、原顺序、等待与接管保留，提示移除编译教学/技术例子。独立审查指出旧模板兼容、无定义旧指导与死selection工具消费者，均已同包收掉；纯离线账号资格前置也移除。P5尚未开始两站产品准备。
+
+P4反例最终通过：Python新增5项0.008秒、prefix及逆向projection3项0.127秒；TS旧新registry/双步骤revision两项最终通过（原2.416秒预算失败，补预算后2.334秒空presentation失败，实际presentation后2.221秒通过）。首Python20项0.065秒的8夹具缺stepIndex和2旧公开参数失败、其后2项0.073秒旧done失败均保留。当前Python原生结束/检查/输出24项首0.404秒3错误（过期factory patch/缺before_dispatch），当前source分账4项0.011秒通过。接口迁移相关43项首0.167秒3失败12错误；旧prompt/模型抄值、旧factory快照与4过期读取夹具已按当前合同纠正，诊断4项0.005秒同失败保留、6项0.146秒剩1固定错误码断言、最终该项0.001秒通过。恢复零模型现有TS1项1.238秒、当前源错误跨进程1项4.060秒通过。API/Workbench类型已有通过，新受控场景消费者API核验9.153秒通过。未新增测试文件，不把检查通过结算为真实站点产品验收。
+
+P5受控A1/A2已真实串行运行，6组中read/search/PDF通过（11.623/4.884/60.292秒），find_text首0.121秒JSONDecodeError；依据固定B-U Page.evaluate源码改为对象JSON返回，同可见性规则在A2真实滚动/未找到反例0.318秒通过。upload两轮5.199/5.212秒失败定位在派发后verify_declared→current_document_id→SDK DOM.getDocument等待；close两轮0.572/60.480秒native_close_unconfirmed，suffix已证正确，具体原生close/事件原因待核，不先归因缓存/权限。所有失败与耗时存现有实施记录和work下TAP/strict诊断。两个owner最后成功响应分别报告28/12浏览器命令、0模型（失败动作另有派发证据，不把成功前缀数当全部命令），整体95.971/73.347秒；清理0.288/0.238秒confirmed，child_exit/browser_close确认后专属Profile根无force永久删除并证实ENOENT。160份TaskBrowser/原生输入/鼠标/预算/冷却/盾与依赖保护摘要全部同P0。当前两个剩余真实工具问题先修，再固定源码/依赖恢复必要现有服务；不以测试替代两站完整验收。
+
+P5定点A3–A8全部失败和清理保留：A3 upload 5.286/整体12.404秒，A4 fresh close 2.982/9.851秒，A5 close 0.494/7.244秒，A6 upload 5.270/12.715秒，A7 close 0.566/8.574秒，A8 upload 5.280/12.495秒。各owner首次清理confirmed且专属Profile根永久删除。A3实际61个已注册回调的122行enter/exit均0ms，推翻本轮被观测handler阻塞推测，不改receiver调度。A5单次Target.closeTarget 2ms返回success=true，缓存仍含target；改核真实Target.getTargets后A7继续到原生焦点落启动空白页的hybrid_origin_denied，合法任务页及last-tab守卫正在补齐。A8单次DOM.setFileInputFiles 6ms返回后实读fileCount=1/fileSize=0/nameMatches=true/contentMatches=false/changes=0；固定SDK在CDP attached is_local=false下不把FileSystem basename映射为本地路径，普通运行正补已核owner绝对路径，source仍保留原args并接公开available_file_paths。以上不是两站产品验收。
+
+P5 A9仅upload/close：upload实际字节与缺失/越界反例首次通过0.495秒；close在第二次真实关闭后复用合法页时0.504秒RuntimeError（SDK on_SwitchTabEvent要求focus非空，而close已置空）。原生close未重派，继续修复原生焦点恢复入口。整体8.320秒，owner b860edc1首次清理0.267秒confirmed及目录永久删除；最后成功响应14命令、总15请求、0模型。新增同实际Tools.act的普通/AgentFS两条上传验证核字节、当前available_file_paths/prompt与不改source args；首4项0.053秒1fixture缺cdp_client，失败项第二轮0.033秒Mac路径别名断言失败，改Path.resolve后第三轮0.033秒通过，保留各失败。
+
+P5 A10仅close真实整组通过0.780秒：多owned关闭、stale switch拒绝、当前页关闭后唯一已有合法任务页焦点恢复、last合法任务页拒绝；公开get_or_create_cdp_session核既有session/page恢复focus后复用原on_SwitchTabEvent，不改flag/开页/睡眠/重关。整体7.402秒，owner738f2296清理0.267秒confirmed及目录永久删除，9reported/9attempted/0模型。至此6工具类型各有真实通过；source绝对文件路径→新run绑定仍待当前离线编译闭环，未冻结/未开始两站。临时CDP/上传state探针代码已从现有fixture收掉，历史strict probe日志保留。
+
+本次恢复前服务PID72766/root本checkout，启动于本日13:16；Chrome主PID657为原个人实例，不启停。只读SQLite无running/queued/waiting/cleanup_required job或execution，无browser_use_runner进程；daily connected=true/busy=false。最新aa0d0a18持久completed/首次cleanup confirmed。未恢复旧f-acceptance回执、未重放任务或副作用；需要载入本次源码时再次核关键活动事实再重载现有服务。
+
+Product Alignment:
+- natural-language task: 两站原确认的检测报告任务及通用浏览器查询/结果任务
+- reusable chain boundary: 原生探索事实到参数化方法、双验证和不可变发布
+- runtime inputs: 原确认输入及当前页面/文件状态
+- dynamic task outputs: 当前真实页面读取与本owner产物
+- generic platform capability used: B-U Tools/Agent、现行IR、QuickJS、LangGraph及产物仓储
+- replay model calls: 0（两站原合同）
+- site/task-specific code added: no
+
+Reuse Assessment:
+- capability: 原生派发、查询证据、文件上下文、在线编译与宿主完成装配
+- existing implementation in repository: 现行capture/compile/AuthoringBuild/TaskChainRuntime/artifact
+- mature candidates and pinned versions: 已锁定browser-use 0.13.8、vendor workflow-use、现有QuickJS/LangGraph
+- selected implementation: 沿用现行组件，不更换依赖
+- reused public surface: Tools.act、原生FileSystem、Agent.run/multi_act及现有仓储API
+- B-A-T-owned adapter and remaining gap: 当前来源/候选分账、IR绑定和产物/发布合同，按P1→P4补齐
+- license/runtime/platform fit: 沿用锁定依赖；本次Mac原生实测，Windows未实测仍未完成
+- browser/runtime/state ownership conflicts: 保留TaskBrowser/owner/finally；不重造循环或文件系统
+- replay model calls: 两站普通复跑0；extract被消费时须确定性转换
+- rejected candidates and evidence: 无替换选型；任意evaluate缺安全guard故不开放
+- focused validation: 依各包真实改动选择计划7.1现有入口，未执行不称通过
+
+## 2026-10-13 历史：源码对照方案复审完成，具备新 session 实施条件，本 session 未开发
+
+用户已明确本 session 不动代码，随后授权整理规范、规划并要求review清楚再交全新session。现行入口是[AGENTS](../../AGENTS.md)、[两层计划](BAT_NATIVE_EXPLORATION_REMEDIATION_PLAN_20261013.md)、[源码复审](BAT_NATIVE_EXPLORATION_REMEDIATION_REVIEW_20261013.md)。本次主agent对照源码补齐4项方案缺口：§4.1逐工具转换/原生运行路径；§5.1跨Python/TS持久化与ACK；§5.2原生done与宿主输出分离；§7.1实际现有验证入口。方案具备实施条件，不是独立工程师批准或实现通过；新session核漂移后按P0→P5执行，不再无新事实地重新规划。
+
+关键发现：仅改Python异常不够，TS仍把候选拒绝ACK(false)；当前普通Tools.act无FileSystem，解除文件工具限制会失败；自造done把输出/编译错误退给Agent继续跑。已决定单checkpoint、独立来源接收游标、来源已存且候选失败ACK(true)但不可发布、原生done结束/宿主装配，代码尚未改。取消历史兼容目标，保护真实来源身份/不可变运行及全部dirty，不删除数据库或历史；旧review和下方历史断点不能恢复服务或任务。
+
+本轮核验通过：master/2b00a63d不变，冻结3范围1273文件全部仍同SHA；6份既有文档的修改段落链接/围栏、36个实际文件引用和定点diff --check通过。首遍检查脚本误把SDK短路径及命令串当仓库文件，0.355秒返回失败；修正引用解析后通过，无文件副作用。未运行产品/逻辑测试。基线至当前修改48、新增5、删除0，已有dirty不能全归本轮。freeze3.changed列45，漏model-bridge.ts、test_hybrid_author.py、author_action_helpers.py。文档整理不修改源码/测试/依赖/数据库或模型设置，不创建分支/worktree、不提交推送、不启停服务或浏览器；未委派新子agent。新session型号/推理取实际运行上下文，产品仍gpt-6.1-sol/high。
+
+最新BrowserScan job aa0d0a18：准备691.149秒，18次Agent模型累计526.667秒；来源6cf41dcb、草稿15929cc4 rev2。样本5c60116a 44.027秒、独立c59f9bd2 40.132秒，同checksum、各23命令/0模型/首次清理confirmed、110项。两次find_elements失败和两项未派发尾部保留；未发布、无同版正式复跑，Pixelscan本版未开始。只支持两次现场可执行，不证明合法状态变化、动态迭代或失败写入的部分副作用覆盖。f-acceptance.json仍running，回执落后于持久事实；不得直接恢复它自动重跑。
+
+前轮F1 763.648秒/21模型；F2 833.463秒及75秒原生超时后provider重叠18.283秒、ai_structured_output_invalid 46.144秒均保留，详见[实施记录](BAT_NATIVE_EXPLORATION_EXECUTION_20261013.md)。最新模型均完成不掩盖前轮失败。2432秒工具同意等待属于开发等待，不计产品耗时。速度、稳定性、反爬、两站最终F和Windows均未完成；旧清理不明项仍unknown。新session恢复先核job/PID/owner，禁止自动重放副作用。
+
+## 2026-10-13 最新交付：原生探索整改文档与复审完成，尚未实施
+
+用户本轮只要求更新完整文档及 review，并给出新 session 可复制实施指令，优先于下方历史实施断点。[完整方案](BAT_NATIVE_EXPLORATION_REMEDIATION_PLAN_20261013.md)首轮 7 项问题修订后曾通过；用户随后指出漏掉多动作到可复跑方法的设计，本次补入 §8.0 B3。增补审核两项发现（分类冻结、retry 覆盖不证明无部分副作用）修订后，两个独立 reviewer 均确认通过，见[审核记录](BAT_NATIVE_EXPLORATION_REMEDIATION_REVIEW_20261013.md)。方案 review 不等于速度、稳定性、反爬或平台验收。
+
+本轮核验现有 dirty checkout 的 1268 个代码/配置文件 SHA256 全部相同，源码新增/修改/删除为 0，HEAD/分支不变。未改运行源码、测试、依赖、数据库或模型设置；未启停、安装或恢复服务/浏览器/VM，未建分支/worktree、提交推送或重启宿主。保护证据在 `work/native-exploration-remediation-20261013/`。两份文档本地链接与文档 diff --check 通过。
+
+实际运行断点已纠正：PID 26747 已不存在，4173/4175 无监听；`1c9adfd8` 的 DB running 不是活跃执行证明，最后记录为 01:00:23.120 UTC 的第 50 次模型调用开始，43 个动作，cleanup=null。原退出原因未证实，未触发新的启动恢复，不能宣布恢复失败或资源已关闭。本轮没有改写该记录。产品保存型号仍为用户指定的 gpt-6.1-sol/high。
+
+后续须按方案的 A→B1→B2→B3→C→F：核对中断事实与资源，再适配原生多动作、减少模型负担、按依赖编译参数化方法、补局部修订、固定代码完整验收。完整采集不等于可复跑方法；审计保留全部真实动作，执行候选按已有证据分类，必需无输出动作保留，合法绕路不假定副作用抵消。保留 TaskBrowser/输入/轨迹/预算/盾，禁止只改 1→5、复制原生循环、伪造尾部结果、刷新批次索引、延迟访问边界核验或增加全局 judge/逐动作模型评判。本轮没有实施，下方是历史。
+
+## 2026-10-13 当前：6.1-sol 原需求失败定位到宿主额外要求
+
+用户最新指定产品模型 **gpt-6.1-sol / high**，已正常 UI 保存并核对数据库与真实调用审计。后续不使用 Astra。本轮不新增测试文件，不重启 Mac/VM/Chrome，不建分支/worktree、不提交推送。
+
+6.1-sol 未改代码基线 job `fe37db7a-afb5-4706-8bdc-3d4f48170ae4` 在 19 动作、22 次模型调用后主动 done(false)：结果已显示、没有验证码/访问限制，但未捕获处理中状态，认为不能完成。cleanup 首次 confirmed。此前 astra/high 的 `e3722be9` 同因失败；不把这两次直接归为模型能力不足。宿主指导明确把“处理中快照且选择器不命中”变成必需证据，而原生动作返回时短暂中间态可能已经结束。
+
+当前最小修正只涉及 `author.py` 和 `method_read_diagnostics.py` 的宿主指导：读取实际完成标志；初始/处理中快照仅在已观察到时用于反证，不要求倒追或重复提交来补快照。继续排除单次结果值限定、实际未完成内容及探索耗时充当等待。不改用户需求、字段合同、选择器、普通运行器或盾；不增加模型字段/调用、全局 judge。语法与 fork 摘要核验通过，登记源码 5794d2ea；新 job `1c9adfd8-4055-4431-89c9-ebba917243cb` 以同一 6.1-sol/high 和原 v1 需求运行。前后 taskText、runtimeInputSchema、resultSpec 均逐值相同。
+
+其余分类：原 Pixelscan `e24b9213` 的 error-only 条件已在模型参数中，归一化未插入；BrowserScan 未查图标就宣称无状态也是模型观察/判断问题。5.6-sol/high 原需求 `68568ebe` 样本 `d71f931f` 与独立 `f14c9ed0` 均完成、cleanup confirmed，但第二阶段 `e73c5abc` 仍限定 error，因此未发布。新旧任务正文、输入与结果合同完全相同。
+
+纠正旧归因：前置动作首个消费者是静态名称，不独立证明后续结果无等待；已证实的代码缺陷是 requiredPaths 为空时必需对象读取跳过等待，已修并由原草稿两次实际复跑验证。读取基数、字段模式及 Python/TS 完成合同不同步等是代码故障；发布证据检查并不是两站原失败原因。
+
+本轮检查时 4173/4175 无监听，已启动现有 npm run dev（PID 26747），未停止已有服务。旧失败和旧发布保持不变。当前修正尚待真实准备、样本及独立复跑，不据语法检查或一次成功宣布整批关闭。
+
+## 2026-10-13 主流程检查：证据门禁已修复，整体仍不通过
+
+本轮新增发现是发布及准备完成过度信任 completed 摘要：空调用、错误归属/版本/输入/结果等记录能被接受。17 项反例中 14 项先红；另一个空调用准备完成反例先红。现准备推进、工作台就绪和事务发布复用 release-evidence，执行与验收共享原输入展开/输出逻辑；正常空 each 仍合法。关联 34 项通过，两站 4 份真实历史试跑亦通过新门禁，但这不证明方法语义正确。
+
+主流程 38 个 TS 文件、19 个 Python 模块合计 389 项不同检查分组覆盖；旧协议测试、浏览器替身和 JSX 配置导致的失败已定点复验通过。维护入口 npm run check:mainflow；API 类型检查、fork 摘要、git diff --check 通过。没有新 LLM 字段、额外 judge 或普通复跑模型调用。
+
+**仍未关闭：方法变化验证、同需求下的局部方法修订。** Pixelscan 已保存方法绑定单个结果值，在线接口依然显示技术 ready，本轮没有发布。不能用本轮证据完整性修复或检查数量掩盖这两个既有缺口。完整根因、检查范围和关闭条件见[本轮检查记录](MAIN_FLOW_INVARIANT_AUDIT_20261013.md)。
+
+检查时原服务端口已无监听、无活动任务；当前 checkout npm run dev 已启动，PID 22917，两任务接口和工作台 HTTP 200。只登记通过核验的受管源码摘要；未重启 Mac/VM/Chrome、未改个人网络、未提交推送或建立分支/worktree。后续从上述两个未关闭项继续，下面是历史断点。
+
+## 2026-10-13 本轮结算：BrowserScan通过，整批问题尚未关闭
+
+最终冻结13（1211份代码配置）。BrowserScan原v1已发布，最终正式34a0ec3f：110项、Normal、11命令/0模型/完整审计/首次清理confirmed。Pixelscan运行层等待修复后，同草稿样本1a7bd18f与独立5ca64233均完成两个步骤、五项结果、18命令/0模型/首次清理confirmed；但生成条件仍绑定error结果，新草稿未发布，旧V1也不作为通用方法通过证据。
+
+本批字段/来源/编译、查询摘要、必需结果等待、动画、图标组合、清理与诊断修复有聚焦验证；“合法来源+同现场两次成功”不能证明方法覆盖其它合法结果，仍是活动设计缺口。禁止把继续改提示词、普通Chrome对照或运行completed当关闭。详见[本轮完整结算](PUBLIC_NATIVE_REPAIR_CLOSEOUT_20261013.md)的尚未解决设计缺口和后续实现边界。
+
+两站14个准备job、19个execution均无活动状态，已有清理状态全confirmed；五个局部测试复制Profile已关闭并永久删除。代码留当前master工作区，未提交推送、建分支/worktree，未重启Mac/VM/Chrome、未改个人或共享网络。下方为各阶段历史，不能覆盖此结论。
+
+## 2026-10-13 当前断点：查询事实和必需结果等待修复通过，冻结13
+
+Pixelscan原v1新jobd1d5b619在30动作/31模型后完成来源生成，但样本bfd4d4b7在第一步s-a-0012读取结果时失败read_single_object_required，首次清理confirmed。该节点不是参数漏填：前置点击的等待被第一个静态名称读取满足，后面的必需单条结果因requiredPaths空而跳过等待。现有read_readiness继续复用StepVerifier/Tenacity，只把对象及minItems>0的必需结果也纳入已有预算；可选空集合保留即时返回。没有新增LLM字段、动作重派、状态词表或等待循环。
+
+原生查询摘要覆盖缺陷已由原生0/1/3/截断集合经实际适配器到采集/空集合编译的6项测试验证，先红后绿；必需读取11项聚焦、真实Chrome延迟到达的success/error两终态及错误结果限定有界失败通过，测试复制Profile已关闭并永久删除（第五个）。该能力修复不等于模型已生成通用终态条件，原error选择器仍存在于未发布草稿。
+
+冻结13为1211份代码配置，fork ed76ab3bbedc48be4334fdb294f8482134ff19a713823f71fd30d4e0e111c89b。当前无活动任务，准备只重载本checkout开发服务；随后正常UI试跑Pixelscan现草稿核对运行层修复，BrowserScan已发布V1在最终版再复跑。未发布错误方法，不改历史来源或需求。
+
+## 2026-10-13 当前断点：发现查询摘要被适配器覆盖，等待活动任务结束后修复
+
+Pixelscan新第一步来源e24b9213仍绑定error，暂不发布。进一步核查dom_query普遍query_result_summary_unrecognized：action_dispatch为保留查询详情，把原生long_term_memory的“Found N ... .”直接覆盖成extracted_content（有结果使用冒号，无结果“No elements found”）；complete_find_elements_query只消费原生计数首句，因此真实0/多项查询被错误降为不完整。这是可确定修复的适配边界缺陷，不是等待语义正确性的证明。
+
+当前jobd1d5b619仍运行，未动运行代码。结束并清理后，最小修复为保留原生计数首句，再追加原生详情，继续既有一次/长期记忆策略；用真实B-U查询结果经bind_tools_act到capture/compile的0与多项边界测试，旧协议摘要不变。不得因此声称已解决终态选择语义；该项仍需独立核查。
+
+Product Alignment:
+- natural-language task: 原两个公开检测任务及一般动态候选浏览任务
+- reusable chain boundary: 原生查询结果到来源证据和复跑读取
+- runtime inputs: 当前查询选择器和原生结果
+- dynamic task outputs: 查询集合及其实际完整性
+- generic platform capability used: B-U原生ActionResult及现有来源编译
+- replay model calls: 0
+- site/task-specific code added: no
+
+## 2026-10-13 当前断点：BrowserScan完整主流程通过，Pixelscan等待条件继续修订
+
+冻结12 BrowserScan原v1 job042cd240完成21动作/21原生模型调用，来源2f2b93a6保留。样本87553573与独立verification a3719a4a均完成110项（15自动化+2CDP+93Navigator），名称BrowserScan、总体Normal、最终地址正确；每条实际图标状态均保存，无原始属性值。正常UI发布V1后正式execution f1e27a6a完成：9transitions/11浏览器命令/0模型，110项完整，auditComplete，首次同owner清理confirmed。正常UI成果页及截图、browserscan-final-product-proof.json可核查。
+
+Pixelscan新job d1d5b619-4250-47da-8ec5-29bc923ee424 已从原v1正常重新准备，代码未变；当前仅它占用产品浏览器。旧V1最终输出完成的事实保留，但第一步scanning和第二步绑定error的等待方法未通过通用性核查，需新来源实际验证后发布修订版。没有改需求、手写结果或共享环境。
+
+## 2026-10-13 当前断点：最终审计发现 Pixelscan 旧链路等待条件不完整
+
+冻结12 Pixelscan正式execution 9ad07c75（V1/18命令/0模型）最终五项输出完整、首次清理confirmed；但逐步骤核查发现第一步仍读到scanning，第二步才读到inconsistent。来源6fd58639第一步容器仅要求data-state存在；来源77923ba2第二步限定data-state=error，绑定了本次结果，不能证明其它终态可复跑。有限动画修复只解决文字动画，不解决这两条已保存方法的业务等待条件。因此撤回“该旧V1所有步骤验收通过”的判断，保留正式完成事实及原证据，不能改历史。
+
+当前BrowserScan原v1 job042cd240正在冻结12正常准备。其结束并确认清理后，Pixelscan原v1应重新准备并核验新方法：排除实际观察到的处理态、保留所有终态，样本/独立复验和正式运行每一步均为最终结果。没有新增模型字段或全局judge，不通过改需求/手填结果遮住缺口。
+
+## 2026-10-13 当前断点：Navigator状态被原生模型误认成禁止采集的原始值
+
+冻结11 jobc0e3fc14在14动作后主动done(false)，没有尝试字段读取，认为Navigator只有原始值、需要放宽用户排除范围。来源20d5828d证明其仅查询文本/容器，未查SVG状态；前轮872393a9已证明93项状态可独立读取。当前是模型观察和解释失败，不能说成读取器或清理失败，新终止原因展示正确，首次清理confirmed。
+
+补充通用说明：实际状态图标/标签与旁边原始测量值分开；排除原始值时先观察状态节点属性，不能用缺观察推导需求冲突或要求收集被禁止数据。没有网站名、结果或新模型字段，没有更改原需求。仅author.py文案及摘要清单变化，冻结12再次原需求准备；此为能力说明纠正，不能外推为已保证任意模型都不犯语义错误。最终产品仍待通过。
+
+## 2026-10-13 当前断点：现场110项已读取，修正模型收尾职责与终止原因投影
+
+冻结9 job2d95828f完成27动作/28模型调用，名称第一次读取成功；总体结论两次选择器歧义后已纠正，17项WebDriver/CDP与93项Navigator分别读取成功，最终地址成功。原生done(false)认为没有close工具就不能满足用户关闭窗口要求，实际关闭由宿主负责且首次confirmed。来源872393a9保留，不能把这次业务主动失败改写为已完成。两个同路径列表来源也不能假装自动合并；普通合同继续要求一个覆盖完整集合的方法。
+
+现在补充模型应已知的宿主职责：done后宿主关闭/核验任务窗口，清理独立审计；同一路径的多次读取是替代方法，不能在done拼接片段，异构列表应一次选择完整行范围。另修正失败原因投影：旧代码挑第一个failed，把已纠正读取当成终止原因；现在明确区分最终done(false)、最终动作失败、无明确终止动作，并保留原始历史。10项终止/清理聚焦通过；API检查发现宽类型来源入口与helper窄参数不兼容，已保持unknown边界校验修正，重新检查中。冻结10未投入产品运行；准备冻结11后原v1继续正常UI验收，不改需求、网站和盾。
+
+## 2026-10-13 当前断点：纠正原生DOM查询与可见文字读取的语义说明
+
+job815a4e32在网站名称读取连续失败，37动作/40模型调用后正常UI取消。其进度/读取错误摘要保留；取消没有完整source artifact，不冒称保留了所有原动作参数。首次清理unconfirmed保留，原控制器退出后同owner97a3db78核验，attempt2 confirmed，任务仍interrupted。真实取消恢复证据见cancel-recovery-real-proof.json。
+
+已读当前安装B-U正式源码：find_elements用textContent，可能含隐藏/SVG/style内容；原NATURAL_AGENT_GUIDANCE误称搜索能定位“visible text”，与B-A-T实际innerText读取不等价。只纠正工具语义说明，提示图形名称检查已声明的语义metadata属性；不放宽可见文字规则、不加新模型字段、不写站点名称/结果。真实Chrome回归直接调用原生find_elements，证明隐藏名称会出现在预览但字段读取必须拒绝，已观察metadata的content能读出。继续原v1正常准备和最终正式验收。
+
+## 2026-10-13 当前断点：已修复标量列表的内部容器泄漏，转最终原生验收
+
+BrowserScan job776b66f1已观察并选中全部110卡片（15自动化、2CDP、93Navigator），但标量数组内部的单容器maxItems=1误把110/93/49/15个逐行容器当超限，最终done(false)；该失败与同owner清理confirmed保留。宿主现在在来源捕获前把“逐行container、value=:scope”转换为“文档:root容器、value=原逐行选择器”，保留实际选择范围、数量、parts及预算，不需要模型猜内部形态。另收紧实际公开Schema：路径字段名、属性与文本互斥、URL模式及类型组合在同一入口校验。19项聚焦、真实Chrome组合/动态变化/敏感邻居排除、4场景Python→TS来源消费、旧32组摘要及10份真实来源兼容通过；原Python桥ResultSpec替身参数补齐后原测试通过。测试临时Chrome已关闭，其复制Profile已核owner并永久删除。
+
+Product Alignment:
+- natural-language task: 原两个公开检测网站需求，完整读取实际结果
+- reusable chain boundary: 标量列表的观察、采样、编译和普通复跑
+- runtime inputs: 当前页面及已确认输出合同
+- dynamic task outputs: 当前列表全部标签和实际状态
+- generic platform capability used: 现有ReadSpec、多值投影、来源捕获
+- replay model calls: 0
+- site/task-specific code added: no
+
+下一步冻结8，正常工作台重载后重准备BrowserScan原v1；完整样本及独立验证通过再发布/正式运行，随后Pixelscan原发布V1最终复跑。原需求摘要不变，不向需求对话追加指令；没有运行活动时才重载工作台，不重启Mac/VM/Chrome。
+
+## 2026-10-13 当前断点：图标读取已生效，仍拒绝不完整的集合结果
+
+BrowserScan job8c95de0e完成26动作，自动24f9b63f/ac8d1f61完成且清理confirmed、普通模型0。网站名称正确、108条逐项图标状态真实读取，但选择器仅包含WebDriver及Navigator类，没有CDP两个异构卡片，故仍未发布。原生探索查询见过CDP标题，却未观察其结果卡片；读取器报告的108条仅该选择器范围，模型误当业务全集。补充通用原生指导要求逐个覆盖已确认的命名分组，明确局部DOM数量不是业务完整证明；没有站名/选择器/答案、无新模型字段和全局judge。冻结7仍1210份，两文件变化；原v1再次正常准备。未改变需求或已有执行结果。
+
+## 2026-10-13 当前断点：BrowserScan名称恢复，图标状态遗漏仍未验收
+
+job9926fca8与自动样本b4943b0d、独立a08dfddc已合法完成，清理confirmed、普通模型0；网站名称正确，但检测项只含4个分类名和17条文字状态，Navigator图标项目仍被模型误归为原始指纹并排除。因此未发布、业务未通过。parts真实能力及跨语言验证保留；只补原生Agent的通用图标观察/parts使用说明，无站名、选择器、答案或新增模型字段。冻结1210份源码配置6，较冻结5仅author.py与摘要清单变化。当前界面无局部修订入口，先前预判纠正；不得用“重新说明需求”改写原需求求通过。将原v1正常重新准备，随后两个网站最终正式复跑。
+
+## 2026-10-13 当前断点：组合字段修复已验证，重新验收原任务
+
+实际Chrome工具回归已验证空白logo样本被拒、metadata读取成功、名称和SVG状态按行组合、原始邻居值未输出、状态变化被复读、缺失图标明确失败。组合字段仅parts一项，每段selector/可选attribute，固定换行由代码承担；普通复跑仍0模型。Python合同/来源11项、实际JS采样6项、Python→TS组合来源消费和APIcheck通过。旧32组协议摘要与7份真实来源全部兼容；首次兼容诊断脚本因混用当前ReadField和HEAD动态工厂造成误报，已与修改前已保存摘要比较确认，原诊断记录保留。
+
+重新冻结1210份源码配置，先正常UI重新准备BrowserScan原v1需求，再复跑Pixelscan已发布V1。所有早期空值/漏状态输出保留，BrowserScan仍未发布；本次仅重载当前checkout API，无活动会话，Mac/VM/Chrome/远程控制不重启。
+
+## 2026-10-13 当前断点：BrowserScan业务输出不合格，补通用组合投影
+
+原需求jobaf4c7ba3完成18动作/18模型调用、样本53c35302和独立132078a2均合法completed/0模型/清理confirmed。但实际输出网站名称空白，Navigator仅项目名无状态，未发布。来源证实名称选中header logo链接（可见文字为空，实际og:site_name存在）；Navigator选h3而状态在SVG use的xlink:href，父节点另含禁止采集的原始属性值。当前单段投影无法同时保留名称和状态并排除原始值。
+
+实施最小通用修复：空白文本不能作为首次有效文字样本登记；现有ReadSpec增加每行parts（仅selector和可选attribute），按确定顺序组合真实文字/属性，不推断状态语义或调用模型；复用DOM查询/getAttribute与既有采样、来源校验、编译和普通执行。旧source/digest兼容仍须验证。暂时解除冻结4，Pixelscan原通过证据保留，最终新版须复跑其已发布版一次；BrowserScan从原需求重验，禁止以这次自动ready当验收通过。诊断标签已关闭，当前无产品活动会话。
+
+## 2026-10-13 当前断点：Pixelscan正式主流程完成，BrowserScan准备中
+
+冻结1208份源码配置后，原Pixelscan草稿追加两次独立执行bcd7b0f6/f5a81921均交付干净的最终结论，模型0、首次清理confirmed。正常UI发布V1（250b9db0，digest da0cfd3c），正式执行9ee8057f完成，五项分类齐全、实际最终URL正确，模型0、18次转换，清理审计owner匹配且activeResources=false。网站本身仍为fingerprint inconsistent，Timezone/Proxy/Masking告警，Bot未发现自动化；不冒称检测全绿。产品既有验证模式在ready后再次试跑记sample，旧自动verification保留；追加两次是独立新execution，未改其phase或覆盖原输出。
+
+BrowserScan原v1需求已从UI重新生成，仍日常Chrome。当前不再修改生产代码；顺序完成准备、样本、独立复验、发布、正式运行、逐项输出与资源结算。
+
+## 2026-10-13 当前断点：真实复验发现动画中间态，修复后重验草稿
+
+Pixelscan job3839cfd9已完成两步准备、样本c9fe5c3e与独立复验1e59088d，首次资源清理均confirmed。但人工核对交付发现独立复验总体结论同时含scanning与inconsistent，故业务验收未通过、尚未发布。真实DOM证明状态先改error、旧新文字在Angular有限淡入淡出期间共存；读取器立即innerText造成污染。通用读取器改为等待所选可见文字区域的有限原生动画，再重新查询；无限装饰动画不阻塞，3秒仍不结束则read_animation_timeout。实际Chrome本地回归已覆盖完成、取消后换节点、无限动画、暂停超时及属性不等待，无模型字段和站点特判。接下来冻结新版源码，正常草稿试跑和正式发布复跑；BrowserScan随后同入口执行。Mac/VM/个人设置保持，不提交推送。
+
+## 2026-10-13 01:39 当前断点：修复混合输入/动态读取的父子来源重叠
+
+原Pixelscan第二轮job `52fd006a-ddfe-4cd7-8be0-45e48b671f57` 两步骤共26动作，27次模型调用，首步来源完成且无编译缺口；第二步done成功，但装配缺口阻止发布，首次清理confirmed。真实保存来源复现：三个字段现场读取、网站名称继承输入，因整个样本恰好等于输入，`_static_output_fields`又绑定根对象，触发`natural_output_path_conflict`。修复只允许继承没有动态子字段覆盖的输入路径；嵌套同类回归通过。原保存来源诊断重建后Python零缺口、TS四项来源校验和6节点生成通过；仅忽略目录中生成诊断产物，未改产品历史或数据库。
+
+现有离线恢复不补建缺失的最终装配事实，故不能直接用原缺口来源发布；此前“完整来源可直接离线恢复”的判断撤回。下一轮正常入口重新准备，明确以实际产品完整流程为关闭条件。源码摘要更新后再冻结，不在运行中修改代码；保持原需求、个人环境和远程控制。
+
+## 2026-10-13 01:23 当前断点：跨语言消费缺口已修，重跑两站原需求完整验收
+
+Pixelscan正常入口job `2aa9807e-7edb-4665-835d-9441ff0c3dc0` 已完成第一步16动作、17次模型调用均成功、四项读取齐全，但TS最终来源消费仍要求删除的methodOutcome，且把字符串列表按记录数组预算核验，故失败，未发布；原失败保留。已统一宿主推导和标量列表预算，原保存来源离线四项输出核验通过并生成11节点。实际Python→TS跨语言21项通过、API类型检查通过。另以受核验的选择函数URL绑定替代旧inspected导航最终URL等值要求，授权和必经控制流检查保留。该job同owner清理首次confirmed。
+
+这是两步骤任务，保存来源仅覆盖首步骤；离线复用用于定位，不能冒称整任务恢复。接下来重新从原任务正常UI准备，再做样本、独立验证、发布、正式运行。源代码重新冻结；不改需求或网站判据、不重启整机、不提交推送。后文为前次断点。
+
+## 2026-10-13 当前断点：通用修复已加载，进入两站原需求验收
+
+读取/完成协议52项通过；前一版本32种注册表摘要精确兼容；准备取消持久清理与同owner恢复、真实fetch错误分类/并发隔离、实际child取消3项通过；其它相关生命周期12项通过，3项需要显式Python环境尚未运行。API类型检查通过。取消未核验与关闭失败分码；后台部分索引只选待清理准备任务。使用Node官方诊断通道保留安全网络码/HTTP状态，不记录URL正文凭据。正常npm dev/API start增加可选本地.env加载，本机仅配置已有代理的Node支持和loopback直连；系统代理、Mac、Chrome和向日葵不变。开始按原确认需求重新试做Pixelscan与BrowserScan，尚未验收完成。不得提交推送或整机重启。
+
+## 2026-10-13 当前实施：修复两外站剩余通用缺陷与原生完整验收
+
+用户已明确授权“把这批问题处理好，明早看结果”。在当前 master/原 checkout 连续实施，不建分支/worktree，不改个人设置，不重启 Mac，不提交推送。原失败、原任务要求和已有工作区改动保留。先落实最小模型接口和统一来源，再补准备清理与脱敏错误传递；聚焦回归后冻结代码，用正常 B-A-T 入口完成两外站准备、发布、正式复跑及资源验证。普通 Chrome 对照只用于定位，不作产品通过证据。共享网络仅在证明远程控制不受影响的精确范围内处理；相邻仓库现有只读边界不擅自突破。
+
+## 2026-10-13 当前：剩余问题根因与最小模型接口方案，尚未实施
+
+只调查提交后的两外站失败，未重开已关闭的依赖、导航与 VM 问题。查实：模型读取 Schema 与父类模式推断、后置合同不一致；完成装配与编译的常量来源未贯通；准备取消跳过关闭协议后生成未确认码，authoring 缺少持久化清理恢复；本次 BrowserScan 前三次模型失败与 Clash 的 Node→chatgpt.com 直连超时相差 1–6 毫秒，后三次原始 cause 被 AI Connect/bridge 丢弃，不能事后补造。已给出按合同生成最小工具模型、统一来源绑定、删除重复模型字段、同 owner 清理恢复及精确网络规则与脱敏诊断方案。
+
+用户解锁后，00:02 的普通 Chrome 系统界面无 CDP 新窗口对照，重现 Pixelscan 原生任务的三项告警，Bot check 同样未发现自动化。页面明确显示美国 hosting 出口、上海 JS 时区、WebRTC 与网页出口不同、语言项不一致；主动 B-A-T 控制不是产生告警的必要条件，私有 Masking 子项不能唯一归因。对照窗口已关闭，个人窗口保留。未修改生产代码、依赖、网络或扩展，未重启/提交/推送；原生两站仍无发布与正式复跑。详见[剩余根因与完整方案](PUBLIC_NATIVE_REMAINING_ROOT_CAUSES_20261012.md)。下方均为历史时点。
+
+## 2026-10-12 当前结算：VM恢复通过，两外站实测完成，原生链路验收未通过
+
+Lima模板恢复3行，与创建记录摘要一致；status五服务ready、CLI validate和6项宿主测试通过，未重启宿主/VM。BrowserScan原生页面结果Normal；Pixelscan总体指纹不一致，Timezone spoofed / Proxy detected / Masking detected，Bot check未发现自动化。页面结果有原生动作文本证据。但BrowserScan反复读取错误后主动中断，Pixelscan因网站名称等字段无法形成读取方法而done(false)；两任务均无发布/正式复跑，不宣称端到端通过。测试期间1233份产品代码配置未变。BrowserScan首次清理失败经同owner原生verify_closed确认窗口已结束；Pixelscan首次cleanup confirmed。新问题为读取参数纠错、跨区域/站点名称结果方法、取消时清理反馈，未在本轮修改产品逻辑。详见[本轮实测记录](MAC_VM_AND_PUBLIC_NATIVE_TEST_20261012.md)。工作台服务保留，本轮未提交推送。下方均为历史时点。
+
 ## 2026-10-12 当前结算与发布：原入口主流程通过，不复现历史项关闭
 
 用户已授权提交推送当前全部B-A-T代码。旧六次模型失败按“当前正常、未复现”关闭，不再追挂根因待办，原失败证据保留。Windows本轮未重测仅是证据范围。发布前只读mac-host status仍返回lima_instance_owner_changed / exit1，因此该本机维护项保留，不阻挡本次发布。复用刚完成的聚焦回归和真实产品验收，1233份冻结产品源码未变；不重复运行全量测试，不重启宿主。

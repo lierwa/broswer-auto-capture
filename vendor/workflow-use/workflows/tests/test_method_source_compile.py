@@ -28,7 +28,10 @@ def fact(kind, value):
 
 def method_source(case=None, schema=None):
     schema = schema if schema is not None else {'type': 'array', 'items': copy.deepcopy(SCHEMA['items'])}
-    case = case if case is not None else fixture()
+    if case is None:
+        case = fixture()
+        # 当前来源必须使用实际公开参数，内部 ReadSpec 默认值不能冒充模型字段。
+        case['arguments'] = {'container': '.item', 'fields': {'title': {'selector': 'a'}}}
     case['records'].output_schema = copy.deepcopy(schema)
     output = complete_from_read_refs(case['records'], ['r1'], schema, None)
     verified = verified_method_read(**case)
@@ -40,7 +43,7 @@ def method_source(case=None, schema=None):
                     'edgeCases': []})
     author_input = AuthorInput.model_validate(raw)
     model, _unwrap = output_model_for(schema, 'MethodCompileOutput')
-    tools = author_tools_for_result_spec(model, author_input.resultSpec)
+    tools = author_tools_for_result_spec(author_input.resultSpec)
     registry = ActionRegistry.from_tools(tools)
     url = case['records'].records[0].sample.pageIdentity['url']
     observations = [NormalizedObservation(id=f'o-{index:04d}', sequence=index - 1,
@@ -55,8 +58,7 @@ def method_source(case=None, schema=None):
     records = [HistoryRecord(stepIndex=0, actions=[{'bat_read_fields': case['arguments']}],
         results=[ResultEvidence(errorPresent=False, ref=case['result_ref'])],
         preObservationRef='o-0001', postObservationRefs={'0': 'o-0002'}),
-        HistoryRecord(stepIndex=1, actions=[{'done': {'success': True, 'reason': 'Observed method.',
-                                                    'readRefs': ['r1']}}],
+        HistoryRecord(stepIndex=1, actions=[{'done': {'success': True, 'text': 'Observed method.'}}],
         results=[ResultEvidence(errorPresent=False, is_done=True, success=True, ref=reference(output))],
         preObservationRef='o-0003', postObservationRefs={'0': 'o-0004'})]
     trace, issues = normalize_history(HistoryInput(source=TraceSource(version=registry.providerVersion,

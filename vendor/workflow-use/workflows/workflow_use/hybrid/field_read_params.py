@@ -168,9 +168,11 @@ def _value_wrapper(target_schema):
         'additionalProperties': False,
     }
 def bind_root_read_path(arguments, output_schema):
-    # WHY：固定根路径由确认合同唯一确定；所有公开动作/证据消费者共用，旧显式值不能被静默改写。
-    if (isinstance(arguments, dict) and isinstance(output_schema, dict)
-            and output_schema.get('type') == 'array' and 'fields' in arguments
+    # WHY：唯一可读路径由合同确定；执行、捕获与编译共用，旧显式路径不能被改写。
+    if (isinstance(arguments, dict) and isinstance(output_schema, dict) and 'fields' in arguments
             and 'readRef' not in arguments and 'outputPath' not in arguments):
-        return {**arguments, 'outputPath': []}
+        from .author_read_params import readable_paths
+        paths = readable_paths(output_schema)
+        if len(paths) == 1:
+            return {**arguments, 'outputPath': paths[0]}
     return arguments

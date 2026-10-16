@@ -1,4 +1,12 @@
+> **2026-10-13 当前授权仅文档交接：用户暂停开发，要求全新session再开始。** [AGENTS](../../AGENTS.md)、[两层现行计划](BAT_NATIVE_EXPLORATION_REMEDIATION_PLAN_20261013.md)、[源码复审](BAT_NATIVE_EXPLORATION_REMEDIATION_REVIEW_20261013.md)与[PROGRESS顶部](PROGRESS.md)优先。现行计划已补工具转换、跨进程ACK、原生结束/宿主输出及验证入口，主agent源码对照复审认定具备新session实施条件；没有独立工程师批准、实施或产品通过。取消历史兼容目标，保护现行来源与dirty。旧“通过/正在验收/已授权恢复/关机”只属历史，不允许据此启动代码、服务或浏览器任务。
+
+> **2026-10-13 最新入口：本轮仅整改文档更新、review 与新 session 交接，尚未实施。** [原生探索/速度/稳定性方案](BAT_NATIVE_EXPLORATION_REMEDIATION_PLAN_20261013.md)及[修订复审](BAT_NATIVE_EXPLORATION_REMEDIATION_REVIEW_20261013.md)优先。新增 §8.0 B3 补首轮漏项：完整审计不直接播放，候选按数据/控制/状态依赖及已有有限规则收敛为参数化方法；必需无输出动作保留，合法绕路不假定副作用抵消。必须保留反爬代码和 TaskBrowser 原接线，适配逐动作事实后恢复原生多动作，不改 B-U 循环；速度/产品/反爬验收仍未完成。PID 26747 已退出而 job 保存 running，不再把 DB 状态当活跃执行证据。后续恢复先读 PROGRESS 最新断点，不沿用历史启动、提交或关机授权。
+
+> **2026-10-13 最新结算：整批问题未关闭。** BrowserScan最终正式通过；Pixelscan同草稿样本/独立复验通过，但终态方法绑定本次结果，新草稿未发布。下一工作是方法变化验证与局部修订设计缺口，不能继续提示词重跑冒充根因修复。见[结算](PUBLIC_NATIVE_REPAIR_CLOSEOUT_20261013.md)及PROGRESS顶部。没有重启、关机或提交推送授权。
+
 # 反爬下一阶段：检测覆盖、B-A-T 改造与交付计划
+
+> **2026-10-13 当前最高优先入口**：用户已授权处理两参考网站本批剩余问题。原BrowserScan/Pixelscan v1需求、日常Chrome和普通0模型复跑为验收基线；最终结果见[本轮结算](PUBLIC_NATIVE_REPAIR_CLOSEOUT_20261013.md)、[PROGRESS顶部](PROGRESS.md)。本轮不提交推送、建分支/worktree，不重启或关闭Mac/VM/Chrome，不改个人设置及共享网络。下方历史“授权关机/提交”不对本轮生效。
 
 > **2026-10-12 当前实施优先入口**：用户已授权三项开发与完整验收后的提交、推送、核远程及关机。BSK迁移/旧探索清理已完成当前冻结新任务及同版变化输入验收；Windows最终盾包有定点实测，Mac连接、原生arm64与双平台验收未完成。先读[PROGRESS顶部](PROGRESS.md)、[BSK执行记录](BSK_REMOVAL_EXECUTION_20261012.md)和[部署执行记录](SHIELD_DEPLOYMENT_EXECUTION_20261012.md)。下方“仅文档/尚未实施/已完成”均为各自历史时点，不能覆盖当前交付门；当前不得提交、推送或关机。
 

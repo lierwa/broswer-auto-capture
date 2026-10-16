@@ -12,8 +12,8 @@ from browser_use_runner.output_schema import output_model_for
 from workflow_use.hybrid.__main__ import _compilation_sources
 from workflow_use.hybrid.author import (AUTHOR_URL_SHORTENING_LIMIT, NATURAL_AGENT_GUIDANCE,
                                         NATURAL_EXECUTION_AGENT_GUIDANCE,
-                                        VISIBLE_TEXT_EXTRACTION_GUIDANCE, NavigationScopeViolation,
-                                        _business_result, _public_compilation_request, _reject_navigation_scope_retry,
+                                        NavigationScopeViolation,
+                                        _business_result, _reject_navigation_scope_retry,
                                          author_tools, author_tools_for_result_spec, field_read_outcome,
                                         normalize_author_action)
 from workflow_use.hybrid.dom_reference_tool import (
@@ -35,20 +35,29 @@ from workflow_use.hybrid.request import DataResultSpec, NaturalCompilationReques
 
 
 class AuthorFollowUpTests(unittest.TestCase):
-    def test_execution_authoring_excludes_unreplayable_extract_but_keeps_structured_query(self):
+    def test_current_tools_restore_native_capabilities_and_rebuild_only_the_final_registry(self):
         class Output(BaseModel):
             value: None = None
 
-        registry = ActionRegistry.from_tools(author_tools(Output, exclude_extract=True))
+        result_spec = SimpleNamespace(mode='execution')
+        tools = author_tools_for_result_spec(result_spec)
+        registry = ActionRegistry.from_tools(tools)
 
-        self.assertNotIn('extract', registry.names)
+        self.assertIn('extract', registry.names)
         self.assertIn('find_elements', registry.names)
         self.assertTrue({'navigate', 'scroll', 'search_page', 'send_keys', 'dropdown_options'} <= set(registry.names))
-        self.assertFalse({'search', 'find_text', 'switch', 'close', 'save_as_pdf'} & set(registry.names))
-
-        rebuilt = ActionRegistry.from_tools(author_tools_for_result_spec(
-            Output, SimpleNamespace(mode='execution')))
-        self.assertEqual(rebuilt.schemaDigest, registry.schemaDigest)
+        self.assertTrue({'search', 'find_text', 'switch', 'close', 'save_as_pdf', 'read_file',
+                         'write_file', 'replace_file', 'upload_file'} <= set(registry.names))
+        self.assertNotIn('evaluate', registry.names)
+        tools.exclude_action('screenshot')  # 同Agent(use_vision=True)的公开原生配置。
+        final = ActionRegistry.from_tools(tools)
+        from browser_use_runner.hybrid_compile import matching_registry
+        request = SimpleNamespace(plan=SimpleNamespace(resultSpec=result_spec), compilerVersion='bat-hybrid/2',
+                                  actionRegistryVersion=final.schemaDigest)
+        self.assertEqual(matching_registry(request).schemaDigest, final.schemaDigest)
+        request.actionRegistryVersion = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'hybrid_action_registry_mismatch'):
+            matching_registry(request)
 
     def test_successful_business_result_does_not_require_a_judge(self):
         class History:
@@ -59,23 +68,11 @@ class AuthorFollowUpTests(unittest.TestCase):
         schema = {'type': 'object', 'properties': {'value': {'type': 'string'}},
                   'required': ['value'], 'additionalProperties': False}
         model, unwrap = output_model_for(schema, 'SuccessfulOutput')
-        completed, output, gaps = _business_result(History(), False, model, unwrap, schema)
+        completed, output, gaps = _business_result(History(), False, schema)
 
         self.assertTrue(completed)
-        self.assertEqual(output, {'value': 'done'})
-        self.assertEqual(gaps, [])
-
-    def test_agent_guidance_preserves_runtime_url_and_reads_every_output_page(self):
-        self.assertIn('runtime input URL exactly as supplied', NATURAL_AGENT_GUIDANCE)
-        self.assertIn('Use native extract on every page', NATURAL_AGENT_GUIDANCE)
-        self.assertIn('complete visible text only', NATURAL_AGENT_GUIDANCE)
-        self.assertIn('transient signed URLs', NATURAL_AGENT_GUIDANCE)
-        self.assertIn('stop immediately', NATURAL_AGENT_GUIDANCE)
-
-    def test_execution_guidance_does_not_request_the_excluded_extract_tool(self):
-        self.assertNotIn('Use native extract on every page', NATURAL_EXECUTION_AGENT_GUIDANCE)
-        self.assertIn('native extract is intentionally unavailable', NATURAL_EXECUTION_AGENT_GUIDANCE)
-        self.assertIn('find_elements for complete candidate collections', NATURAL_EXECUTION_AGENT_GUIDANCE)
+        self.assertIsNone(output)
+        self.assertEqual([g.reason for g in gaps], ['completion_read_reference_invalid'])
 
     def test_navigation_outside_authorized_scope_stops_without_another_model_step(self):
         agent = SimpleNamespace(history=SimpleNamespace(history=[SimpleNamespace(result=[
@@ -85,16 +82,17 @@ class AuthorFollowUpTests(unittest.TestCase):
         with self.assertRaisesRegex(NavigationScopeViolation, 'hybrid_navigation_outside_authorized_scope'):
             _reject_navigation_scope_retry(agent)
 
-    def test_extract_query_is_normalized_to_literal_visible_text_before_dispatch(self):
-        params = SimpleNamespace(query='Read the complete body.', extract_links=False)
-        action = SimpleNamespace(extract=params, find_elements=None)
+    def test_native_query_extract_and_viewport_scroll_parameters_are_not_rewritten(self):
+        from browser_use.tools.views import ExtractAction, FindElementsAction, ScrollAction
+        extract = ExtractAction(query='Read the complete body.', extract_links=False)
+        query = FindElementsAction(selector='main article')
+        scroll = ScrollAction(index=0)
+        action = SimpleNamespace(extract=extract, find_elements=query, scroll=scroll)
+        expected = [item.model_dump(exclude_unset=True) for item in (extract, query, scroll)]
 
         normalize_author_action(action)
-        normalize_author_action(action)
 
-        self.assertEqual(params.query.count(VISIBLE_TEXT_EXTRACTION_GUIDANCE), 1)
-        self.assertIn('Collapse every whitespace run to one space', params.query)
-        self.assertIn('add no Markdown', params.query)
+        self.assertEqual([item.model_dump(exclude_unset=True) for item in (extract, query, scroll)], expected)
 
     def test_runtime_input_url_is_not_shortened_before_the_navigate_action(self):
         url = ('https://example.test/issues?q=' + 'is%3Aissue%20state%3Aclosed%20label%3Abug%20'
@@ -118,20 +116,6 @@ class AuthorFollowUpTests(unittest.TestCase):
 
         self.assertEqual(unwrap(value), {'items': []})
 
-    def test_author_result_serializes_result_spec_with_public_schema_alias(self):
-        class Compilation(BaseModel):
-            resultSpec: DataResultSpec
-
-        schema = {'type': 'object', 'properties': {'items': {'type': 'array', 'items': {'type': 'string'}}},
-                  'required': ['items'], 'additionalProperties': False}
-        compilation = Compilation(resultSpec={'contractVersion': 'bat-result-spec/v1', 'mode': 'data',
-            'schema': schema, 'fields': [{'path': ['items'], 'description': 'items',
-                                         'producerRef': 'items-read'}], 'edgeCases': []})
-        result = _public_compilation_request(compilation)
-
-        self.assertEqual(result['resultSpec']['schema'], schema)
-        self.assertNotIn('schemaValue', result['resultSpec'])
-
     def test_natural_source_payload_matches_public_author_request(self):
         schema = {'type': 'object', 'properties': {'items': {'type': 'array', 'items': {'type': 'string'}}},
                   'required': ['items'], 'additionalProperties': False}
@@ -141,11 +125,9 @@ class AuthorFollowUpTests(unittest.TestCase):
         plan = NaturalPlan.model_construct(id='plan', version=1, sourceDigest='a' * 64,
             digest='b' * 64, stepId='step', inputSchemaDigest='c' * 64,
             outputSchemaDigest='d' * 64, callMode='once', entryUrls=[], resultSpec=spec)
-        request = NaturalCompilationRequest.model_construct(
-            compilerVersion='bat-hybrid/2', actionRegistryVersion='registry',
-            requirement=SimpleNamespace(model_dump=lambda **_kwargs: {'id': 'requirement'}), plan=plan,
-            runtimeInputSchema={'type': 'object'},
-            trace=SimpleNamespace(model_dump=lambda **_kwargs: {'mediaType': 'trace'}))
+        from test_author_source_boundary import source_fixture
+        _, baseline, _ = source_fixture()
+        request = baseline.model_copy(update={'plan': plan})
 
         public_plan = request.model_dump(mode='json', by_alias=True)['plan']
         public_plan.pop('digest')
@@ -159,7 +141,7 @@ class AuthorFollowUpTests(unittest.TestCase):
         class Output(BaseModel):
             value: None = None
 
-        registry = ActionRegistry.from_tools(author_tools(Output))
+        registry = ActionRegistry.from_tools(author_tools())
         url = 'https://example.test/watch'
         url_digest = digest(url)
         url_fact = lambda identity: ObservationFact(
@@ -247,7 +229,7 @@ class AuthorFollowUpTests(unittest.TestCase):
         class Output(BaseModel):
             value: str
 
-        registry = ActionRegistry.from_tools(author_tools(Output))
+        registry = ActionRegistry.from_tools(author_tools())
 
         self.assertTrue({
             'bat_inspect_dom', 'bat_read_fields', 'bat_wait_for', 'bat_scroll_to', 'bat_summarize',
@@ -465,9 +447,8 @@ class AuthorFollowUpTests(unittest.TestCase):
 
     def test_dom_reference_failures_remain_visible_in_progress(self):
         result = SimpleNamespace(error='dom_reference_record_scope_mismatch')
-        agent = SimpleNamespace(history=SimpleNamespace(history=[SimpleNamespace(result=[result])]))
 
-        self.assertEqual(field_read_outcome(agent), {
+        self.assertEqual(field_read_outcome(result), {
             'readOutcome': 'failed', 'readError': 'dom_reference_record_scope_mismatch',
         })
 
@@ -483,7 +464,7 @@ class AuthorFollowUpTests(unittest.TestCase):
             def __init__(self, _browser):
                 pass
 
-            async def resolve_collection(self, _selector, _scope=None):
+            async def resolve_collection(self, _selector, _scope=None, *, page=None):
                 return [Element()]
 
         specification = ReadSpec(
@@ -517,7 +498,7 @@ class AuthorFollowUpTests(unittest.TestCase):
             def __init__(self, _browser):
                 pass
 
-            async def resolve_collection(self, _selector, _scope=None):
+            async def resolve_collection(self, _selector, _scope=None, *, page=None):
                 return elements
 
         specification = ReadSpec(
@@ -552,7 +533,7 @@ class AuthorFollowUpTests(unittest.TestCase):
             def __init__(self, _browser):
                 pass
 
-            async def resolve_collection(self, _selector, _scope=None):
+            async def resolve_collection(self, _selector, _scope=None, *, page=None):
                 return [Element()]
 
         specification = ReadSpec(

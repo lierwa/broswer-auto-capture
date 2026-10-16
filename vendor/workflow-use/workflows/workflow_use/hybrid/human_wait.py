@@ -136,7 +136,7 @@ def register_human_wait_tool(tools):
     @tools.registry.action('Request the user to handle login, CAPTCHA, confirmation or access in this same '
         'browser tab. Give a short safe prompt. After confirmation, observe the actual page and continue. '
         'Never request passwords, cookies or CAPTCHA values. The host waits for explicit user confirmation.',
-        param_model=HumanRequestParams)
+        param_model=HumanRequestParams, terminates_sequence=True)
     async def bat_request_human(params: HumanRequestParams):
         if tools._bat_human_wait is None:
             return ActionResult(error='hybrid_human_wait_unavailable')

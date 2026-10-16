@@ -48,7 +48,8 @@ def main():
     compiled = compile_natural_prefix(request, registry, output_schema=schema)
     response = compilation_envelope(request, compiled)
     payload = canonical_json({'phase': 'prefix', 'stepId': step['id'],
-        'canonicalRequest': canonical_json(request.model_dump(mode='json', by_alias=True)), 'response': response})
+        'canonicalRequest': canonical_json(request.model_dump(mode='json', by_alias=True)),
+        'candidate': {'kind': 'result', 'response': response}})
     print(json.dumps({'payload': payload, 'pythonMs': (time.perf_counter() - started) * 1000,
                       'bytes': len(payload.encode('utf-8'))}))
 

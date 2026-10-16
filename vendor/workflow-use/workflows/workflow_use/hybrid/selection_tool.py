@@ -1,43 +1,21 @@
-"""Adapt the existing QuickJS validator to the native preparation Agent tools."""
+"""Attach the proven singleton query guard; semantic programs are annotated after actions."""
 from copy import deepcopy
 from types import SimpleNamespace
-import json
-
-import aiohttp
-from browser_use.agent.views import ActionResult
-from pydantic import Field, JsonValue
-from jsonschema import Draft202012Validator
 
 from .dom_evidence import DomQueryEvidence
-from .evidence import Contract, EvidenceRef, ObservationFact, digest
+from .evidence import EvidenceRef, ObservationFact, digest
 from .natural_reads import VerifiedNaturalRead, find_elements_read_spec
 from .natural_repeat_evidence import _assert_same_document
 from .natural_target_compile import natural_target
 
 
-class SelectionExample(Contract):
-    candidates: list[dict[str, JsonValue]] = Field(min_length=1, max_length=300)
-    ordinal: int = Field(gt=0, le=300)
-
-
-class SelectionCheck(Contract):
-    source: str = Field(min_length=1, max_length=20000, description=
-        'Pure JavaScript function main({candidates}). Each candidate has original ordinal and text; return '
-        'candidate.ordinal, never an array index. Candidates follow DOM order; preserve their ordinal '
-        'if your function filters or sorts them.')
-    examples: list[SelectionExample] = Field(default_factory=list, max_length=4, description=
-        'Optional additional examples: {candidates:[{ordinal:1,text:"..."},...],ordinal:<expected ordinal>}. '
-        'EVERY candidate requires its original ordinal and text. Expected ordinals follow the task rule; '
-        'first-item and fixed-position rules may always return the same ordinal. Current live input is checked automatically.')
-
-
 class PreparedSelections:
     def __init__(self):
-        self.collector = self.request = self.model = None
-        self.validated, self.clicks = {}, {}
+        self.collector = self.request = None
+        self.clicks = {}
 
-    def bind(self, collector, request, model):
-        self.collector, self.request, self.model = collector, request, model
+    def bind(self, collector, request):
+        self.collector, self.request = collector, request
 
     def current_read(self):
         if self.collector is None or not self.collector.observations:
@@ -53,59 +31,6 @@ class PreparedSelections:
                         and value.get('specification', {}).get('includeOrdinal') is True):
                     return fact
         raise ValueError('selection_current_read_required')
-
-    async def validate(self, params):
-        try:
-            fact = self.current_read()
-            read = fact.value
-            # WHY：空集合是页面查询结果，不是函数错误；必须重新读取，不能回用旧集合或诱导反复改函数。
-            if not read['output']:
-                return ActionResult(error='selection_candidates_empty: the latest find_elements query returned '
-                    'zero candidates. Inspect the current page and use find_elements with a corrected scoped '
-                    'query before validating a selection rule. Changing the function cannot create missing '
-                    'candidates; older reads are not used and no click has been performed.')
-            body = {**params.model_dump(mode='json'), 'candidates': read['output'],
-                    'candidateSchema': read['specification']['outputSchema'],
-                    'maxItems': read['specification']['maxItems']}
-            validator = Draft202012Validator(body['candidateSchema'])
-            for index, example in enumerate(params.examples):
-                invalid = next(validator.iter_errors(example.candidates), None)
-                if invalid is not None:
-                    return ActionResult(error='selection_example_schema_invalid: example '
-                        + str(index + 1) + ', path=' + json.dumps(list(invalid.absolute_path))
-                        + ', constraint=' + invalid.validator + '. Use this exact candidate schema: '
-                        + json.dumps(body['candidateSchema'], ensure_ascii=False)
-                        + '. Every candidate has its own original ordinal and text; no click performed.')
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20), trust_env=False) as client:
-                async with client.post(self.model.endpoint + '/validate-selection', json=body,
-                        headers={'Authorization': 'Bearer ' + self.model.token}) as response:
-                    checked = await response.json()
-                    status = response.status
-            if status != 200:
-                raise ValueError('selection_validation_unavailable')
-            if checked.get('valid') is not True:
-                reason = checked.get('reason', 'selection_validation_failed')
-                details = {key: checked[key] for key in ('exampleIndex', 'actual', 'expected') if key in checked}
-                return ActionResult(error=reason + ' ' + json.dumps(details) + ': correct the program or expected examples using the '
-                    'confirmed rule. exampleIndex 0 is the current input; 1 onward are your optional examples. '
-                    'Do not change the task rule merely to match an answer; no click has been performed.')
-            ordinal = checked['ordinal']
-            if type(ordinal) is not int or not any(item.get('ordinal') == ordinal for item in body['candidates']):
-                raise ValueError('selection_validation_invalid_result')
-            draft = {'language': 'javascript', 'source': params.source,
-                'inputs': {'candidates': body['candidateSchema']},
-                'outputSchema': {'type': 'integer', 'minimum': 1, 'maximum': body['maxItems']},
-                'examples': [{'input': {'candidates': body['candidates']}, 'output': ordinal},
-                    *[{'input': {'candidates': item.candidates}, 'output': item.ordinal} for item in params.examples]]}
-            self.validated[fact.id] = {'draft': deepcopy(draft), 'ordinal': ordinal,
-                                       'readFactRef': fact.id, 'readActionRef': read['actionRef']}
-            selected = next(item for item in body['candidates'] if item['ordinal'] == ordinal)
-            return ActionResult(extracted_content='Selection method validated: '
-                + json.dumps(selected, ensure_ascii=False)
-                + '. Click this candidate using its current Browser-Use index; ordinal is not a click index.')
-        except (ValueError, KeyError, AttributeError, aiohttp.ClientError, TimeoutError):
-            return ActionResult(error='selection_validation_unavailable: obtain a complete current '
-                'find_elements read and try the validation tool again; no click has been performed.')
 
     def before_dispatch(self):
         collector = self.collector
@@ -124,15 +49,11 @@ class PreparedSelections:
         candidate = structures[0].get('queryCandidate') if len(structures) == 1 else None
         if not candidate or not candidate.get('readActionRef'):
             return
-        records = [item for item in self.validated.values() if item['readActionRef'] == candidate['readActionRef']]
-        if not records:
-            guard = self.unique_query_guard(candidate, target, pre)
-            if guard is not None:
-                records = [guard]
-        if len(records) != 1 or records[0]['ordinal'] != target['ordinal']:
+        guard = self.unique_query_guard(candidate, target, pre)
+        if guard is None or guard['ordinal'] != target['ordinal']:
             # WHY：缺少程序是编译缺口，不是浏览器操作错误；交给动作后的在线生成。
             return
-        self.clicks[pre.id] = deepcopy(records[0])
+        self.clicks[pre.id] = deepcopy(guard)
 
     def unique_query_guard(self, candidate, target, pre):
         """Reuse the proven singleton query; never infer a choice among multiple candidates."""
@@ -188,17 +109,3 @@ class PreparedSelections:
                 facts.append(prepared)
         body = updated.model_dump(mode='json', exclude={'digest'})
         return type(trace).model_validate({**body, 'digest': digest(body)})
-
-
-def register_selection_tool(tools):
-    records = PreparedSelections()
-
-    @tools.registry.action('Validate a deterministic rule over the latest complete find_elements candidates '
-        'BEFORE clicking a collection item. Supply JavaScript function main({candidates}) implementing '
-        'the confirmed task rule. Extra examples are optional, not proof of business correctness. '
-        'A first-item rule may always return ordinal 1. The tool computes the current ordinal from live input. '
-        'No browser, network, imports or async. The same program becomes the replay method.', param_model=SelectionCheck)
-    async def bat_validate_selection(params: SelectionCheck):
-        return await records.validate(params)
-
-    return records

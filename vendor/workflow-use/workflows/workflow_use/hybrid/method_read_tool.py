@@ -14,7 +14,6 @@ from typing import Literal
 
 from .evidence import Contract
 from .field_read_params import FieldReadMapping, _expanded_field, _read_shape, bind_root_read_path
-from .field_read_params import LEGACY_ROOT_ARRAY_PATH_GUIDANCE
 from .natural_reads import NaturalReadFailure, schema_at_path, value_at_path
 from .read import ReadField
 from .read_sampling import ReadSample, sample_read_fields
@@ -23,14 +22,23 @@ from .page_content import CONTENT_SCHEMA, CONTENT_LIMIT, content_schema, content
 from .element_entry import entry_field
 from .entry_selection import EntryObservation, EntrySelection, assert_entry_sample, capture_entry_indices, select_entry_container
 from .content_read_params import ContentReadToolParams
-from .method_read_diagnostics import CONTENT_READINESS_GUIDANCE, _safe_read_error
+from .method_read_diagnostics import _safe_read_error
+from .read_parts import ReadPart, assert_text_sample
+
+
+def _serialize_method_field(self, handler):
+    value = handler(self)
+    if self.parts is not None:
+        value['parts'] = [part.model_dump(mode='json') for part in self.parts]
+    return value
 
 # WHY：字段类型与多值形状只有最终合同一个事实源；复用投影配置，避免默认值经持久化变成模型声明。
-MethodReadField = create_model('MethodReadField', __base__=Contract, **{
+MethodReadField = create_model('MethodReadField', __base__=Contract,
+    __validators__={'serialize_parts': model_serializer(mode='wrap')(_serialize_method_field)}, **{
     name: (field.annotation, copy.deepcopy(field))
     for name, field in ReadField.model_fields.items()
-    if name not in {'valueType', 'multiple', 'maxValues', 'allowMissing', 'contentSource'}
-})
+    if name not in {'valueType', 'multiple', 'maxValues', 'allowMissing', 'contentSource', 'parts'}
+}, parts=(SkipJsonSchema[list[ReadPart] | None], Field(default=None, exclude=True)))
 
 class MethodReadToolParams(Contract):
     captureContent: bool = False
@@ -105,38 +113,9 @@ class EntryReadToolParams(Contract):
     def omit_absent(self, handler):
         return {key: value for key, value in handler(self).items() if value is not None}
 
-class AuthorMethodReadToolParams(MethodReadToolParams):
-    captureContent: SkipJsonSchema[bool] = Field(default=False, exclude=True)
-    # WHY：模型只决定业务选择，300 项技术预算由宿主持有；旧来源的显式预算仍可解析和离线校验。
-    maxItems: SkipJsonSchema[Literal[300]] = Field(default=300, exclude=True)
-    indices: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
-    regions: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
-    regionMode: SkipJsonSchema[Literal[None]] = Field(default=None, exclude=True)
-
-ROOT_ARRAY_PATH_GUIDANCE = ('The confirmed business output is a root array. The host binds its output path. '
-    'Return only the record container and field projections, or reuse a readRef.')
-
-class RootArrayMethodReadToolParams(AuthorMethodReadToolParams):
-    outputPath: SkipJsonSchema[list[str | int] | None] = Field(default=None, max_length=40, exclude=True)
-
-    @model_validator(mode='before')
-    @classmethod
-    def bind_root_path(cls, value):
-        if not isinstance(value, dict) or 'readRef' in value:
-            return value
-        # WHY：根数组的固定路径来自确认合同；旧显式错误仍拒绝，不能默默修正来源证据。
-        if value.get('outputPath') not in (None, []):
-            raise ValueError('root_array_output_path_invalid')
-        return {**value, 'outputPath': []} if 'fields' in value else value
-
-def method_read_params_for(output_schema, legacy_model_fields=False):
-    if output_schema.get('type') != 'array':
-        return AuthorMethodReadToolParams
-    if legacy_model_fields:
-        return create_model('RootArrayMethodReadToolParams', __base__=AuthorMethodReadToolParams,
-            outputPath=(list[str | int] | None, Field(default=None, max_length=40,
-                description=LEGACY_ROOT_ARRAY_PATH_GUIDANCE, examples=[[]])))
-    return RootArrayMethodReadToolParams
+def method_read_params_for(output_schema):
+    from .author_read_params import author_read_params
+    return author_read_params(output_schema)
 
 class MethodReadRecord(Contract):
     readRef: str = Field(pattern=r'^r[1-9][0-9]*$')
@@ -203,8 +182,7 @@ class MethodReadRecords:
         return record.parameters.model_copy(deep=True), record.mapping.model_copy(deep=True)
 
     def feedback(self, params, record, *, observation=None):
-        method = {'recordedMethod': record.parameters.model_dump(mode='json'),
-                  'readinessGuidance': CONTENT_READINESS_GUIDANCE}
+        method = {'recordedMethod': record.parameters.model_dump(mode='json')}
         if any(field.contentSource for field in record.mapping.specification.fields.values()):
             # WHY：完整采集仅证明所选区域的字节，不能替模型断言选对了业务范围。
             return json.dumps({**method, 'contentScopeGuidance': (
@@ -213,8 +191,6 @@ class MethodReadRecords:
                 'Include all requested related text, tables and images in one reusable region; '
                 'an image-only subregion does not include configuration text in its siblings. '
                 'Correct the scope with the existing tools before finishing if necessary. '
-                f'This successful method is {record.readRef}; if it supplies the confirmed result, '
-                f'finish using readRefs=["{record.readRef}"]. Earlier exploratory reads remain audit evidence. '
                 'Capture raw content; do not extract individual business fields or clean the data.')})
         if record.mapping.specification.entryField is not None:
             # WHY：来源只验证入口读取方法；首/尾样本不能被误解成漏掉中间输入。
@@ -238,8 +214,7 @@ class MethodReadRecords:
                 'Middle ordinals omitted from this sample are not missing entries. Re-reading still returns a bounded sample. '
                 'The ordinary runtime re-queries the complete selected range using this method. '
                 'Entry activation and detail processing are verified by the next representative item step. '
-                'If the observed source order and selection satisfy this source step, finish it with success=true and '
-                f'readRefs=["{record.readRef}"]. Do not copy all values or enter details in this source step. '
+                'If the observed order and selection satisfy this step, finish with native done. '
                 'This does not declare the full task or all detail content completed.'), 'entryPreviews': previews},
                 ensure_ascii=False, separators=(',', ':'))
         if not isinstance(value_at_path(record.sample.output, record.mapping.readPath), list):
@@ -330,62 +305,26 @@ def expand_method_read_params(params: MethodReadToolParams, output_schema, *, in
         'outputPath': params.outputPath, 'readPath': read_path,
     })
 
-def register_method_read_tool(tools, *, output_schema, capture_content=False, legacy_model_fields=False):
+def register_method_read_tool(tools, *, output_schema, capture_content=False):
     Draft202012Validator.check_schema(output_schema)
     successful = MethodReadRecords(output_schema, capture_content=capture_content)
 
     @tools.action(
-        ('Read actual clickable entries from the current ordered/filtered list. Prefer indices containing '
-         'the native browser indices of the selected clickable titles/controls in DOM order; the host derives '
-         'the reusable collection selector, so you need not know CSS. Alternatively supply an observed container '
-         'CSS selector. Supply take '
-         'only when the confirmed task selects the first N. Do not require href, do not declare output '
-         'fields or read final business parameters. The host reads the complete collection and creates '
-         'typed entries with actual tab, query and text identity. Leave the source list open and finish '
-         'with this readRef; the next step processes one representative entry using the native actions.'
-         if entry_field(output_schema) else
-         'Capture the task-relevant raw page content. Supply regions selecting one or more observed related '
-         'regions; only these regions and their descendants are saved, excluding unrelated siblings. '
-         'You may omit regions to capture the whole current page body. Reuse a successful readRef alone. '
-         'Do not declare business fields. '
-         'Expand and load images first. The host saves raw HTML, Markdown and original image bytes; '
-         'only a small content preview and coverage are returned to you. No data cleaning is performed.'
-         if capture_content else
-        'Describe and verify a reusable DOM field-reading method for one real output-contract path. '
-        'Reuse current native observations for DOM projections; do not use remembered website CSS. '
-        'For a field without observed DOM evidence, use native search_page on its visible text and '
-        'find_elements on the returned paths, or find_elements directly for observed attributes. '
-        'A combined query matching some fields does not verify the others. Missing or ambiguous matches '
-        'need inspection of that field and scope on the current page, not leaving a valid detail page. '
-        'page-url, inherited input and successful readRef reuse need no repeated DOM discovery. '
-        'Provide an observed common record container containing all DOM fields and relative field projections; '
-        'a nested list or table may exclude required summary fields. Types come from the output contract. '
-        'Fields read visible text by default. Use attribute only for an attribute observed on the page. '
-        'After a real navigation, selector=:scope with valueSource=page-url reads the current document URL. '
-        'When the requested source/result is the current document, its address does not require a hyperlink '
-        'inside that document. Inspect and read results where the page actually presents them. '
-        'This does not discover target URLs from a list or synthesize any URL. '
-        'For object or root array results, use outputPath=[]; the host inherits same-named typed input '
-        'fields into each record without page reads. Optional fields may be absent on later records; do not use scalar '
-        'methods for them. Required output fields not guaranteed by input.required need real DOM fallback '
-        'projections even when the representative input already has a value. The runtime prefers that '
-        'item input and reads the fallback only if absent. '
-        'Input entry links must be navigated directly, never replaced by fixed list clicks. '
-        'Use :scope to read the container itself; . is not a CSS selector. '
-        'Object targets use contract field names, scalar targets use value. maxItems is a current-page runtime '
-        'budget, not the final collection count. The host returns a readRef and at most three representative '
-        'records with current DOM coverage; these samples do not prove the complete business collection. '
-        'To read the same method on another page, supply only {"readRef":"r1"} using its successful '
-        'reference; never repeat or override its fields, container, outputPath or maxItems. '
-        'The host preserves the exact method and returns a new readRef for the new sample. '
-        'Select the intended readRef when finishing. '
-        + ((LEGACY_ROOT_ARRAY_PATH_GUIDANCE if legacy_model_fields else ROOT_ARRAY_PATH_GUIDANCE)
-           if output_schema.get('type') == 'array' else '')).replace(
-               'For object or root array results, use outputPath=[];',
-               'For object or root array results, use outputPath=[];' if legacy_model_fields else
-               'For object results, use outputPath=[]; root array paths are host-bound.'),
+        ('Read the selected clickable entries in current DOM order. Supply their native indices or an '
+         'observed container, and take only when confirmed. The host reads the complete range; representative '
+         'samples omit middle entries. Leave the list open for the next step.' if entry_field(output_schema) else
+         'Capture task-relevant raw content using regions for observed related regions, or the current body '
+         'when the whole page is requested. Expand relevant content and load images first. '
+         'Reuse a successful readRef alone. Do not declare business fields.' if capture_content else
+         'Read one allowed output path using an observed record container and relative fields. '
+         'Use current page observations; native text previews are not rendered reads. Use attribute only '
+         'for observed attributes. For the current document address use selector=:scope, valueSource=page-url. '
+         'Types and cardinality are host-bound. Different output paths may use different regions. '
+         'For asynchronous results include the observed completion condition in the container selector. '
+         'Representative samples do not prove a whole cross-page collection. To reuse this exact method '
+         'on another page, supply only its successful readRef. The host assembles the result after done.'),
         param_model=EntryReadToolParams if entry_field(output_schema) else
-            ContentReadToolParams if capture_content else method_read_params_for(output_schema, legacy_model_fields),
+            ContentReadToolParams if capture_content else method_read_params_for(output_schema),
     )
     async def bat_read_fields(params: MethodReadToolParams, browser_session: BrowserSession) -> ActionResult:
         params = MethodReadToolParams.model_validate(bind_root_read_path(params.model_dump(mode='json'), output_schema))
@@ -406,6 +345,7 @@ def register_method_read_tool(tools, *, output_schema, capture_content=False, le
             # WHY：空匹配不能验证字段投影；先拒绝，避免登记一个无法被编译的成功 readRef。
             if sample.coverage.sampled == 0:
                 raise NaturalReadFailure('read_sample_empty_unproven')
+            assert_text_sample(mapping.specification, sample)
             phase = 'result'
             record = MethodReadRecord(readRef='r' + str(len(successful.records) + 1),
                 parameters=expanded, mapping=mapping, sample=sample, selection=selection)
@@ -415,8 +355,6 @@ def register_method_read_tool(tools, *, output_schema, capture_content=False, le
             feedback = successful.feedback(params, record, observation=observation)
         except Exception as error:
             message = _safe_read_error(error, field_names, phase=phase, output_schema=output_schema, params=params)
-            if str(error) == 'natural_read_output_path_invalid' and output_schema.get('type') == 'array':
-                message += ': ' + ROOT_ARRAY_PATH_GUIDANCE
             return ActionResult(error=message)
         successful.append_verified(record)
         # WHY：读取证据精确校验 extracted_content；沿用原生记忆通道提供提示，不改样本合同。

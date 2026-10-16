@@ -16,18 +16,26 @@ from workflow_use.hybrid.read_sampling import sample_read_fields
 # WHY：执行生产投影脚本并记录属性 getter 次数，避免用“返回三条”的 mock 掩盖先读一百条再 slice。
 SCRIPT_HOST = r"""const fs = require('node:fs');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+(async () => {
 let reads = 0;
 const nodes = Array.from({length: input.count}, (_, i) => ({
   get innerText() { reads++; return `item-${i}`; },
   get textContent() { reads++; return `item-${i}`; },
   shadowRoot: null,
+  parentElement: null,
+  getAnimations: () => [],
+  matches: () => false,
   checkVisibility: () => true,
-  querySelectorAll: () => [],
+  querySelectorAll: (selector) => selector === '.name' ? [{
+    get innerText() { reads++; return `item-${i}`; },
+    checkVisibility: () => true, querySelectorAll: () => [], shadowRoot: null,
+  }] : selector === '.state' ? [{getAttribute: () => 'status-ok', querySelectorAll: () => [], shadowRoot: null}] : [],
 }));
 const container = {matches: () => false, querySelectorAll: () => nodes};
 const project = new Function('fields', 'return (' + input.script + ')(fields)');
-const output = project.call(container, input.fields);
+const output = await project.call(container, input.fields);
 process.stdout.write(JSON.stringify({output, reads}));
+})().catch(error => { process.stderr.write(String(error)); process.exitCode = 1; });
 """
 
 SCHEMA = {'type': 'array', 'items': {'type': 'string'}, 'minItems': 50, 'maxItems': 200}
@@ -124,7 +132,7 @@ class ScalarMethodSamplingTests(unittest.IsolatedAsyncioTestCase):
         from workflow_use.hybrid.compiler import compile_request
         records, arguments, result = await tool_case(Element())
         self.assertIsNone(result.error)
-        case = {'records': records, 'start': 0, 'arguments': arguments.model_dump(mode='json'),
+        case = {'records': records, 'start': 0, 'arguments': {'container': '.records', 'fields': {'value': {'selector': '.title'}}},
                 'results': [result], 'action_ref': 'a-0001',
                 'result_ref': EvidenceRef(ref='result', digest=digest(result.extracted_content))}
         request, registry, schema, verified = method_source(case=case, schema=SCHEMA)
@@ -139,7 +147,7 @@ class ScalarMethodSamplingTests(unittest.IsolatedAsyncioTestCase):
     async def test_runtime_field_budget_overflow_is_reported_without_reading_full_values(self):
         element = Element((301,))
         records, _arguments, result = await tool_case(element)
-        self.assertEqual(result.error, 'read_field_value_limit')
+        self.assertTrue(result.error.startswith('read_field_value_limit: '))
         self.assertEqual(element.reads, [3])
         self.assertEqual(records.records, [])
 
@@ -162,7 +170,7 @@ class ScalarMethodSamplingTests(unittest.IsolatedAsyncioTestCase):
         page = RecordPage(10)
         method = specification(maximum=100)
         sample = await sample_read_fields(RecordBrowser(page), method)
-        self.assertEqual(page.reads, [10, 11, 12, 10, 11, 12])
+        self.assertEqual(page.reads, [10, 18, 19, 10, 18, 19])
         self.assertEqual(sample.coverage.sampled, 3)
         self.assertEqual(sample.coverage.total, 10)
         page.reads.clear()

@@ -28,7 +28,7 @@ const binding = z.object({ id: z.string(), actionRef: z.string(), argumentPath: 
   kind: z.enum(["runtime_input", "prior_output", "authorized_constant", "sample_evidence"]),
   sourceRef: z.string(), transform: z.null(), proofRefs: z.array(reference) }).strict()
 const naturalBinding = binding.extend({ binding: valueBindingSchema.optional(),
-  derivation: z.enum(["anchor_navigation", "prior_verified_read", "repeat_destination", "selection_function", "prior_browser_context"]).optional() }).strict()
+  derivation: z.enum(["anchor_navigation", "prior_verified_read", "repeat_destination", "selection_function", "prior_browser_context", "owned_native_file"]).optional() }).strict()
 export const naturalBindingFactValueSchema = z.object({ actionRef: z.string(), argumentPath: z.string(),
   binding: valueBindingSchema, provenance: z.enum(["runtime_input", "native_parameter", "task_literal", "plan_entry_url", "node_output"]),
   taskQuote: z.string().nullable().optional(), sourceReadRef: z.string().nullable().optional() }).strict()
@@ -96,6 +96,8 @@ export const hybridTargetSchema = z.discriminatedUnion("strategy", [
     identity: historyTargetIdentitySchema }).strict(),
 ])
 const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.string().nullable(),
+  parts: z.array(z.object({ selector: z.string().min(1).max(2000),
+    attribute: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_:.-]*$/).optional() }).strict()).min(2).max(10).optional(),
   optionalAttribute: z.boolean().optional(),
   ordinal: z.boolean().optional(), allowMissing: z.boolean().optional(),
   contentSource: z.literal("page-content").optional(),
@@ -107,6 +109,11 @@ const readFieldSchema = z.object({ selector: z.string().min(1), attribute: z.str
   multiple: z.boolean().optional(),
   maxValues: z.number().int().min(1).max(300).optional() }).strict()
   .superRefine((value, context) => {
+    if (value.parts && (value.valueType !== "string" || value.attribute !== null || value.resolveUrl
+      || value.valueSource || value.contentSource || value.ordinal || value.textSource === "textContent"
+      || value.textPrefix !== undefined || value.textSuffix !== undefined)) {
+      context.addIssue({ code: "custom", message: "read_parts_projection_invalid" })
+    }
     if (value.valueSource && (value.valueType !== "string" || value.multiple || value.attribute !== null
       || value.selector !== ":scope" || value.ordinal || value.contentSource || value.resolveUrl
       || value.textPrefix !== undefined || value.textSuffix !== undefined
@@ -164,7 +171,7 @@ const settlePolicySchema = z.object({ maxMs: z.number().int().min(1).max(30000),
   maxAttempts: z.number().int().min(1).max(100), intervalMs: z.number().int().min(10).max(1000) }).strict()
 const factPostconditionSchema = z.object({
   kind: z.enum(["url", "url_digest", "title", "target_value", "target_text", "target_state",
-    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "focused_element", "read_fields", "active_tab"]),
+    "target_in_view", "target_visible", "scroll_position", "visible_overlays", "media_playback", "focused_element", "read_fields", "active_tab", "text_in_view"]),
   bindingArgument: z.string().min(1).optional(), equals: jsonValueSchema.optional(),
   changed: z.literal(true).optional(), unchanged: z.literal(true).optional(),
   ready: z.literal(true).optional(), transition: z.literal(true).optional(),
@@ -191,8 +198,9 @@ export const hybridPostconditionSchema = z.union([
   factPostconditionSchema,
   z.object({ kind: z.literal("output_schema"), schemaDigest: hash.nullable() }).strict(),
 ])
-export const hybridOrdinaryActionNameSchema = z.enum(["navigate", "switch", "go_back", "wait", "click", "input", "scroll",
-  "send_keys", "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for"])
+export const hybridOrdinaryActionNameSchema = z.enum(["navigate", "search", "switch", "close", "go_back", "wait", "click", "input", "scroll",
+  "find_text", "send_keys", "dropdown_options", "select_dropdown", "bat_scroll_to", "bat_wait_for",
+  "read_file", "write_file", "replace_file", "upload_file", "save_as_pdf", "screenshot"])
 const workflowStepOperation = z.object({ name: z.literal("browser.workflow-step"), version: z.literal(2),
   actionName: hybridOrdinaryActionNameSchema }).strict()
 const readFieldsOperation = z.object({ name: z.literal("browser.read-fields"), version: z.literal(2), specification: readSpecificationSchema }).strict()

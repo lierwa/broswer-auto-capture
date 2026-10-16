@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/main.ts",
-    "start": "tsx src/main.ts",
+    "dev": "node --env-file-if-exists=../../.env --import tsx src/main.ts",
+    "start": "node --env-file-if-exists=../../.env --import tsx src/main.ts",
     "check": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "preaccept:requirement-dialogue": "npm run build --workspace @browser-capture/workbench",

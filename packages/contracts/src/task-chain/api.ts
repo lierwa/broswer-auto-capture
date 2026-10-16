@@ -15,12 +15,13 @@ import { jsonValueSchema, taskOutputSchema } from "./value.js"
 import { stableChainNodeV2Schema } from "./node.js"
 import { chainEdgeV2Schema } from "./chain.js"
 import { chainPresentationContentSchema } from "./presentation.js"
+import { taskMethodRevisionFields, taskMethodRevisionContextSchema, taskMethodRevisionOptionsSchema } from "./method-revision.js"
 export { taskExecutionBrowserSchema, taskExecutionPacingSchema } from "./product.js"
 
 export const authoringAuditSchema = z.object({
   // 旧 chain_compilation 只用于读取迁移期间已落库的终态 job；新链路生成写入完整探索与编译用途。
   purpose: z.enum(["plan_creation", "plan_projection", "plan_contract_revalidation", "chain_compilation",
-    "chain_exploration_and_compilation", "chain_offline_compilation"]), model: textSchema, effort: textSchema,
+    "chain_exploration_and_compilation", "chain_offline_compilation", "chain_method_revision"]), model: textSchema, effort: textSchema,
   status: z.enum(["intended", "completed", "failed", "interrupted"]),
   reportedInvocations: z.number().int().nonnegative().nullable(), events: z.array(aiEventSchema),
   escalations: z.array(z.object({ model: textSchema, effort: textSchema, reason: textSchema }).strict()).default([]),
@@ -170,6 +171,10 @@ export const planCandidateRecordSchema = z.object({
 }).strict()
 export const preparationPhaseSchema = z.enum(["forming_plan", "awaiting_representative_input", "preexecuting", "compiling",
   "validating_sample", "awaiting_verification_input", "validating_verification", "publishing", "ready"])
+const candidateStatusSchema = z.object({ status: z.enum(["pending", "accepted", "failed"]),
+  observedActions: z.number().int().min(0).max(500),
+  stage: z.enum(["annotation", "compile", "validate", "materialize"]).optional(),
+  code: z.string().max(200).regex(/^[A-Za-z0-9_:.-]+$/).optional() }).strict()
 
 export const taskAuthoringJobSchema = z.object({
   id: identitySchema, taskId: taskIdentitySchema, type: z.enum(["plan", "chain", "prepare", "repair"]), key: textSchema,
@@ -178,6 +183,9 @@ export const taskAuthoringJobSchema = z.object({
   waitpoint: humanWaitpointSchema.nullable().default(null),
   // WHY：准备也冻结实际环境；旧 job 缺失时保留未知，不从当前选择补造历史。
   browser: taskExecutionBrowserSchema.optional(),
+  // WHY：准备取消和资源核验是独立事实；复用执行清理摘要，完整阶段证据存不可变 artifact。
+  cleanup: executionCleanupSchema.optional(),
+  cleanupEvidence: artifactReferenceSchema.optional(),
   audit: authoringAuditSchema.nullable(),
   authoring: z.object({
     sourceProtocol: z.enum(["bat-hybrid/2", "bat-hybrid/3"]).optional(),
@@ -189,10 +197,14 @@ export const taskAuthoringJobSchema = z.object({
     compiledChain: versionReferenceSchema.optional(),
     compiledChains: z.array(versionReferenceSchema).optional(),
     progress: authoringProgressSchema.optional(),
+    // WHY：接收游标独立于最后有效图；候选失败仍保存当前来源，不覆写旧候选或重派动作。
+    sourceReceipt: z.object({ authorRequestId: identitySchema, stepId: keySchema,
+      sequence: z.number().int().min(1).max(202), digest: digestSchema, phase: z.enum(["prefix", "final"]),
+      canonicalRequest: z.string().min(1).max(8_000_000) }).strict().optional(),
+    candidateStatus: candidateStatusSchema.optional(),
     // WHY：准备期唯一可变快照；没有入口、版本或运行权限，canonical 现场只留本地仓储。
     build: z.object({ authorRequestId: identitySchema, stepId: keySchema,
       sequence: z.number().int().min(1).max(202), digest: digestSchema, phase: z.enum(["prefix", "final"]),
-      payload: z.string().min(1).max(8_000_000),
       nodes: z.array(stableChainNodeV2Schema).max(500), edges: z.array(chainEdgeV2Schema).max(5000),
       presentation: chainPresentationContentSchema.optional(),
       compilation: z.object({ observedActions: z.number().int().min(0).max(500),
@@ -204,12 +216,14 @@ export const taskAuthoringJobSchema = z.object({
         }).strict()).max(500),
       }).strict().refine(value => value.observedActions === value.compiledActions + value.pendingActions + value.excludedActions,
         "compilation_coverage_count_mismatch").optional(),
-    }).strict().optional(),
+    // WHY：仓储读取保留未定义历史元数据，状态结算不能删除原记录；公共投影仅输出当前字段。
+    }).passthrough().optional(),
     consumption: z.object({ explorationToolCalls: z.number().int().nonnegative(), explorationSessions: z.number().int().nonnegative(),
       compilationCalls: z.number().int().nonnegative(), providerInvocations: z.number().int().nonnegative().nullable() }).strict(),
   }).strict().optional(),
   preparation: z.object({
     phase: preparationPhaseSchema,
+    methodRevision: taskMethodRevisionContextSchema.optional(),
     plan: versionReferenceSchema.nullable(), chains: z.array(versionReferenceSchema),
     candidatePlan: taskPlanSchema.nullable().default(null), draft: taskDraftReferenceSchema.nullable().default(null),
     planCandidates: z.array(planCandidateRecordSchema).max(10).default([]),
@@ -317,15 +331,18 @@ export const taskExecutionDetailSchema = z.object({
 }).strict()
 
 export const taskAuthoringBuildViewSchema = taskAuthoringJobSchema.shape.authoring.unwrap().shape.build.unwrap()
-  .omit({ payload: true, authorRequestId: true }).extend({ presentation: chainPresentationContentSchema })
+  .omit({ authorRequestId: true }).extend({ presentation: chainPresentationContentSchema }).strip()
 
 export const taskAuthoringActivitySchema = z.object({
   id: identitySchema, status: z.enum(["queued", "running", "waiting_for_human", "failed", "interrupted"]),
   phase: preparationPhaseSchema,
+  methodRevision: taskMethodRevisionContextSchema.optional(),
   // WHY：画布展示完整确认计划和已经保存的步骤链；未完成步骤不伪造技术节点。
   plan: taskPlanSchema.optional(), steps: z.array(taskDraftStepSchema).max(100).optional(),
   browser: taskExecutionBrowserSchema.optional(),
   build: taskAuthoringBuildViewSchema.optional(),
+  compilationStatus: candidateStatusSchema.extend({ stepId: keySchema, sequence: z.number().int().positive(),
+    phase: z.enum(["prefix", "final"]), stale: z.boolean() }).optional(),
   completedBuilds: z.array(taskAuthoringBuildViewSchema).max(100).optional(),
   sequence: z.number().int().nonnegative(), reason: textSchema.nullable(),
   waitpoint: humanWaitpointSchema.nullable().default(null),
@@ -376,8 +393,12 @@ export const taskWorkspaceHistoryPageSchema = z.discriminatedUnion("kind", [
 ])
 export const taskWorkspaceDiagnosticsSchema = z.object({
   capabilityDescriptors: z.array(capabilityDescriptorSchema),
+  methodRevision: taskMethodRevisionOptionsSchema.nullable().optional(),
   preparation: z.object({ jobId: identitySchema, phase: preparationPhaseSchema,
     status: taskAuthoringJobSchema.shape.status, reason: textSchema.nullable(),
+    windowRecovery: z.object({ status: z.enum(["not_recorded", "checking", "active", "closed", "unavailable"]),
+      checkedAt: z.string().datetime().nullable(), reason: textSchema.nullable(),
+      canInspect: z.boolean(), canEnd: z.boolean() }).strict().nullable().optional(),
     compilationRecovery: z.object({ sourceJobId: identitySchema, available: z.boolean(), reason: textSchema }).strict().nullable(),
   }).strict().nullable(),
 }).strict()
@@ -399,12 +420,16 @@ export const taskChainCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cancel_authoring"), jobId: identitySchema }).strict(),
   z.object({ type: z.literal("prepare_task"), ...request, requirementVersion: z.number().int().positive(),
     browser: taskExecutionBrowserSchema.optional(), research: taskPreparationResearchSchema.optional() }).strict(),
+  z.object({ type: z.literal("revise_task_method"), ...request, ...taskMethodRevisionFields,
+    requirementVersion: z.number().int().positive(), browser: taskExecutionBrowserSchema.optional() }).strict(),
   z.object({ type: z.literal("continue_preparation"), ...request, jobId: identitySchema,
     expectedSequence: z.number().int().nonnegative(), input: jsonValueSchema }).strict(),
   z.object({ type: z.literal("resume_preparation_human"), ...request, jobId: identitySchema,
     expectedSequence: z.number().int().nonnegative(), waitpointId: identitySchema }).strict(),
   z.object({ type: z.literal("recover_preparation_compilation"), ...request, jobId: identitySchema,
     expectedSequence: z.number().int().nonnegative() }).strict(),
+  z.object({ type: z.literal("cleanup_authoring"), ...request, jobId: identitySchema,
+    expectedSequence: z.number().int().nonnegative(), action: z.enum(["inspect", "end"]) }).strict(),
   z.object({ type: z.literal("trial_task_draft"), ...request, draftId: identitySchema,
     expectedRevision: z.number().int().nonnegative(), expectedChecksum: digestSchema, input: jsonValueSchema,
     browser: taskExecutionBrowserSchema.optional() }).strict(),

@@ -37,7 +37,7 @@ def compilation_source(records, arguments, results, verified):
             {'path': [], 'description': 'Visible records', 'producerRef': 'records'}], 'edgeCases': []})
     author_input = AuthorInput.model_validate(raw)
     model, _unwrap = output_model_for(SCHEMA, 'ReferenceCompileOutput')
-    tools = author_tools_for_result_spec(model, author_input.resultSpec)
+    tools = author_tools_for_result_spec(author_input.resultSpec)
     registry = ActionRegistry.from_tools(tools)
     observations, history = [], []
     output = complete_from_read_refs(records, [records.records[-1].readRef], SCHEMA, None)
@@ -83,8 +83,7 @@ async def captured_reads(count=2):
     results, arguments, verified = [], [], []
     first = parameters(maxItems=300, fields={'count': {'selector': '.count', 'normalizeWhitespace': True},
                                             'labels': {'selector': '.label'}})
-    raw = first.model_dump(mode='json')
-    del raw['outputPath']
+    raw = {'container': '.row', 'fields': {'count': {'selector': '.count'}, 'labels': {'selector': '.label'}}}
     first = tools.registry.registry.actions['bat_read_fields'].param_model.model_validate(raw)
     for index in range(count):
         params = first if index == 0 else MethodReadToolParams(readRef='r' + str(index))
@@ -125,7 +124,7 @@ class MethodReadReferenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(record.mapping, records.records[0].mapping)
             self.assertEqual(record.parameters, records.records[0].parameters)
             self.assertIsNot(record.mapping, records.records[0].mapping)
-        self.assertTrue(records.records[-1].mapping.specification.fields['count'].normalizeWhitespace)
+        self.assertFalse(records.records[-1].mapping.specification.fields['count'].normalizeWhitespace)
         self.assertEqual([call.args[1].maxItems for call in sampler.await_args_list], [300] * 3)
         request, registry = compilation_source(records, arguments, results, verified)
         before = request.trace.model_dump(mode='json')
@@ -165,7 +164,7 @@ class MethodReadReferenceTests(unittest.IsolatedAsyncioTestCase):
         sampler = AsyncMock(side_effect=lambda _browser, spec, **_kwargs: sample_for(spec))
         with patch('workflow_use.hybrid.method_read_tool.sample_read_fields', sampler):
             records, arguments, results, _verified = await captured_reads()
-        records.records[1].mapping.specification.fields['count'].normalizeWhitespace = False
+        records.records[1].mapping.specification.fields['count'].normalizeWhitespace = True
         with self.assertRaisesRegex(FieldReadEvidenceFailure, 'mapping_mismatch'):
             verified_method_read(records=records, start=1, arguments=arguments[1], results=[results[1]],
                 result_ref=reference(results[1].extracted_content), action_ref='a-0002')

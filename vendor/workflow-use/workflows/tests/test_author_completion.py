@@ -1,144 +1,91 @@
-"""Protect explicit completion declarations across Browser-Use public registration."""
-import json
+"""Native done ends the Agent; host output never changes that completion."""
 import unittest
 from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 
-from browser_use import Agent
+from browser_use import Agent, Tools
 from browser_use_runner.ai_connect import AIConnectModel
-
-from pydantic import ValidationError
-
 from browser_use_runner.output_schema import output_model_for
-from workflow_use.hybrid.author import _business_result, author_tools_for_result_spec
+from workflow_use.hybrid.author import _business_result
 from workflow_use.hybrid.author_tools import AuthorTools
-from workflow_use.hybrid.evidence import EvidenceRef, NormalizedObservation, TraceSource, digest
-from workflow_use.hybrid.normalize import HistoryInput, HistoryRecord, ResultEvidence, normalize_history
 from workflow_use.hybrid.registry import ActionRegistry
+from test_method_read_evidence import fixture, SCHEMA
+
+
+def history(success=True, done=True):
+    return SimpleNamespace(is_done=lambda: done, is_successful=lambda: success)
 
 
 class AuthorCompletionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.output_model, self.unwrap = output_model_for({'type': 'null'}, 'CompletionOutput')
-        self.tools = AuthorTools(output_model=self.output_model)
+        self.model, self.unwrap = output_model_for({'type': 'null'}, 'CompletionOutput')
+        self.tools = AuthorTools()
 
-    def test_initial_and_agent_public_reregistration_have_identical_schema(self):
-        initial = ActionRegistry.from_tools(self.tools)
-        # Agent.__init__ uses this public hook before creating its action models.
-        self.tools.use_structured_output_action(self.output_model)
-        rebuilt = ActionRegistry.from_tools(self.tools)
-        self.assertEqual(initial.schemaDigest, rebuilt.schemaDigest)
+    def test_done_uses_exact_native_schema_without_host_technical_fields(self):
+        native = Tools(output_model=None)
+        self.assertEqual(self.tools.registry.registry.actions['done'].param_model.model_json_schema(),
+                         native.registry.registry.actions['done'].param_model.model_json_schema())
         self.assertIsNone(self.tools.get_output_model())
+        params = self.tools.registry.registry.actions['done'].param_model.model_validate({'text': 'Finished.'})
+        self.assertTrue(params.success)
+        self.assertEqual(params.files_to_display, [])
+        self.assertNotIn('readRefs', params.model_dump())
+        self.assertNotIn('methodOutcome', params.model_dump())
 
-    def test_native_agent_does_not_ask_model_to_copy_host_owned_output(self):
-        # WHY：真实 Agent 构造会自动注入工具输出 schema；读取回执协议不能同时要求抄写业务值。
-        model, _ = output_model_for({'type': 'object', 'properties': {'content': {'type': 'string'}},
-                                    'required': ['content'], 'additionalProperties': False}, 'CapturedOutput')
-        tools = AuthorTools(output_model=model)
-        with TemporaryDirectory() as directory:
-            agent = Agent(task='Capture the requested region.', tools=tools,
+    def test_real_agent_does_not_request_a_business_output_model(self):
+        with TemporaryDirectory(prefix='bat-author-schema-') as directory:
+            agent = Agent(task='Read the confirmed report.', tools=self.tools,
                 llm=AIConnectModel(model='fixture', endpoint='http://127.0.0.1:1', token='fixture', purpose='agent'),
                 file_system_path=directory, enable_signal_handler=False, use_vision=True, use_judge=False)
-            self.assertEqual(agent.task, 'Capture the requested region.')
+            self.assertEqual(agent.task, 'Read the confirmed report.')
             self.assertIsNone(agent.output_model_schema)
-            properties = tools.registry.registry.actions['done'].param_model.model_json_schema()['properties']
-        self.assertEqual(set(properties), {'success', 'reason'})
+            self.assertIsNone(self.tools.get_output_model())
+            self.assertIn('text', self.tools.registry.registry.actions['done'].param_model.model_json_schema()['required'])
 
-    def test_native_done_root_json_values_are_plain_json_values(self):
-        class History:
-            def __init__(self, value): self.value = value
-            def is_done(self): return True
-            def is_successful(self): return True
-            def get_structured_output(self, model):
-                return model.model_validate_json(json.dumps({'value': self.value}, ensure_ascii=False))
-
-        cases = [
-            ({'type': 'array', 'items': {'type': 'object', 'properties': {
-                'title': {'type': 'string'}, 'url': {'type': 'string'}},
-                'required': ['title', 'url'], 'additionalProperties': False}},
-             [{'title': 'First', 'url': 'https://example.test/1'}]),
-            ({'type': 'array', 'items': {'type': 'string'}}, ['First', 'Second']),
-            ({'type': 'string'}, 'Ready'),
-            ({'type': 'null'}, None),
-        ]
-        for schema, expected in cases:
-            with self.subTest(schema=schema):
-                model, unwrap = output_model_for(schema, 'RootOutput')
-                completed, output, gaps = _business_result(
-                    History(expected), False, model, unwrap, schema)
-                self.assertTrue(completed)
-                self.assertEqual(gaps, [])
-                self.assertEqual(output, expected)
-
-    def test_success_and_reason_are_required_and_visible_to_the_model(self):
-        model = self.tools.registry.registry.actions['done'].param_model
-        schema = model.model_json_schema()
-        self.assertEqual(set(schema['required']), {'success', 'reason'})
-        self.assertNotIn('readRefs', schema['properties'])
-        self.assertEqual(model.model_validate({'success': True, 'reason': 'Observed.'}).readRefs, [])
-        self.assertEqual(schema['properties']['success']['type'], 'boolean')
-        self.assertNotIn('default', schema['properties']['success'])
-        self.assertNotIn('data', schema['properties'])
-        for invalid in ({'reason': 'blocked', 'readRefs': []},
-                        {'success': False, 'readRefs': []},
-                        {'success': 'false', 'reason': 'blocked', 'readRefs': []},
-                        {'success': True, 'reason': 'Observed.', 'readRefs': [], 'data': {'value': None}}):
-            with self.subTest(invalid=invalid), self.assertRaises(ValidationError):
-                model.model_validate(invalid)
-
-    async def test_explicit_failure_preserves_reason_without_business_data(self):
-        result = await self.tools.registry.execute_action(
-            'done', {'success': False, 'reason': 'The target changed before selection.', 'readRefs': []},
-            browser_session=SimpleNamespace(downloaded_files=['existing-download.pdf'], cdp_client=None),
-            file_system=SimpleNamespace())
+    async def test_native_failure_retains_text_and_ends_without_business_output(self):
+        result = await self.tools.registry.execute_action('done',
+            {'success': False, 'text': 'The observed target was unavailable.'},
+            browser_session=SimpleNamespace(downloaded_files=[], cdp_client=None), file_system=SimpleNamespace())
         self.assertTrue(result.is_done)
         self.assertIs(result.success, False)
-        self.assertEqual(result.extracted_content, 'The target changed before selection.')
-        self.assertIsNone(result.attachments)
-        self.assertEqual(result.metadata['batCompletion'], {
-            'success': False, 'reason': 'The target changed before selection.'})
-
-    async def test_business_data_keeps_its_original_null_contract(self):
-        model = self.tools.registry.registry.actions['done'].param_model
-        with self.assertRaises(ValidationError):
-            model.model_validate({'success': True, 'reason': 'Observed.', 'readRefs': [],
-                                  'data': {'value': 'not-null'}})
-        result = await self.tools.registry.execute_action(
-            'done', {'success': True, 'reason': 'Observed.', 'readRefs': []},
-            browser_session=SimpleNamespace(downloaded_files=[], cdp_client=None), file_system=SimpleNamespace())
-        business_output = self.output_model.model_validate_json(result.extracted_content)
-        self.assertIsNone(self.unwrap(business_output))
-        self.assertIs(result.success, True)
-
-    async def test_invalid_read_reference_cannot_end_source(self):
-        result = await self.tools.registry.execute_action(
-            'done', {'success': True, 'reason': 'Observed.', 'readRefs': ['r999']},
-            browser_session=SimpleNamespace(downloaded_files=[], cdp_client=None), file_system=SimpleNamespace())
-        self.assertEqual(result.error, 'completion_read_reference_invalid')
-        self.assertFalse(result.is_done)
-        self.assertIsNot(result.success, True)
-        self.assertIsNone(result.extracted_content)
-
-    def test_interim_done_and_final_done_keep_distinct_trace_positions(self):
-        reference = EvidenceRef(ref='fixture:done', digest='1' * 64)
-        registry = ActionRegistry.from_tools(self.tools)
-        observations = [NormalizedObservation(id=f'o-{index:04d}', sequence=index - 1,
-            url='https://example.test/', tabId='tab-1', facts=[], sourceRefs=[reference])
-            for index in range(1, 5)]
-        def record(step, pre, post):
-            return HistoryRecord(stepIndex=step, actions=[{'done': {
-                'success': True, 'reason': 'Observed.'}}],
-                results=[ResultEvidence(errorPresent=False, is_done=True, success=True, ref=reference)],
-                preObservationRef=pre, postObservationRefs={'0': post})
-        trace, gaps = normalize_history(HistoryInput(
-            source=TraceSource(version=registry.providerVersion, historyRef='fixture:history'),
-            completed=True, records=[record(0, 'o-0001', 'o-0002'), record(1, 'o-0003', 'o-0004')],
-            observations=observations, finalResultRef=reference, redactionManifestRef=reference), registry)
-
+        self.assertEqual(result.extracted_content, 'The observed target was unavailable.')
+        completed, output, gaps = _business_result(history(False), False, {'type': 'null'})
+        self.assertFalse(completed)
+        self.assertIsNone(output)
         self.assertEqual(gaps, [])
-        self.assertEqual([(item.id, item.name) for item in trace.actions],
-                         [('a-0001', 'done'), ('a-0002', 'done')])
-        self.assertTrue(trace.completed)
+
+    async def test_host_missing_or_conflicting_output_does_not_reopen_native_done(self):
+        result = await self.tools.registry.execute_action('done', {'success': True, 'text': 'Report read.'},
+            browser_session=SimpleNamespace(downloaded_files=[], cdp_client=None), file_system=SimpleNamespace())
+        self.assertTrue(result.is_done)
+        case = fixture()
+        second = case['records'].records[0].model_copy(deep=True); second.readRef = 'r2'
+        case['records'].records.append(second)
+        model, unwrap = output_model_for(SCHEMA, 'ReportOutput')
+        completed, output, gaps = _business_result(history(), False, SCHEMA, case['records'])
+        self.assertTrue(completed)
+        self.assertIsNone(output)
+        self.assertEqual([g.reason for g in gaps], ['completion_read_path_conflict'])
+        completed, output, gaps = _business_result(history(), False, SCHEMA)
+        self.assertTrue(completed)
+        self.assertIsNone(output)
+        self.assertTrue(gaps)
+        self.assertTrue(result.is_done)
+
+    def test_host_uses_real_read_receipts_and_execution_null(self):
+        case = fixture(); model, unwrap = output_model_for(SCHEMA, 'ReportOutput')
+        completed, output, gaps = _business_result(history(), False, SCHEMA, case['records'])
+        self.assertTrue(completed)
+        self.assertEqual(gaps, [])
+        self.assertEqual(output, case['records'].records[0].sample.output)
+        self.assertEqual(case['records'].selected_refs, ('r1',))
+        self.assertEqual(_business_result(history(), False, {'type': 'null'}), (True, None, []))
+
+    def test_native_run_failure_retains_its_own_failure_layer(self):
+        completed, output, gaps = _business_result(history(), True, {'type': 'null'})
+        self.assertFalse(completed)
+        self.assertIsNone(output)
+        self.assertEqual([g.reason for g in gaps], ['native_agent_run_failed'])
 
 
 if __name__ == '__main__':

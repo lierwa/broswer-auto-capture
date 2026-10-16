@@ -7,9 +7,28 @@ from .history import from_agent_history
 from .natural_output import build_verified_output_assembly
 from .normalize import normalize_history
 from .prior_read_bindings import attach_prior_read_bindings
+from .navigation import NAVIGATION_ACTIONS, navigation_tab_ids
 
 
 class CaptureSnapshots:
+    async def pending_action(self, raw, action_id, before, query_evidence, model_output, step, index,
+                             structure, identity, element, closed_target_id, summary):
+        name = next(iter(raw))
+        return {'action': raw, 'actionId': action_id, 'pre': before.id, 'queryEvidence': query_evidence,
+                'intent': str(getattr(model_output, 'next_goal', '') or '')[:4000],
+                'navigationTabs': await navigation_tab_ids(self.browser) if name in NAVIGATION_ACTIONS else None,
+                'targetRef': structure.targetRef if structure else None,
+                'targetIdentity': identity, 'targetElement': element, 'closedTargetId': closed_target_id,
+                'sourceUrl': getattr(summary, 'url', None), 'nativeStep': step, 'actionIndex': index,
+                'fieldReadStart': len(self.field_read_records.records)
+                    if name == 'bat_read_fields' and self.field_read_records is not None else None,
+                'targetScrollStart': len(self.target_scroll_records.records)
+                    if name == 'bat_scroll_to' and self.target_scroll_records is not None else None,
+                'visibleWaitStart': len(self.visible_wait_records.records)
+                    if name == 'bat_wait_for' and self.visible_wait_records is not None else None,
+                'summaryStart': len(self.summary_records.records)
+                    if name == 'bat_summarize' and self.summary_records is not None else None}
+
     def retain_history_evidence(self, history, *, history_ref, redaction_manifest):
         if self.pending is not None:
             raise ValueError('prefix_capture_incomplete')
@@ -35,7 +54,7 @@ class CaptureSnapshots:
                 step = self.align_pending(history)
                 pending_refs = [self.pending['actionId']]
                 if self.pending['pre'] is not None:
-                    self.links[(step, 0, 'pre')] = self.pending['pre']
+                    self.links[(step, self.pending['actionIndex'], 'pre')] = self.pending['pre']
             except ValueError:
                 self.strip_pending_action_facts()
                 capture_gaps.append(gap('invalid_source', [],

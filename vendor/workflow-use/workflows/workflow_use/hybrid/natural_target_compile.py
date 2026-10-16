@@ -7,6 +7,9 @@ from .history_target import HistoryTargetIdentity
 
 
 def natural_target(action, pre, requirement_text='', input_schema=None, post=None):
+    # WHY：原生 0/None 均滚动 viewport；它们不是一次探索的 DOM 元素索引。
+    if action.name == 'scroll' and action.args.get('index') in (None, 0):
+        return None, [], []
     if action.name not in TARGET_ACTIONS and not (
             action.name in OPTIONAL_TARGET_ACTIONS and action.args.get('index') is not None):
         return None, [], []

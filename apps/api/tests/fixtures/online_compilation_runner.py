@@ -73,7 +73,7 @@ class Runner:
             live.request = AuthorInput.model_validate(request.source)
             model, _unwrap = output_model_for(live.request.outputSchema, 'OnlineFixtureOutput')
             live.collector.registry = ActionRegistry.from_tools(author_tools_for_result_spec(
-                model, live.request.resultSpec, source_protocol=live.request.sourceProtocol))
+                live.request.resultSpec, source_protocol=live.request.sourceProtocol))
             callbacks.registry_provider = lambda: live.collector.registry
             # 本夹具 schema 与生产来源相同；只替换业务身份，所有事实/规范化/编译走真实实现。
             await callbacks.after_step(agent)
@@ -83,7 +83,6 @@ class Runner:
             body.update(completed=True, finalResultRef=final.trace.finalResultRef.model_dump(mode='json'),
                         actions=[*body['actions'], final.trace.actions[-1].model_dump(mode='json')],
                         observations=[*body['observations'], *[item.model_dump(mode='json') for item in final.trace.observations[2:]]])
-            body['actions'][-1]['args']['methodOutcome'] = 'recorded'
             trace = type(final.trace).model_validate({**body, 'digest': digest(body)})
             trace = add_discovery(trace, gaps, os.environ.get('BAT_TEST_DISCOVERY_GAP_MODE'))
             # WHY：沿用生产 author 的V3方法回执；旧V2夹具不能省略当前协议事实。

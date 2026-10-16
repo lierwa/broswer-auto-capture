@@ -7,7 +7,9 @@ from workflow_use.hybrid.compiler import compile_request
 from workflow_use.hybrid.evidence import digest
 from workflow_use.hybrid.natural_compile import natural_postconditions
 from workflow_use.hybrid.natural_prefix import compile_natural_prefix, prefix_edges
+from workflow_use.hybrid.natural_prefix_dependency import PrefixDependency, expired_dependencies
 from test_consumer_readiness import observation, readiness_trace
+from test_natural_read_liveness import sequence_stopped_fixture
 from test_natural_repeat import repeat_source
 
 
@@ -23,6 +25,26 @@ def prefix_of(request, count):
 
 
 class NaturalPrefixTests(unittest.TestCase):
+    def test_prefix_dependency_crosses_only_an_exact_native_unentered_tail(self):
+        trace, _segments, ledger = sequence_stopped_fixture()
+        trace.actions.pop()  # 尚未执行下一导航，依赖可以由后续真实读取解决。
+        dependencies = [PrefixDependency(actionRef='a-0001', kind='consumer_readiness',
+            evidenceRefs=[trace.actions[0].resultRef])]
+        self.assertEqual(expired_dependencies(trace, dependencies, ledger), [])
+        forged = [row.model_copy(update={'evidenceRefs': []}) if row.actionRef == 'a-0005' else row for row in ledger]
+        self.assertEqual([item.reason for item in expired_dependencies(trace, dependencies, forged)],
+            ['prefix_consumer_boundary_crossed'])
+
+    def test_failed_or_unknown_write_keeps_the_prefix_causal_boundary(self):
+        trace, _segments, ledger = sequence_stopped_fixture()
+        trace.actions.pop()
+        dependencies = [PrefixDependency(actionRef='a-0001', kind='consumer_readiness',
+            evidenceRefs=[trace.actions[0].resultRef])]
+        tail = trace.actions[4]
+        tail.name, tail.effect, tail.status, tail.resultRef = 'click', 'external_write', 'failed', trace.actions[0].resultRef
+        self.assertEqual([item.reason for item in expired_dependencies(trace, dependencies, ledger)],
+            ['prefix_consumer_boundary_crossed'])
+
     def test_equivalent_href_waits_for_proven_repeat_not_a_fixed_sample(self):
         request, registry, schema = repeat_source(duplicate_links=2)
         original = copy.deepcopy(request)

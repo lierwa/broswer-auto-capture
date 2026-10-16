@@ -16,17 +16,20 @@ CONTENT_READINESS_GUIDANCE = (
     'encode its readiness in the region selector. Preserve that condition when correcting invalid syntax; '
     'do not fix a failed final-result read by dropping its completion condition. '
     'Exclude observed initial and processing states instead of restricting the read to this sample outcome. '
-    'Observe state attributes before submission and immediately afterward; a finished sample alone does '
-    'not show which states to wait through. Acceptance/rejection is result data, not a readiness condition. '
-    'Check the proposed selector against your observed processing snapshot: it must match nothing there. '
-    'An outcome/summary may appear before details finish. Use one observed lifecycle condition, not '
-    'nonempty or nonpending result data. CSS comma lists are OR, not AND: use a common ancestor gated '
+    # WHY：纠错提示也不能把捕获瞬时中间态变成额外完成门，否则成功读取后模型仍会拒绝收尾。
+    'Use initial or processing snapshots as counterexamples when available; do not require capturing '
+    'a transient state or repeat a completed submission to obtain it. An observed completion marker '
+    'can establish readiness without such a snapshot. Acceptance/rejection is result data, not a '
+    'readiness condition. An outcome/summary may appear before details finish: inspect the completion '
+    'indicator for the required result region. CSS comma lists are OR, not AND: use a common ancestor gated '
     'by that lifecycle condition (including :has(...) if needed), or the SAME gate on every branch. '
     'A successful capture proves current bytes only, not a reusable final-result method. '
     'Correct the method with existing tools if needed, without repeating completed submissions. '
     'If no executable readiness condition can be observed, report the missing method.')
 
 _READ_ERRORS = frozenset({
+    'read_animation_timeout', 'read_parts_projection_invalid', 'read_sample_text_empty_unproven',
+    'read_part_selector_invalid', 'read_part_cardinality_invalid', 'read_part_shadow_unsupported', 'read_part_value_missing',
     'native_entry_indices_invalid', 'native_entry_selector_unavailable',
     'native_entry_observation_unavailable', 'native_entry_document_changed',
     'native_entry_dom_unavailable', 'native_entry_query_failed', 'native_entry_record_scope_unavailable',
@@ -47,6 +50,7 @@ _READ_ERRORS = frozenset({
 }) | SAFE_CONTENT_FAILURE_CODES
 
 _READ_ERROR_REASONS = frozenset({
+    'finite_animation_not_settled',
     'complete_collection_required', 'container_not_resolved', 'exceeded_max_values',
     'expected_exactly_one_match', 'expected_exactly_one_record', 'invalid_boolean_text', 'invalid_number_text',
     'invalid_selector', 'projected_output_invalid', 'selected_value_not_text',
@@ -103,6 +107,9 @@ def _safe_failure_detail(error):
 def _safe_read_error(error, field_names, *, phase=None, output_schema=None, params=None):
     message = _base_read_error(error, field_names, phase=phase)
     code = str(error)
+    if code == 'read_sample_text_empty_unproven':
+        return (message + ': selected rendered nodes contain no readable text; inspect the actual text region or '
+            'observed metadata attribute, then read that source. Empty output cannot prove a readable method.')
     if params is not None and params.captureContent and phase == 'sample':
         return message + '\n' + json.dumps({'contentReadCorrection': CONTENT_READINESS_GUIDANCE})
     if output_schema is None or params is None or code not in {

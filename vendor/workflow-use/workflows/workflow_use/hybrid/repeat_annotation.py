@@ -162,8 +162,11 @@ def _annotation_input(request, trace, group):
                       'readPath': value['readPath'], 'specification': value['specification'],
                       'sample': rows[:3], 'total': (value.get('coverage') or {}).get('total', len(rows))})
     actions = [_action_context(action, observations) for action in trace.actions[first:] if action.name != 'done']
-    return {'confirmedRequirement': request.requirementText, 'confirmedTask': request.task,
-            'readMethods': reads, 'actions': actions}
+    content = {'confirmedTask': request.task, 'readMethods': reads, 'actions': actions}
+    # WHY：只省略已经逐字包含的确认正文；不同正文或旧 task 仍一并交给原语义生成。
+    if request.requirementText not in request.task:
+        content['confirmedRequirement'] = request.requirementText
+    return content
 
 
 def _action_facts(observation, action_ref, kind):

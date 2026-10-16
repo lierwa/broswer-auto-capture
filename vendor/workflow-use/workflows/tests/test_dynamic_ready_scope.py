@@ -57,9 +57,12 @@ class DynamicReadyScopeTests(unittest.IsolatedAsyncioTestCase):
                 after_dispatch(browser)
             return SimpleNamespace(model_dump=lambda **_kwargs: {'error': None})
 
-        async def native_read(_browser, _spec, *, scope, page, required_paths):
+        async def native_read(_browser, _spec, *, scope, page, required_paths,
+                              inherited=None, content_readiness=False):
             # WHY：保留生产 TargetResolver 的 exact URL/digest 校验，只替换测试页的原生字段投影。
             await TargetResolver(browser).assert_scope(scope)
+            self.assertTrue(content_readiness)
+            self.assertIsNone(inherited)
             scopes.append(scope)
             if after_read is not None:
                 after_read(browser)
@@ -85,7 +88,8 @@ class DynamicReadyScopeTests(unittest.IsolatedAsyncioTestCase):
         result, scopes = await self.run_click(raw)
 
         self.assertEqual(result, {'error': None})
-        self.assertEqual(scopes, [{'url': RUNTIME_URL, 'urlDigest': digest(RUNTIME_URL)}] * 2)
+        # ready 接受本次有效投影；只有已证明变化的 transition 才要求两次相同读取。
+        self.assertEqual(scopes, [{'url': RUNTIME_URL, 'urlDigest': digest(RUNTIME_URL)}])
         self.assertEqual(raw, original)
 
     async def test_existing_transition_also_keeps_same_action_scope(self):

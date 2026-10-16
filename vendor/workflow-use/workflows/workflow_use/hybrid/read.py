@@ -9,10 +9,11 @@ from pydantic import Field, JsonValue, model_serializer, model_validator
 
 from .evidence import Contract, digest, gap
 from .rendered_field_text import FieldReadError, replace_shadow_text
+from .rendered_field_stability import RENDERED_FIELD_STABILITY
+from .read_parts import ReadPart, PART_PROJECTION
 from .semantic import bounded_schema
 from .targets import TargetResolver
 from .visible_text import normalize_presentation_text
-
 
 class ReadField(Contract):
     selector: str = Field(min_length=1, max_length=2000)
@@ -31,9 +32,14 @@ class ReadField(Contract):
     allowMissing: bool = False
     contentSource: Literal['page-content'] | None = None
     valueSource: Literal['page-url'] | None = None
+    parts: list[ReadPart] | None = Field(default=None, min_length=2, max_length=10)
 
     @model_validator(mode='after')
     def bounded_cardinality(self):
+        if self.parts and (self.valueType != 'string' or self.attribute or self.resolveUrl or self.valueSource
+                or self.contentSource or self.ordinal or self.textSource != 'rendered'
+                or self.textPrefix is not None or self.textSuffix is not None):
+            raise ValueError('read_parts_projection_invalid')
         if self.valueSource is not None and (self.valueType != 'string' or self.multiple
                 or self.attribute is not None or self.selector != ':scope' or self.ordinal
                 or self.contentSource is not None or self.resolveUrl or self.textPrefix is not None
@@ -90,8 +96,9 @@ class ReadField(Contract):
             value.pop('contentSource', None)
         if self.valueSource is None:
             value.pop('valueSource', None)
+        if self.parts is None:
+            value.pop('parts', None)
         return value
-
 
 class ReadSampleCoverage(Contract):
     scope: Literal['current_dom_matches'] = 'current_dom_matches'
@@ -107,7 +114,6 @@ class ReadSampleCoverage(Contract):
         if self.matched is None:
             value.pop('matched', None)
         return value
-
 
 class ReadSpec(Contract):
     container: str = Field(min_length=1, max_length=2000)
@@ -168,8 +174,8 @@ class ReadSpec(Contract):
             value.pop('entryField', None)
         return value
 
-
-FIELD_PROJECTION_SCRIPT = """(fields) => {
+FIELD_PROJECTION_SCRIPT = """async (fields) => {
+""" + RENDERED_FIELD_STABILITY + PART_PROJECTION + """
   const projected = Object.create(null);
   for (const field of fields) {
     const name = field.name;
@@ -193,6 +199,7 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
       selfMatched,
       ...(field.sampleLimit === undefined ? {} : {totalMatches: selected.length + (selfMatched ? 1 : 0)}),
       values: matches.slice(0, limit).map((node) => {
+        if (field.parts) return projectParts(node, field.parts);
         if (field.valueSource === 'page-url') {
           // WHY：地址来自本运行实际文档，不能把模型文本或列表编号当成导航证据。
           return {value: node.ownerDocument.URL, hasShadow: false};
@@ -214,13 +221,13 @@ FIELD_PROJECTION_SCRIPT = """(fields) => {
         return {value: node.innerText, hasShadow};
       }),
     };
+    const failure = projected[name].values.find((value) => value.error);
+    if (failure) return [name, failure.error];
   }
   return projected;
 }"""
 
-
 ReadPaths = list[Annotated[list[str | Annotated[int, Field(strict=True, ge=0)]], Field(min_length=1)]]
-
 
 def assert_read_paths(output, paths):
     """WHY：运行绑定需要哪一个值就检查哪一个值，不要求其它行具有同样的可选字段。"""
@@ -363,6 +370,9 @@ async def project_fields(browser, element, fields, native_context, *, field_samp
                    'resolveUrl': field.resolveUrl, 'textSource': field.textSource,
                    'valueSource': field.valueSource}
                   for name, field in fields.items()]
+    for item in projection:
+        if fields[item['name']].parts:
+            item['parts'] = [part.model_dump(mode='json') for part in fields[item['name']].parts]
     # WHY：采样只限制宿主本次投影，不改写正式 ReadSpec 或把业务值全部取回后再截取。
     if field_samples is not None:
         for field in projection:
@@ -373,6 +383,12 @@ async def project_fields(browser, element, fields, native_context, *, field_samp
         result = json.loads(raw)
     except Exception as error:
         raise ValueError('read_field_projection_failed') from error
+    if result == [None, 'read_animation_timeout']:
+        raise FieldReadError('read_animation_timeout', reason='finite_animation_not_settled')
+    if isinstance(result, list) and len(result) == 2 and result[0] in fields and result[1] in {
+            'read_part_selector_invalid', 'read_part_cardinality_invalid', 'read_part_shadow_unsupported',
+            'read_part_value_missing'}:
+        raise FieldReadError(result[1], field_name=result[0])
     if isinstance(result, list) and len(result) == 1 and result[0] in fields:
         raise FieldReadError('read_field_projection_failed', field_name=result[0],
                              reason='invalid_selector')

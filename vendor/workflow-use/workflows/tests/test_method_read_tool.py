@@ -58,15 +58,17 @@ class MethodReadMappingTests(unittest.TestCase):
     def test_root_array_path_is_bound_by_host_and_reference_reuse_stays_exclusive(self):
         model = method_read_params_for(OUTPUT)
         self.assertNotIn('outputPath', model.model_json_schema()['properties'])
-        params = model.model_validate({'container': '.row', 'fields': {'name': {'selector': '.name'}}})
-        self.assertEqual(params.outputPath, [])
+        params = model.model_validate({'container': '.row',
+            'fields': {'count': {'selector': '.count'}, 'labels': {'selector': '.label'}}})
+        from workflow_use.hybrid.field_read_params import bind_root_read_path
+        self.assertEqual(bind_root_read_path(params.model_dump(), OUTPUT)["outputPath"], [])
         self.assertNotIn('outputPath', params.model_dump())
         self.assertEqual(model.model_validate({'readRef': 'r1'}).model_dump(), {'readRef': 'r1'})
         with self.assertRaises(ValidationError):
             model.model_validate({'outputPath': ['value'], 'container': '.row', 'fields': {'name': {'selector': '.name'}}})
 
     def test_internal_content_mode_is_absent_from_field_tool_schema(self):
-        for schema in ({'type': 'object'}, {'type': 'array'}):
+        for schema in (ITEM, OUTPUT):
             properties = method_read_params_for(schema).model_json_schema()['properties']
             self.assertNotIn('regionMode', properties)
             self.assertNotIn('regions', properties)
@@ -179,8 +181,7 @@ class MethodReadToolTests(unittest.IsolatedAsyncioTestCase):
         tools = ToolsStub()
         records = register_method_read_tool(tools, output_schema=OUTPUT)
         self.assertEqual(list(tools.actions), ['bat_read_fields'])
-        raw = parameters().model_dump(mode='json')
-        del raw['outputPath']
+        raw = {'container': '.row', 'fields': {'count': {'selector': '.count'}, 'labels': {'selector': '.label'}}}
         browser, params = object(), tools.param_model.model_validate(raw)
         self.assertNotIn('outputPath', params.model_dump(mode='json'))
         sampler = AsyncMock(side_effect=lambda _browser, spec, **_kwargs: sample_for(spec))
@@ -196,7 +197,7 @@ class MethodReadToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse({'sample', 'pageIdentity', 'documentRootId', 'outputDigest'} & set(payload))
         self.assertIn('does not prove the full business collection', payload['coverageNote'])
         self.assertEqual(len(records.records), 2)
-        self.assertEqual(records.records[0].mapping, expand_method_read_params(params, OUTPUT))
+        self.assertEqual(records.records[0].mapping, expand_method_read_params(parameters(), OUTPUT))
         self.assertEqual(records.records[0].sample.documentRootId, 1)
         self.assertEqual(records.records[0].sample.output, payload['representative'])
         self.assertEqual(sampler.await_args.kwargs, {'sample_limit': 3, 'read_path': []})

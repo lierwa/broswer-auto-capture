@@ -54,8 +54,12 @@ export function draftReference(draft: TaskDraft) {
   return { id: draft.id, revision: draft.revision, checksum: draft.checksum }
 }
 
-function executionMatchesDraft(execution: TaskExecution, draft: TaskDraft) {
-  return execution.plan.id === draft.content.plan.id && execution.plan.version === draft.content.plan.version
+export function executionMatchesDraft(execution: TaskExecution, draft: TaskDraft) {
+  return execution.taskId === draft.taskId && execution.requirement.id === draft.requirement.id
+    && execution.requirement.version === draft.requirement.version
+    && execution.requirement.revision === draft.requirement.revision && execution.requirement.digest === draft.requirement.digest
+    && new Set(execution.steps.map(step => step.stepId)).size === execution.steps.length
+    && execution.plan.id === draft.content.plan.id && execution.plan.version === draft.content.plan.version
     && execution.plan.digest === digestJson(draft.content.plan) && execution.steps.length === draft.content.steps.length
     && execution.steps.every((step) => {
       const current = draft.content.steps.find((item) => item.stepId === step.stepId)

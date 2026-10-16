@@ -14,6 +14,7 @@ export const runnerCleanupStageStatusSchema = z.enum(["confirmed", "unconfirmed"
 export const runnerCleanupCodeSchema = z.enum([
   "cleanup_capability_close_failed",
   "cleanup_browser_close_failed",
+  "cleanup_browser_close_unverified",
   "cleanup_close_protocol_timeout",
   "cleanup_close_protocol_rejected",
   "cleanup_close_protocol_invalid",
@@ -24,6 +25,7 @@ export const runnerCleanupCodeSchema = z.enum([
   "cleanup_process_tree_failed",
   "cleanup_process_tree_unconfirmed",
   "cleanup_temp_directory_failed",
+  "cleanup_interrupted_unverified",
 ])
 export const runnerCleanupStageSchema = z.object({
   stage: runnerCleanupStageNameSchema,

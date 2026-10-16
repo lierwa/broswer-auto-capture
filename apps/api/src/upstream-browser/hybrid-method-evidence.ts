@@ -5,10 +5,10 @@ import { jsonValueSchema, parseTaskValue, valuePathSchema,
 import { digestJson, readPath } from "@browser-capture/runtime"
 import type { HybridSourceResult } from "./hybrid-captured-source.js"
 import { naturalSourceContext } from "./hybrid-natural-payload.js"
-import { readSpecificationSchema } from "./hybrid-schema.js"
+import { hybridOutputAssemblyEvidenceSchema, readSpecificationSchema } from "./hybrid-schema.js"
 import { contentValueSchema, isContentResult } from "./page-content-contract.js"
 import { elementEntryValueSchema } from "./element-entry-contract.js"
-import { preparationMethodOutcomeSchema } from "./hybrid-method-source.js"
+import { contractReadPaths, contractOwnsValue } from "./hybrid-read-contract.js"
 
 type ValuePath = Array<string | number>
 type Source = Pick<HybridSourceResult, "request" | "canonicalRequest" | "output">
@@ -17,9 +17,8 @@ const readRef = z.string().regex(/^r[1-9][0-9]*$/)
 const actionSchema = z.object({ id: z.string(), name: z.string(), args: jsonValueSchema,
   status: z.literal("succeeded"), postObservationRef: z.string().nullable(),
   resultRef: z.object({ ref: z.string(), digest: hash }).strict() }).passthrough()
-const doneSchema = z.object({ success: z.literal(true), reason: z.string().min(1),
-  readRefs: z.array(readRef).default([]) }).strict()
-const methodDoneSchema = doneSchema.extend({ methodOutcome: preparationMethodOutcomeSchema }).strict()
+const doneSchema = z.object({ text: z.string(), success: z.literal(true).default(true),
+  files_to_display: z.array(z.string()).nullable().optional() }).strict()
 const methodFactSchema = z.object({ actionRef: z.string(), specification: readSpecificationSchema,
   outputPath: valuePathSchema, readPath: z.array(z.string()), output: jsonValueSchema,
   resultDigest: hash, urlDigest: hash, targetId: z.string().min(1), containerIdsDigest: hash,
@@ -52,30 +51,20 @@ export function representativeSourceOutput(contract: TaskPlan["outputContract"],
   if (new Set(request.trace.actions.map((action) => action.id)).size !== request.trace.actions.length) {
     throw new Error("hybrid_method_action_duplicate")
   }
-  let selected = (request.compilerVersion === "bat-hybrid/3" ? methodDoneSchema : doneSchema).parse(done.args).readRefs
-  if (new Set(selected).size !== selected.length) throw new Error("hybrid_method_read_ref_duplicate")
+  doneSchema.parse(done.args)
   if (request.plan.resultSpec.mode === "execution") {
-    if (selected.length || contract.schema.type !== "null") throw new Error("hybrid_method_execution_read_forbidden")
+    if (contract.schema.type !== "null") throw new Error("hybrid_method_execution_read_forbidden")
     return { output: parseTaskValue(contract, source.output), samplePaths: [] as ValuePath[], countPaths: [] as ValuePath[] }
   }
   if (!isDeepStrictEqual(request.plan.resultSpec.schema, contract.schema)) {
     throw new Error("hybrid_method_result_contract_mismatch")
   }
   const facts = methodFacts(request)
-  if (isContentResult(request.plan.resultSpec) && !selected.length) {
-    const scopes = new Set(facts.map(fact => {
-      const value = methodFactSchema.parse(fact.raw)
-      return JSON.stringify([value.specification.container, value.targetId, value.urlDigest])
-    }))
-    if (scopes.size > 1) throw new Error("hybrid_content_scope_ambiguous")
-    // WHY：宿主证明的最后一份实际范围产物即可交付；不让模型抄参数或技术引用。
-    const matching = facts.filter(fact => isDeepStrictEqual(methodFactSchema.parse(fact.raw).output, source.output))
-    selected = matching.length ? [matching.at(-1)!.reference] : []
-  }
+  const selected = assemblyMethodRefs(context, facts, contract.schema, done)
   if (new Set(facts.map(({ reference }) => reference)).size !== facts.length) {
     throw new Error("hybrid_method_read_ref_duplicate")
   }
-  // WHY：重复读取即使不作为 done 的输出引用，也必须验证其方法来源；旧未选空观察仍不参与结果。
+  // WHY：重复读取也须验证真实方法来源；输出选择只消费宿主已证 assembly，不让模型抄引用。
   for (const action of request.trace.actions) {
     if (action.name !== "bat_read_fields" || !isMethodReference(action.args)) continue
     const match = facts.find((fact) => z.object({ actionRef: z.string() }).parse(fact.raw).actionRef === action.id)
@@ -122,10 +111,46 @@ export function representativeSourceOutput(contract: TaskPlan["outputContract"],
   return { output: parseTaskValue({ ...contract, schema }, source.output), samplePaths, countPaths }
 }
 
+function assemblyMethodRefs(context: ReturnType<typeof naturalSourceContext>, facts: ReturnType<typeof methodFacts>,
+  schema: ValueSchema, done: z.infer<typeof actionSchema>) {
+  const { ordinary: request } = context
+  const matches = request.trace.observations.flatMap(observation => observation.facts
+    .filter(fact => fact.kind === "verified_output_assembly").map(fact => ({ observation, fact })))
+  if (matches.length !== 1 || matches[0]!.observation.id !== done.postObservationRef) {
+    throw new Error("hybrid_method_output_assembly_required")
+  }
+  const { observation, fact } = matches[0]!, assembly = hybridOutputAssemblyEvidenceSchema.parse(fact.value)
+  context.assertFact(fact, observation.id)
+  const finalResult = z.object({ digest: hash }).passthrough().parse(request.trace.finalResultRef)
+  if (!isDeepStrictEqual(assembly.schema, schema) || assembly.outputDigest !== finalResult.digest) {
+    throw new Error("hybrid_method_output_assembly_mismatch")
+  }
+  const selected: string[] = []
+  for (const field of assembly.fields) {
+    const binding = field.binding
+    if (binding.source !== "node") continue
+    const sources = facts.filter(candidate => {
+      const value = methodFactSchema.parse(candidate.raw)
+      return value.actionRef === binding.nodeId && isDeepStrictEqual(value.readPath, binding.path)
+        && isDeepStrictEqual(value.outputPath, field.path)
+    })
+    if (!sources.length && request.plan.resultSpec.mode === "data" && request.plan.resultSpec.derivations.some(derivation =>
+      binding.nodeId === `result-${derivation.producerRef}` && !binding.path.length
+      && request.plan.resultSpec.mode === "data" && request.plan.resultSpec.fields.some(target =>
+        target.producerRef === derivation.producerRef && isDeepStrictEqual(target.path, field.path)))) continue
+    if (sources.length !== 1 || selected.includes(sources[0]!.reference)) {
+      throw new Error("hybrid_method_output_assembly_ambiguous")
+    }
+    selected.push(sources[0]!.reference)
+  }
+  return selected
+}
+
 function validateOutputOrigins(schema: ValueSchema, output: JsonValue, input: JsonValue | undefined,
   inputSchema: ValueSchema, observed: ValuePath[]) {
   const visit = (value: JsonValue, target: ValueSchema, path: ValuePath) => {
     if (observed.some((owned) => pathPrefix(owned, path))) return
+    if (contractOwnsValue(target, value)) return
     // WHY：单项方法只能继承同一输入的同一路径；相同值、不同记录或模型填值均不能证明来源。
     if (input !== undefined && requiredInputPath(inputSchema, path) && isDeepStrictEqual(schemaAtPath(inputSchema, path), target)) {
       try { if (isDeepStrictEqual(readPath(input, path), value)) return } catch { /* 缺字段不是来源证明。 */ }
@@ -210,8 +235,12 @@ function validateMethodAction(action: z.infer<typeof actionSchema>, value: Metho
       throw new Error("hybrid_method_record_key_invalid")
     }
   }
+  // WHY：标量数组由一个容器中的多值字段读取；容器预算为1，值预算仍独立且严格。
+  const scalarArray = source?.type === "array" && source.items.type !== "object"
+    && isDeepStrictEqual(value.readPath, ["value"]) && value.specification.outputSchema.type === "object"
   if (source?.type === "array" && (source.maxItems !== (args.take ?? args.maxItems ?? 300)
-    || value.specification.maxItems !== (args.maxItems ?? 300)
+    || value.specification.maxItems !== (scalarArray ? 1 : args.maxItems ?? 300)
+    || scalarArray && value.specification.fields.value?.maxValues !== source.maxItems
     || value.specification.take !== args.take)) {
     throw new Error("hybrid_method_read_budget_mismatch")
   }
@@ -221,7 +250,7 @@ function validateMethodAction(action: z.infer<typeof actionSchema>, value: Metho
 function validateMethodField(field: Record<string, JsonValue>, actual: Record<string, unknown>) {
   const defaults: Record<string, JsonValue> = { attribute: null, optionalAttribute: false, resolveUrl: false,
     textSource: "rendered", textPrefix: null, textSuffix: null, normalizeWhitespace: false, normalizePresentation: false,
-    ordinal: false, valueSource: null }
+    ordinal: false, valueSource: null, parts: null }
   const allowed = new Set(["selector", ...Object.keys(defaults)])
   if (Object.keys(field).some((key) => !allowed.has(key)) || field.selector !== actual.selector
     || Object.entries(defaults).some(([key, fallback]) => !isDeepStrictEqual(field[key] ?? fallback, actual[key] ?? fallback))) {
@@ -232,7 +261,13 @@ function validateMethodField(field: Record<string, JsonValue>, actual: Record<st
 function contentMethodArgs(raw: JsonValue, value: MethodFact, request: MethodRequest): MethodArgs {
   if (value.specification.entryField) return entryMethodArgs(raw, value, request)
   const capture = Object.values(value.specification.fields).some(field => field.contentSource === "page-content")
-  if (!capture) return methodArgsSchema.parse(raw)
+  if (!capture) {
+    const schema = request.plan.resultSpec.mode === "data" ? request.plan.resultSpec.schema : { type: "null" as const }
+    const paths = contractReadPaths(schema)
+    const args = raw && typeof raw === "object" && !Array.isArray(raw) && !Object.hasOwn(raw, "outputPath") && paths.length === 1
+      ? { ...raw, outputPath: paths[0] } : raw
+    return methodArgsSchema.parse(args)
+  }
   const selected = z.union([z.object({ container: z.string().min(1) }).strict(),
     z.object({ regions: z.string().min(1), regionMode: z.literal("selected-regions").optional() }).strict()]).parse(raw)
   const args = { container: "regions" in selected ? selected.regions : selected.container }

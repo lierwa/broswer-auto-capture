@@ -57,7 +57,7 @@ class AuthorCallbackStopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(collector.source_gaps[0].reason, 'new_navigation_tab_not_ready')
         self.assertTrue(agent.state.stopped)
         history = SimpleNamespace(is_done=lambda: True, is_successful=lambda: True)
-        completed, output, gaps = _business_result(history, callbacks.failed, None, None, {'type': 'null'})
+        completed, output, gaps = _business_result(history, callbacks.failed, {'type': 'null'})
         self.assertFalse(completed)
         self.assertIsNone(output)
         self.assertIn('native_agent_run_failed', [item.reason for item in gaps])

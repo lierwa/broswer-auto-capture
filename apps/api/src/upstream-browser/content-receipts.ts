@@ -9,6 +9,41 @@ const receiptSchema = z.object({ format: z.literal("bat-page-content-ref/v1"), u
   coverage: z.object({ scope: z.literal("selected_live_region"), imageCount: z.number().int().nonnegative(),
     complete: z.literal(true) }).strict(), textPreview: z.string().max(1500) }).strict()
 
+const nativeFileReceiptSchema = z.object({ format: z.literal("bat-native-file-ref/v1"), ownerId: z.uuid(),
+  fileName: z.string().min(1).max(255), mediaType: z.string().min(1).max(200),
+  digest: z.string().regex(/^[a-f0-9]{64}$/), byteLength: z.number().int().positive().max(64 * 1024 * 1024),
+  relativePath: z.string().min(1).max(1000) }).strict()
+
+/** WHY：原生临时路径只在本owner存活时读取；保存字节后才可由既有finally关闭资源。 */
+export async function resolveNativeFileReceipts(output: JsonValue, profilePath: string,
+  ownerId: string): Promise<JsonValue> {
+  const value = z.object({ text: z.string(), files: z.array(nativeFileReceiptSchema).max(100) }).strict().parse(output)
+  const root = path.resolve(await realpath(path.dirname(profilePath)), "native-files", ownerId)
+  const files = []
+  for (const receipt of value.files) {
+    if (receipt.ownerId !== ownerId || path.basename(receipt.fileName) !== receipt.fileName
+      || /[\\/]/.test(receipt.fileName) || receipt.fileName === "." || receipt.fileName === "..") {
+      throw new Error("native_file_receipt_owner_mismatch")
+    }
+    const file = path.resolve(root, receipt.relativePath)
+    if (path.isAbsolute(receipt.relativePath) || file === root || !file.startsWith(root + path.sep)
+      || /\\/.test(receipt.relativePath)) throw new Error("native_file_receipt_path_mismatch")
+    const resolved = await realpath(file)
+    if (process.platform === "win32" ? resolved.toLowerCase() !== file.toLowerCase() : resolved !== file) {
+      throw new Error("native_file_receipt_path_mismatch")
+    }
+    const metadata = await stat(file)
+    if (!metadata.isFile() || metadata.size !== receipt.byteLength) throw new Error("native_file_receipt_size_mismatch")
+    const bytes = await readFile(file)
+    if (bytes.length !== receipt.byteLength || createHash("sha256").update(bytes).digest("hex") !== receipt.digest) {
+      throw new Error("native_file_receipt_digest_mismatch")
+    }
+    files.push({ format: "bat-native-file/v1", fileName: receipt.fileName, mediaType: receipt.mediaType,
+      digest: receipt.digest, byteLength: receipt.byteLength, bytesBase64: bytes.toString("base64") })
+  }
+  return { text: value.text, files }
+}
+
 /** WHY：原图不穿过编译消息；只读取本次 owner 的有界、摘要匹配的产物传输文件。 */
 export async function resolveContentReceipts(output: JsonValue, config: Record<string, unknown>,
   profilePath: string, ownerId: string): Promise<JsonValue> {
@@ -25,7 +60,7 @@ export async function resolveContentReceipts(output: JsonValue, config: Record<s
       if (parsed.format !== "bat-page-content-ref/v1") continue
       const receipt = receiptSchema.parse(parsed)
       if (receipt.ownerId !== ownerId) throw Error("content_receipt_owner_mismatch")
-      const file = path.resolve(path.dirname(profilePath), "content-receipts", ownerId, `${receipt.digest}.json`)
+      const file = path.resolve(await realpath(path.dirname(profilePath)), "content-receipts", ownerId, `${receipt.digest}.json`)
       const resolved = await realpath(file)
       if (process.platform === "win32" ? resolved.toLowerCase() !== file.toLowerCase() : resolved !== file) {
         throw Error("content_receipt_path_mismatch")

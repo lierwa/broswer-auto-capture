@@ -227,10 +227,4 @@ class CompileRequest(Envelope):
     sourceGaps: list[CompilationGap] = Field(default_factory=list)
 
 
-class AnnotateRequest(CompileRequest):
-    type: Literal['hybrid_annotate']
-    request: NaturalCompilationRequest
-    model: AuthorModel
-
-
-REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | LegacyRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | AccountSessionRequest | CloseRequest | ReleaseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest | AnnotateRequest, Field(discriminator='type')])
+REQUEST = TypeAdapter(Annotated[StartRequest | ProfileStartRequest | ProfileOwnerRequest | ProfileRecoverRequest | ExecuteRequest | LegacyRequest | ObserveRequest | HandoffRequest | ManagedWindowRequest | AccountSessionRequest | CloseRequest | ReleaseRequest | AuthorRequest | AuthorResumeRequest | CompilationAck | CompileRequest, Field(discriminator='type')])

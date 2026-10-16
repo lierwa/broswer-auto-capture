@@ -1,32 +1,31 @@
-"""Protect source recovery against model-facing field reductions; hashes come from the pre-change registry."""
-import json
-from pathlib import Path
-from types import SimpleNamespace
+"""Only the current public tool registry can recompile a source."""
 import unittest
-
-from browser_use_runner.output_schema import output_model_for
-from browser_use_runner.hybrid_compile import matching_registry
+from types import SimpleNamespace
 from pydantic import TypeAdapter
+from browser_use_runner.hybrid_compile import matching_registry
+from workflow_use.hybrid.author import author_tools_for_result_spec
+from workflow_use.hybrid.registry import ActionRegistry
 from workflow_use.hybrid.request import ResultSpec
 
 
-class MinimalModelFieldsCompatibilityTests(unittest.TestCase):
-    def test_exact_prechange_registries_remain_readable(self):
-        snapshots = json.loads((Path(__file__).parent / 'fixtures/legacy-model-registry-20261006.json').read_text())
-        for snapshot in snapshots:
-            mode = snapshot['mode']
-            schema = {'type': 'null'} if mode == 'execution' else {'type': 'array', 'items': {'type': 'string'}}
-            spec = {'contractVersion': 'bat-result-spec/v1', 'mode': mode}
+class MinimalModelFieldsTests(unittest.TestCase):
+    def test_current_registry_exact_digest_and_tampered_digest_refusal(self):
+        for mode in ('execution', 'data'):
+            raw = {'contractVersion': 'bat-result-spec/v1', 'mode': mode}
             if mode == 'data':
-                spec.update(schema=schema, fields=[{'path': [], 'description': 'records', 'producerRef': 'records'}], edgeCases=[])
-            output_model, _ = output_model_for(schema, 'LegacyProof')
-            request = SimpleNamespace(plan=SimpleNamespace(resultSpec=TypeAdapter(ResultSpec).validate_python(spec)),
-                actionRegistryVersion=snapshot['exactLegacyDigest'])
-            with self.subTest(mode=mode, human=snapshot['human'], selection=snapshot['selection']):
-                registry = matching_registry(output_model, request)
-                self.assertEqual(registry.schemaDigest, snapshot['exactLegacyDigest'])
-                if mode == 'execution':
-                    registry.validate_action('done', {'success': True, 'reason': 'Observed.', 'readRefs': []})
+                raw.update(schema={'type': 'array', 'items': {'type': 'string'}},
+                    fields=[{'path': [], 'description': 'records', 'producerRef': 'records'}], edgeCases=[])
+            spec = TypeAdapter(ResultSpec).validate_python(raw)
+            tools = author_tools_for_result_spec(spec, source_protocol='bat-hybrid/3')
+            tools.exclude_action('screenshot')
+            current = ActionRegistry.from_tools(tools)
+            request = SimpleNamespace(plan=SimpleNamespace(resultSpec=spec), compilerVersion='bat-hybrid/3',
+                actionRegistryVersion=current.schemaDigest)
+            self.assertEqual(matching_registry(request).schemaDigest, current.schemaDigest)
+            current.validate_action('done', {'success': True, 'text': 'Observed.'})
+            request.actionRegistryVersion = '0' * 64
+            with self.assertRaisesRegex(ValueError, 'hybrid_action_registry_mismatch'):
+                matching_registry(request)
 
 
 if __name__ == '__main__':

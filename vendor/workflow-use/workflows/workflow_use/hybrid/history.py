@@ -8,6 +8,7 @@ from .action_identity import history_action_refs
 from .dom_evidence import history_tab_id, safe_url
 from .evidence import EvidenceRef, NormalizedObservation, ObservationFact, TraceSource, digest, gap
 from .normalize import HistoryInput, HistoryRecord, ResultEvidence
+from .native_sequence_stop import sequence_stop_fact
 
 
 def from_agent_history(history: AgentHistoryList, *, source: TraceSource,
@@ -33,6 +34,7 @@ def from_agent_history(history: AgentHistoryList, *, source: TraceSource,
         if any(not isinstance(action, dict) or set(action) != action_names[index]
                for index, action in enumerate(actions)):
             raise ValueError('invalid_redacted_action')
+        retain_rejected_sequence_tail(dispatch, step_index, item, len(actions))
         result_pairs = collect_result_evidence(
             step_index, item.result, len(actions), dispatch, store_result, put_evidence)
         results = [result for _index, result in result_pairs]
@@ -46,6 +48,10 @@ def from_agent_history(history: AgentHistoryList, *, source: TraceSource,
                 result = results_by_index.get(action_index)
                 facts = action_evidence_facts(value, raw_result, result.ref if result else None,
                                               observations, put_evidence)
+                stop = sequence_stop_fact(value, dispatch, results_by_index, step_index, put_evidence)
+                if stop is not None:
+                    facts.append(stop)
+                    retain_sequence_stop_link(value, dispatch, step_index, observation_links)
                 attached = attach_action_facts(observations, observation_links, step_index,
                                                action_index, facts)
                 if (not attached and value['entered'] is False and value['resultReceived'] is False
@@ -64,11 +70,16 @@ def from_agent_history(history: AgentHistoryList, *, source: TraceSource,
                     import_gaps.append(gap('missing_observation', [value['actionRef']],
                                            'native_action_event_' + capture['status'], 'reject_trace'))
         disposition = 'action_aligned' if set(results_by_index) == set(range(len(actions))) else 'unpaired'
+        missing = set(range(len(actions))) - set(results_by_index)
+        if missing and all(dispatch.get((step_index, index), {}).get('sequenceStop') for index in missing):
+            disposition = 'native_sequence_stopped'
         if not actions and results and all(result.errorPresent for result in results) and put_evidence is not None:
             if retain_auxiliary_results(step_index, item, results, observations, put_evidence):
                 disposition = 'agent_step_auxiliary'
         records.append(HistoryRecord(stepIndex=step_index, actions=actions, results=results,
                        preObservationRef=observation_links.get((step_index, 0, 'pre')),
+                       preObservationRefs={str(index): observation_links[(step_index, index, 'pre')]
+                                           for index in range(len(actions)) if (step_index, index, 'pre') in observation_links},
                        postObservationRefs={str(index): observation_links[(step_index, index, 'post')]
                                             for index in range(len(actions)) if (step_index, index, 'post') in observation_links},
                        resultDisposition=disposition))
@@ -76,6 +87,42 @@ def from_agent_history(history: AgentHistoryList, *, source: TraceSource,
     return HistoryInput(source=source, completed=actual_completed,
                         records=records, observations=observations, finalResultRef=final_result_ref,
                         redactionManifestRef=redaction_manifest, importGaps=import_gaps)
+
+
+def retain_sequence_stop_link(dispatch, all_dispatch, step_index, observation_links):
+    # WHY：未派发尾部没有新前后观察；只引用已结束 cause 的真实 post，不捏造浏览器状态。
+    marker = dispatch.get('sequenceStop')
+    cause = all_dispatch.get((step_index, marker['causeIndex'])) if isinstance(marker, dict) else None
+    if cause is None:
+        return
+    phase = 'pre' if marker.get('reason') == 'admission_rejected' else 'post'
+    reference = observation_links.get((step_index, marker['causeIndex'], phase))
+    if reference is not None:
+        observation_links[(step_index, dispatch['nativeActionIndex'], 'pre')] = reference
+
+
+def retain_rejected_sequence_tail(dispatch, step_index, item, action_count):
+    """Use only native multi_act's actual aligned error return to explain its undispatched tail."""
+    count = len(item.result)
+    if not 0 < count < action_count or not getattr(item.result[-1], 'error', None):
+        return
+    cause = dispatch.get((step_index, count - 1))
+    if cause is None or cause['entered'] or cause['resultReceived']:
+        return
+    for index in range(count - 1):
+        prefix = dispatch.get((step_index, index))
+        actual = public_action_result(item.result[index])
+        if (prefix is None or not prefix['entered'] or not prefix['resultReceived']
+                or prefix['nativeResult'] != actual or actual is None or actual.get('error') or actual.get('is_done')):
+            return
+    tails = [dispatch.get((step_index, index)) for index in range(count, action_count)]
+    if any(value is None or value['entered'] or value['resultReceived'] or value.get('sequenceStop') for value in tails):
+        return
+    # WHY：不生成反馈或补派发；原生真实错误前缀及逐位置audit共同证明其余动作未发送。
+    marker = {'causeIndex': count - 1, 'reason': 'admission_rejected',
+              'proof': {'nativeResultPrefixLength': count}}
+    for value in tails:
+        value['sequenceStop'] = marker
 
 
 def action_evidence_facts(dispatch, raw_result, result_ref, observations, put_evidence):

@@ -2,13 +2,14 @@
 import copy
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from workflow_use.hybrid.evidence import NormalizedAction, NormalizedObservation, NormalizedTrace, digest
 from workflow_use.hybrid.natural_reads import VerifiedNaturalRead, find_elements_read_spec, runtime_read_specification
 from workflow_use.hybrid.natural_selection import bind_selection_function
 from workflow_use.hybrid.natural_target_compile import natural_target
-from workflow_use.hybrid.selection_tool import PreparedSelections, SelectionCheck
+from workflow_use.hybrid.selection_tool import PreparedSelections
+from workflow_use.hybrid.selection_annotation import annotate_selections
 from test_execution_dynamic_selection import URL, URL_DIGEST, REF, fact, query
 
 
@@ -51,22 +52,14 @@ def fixture(total=1):
     prepared.bind(SimpleNamespace(observations=trace.observations,
         pending={'pre': 'o-0002', 'actionId': 'a-0002', 'action': {'click': {'index': 42}}}),
         SimpleNamespace(requirementDigest='4' * 64, requirementText='Choose the first item.',
-                        task='Open the first item from the list.'), None)
-    draft = {'language': 'javascript', 'source': 'function main({candidates}) { '
-        'const hits = candidates.filter(c => c.text === "chosen"); '
-        'if (hits.length !== 1) throw new Error("ambiguous"); return hits[0].ordinal; }',
-        'inputs': {'candidates': spec.outputSchema},
-        'outputSchema': {'type': 'integer', 'minimum': 1, 'maximum': spec.maxItems},
-        'examples': [{'input': {'candidates': read.output}, 'output': 1}]}
-    prepared.validated[read_fact.id] = {'readActionRef': 'a-0001', 'readFactRef': read_fact.id,
-                                      'ordinal': 1, 'draft': draft}
+                        task='Open the first item from the list.'))
     segment = {'id': 's-a-0001', 'operation': {'name': 'browser.read-fields',
         'specification': runtime_read_specification(spec)}, 'outputs': [{'sourceRef': read_fact.id}]}
     return prepared, trace, segment
 
 
 class PreparedSelectionDispatchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_latest_empty_read_requests_a_new_query_without_validating_an_older_read(self):
+    def test_latest_empty_read_cannot_borrow_an_older_query_guard(self):
         prepared, trace, _ = fixture(3)
         empty = trace.observations[0].model_copy(deep=True)
         empty.id = 'o-0003'
@@ -76,37 +69,37 @@ class PreparedSelectionDispatchTests(unittest.IsolatedAsyncioTestCase):
         read.value['actionRef'] = 'a-0003'
         read.value['output'] = []
         prepared.collector.observations.append(empty)
-        prepared.model = SimpleNamespace(endpoint='http://validator.invalid', token='test')
-        with patch('workflow_use.hybrid.selection_tool.aiohttp.ClientSession',
-                   side_effect=ValueError('empty candidates must not reach the validator')) as client:
-            result = await prepared.validate(SelectionCheck(source='function main({candidates}) { return 1; }'))
-        self.assertTrue(result.error.startswith('selection_candidates_empty:'), result.error)
-        self.assertIn('find_elements', result.error)
+        prepared.before_dispatch()
         self.assertEqual(prepared.current_read().id, 'empty-read')
-        client.assert_not_called()
         self.assertEqual(prepared.clicks, {})
 
-    def test_validated_singleton_and_collection_reach_the_same_compiler(self):
-        for total in (1, 3):
-            with self.subTest(total=total):
-                prepared, trace, read_segment = fixture(total)
-                original = copy.deepcopy(trace)
-                prepared.before_dispatch()
-                self.assertIn('o-0002', prepared.clicks)
-                updated = prepared.attach(trace)
-                target, _, issues = natural_target(updated.actions[-1], updated.observations[-1])
-                self.assertEqual(issues, [])
-                request = SimpleNamespace(trace=updated, requirement=SimpleNamespace(sourceDigest='4' * 64))
-                functions, click, gaps = bind_selection_function(request, updated.actions[-1],
-                    [read_segment], {'id': 's-a-0002', 'target': target})
-                self.assertEqual(gaps, [])
-                self.assertEqual(functions[0]['draft'], prepared.validated['read']['draft'])
-                self.assertEqual(click['target']['ordinalBinding']['nodeId'], 'selection-a-0002')
-                self.assertEqual(trace, original)
+    async def test_collection_annotation_after_the_native_click_reaches_the_current_compiler(self):
+        prepared, trace, read_segment = fixture(3)
+        original = copy.deepcopy(trace)
+        prepared.before_dispatch()
+        self.assertEqual(prepared.clicks, {})
+        request = prepared.request
+        source = 'function main({candidates}) { return candidates[0].ordinal; }'
+        with patch('workflow_use.hybrid.selection_annotation.selection_source',
+                new=AsyncMock(return_value=(source, None))) as generate:
+            updated, issues = await annotate_selections(request, prepared.attach(trace), None)
+        self.assertEqual(issues, [])
+        generate.assert_awaited_once()
+        self.assertEqual(generate.call_args.args[1], trace)
+        self.assertEqual(generate.call_args.args[4].output,
+            next(f.value['output'] for f in trace.observations[0].facts if f.kind == 'verified_natural_read'))
+        target, _, issues = natural_target(updated.actions[-1], updated.observations[-1])
+        self.assertEqual(issues, [])
+        functions, click, gaps = bind_selection_function(SimpleNamespace(trace=updated,
+            requirement=SimpleNamespace(sourceDigest='4' * 64)), updated.actions[-1],
+            [read_segment], {'id': 's-a-0002', 'target': target})
+        self.assertEqual(gaps, [])
+        self.assertEqual(functions[0]['draft']['source'], source)
+        self.assertEqual(click['target']['ordinalBinding']['nodeId'], 'selection-a-0002')
+        self.assertEqual(trace, original)
 
     def test_unique_query_without_program_attaches_a_cardinality_guard(self):
         prepared, trace, read_segment = fixture()
-        prepared.validated.clear()
         prepared.before_dispatch()
         updated = prepared.attach(trace)
         target, _, _ = natural_target(updated.actions[-1], updated.observations[-1])
@@ -116,16 +109,14 @@ class PreparedSelectionDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gaps, [])
         self.assertIn('candidates.length !== 1', functions[0]['draft']['source'])
         self.assertEqual(click['target']['ordinalBinding']['nodeId'], 'selection-a-0002')
-        self.assertEqual(prepared.validated, {})
 
     def test_missing_program_does_not_block_native_click_or_invent_proof(self):
         for mode in ('collection', 'wrong_ordinal', 'missing_document', 'incomplete_query'):
             with self.subTest(mode=mode):
                 prepared, trace, _ = fixture(3 if mode == 'collection' else 1)
                 if mode == 'wrong_ordinal':
-                    prepared.validated['read']['ordinal'] = 2
-                else:
-                    prepared.validated.clear()
+                    next(f for f in trace.observations[-1].facts if f.kind == 'dom_structure') \
+                        .value['queryCandidate']['matchedItemOrdinal'] = 2
                 if mode == 'missing_document':
                     prepared.collector.observations[-1].facts = [f for f in trace.observations[-1].facts
                                                                if f.kind != 'document_identity']

@@ -56,9 +56,9 @@ def readiness_trace(producer_effect, consumer_name='extract'):
         observation('o-0003', 2, url, [url_fact('url-3')]),
         observation('o-0004', 3, url, [url_fact('url-4'), read_fact]),
     ]
-    producer = SimpleNamespace(id='a-0001', name='click', effect=producer_effect, status='succeeded',
+    producer = SimpleNamespace(id='a-0001', name='click', args={}, effect=producer_effect, status='succeeded',
                                preObservationRef='o-0001', postObservationRef='o-0002', resultRef=REF)
-    consumer = SimpleNamespace(id='a-0002', name=consumer_name, effect='read', status='succeeded',
+    consumer = SimpleNamespace(id='a-0002', name=consumer_name, args={}, effect='read', status='succeeded',
                                preObservationRef='o-0003', postObservationRef='o-0004', resultRef=result)
     return SimpleNamespace(actions=[producer, consumer], observations=observations)
 
@@ -99,6 +99,23 @@ class CompilerReadinessTests(unittest.TestCase):
                     status='succeeded', preObservationRef='o-0001', postObservationRef='o-0001'))
                 condition = consumer_readiness_by_action(trace)['a-0001']['condition']
                 self.assertTrue(condition[authority])
+
+    def test_unentered_tail_preserves_the_prior_read_projection_without_weakening_actual_effects(self):
+        trace = readiness_trace('ui_state')
+        prior = deepcopy(trace.observations[-1].facts[-1])
+        prior.id = 'prior-read'; prior.value['actionRef'] = 'a-prior'; prior.value['output'] = [{'title': 'Old'}]
+        trace.observations[0].facts.append(prior)
+        trace.actions[:0] = [SimpleNamespace(id='a-prior', name='extract', effect='read',
+            status='succeeded', preObservationRef='o-0001', postObservationRef='o-0001'),
+            SimpleNamespace(id='a-unentered', name='scroll', effect='ui_state', status='proposed',
+                preObservationRef='o-0001', postObservationRef=None)]
+        proven = consumer_readiness_by_action(trace, proven_not_dispatched_ids={'a-unentered'})
+        self.assertTrue(proven['a-0001']['condition']['transition'])
+        unproven = consumer_readiness_by_action(trace)
+        self.assertTrue(unproven['a-0001']['condition']['ready'])
+        trace.actions[1].name, trace.actions[1].effect, trace.actions[1].status = 'done', 'none', 'succeeded'
+        ended = consumer_readiness_by_action(trace)
+        self.assertTrue(ended['a-0001']['condition']['ready'])
 
     def test_navigation_uses_stable_ready_projection_without_old_page_baseline(self):
         readiness = consumer_readiness_by_action(readiness_trace('navigation'))['a-0001']
@@ -338,6 +355,18 @@ class RuntimeReadinessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PostconditionDiagnosticTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # WHY：诊断检查必须先通过真实身份门；只替换文档 ID 的浏览器传输。
+        self.browser = SimpleNamespace(id='session-1', agent_focus_target_id='tab-1')
+        self.browser.get_current_page = AsyncMock(return_value=self.browser)
+        self.browser.get_url = AsyncMock(return_value='https://example.test/issues')
+        self.browser.get_target_info = AsyncMock(return_value={'targetId': 'tab-1'})
+        self.browser.get_tabs = AsyncMock(return_value=[SimpleNamespace(target_id='tab-1')])
+        document = patch('workflow_use.hybrid.postconditions.current_document_id',
+                         new=AsyncMock(return_value='doc-current'))
+        document.start()
+        self.addCleanup(document.stop)
+
     def readiness(self):
         return declared_checks([{
             'kind': 'read_fields', 'ready': True, 'consumerRef': 's-a-0002',
@@ -351,7 +380,7 @@ class PostconditionDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                                reason='https://private.test/?token=secret')
         with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(side_effect=error)):
             with self.assertRaises(PostconditionNotMet) as raised:
-                await verify_once(object(), checks)
+                await verify_once(self.browser, checks)
         self.assertEqual(str(raised.exception),
                          'ordinary_postcondition_failed_read_fields_read_collection_limit')
 
@@ -360,7 +389,7 @@ class PostconditionDiagnosticTests(unittest.IsolatedAsyncioTestCase):
         with patch('workflow_use.hybrid.postconditions.read_fields', new=AsyncMock(
                 side_effect=RuntimeError('https://private.test/?token=secret'))):
             with self.assertRaises(PostconditionNotMet) as raised:
-                await verify_once(object(), checks)
+                await verify_once(self.browser, checks)
         self.assertEqual(str(raised.exception), 'ordinary_postcondition_failed_read_fields_check_error')
 
     async def test_multiple_failed_checks_identify_the_first_fixed_failure(self):
@@ -374,7 +403,7 @@ class PostconditionDiagnosticTests(unittest.IsolatedAsyncioTestCase):
         with patch('workflow_use.hybrid.postconditions.read_check_value', new=AsyncMock(
                 side_effect=['old-url-digest', ValueError('target_scope_mismatch')])):
             with self.assertRaises(PostconditionNotMet) as raised:
-                await verify_once(object(), checks)
+                await verify_once(self.browser, checks)
         self.assertEqual(str(raised.exception), 'ordinary_postcondition_failed_url_digest_fact_mismatch')
 
     async def test_target_state_mismatch_keeps_only_fixed_boolean_expected_and_actual(self):
@@ -386,7 +415,7 @@ class PostconditionDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                                  {'strategy': 'css', 'value': 'button'})
         with patch('workflow_use.hybrid.postconditions.read_check_value', new=AsyncMock(return_value=actual)):
             with self.assertRaises(PostconditionNotMet) as raised:
-                await verify_once(object(), checks)
+                await verify_once(self.browser, checks)
         self.assertEqual(raised.exception.diagnostic, {
             'kind': 'target_state', 'attempts': 1,
             'expected': {'aria-expanded': True, 'disabled': False},
@@ -399,7 +428,7 @@ class PostconditionDiagnosticTests(unittest.IsolatedAsyncioTestCase):
         with patch('workflow_use.hybrid.postconditions.read_check_value',
                    new=AsyncMock(return_value='private-after')):
             with self.assertRaises(PostconditionNotMet) as raised:
-                await verify_once(object(), checks)
+                await verify_once(self.browser, checks)
         self.assertEqual(raised.exception.diagnostic, {'kind': 'target_value', 'attempts': 1})
         self.assertNotIn('private', json.dumps(raised.exception.diagnostic))
 
